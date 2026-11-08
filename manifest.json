@@ -1,0 +1,19 @@
+{
+  "name": "ChemPro Suite — 화공 장치설계 워크스테이션",
+  "short_name": "ChemPro Suite",
+  "description": "열교환기, 원심펌프, 증류컬럼, 공정배관, 압력용기, 안전밸브(PSV) 정밀 수렴해석 및 견적 데이터시트 엔지니어링 스위트",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#070b14",
+  "theme_color": "#070b14",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
