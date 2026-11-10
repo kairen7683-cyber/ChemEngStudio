@@ -1,0 +1,2 @@
+:HL["/ChemEngStudio/_next/static/chunks/0ba21yqqc3wme.css","style"]
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"special-process","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"Paoq7atLO3_CKbj_y6yrv"}

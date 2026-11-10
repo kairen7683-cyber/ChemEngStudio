@@ -1,0 +1,1428 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="ChemPro Suite" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-512.png" />
+  <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
+  <link rel="stylesheet" href="styles.css?v=20261109d" />
+</head>
+<body class="mode-rigorous">
+
+  <!-- Top Sticky Telemetry Header (Stitch "Synthetix Telemetry" Layout) -->
+  <header class="app-header">
+    <div class="header-top">
+      <div class="brand-wrap">
+        <div class="brand-logo">CP</div>
+        <div>
+          <div class="brand-title">
+            ChemPro Suite
+            <span class="pro-badge">v2.6</span>
+          </div>
+        </div>
+      </div>
+      <div class="db-sync-pill" id="dbStatusBadge">
+        <span class="dot dot-emerald"></span>151종 물성 DB (전해공장 전용 물질 포함)
+      </div>
+    </div>
+
+    <!-- Chlor-Alkali Plant PFD Equipment Sync Bar -->
+    <div id="caPlantSyncBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 14px; background:linear-gradient(90deg, rgba(249,115,22,0.16), rgba(56,189,248,0.12)); border-top:1px solid rgba(249,115,22,0.3); border-bottom:1px solid rgba(56,189,248,0.25);">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:11px; font-weight:800; color:#fb923c; letter-spacing:0.3px;">⚡ 전해공장 PFD 장치 연동:</span>
+        <select id="ca_equip_tag" onchange="App.loadChlorAlkaliPreset(this.value)" style="background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px; padding:5px 10px; font-size:11px; font-family:monospace; min-width:320px;">
+          <optgroup label="열교환기 (Heat Exchangers — HEX, 판형 PHE & 다관원통형 TEMA)">
+            <option value="E-332" selected>E-332 — 1효 가성소다 열회수 예열기 (PHE 판형, L11→L12 / L8→L10, 54 m²)</option>
+            <option value="E-333">E-333 — 1효 응축수 열회수 예열기 (PHE 판형, C1→C2 / L9→L10, 14 m²)</option>
+            <option value="E-342">E-342 — 2효 가성소다 열회수 예열기 (PHE 판형, L12→L13 / L3→L5, 54 m²)</option>
+            <option value="E-343">E-343 — 2효 응축수 열회수 예열기 (PHE 판형, C2→C3 / L4→L5, 20 m²)</option>
+            <option value="E-352">E-352 — 50% 가성소다 제품 냉각기 (PHE 판형, L13→L14 / CW, 20 m²)</option>
+            <option value="E-350">E-350 — 3효 진공 표면응축기 (S&T TEMA, Surface Condenser V3 / CW)</option>
+            <option value="E-413">E-413 — 1단 염소가스 냉각기 (1st Cl2 Gas Cooler, Ti)</option>
+            <option value="E-423">E-423 — 2단 염소가스 냉각기 (2nd Cl2 Gas Cooler, Ti)</option>
+            <option value="E-433">E-433 — 3단 염소가스 칠러 냉각기 (3rd Cl2 Chiller Cooler, Ti)</option>
+            <option value="D-484">D-484 — 염소 냉동 액화기 (Cl2 Liquefier, LTCS)</option>
+            <option value="E-5613">E-5613 — 1단 수소가스 냉각기 (1st H2 Gas Cooler)</option>
+            <option value="E-5630">E-5630 — 2단 수소가스 CCW 냉각기 (2nd H2 CCW Cooler)</option>
+            <option value="E-5680">E-5680 — 고압 수소 정제 냉각기 (HP H2 Cooler)</option>
+            <option value="E-5682">E-5682 — 고압 수소가스 최종 냉각기 (H2 Aftercooler)</option>
+          </optgroup>
+          <optgroup label="원심 펌프 (Centrifugal Pumps — PMP, ANSI/ASME)">
+            <option value="P-044A/B">P-044A/B — 포화염수 이송 펌프 (D-010→D-013)</option>
+            <option value="P-033A/B">P-033A/B — 반응 전 브라인 이송 펌프 (D-013→D-020)</option>
+            <option value="P-014A/B">P-014A/B — 반응 후 브라인 이송 펌프 (D-020→T-030)</option>
+            <option value="P-154A/B">P-154A/B — 침전 후 여과공급 펌프 (T-030→F-140)</option>
+            <option value="P-084A/B">P-084A/B — 전해조 정제염수 공급 펌프 (Brine Feed Pump)</option>
+            <option value="P-244A/B">P-244A/B — 양극액 순환 펌프 (Anolyte Feed Pump)</option>
+            <option value="P-254A/B">P-254A/B — 음극액 순환 펌프 (Catholyte Circ. Pump)</option>
+            <option value="P-284A/B">P-284A/B — 32% 가성소다 이송 펌프 (32% NaOH Pump)</option>
+            <option value="P-264A/B">P-264A/B — 탈염소 브라인 펌프 (Dechlorinated Brine)</option>
+            <option value="P-314A/B">P-314A/B — 염수 반송 펌프 (Brine Return)</option>
+            <option value="P-374A/B">P-374A/B — 희박 브라인 반송 펌프 (→100 Sec)</option>
+            <option value="P-341A/B">P-341A/B — 3효 증발관 순환/이송 펌프 (36.4% NaOH Pump)</option>
+            <option value="P-331A/B">P-331A/B — 2효 증발관 순환/이송 펌프 (42.1% NaOH Pump)</option>
+            <option value="P-321A/B">P-321A/B — 1효 50% 가성소다 제품 펌프 (50.0% NaOH Pump)</option>
+            <option value="P-413A/B">P-413A/B — Cl2 수세탑 순환 펌프 (Wash Tower Pump)</option>
+            <option value="P-450A/B">P-450A/B — 98% 황산 건조탑 순환 펌프 (H2SO4 Pump)</option>
+            <option value="P-494A/B">P-494A/B — 액화염소 이송 펌프 (Liq Cl2 Transfer)</option>
+            <option value="P-496A/B">P-496A/B — 액화염소 출하 펌프 (Liq Cl2 Loading)</option>
+            <option value="P-613A/B">P-613A/B — 수소 응축수 반송 펌프 (H2 Condensate)</option>
+          </optgroup>
+          <optgroup label="압력용기 / 기액분리기 (Vessels & Separators — VES)">
+            <option value="D-210">D-210 — 양극액 기액분리 탱크 (Anolyte Separator)</option>
+            <option value="D-220">D-220 — 음극액 기액분리 탱크 (Catholyte Separator)</option>
+            <option value="D-341">D-341 — 3효 증발기 기액분리기 (3rd Effect Vapor Sep)</option>
+            <option value="D-331">D-331 — 2효 증발기 기액분리기 (2nd Effect Vapor Sep)</option>
+            <option value="D-321">D-321 — 1효 증발기 기액분리기 (1st Effect Vapor Sep)</option>
+            <option value="D-495">D-495 — 액화염소 수액기 (Liq Cl2 Accumulator)</option>
+            <option value="D-680">D-680 — 고압 수소 버퍼 드럼 (H2 Header Drum)</option>
+          </optgroup>
+        </select>
+        <button type="button" onclick="App.loadChlorAlkaliPreset(document.getElementById('ca_equip_tag').value)" style="background:rgba(56,189,248,0.18); color:#38bdf8; border:1px solid rgba(56,189,248,0.45); border-radius:6px; padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;">
+          🔄 공정조건 자동입력
+        </button>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span id="ca_sync_status" style="font-size:11px; color:#34d399; font-weight:700;"></span>
+        <button type="button" onclick="App.saveToChlorAlkaliEquipList()" style="background:linear-gradient(135deg,#f97316,#ea580c); color:#ffffff; border:none; border-radius:6px; padding:6px 14px; font-size:11px; font-weight:800; cursor:pointer; box-shadow:0 0 12px rgba(249,115,22,0.4);">
+          💾 설계 실행 및 장치 목록(Equipment List) 업데이트
+        </button>
+      </div>
+    </div>
+
+    <!-- 6 Equipment Module Tabs (Zero Emojis) -->
+    <nav class="equip-tabs">
+      <button type="button" class="tab-btn active" data-tab="hx" onclick="App.setTab('hx')">
+        <span class="dot dot-coral"></span>열교환기 <span class="tab-code">HEX</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="pump" onclick="App.setTab('pump')">
+        <span class="dot dot-cyan"></span>펌프 설계 <span class="tab-code">PMP</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="column" onclick="App.setTab('column')">
+        <span class="dot dot-emerald"></span>증류 컬럼 <span class="tab-code">COL</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="piping" onclick="App.setTab('piping')">
+        <span class="dot dot-amber"></span>공정 배관 <span class="tab-code">PIP</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="vessel" onclick="App.setTab('vessel')">
+        <span class="dot dot-cyan"></span>압력용기 <span class="tab-code">VES</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="psv" onclick="App.setTab('psv')">
+        <span class="dot dot-coral"></span>안전밸브 <span class="tab-code">PSV</span>
+      </button>
+    </nav>
+
+    <!-- Step-by-Step Engineering Workflow Navigation Bar -->
+    <div class="subview-bar">
+      <button type="button" class="subview-btn active" data-subview="input" onclick="App.setSubView('input')"><span class="step-num">1</span>설계 입력 / 열수지</button>
+      <button type="button" class="subview-btn" data-subview="telemetry" onclick="App.setSubView('telemetry')"><span class="step-num">2</span>수렴결과 / AI 점검</button>
+      <button type="button" class="subview-btn" data-subview="datasheet" onclick="App.setSubView('datasheet')"><span class="step-num">3</span>도면 / 데이터시트</button>
+      <button type="button" class="subview-btn" data-subview="all" onclick="App.setSubView('all')">PC 통합뷰</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+
+    <!-- ===================================================================
+         MODULE 1: SHELL & TUBE HEAT EXCHANGER (Stitch Primary Layout)
+         =================================================================== -->
+    <section class="module-panel active" id="panel-hx">
+      <!-- Left Input Column -->
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-coral"></span>고온/저온 유체 지정 및 열수지 수렴</div>
+            <span class="card-badge">TEMA R/C/B · Bell-Delaware</span>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 톨루엔, 원유, 에탄올, 냉각수)..." oninput="App.filterHXFluidSelects(this.value)" />
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label><span class="dot dot-coral"></span>고온측 (Hot) <span class="unit">Fluid</span></label>
+                <select id="hx_hot_fluid" onchange="App.onHXFluidOrTempChange('fluid')"></select>
+              </div>
+              <div class="field">
+                <label><span class="dot dot-cyan"></span>저온측 (Cold) <span class="unit">Fluid</span></label>
+                <select id="hx_cold_fluid" onchange="App.onHXFluidOrTempChange('fluid')"></select>
+              </div>
+              <div class="field">
+                <label>쉘/튜브 유체 배치 <span class="unit">Alloc</span></label>
+                <select id="hx_allocation" onchange="App.onModelInputEdited('hx')">
+                  <option value="hot_shell" selected>고온: Shell / 저온: Tube</option>
+                  <option value="hot_tube">고온: Tube / 저온: Shell</option>
+                </select>
+              </div>
+            </div>
+            <!-- Stitch 4-Column Property Telemetry Cards -->
+            <div class="auto-prop-strip" id="hx_prop_strip"></div>
+          </div>
+
+          <!-- Stitch Energy Balance Status Banner & 2x2 DOF Cards -->
+          <div class="dof-balance-bar">
+            <div class="fluid-selector-header" style="margin-bottom:8px;">
+              <span class="fluid-selector-title"><span class="dot dot-emerald"></span>열수지 (Qh = Qc) 자동 산출 변수 선택 (5개 변수 확정 시 목표 미지수를 실시간 자동 수렴합니다)</span>
+            </div>
+
+            <div class="dof-status-banner">
+              <div class="dof-status-left">
+                <div class="dof-status-title">열평형 수렴 완료 (Qh = Qc)</div>
+                <div class="dof-status-val" id="hx_q_badge">1,450.0 kW | 1,246.8 Mcal/h</div>
+              </div>
+              <div class="dof-err-badge">오차<br/>0.00%</div>
+            </div>
+
+            <div class="dof-pills">
+              <button type="button" class="dof-pill active" id="dof_mc_auto" onclick="App.setHXDof('mc_auto')">
+                <div class="dof-pill-top"><span>저온 유량 (m_c)</span><span class="dot dot-cyan"></span></div>
+                <div class="dof-pill-sub" id="dof_sub_mc">자동 산출 모드</div>
+              </button>
+              <button type="button" class="dof-pill" id="dof_tco_auto" onclick="App.setHXDof('tco_auto')">
+                <div class="dof-pill-top"><span>저온 출구온도 (Tc,out)</span></div>
+                <div class="dof-pill-sub" id="dof_sub_tco">고정 입력값</div>
+              </button>
+              <button type="button" class="dof-pill" id="dof_tho_auto" onclick="App.setHXDof('tho_auto')">
+                <div class="dof-pill-top"><span>고온 출구온도 (Th,out)</span></div>
+                <div class="dof-pill-sub" id="dof_sub_tho">고정 입력값</div>
+              </button>
+              <button type="button" class="dof-pill" id="dof_mh_auto" onclick="App.setHXDof('mh_auto')">
+                <div class="dof-pill-top"><span>고온 유량 (m_h)</span></div>
+                <div class="dof-pill-sub" id="dof_sub_mh">고정 입력값</div>
+              </button>
+            </div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>열수지 운전 조건 (Process Thermal Boundary)</span>
+            <span>SI Units</span>
+          </div>
+          <div class="form-grid cols-3">
+            <div class="field" id="wrap_hx_mh">
+              <label>고온 유량 (m_h) <span class="unit" id="tag_hx_mh">kg/h</span></label>
+              <input type="number" id="hx_mh" value="45000" step="500" oninput="App.onHXThermalInput('mh')" />
+            </div>
+            <div class="field">
+              <label>고온 입구 (Th,in) <span class="unit">°C</span></label>
+              <input type="number" id="hx_Thi" value="135.0" step="1" oninput="App.onHXThermalInput('thi')" />
+            </div>
+            <div class="field" id="wrap_hx_Tho">
+              <label>고온 출구 (Th,out) <span class="unit" id="tag_hx_Tho">°C</span></label>
+              <input type="number" id="hx_Tho" value="65.0" step="1" oninput="App.onHXThermalInput('tho')" />
+            </div>
+
+            <div class="field auto-calc-field" id="wrap_hx_mc">
+              <label>저온 유량 (m_c) <span class="unit" id="tag_hx_mc"><span class="auto-tag">AUTO</span> kg/h</span></label>
+              <input type="number" id="hx_mc" value="55800" step="500" oninput="App.onHXThermalInput('mc')" />
+            </div>
+            <div class="field">
+              <label>저온 입구 (Tc,in) <span class="unit">°C</span></label>
+              <input type="number" id="hx_Tci" value="28.0" step="1" oninput="App.onHXThermalInput('tci')" />
+            </div>
+            <div class="field" id="wrap_hx_Tco">
+              <label>저온 출구 (Tc,out) <span class="unit" id="tag_hx_Tco">°C</span></label>
+              <input type="number" id="hx_Tco" value="52.0" step="1" oninput="App.onHXThermalInput('tco')" />
+            </div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>열교환기 형식 선택 및 기계 기하학 (Mechanical Geometry)</span>
+            <span>ASME / TEMA / PHE</span>
+          </div>
+          <div class="form-grid cols-2" style="margin-bottom:8px;">
+            <div class="field">
+              <label><span class="dot dot-coral"></span>열교환기 구조 형식 <span class="unit">Exchanger Type</span></label>
+              <select id="hx_type" onchange="App.onHXTypeChange()">
+                <option value="shell_tube">다관원통형 (Shell & Tube — TEMA R/C/B)</option>
+                <option value="plate_phe" selected>판형 열교환기 (Plate & Frame PHE — Chevron Corrugated)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>전열관/전열판 재질 열전도도 <span class="unit">W/m·K</span></label>
+              <select id="hx_kw" onchange="App.onModelInputEdited('hx')">
+                <option value="70.2" selected>Nickel 200 (가성소다 표준 · 70.2 W/m·K)</option>
+                <option value="21.9">Titanium Gr.2 (염소/브라인 표준 · 21.9 W/m·K)</option>
+                <option value="16.3">SUS 304/316L (16.3 W/m·K)</option>
+                <option value="14.6">Duplex SS 2205 (14.6 W/m·K)</option>
+                <option value="45">탄소강 Carbon Steel (45.0 W/m·K)</option>
+                <option value="10.2">Hastelloy C-276 (10.2 W/m·K)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Subpanel A: Shell & Tube (TEMA) Geometry -->
+          <div id="hx_st_subpanel" style="display:none;">
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>초기 가정계수 (U0) <span class="unit">W/m²K</span></label>
+                <input type="number" id="hx_U_assumed" value="520" step="10" oninput="App.onModelInputEdited('hx')" />
+              </div>
+              <div class="field">
+                <label>튜브 외경 (OD) <span class="unit">mm</span></label>
+                <select id="hx_tube_od" onchange="App.onModelInputEdited('hx')">
+                  <option value="19.05" selected>19.05 mm (3/4" 표준)</option>
+                  <option value="25.4">25.40 mm (1" 대형)</option>
+                  <option value="15.88">15.88 mm (5/8" 고밀도)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>튜브 길이 (L) <span class="unit">m</span></label>
+                <select id="hx_tube_L" onchange="App.onModelInputEdited('hx')">
+                  <option value="2.44">2.44 m (8 ft)</option>
+                  <option value="3.05">3.05 m (10 ft)</option>
+                  <option value="3.66">3.66 m (12 ft)</option>
+                  <option value="4.88" selected>4.88 m (16 ft 표준)</option>
+                  <option value="6.00">6.00 m (20 ft ISO)</option>
+                  <option value="6.10">6.10 m (20 ft TEMA)</option>
+                  <option value="7.32">7.32 m (24 ft)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>튜브 패스 (N_pass)</label>
+                <select id="hx_passes" onchange="App.onModelInputEdited('hx')">
+                  <option value="1">1 Pass (단일 패스)</option>
+                  <option value="2" selected>2 Passes (표준)</option>
+                  <option value="4">4 Passes (고유속)</option>
+                  <option value="6">6 Passes</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>직렬 쉘 수 (N_shell)</label>
+                <select id="hx_nshell" onchange="App.onModelInputEdited('hx')">
+                  <option value="1" selected>1 Shell (1-2)</option>
+                  <option value="2">2 Shells (2-4)</option>
+                  <option value="3">3 Shells</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>배플 간격비 (B / Ds)</label>
+                <input type="number" id="hx_baffle_ratio" value="0.32" step="0.02" min="0.2" max="0.6" oninput="App.onModelInputEdited('hx')" />
+              </div>
+            </div>
+
+            <div class="rigorous-only">
+              <div class="form-grid cols-2">
+                <div class="field">
+                  <label>튜브 배열각 (Layout)</label>
+                  <select id="hx_layout" onchange="App.onModelInputEdited('hx')">
+                    <option value="30" selected>30° 삼각배열 (전열 우수)</option>
+                    <option value="90">90° 사각배열 (세척 용이)</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>배플 절단율 (Cut) <span class="unit">%</span></label>
+                  <input type="number" id="hx_baffle_cut" value="25" step="1" min="15" max="45" oninput="App.onModelInputEdited('hx')" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subpanel B: Plate Heat Exchanger (PHE — Chevron Corrugated Plate) Geometry -->
+          <div id="hx_phe_subpanel">
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>쉐브론 파형각 (β) <span class="unit">deg</span></label>
+                <select id="hx_phe_beta" onchange="App.onModelInputEdited('hx')">
+                  <option value="30">30° (Soft · 저차압형)</option>
+                  <option value="45">45° (Medium · 혼합채널)</option>
+                  <option value="60" selected>60° (Hard · 고난류 표준)</option>
+                  <option value="65">65° (Ultra-High θ)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>판 간격 (Channel Gap b) <span class="unit">mm</span></label>
+                <select id="hx_phe_b" onchange="App.onModelInputEdited('hx')">
+                  <option value="2.5">2.5 mm (고밀도 전열)</option>
+                  <option value="3.0" selected>3.0 mm (표준 가스켓 간격)</option>
+                  <option value="3.5">3.5 mm (중점도 액상)</option>
+                  <option value="4.0">4.0 mm (대유량/저차압)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>전열판 두께 (t_p) <span class="unit">mm</span></label>
+                <select id="hx_phe_tp" onchange="App.onModelInputEdited('hx')">
+                  <option value="0.5" selected>0.5 mm (표준 프레스판)</option>
+                  <option value="0.6">0.6 mm (중압용)</option>
+                  <option value="0.8">0.8 mm (고압/부식대비)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>전열판 유효 폭 (W_p) <span class="unit">mm</span></label>
+                <select id="hx_phe_wp" onchange="App.onModelInputEdited('hx')">
+                  <option value="300">300 mm (소형 프레임)</option>
+                  <option value="450" selected>450 mm (중형 표준 프레임)</option>
+                  <option value="600">600 mm (대형 프레임)</option>
+                  <option value="800">800 mm (초대형 프레임)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>포트 간 유효 길이 (L_p) <span class="unit">mm</span></label>
+                <select id="hx_phe_lp" onchange="App.onModelInputEdited('hx')">
+                  <option value="900">900 mm (단축형)</option>
+                  <option value="1200" selected>1,200 mm (표준 장축형)</option>
+                  <option value="1500">1,500 mm (고NTU 장축)</option>
+                  <option value="1800">1,800 mm (대용량 장축)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>PHE 유로 패스 배열</label>
+                <select id="hx_phe_passes" onchange="App.onModelInputEdited('hx')">
+                  <option value="1" selected>1-1 Pass (완전 대향류 표준)</option>
+                  <option value="2">2-2 Pass (2단 직렬 고유속)</option>
+                  <option value="3">3-3 Pass (고온도접근용)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Rigorous Solver Trigger Bar for Heat Exchanger -->
+          <div class="solver-trigger-bar" id="solver_bar_hx">
+            <div class="solver-status-box">
+              <span class="dot dot-emerald" id="solver_dot_hx"></span>
+              <div>
+                <div class="solver-status-title" id="solver_title_hx">Bell-Delaware 5-Factor & TEMA 수렴 완료</div>
+                <div class="solver-status-sub" id="solver_sub_hx">파라미터 변경 시 [수렴해석 실행]을 눌러 반복 계산을 수행합니다</div>
+              </div>
+            </div>
+            <button type="button" class="btn-solver-exec" id="btn_solver_hx" onclick="App.runRigorousConvergence('hx')">
+              수렴해석 실행 (Run Solver)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Telemetry & Plots Column (Stitch Right Screen Layout) -->
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-emerald"></span><span id="hx_tele_title">E-332 (1효 가성소다 열회수 예열기) 수렴 텔레메트리</span></div>
+            <span class="card-badge emerald" id="hx_converge_badge">수렴 완료 (BELL-DELAWARE)</span>
+          </div>
+
+          <div class="kpi-grid" id="hx_kpis"></div>
+
+          <!-- Stitch Hydraulic Pressure Drop Margin Gauges -->
+          <div class="dp-gauge-grid" id="hx_dp_gauges"></div>
+
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span>열유속 및 온도 분포 선도 (T-Q Profile)</span>
+              <span id="hx_ft_label">Ft = 0.91</span>
+            </div>
+            <canvas id="canvas_hx" class="eng-canvas"></canvas>
+          </div>
+
+          <!-- Stitch 5-Segment Thermal Profile Table -->
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>구간별 전열 세부 프로파일 (5 Segments)</span>
+              <span>TEMA / Bell-Delaware</span>
+            </div>
+            <table class="eng-table" id="hx_seg_table"></table>
+          </div>
+
+          <div class="warn-list" id="hx_warnings"></div>
+
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>반복 수렴 이력 (U_assumed ↔ U_calc Wegstein Loop)</span>
+              <span>Convergence Log</span>
+            </div>
+            <table class="eng-table" id="hx_iter_table"></table>
+          </div>
+
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_hx" placeholder="수석 엔지니어 AI 검토 요청사항 입력 (예: 쉘측 차압 절감 및 진동 여유 확보)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('hx')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_hx"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         MODULE 2: CENTRIFUGAL PUMP (API 610 + ANSI/HI 9.6.7)
+         =================================================================== -->
+    <section class="module-panel" id="panel-pump">
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-cyan"></span>펌프 운전 유체 및 공정 경계조건</div>
+            <span class="card-badge">API 610 / ANSI HI 9.6.7</span>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 벤젠, 황산, 원유, 공정수)..." oninput="App.filterFluidSelect('pump_fluid', this.value)" />
+            <div class="form-grid">
+              <div class="field">
+                <label>이송 유체 (Fluid) <span class="unit">DB</span></label>
+                <select id="pump_fluid" onchange="App.onPumpFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>운전 온도 (T_op) <span class="unit">°C</span></label>
+                <input type="number" id="pump_T" value="25" step="1" oninput="App.onPumpFluidChange()" />
+              </div>
+            </div>
+            <div class="auto-prop-strip" id="pump_prop_strip"></div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>운전 유량 및 펌프 기본 사양</span>
+            <span>API 610</span>
+          </div>
+          <div class="form-grid cols-3">
+            <div class="field">
+              <label>설계 유량 (Q) <span class="unit">m³/h</span></label>
+              <input type="number" id="pump_Q" value="65" step="1" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>유체 밀도 (ρ) <span class="unit">kg/m³</span></label>
+              <input type="number" id="pump_rho" value="997.0" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>점도 (μ) <span class="unit">cP</span></label>
+              <input type="number" id="pump_mu" value="0.89" step="0.05" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>증기압 (Pv) <span class="unit">bar.a</span></label>
+              <input type="number" id="pump_pv" value="0.032" step="0.005" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>펌프 효율 (청수) <span class="unit">%</span></label>
+              <input type="number" id="pump_eff" value="75" step="1" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>회전수 (N) <span class="unit">RPM</span></label>
+              <select id="pump_rpm" onchange="App.recalc()">
+                <option value="1750" selected>1750 RPM (4P 60Hz)</option>
+                <option value="3500">3500 RPM (2P 60Hz)</option>
+                <option value="1450">1450 RPM (4P 50Hz)</option>
+                <option value="2900">2900 RPM (2P 50Hz)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="rigorous-only">
+            <div class="section-sub-header">
+              <span>흡입/토출 배관망 및 압력 경계조건</span>
+              <span>Hydraulic Network</span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>흡입 압력 (P1) <span class="unit">barG</span></label>
+                <input type="number" id="pump_P1" value="0.2" step="0.1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>토출 압력 (P2) <span class="unit">barG</span></label>
+                <input type="number" id="pump_P2" value="3.5" step="0.1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>흡입 액면 (z1) <span class="unit">m</span></label>
+                <input type="number" id="pump_z1" value="2.5" step="0.5" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>토출 높이 (z2) <span class="unit">m</span></label>
+                <input type="number" id="pump_z2" value="16.0" step="0.5" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>흡입관 규격 <span class="unit">ANSI/ASME Sch 40</span></label>
+                <select id="pump_dsuc" onchange="App.recalc()">
+                  <option value="26.64">NPS 1" Sch 40 (ID 26.64 mm)</option>
+                  <option value="40.89">NPS 1-1/2" Sch 40 (ID 40.89 mm)</option>
+                  <option value="52.50">NPS 2" Sch 40 (ID 52.50 mm)</option>
+                  <option value="62.71">NPS 2-1/2" Sch 40 (ID 62.71 mm)</option>
+                  <option value="77.92">NPS 3" Sch 40 (ID 77.92 mm)</option>
+                  <option value="102.26" selected>NPS 4" Sch 40 (ID 102.26 mm)</option>
+                  <option value="154.05">NPS 6" Sch 40 (ID 154.05 mm)</option>
+                  <option value="202.72">NPS 8" Sch 40 (ID 202.72 mm)</option>
+                  <option value="254.51">NPS 10" Sch 40 (ID 254.51 mm)</option>
+                  <option value="303.23">NPS 12" Sch 40 (ID 303.23 mm)</option>
+                  <option value="333.35">NPS 14" Sch 40 (ID 333.35 mm)</option>
+                  <option value="381.00">NPS 16" Sch 40 (ID 381.00 mm)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>토출관 규격 <span class="unit">ANSI/ASME Sch 40</span></label>
+                <select id="pump_ddis" onchange="App.recalc()">
+                  <option value="26.64">NPS 1" Sch 40 (ID 26.64 mm)</option>
+                  <option value="40.89">NPS 1-1/2" Sch 40 (ID 40.89 mm)</option>
+                  <option value="52.50">NPS 2" Sch 40 (ID 52.50 mm)</option>
+                  <option value="62.71">NPS 2-1/2" Sch 40 (ID 62.71 mm)</option>
+                  <option value="77.92" selected>NPS 3" Sch 40 (ID 77.92 mm)</option>
+                  <option value="102.26">NPS 4" Sch 40 (ID 102.26 mm)</option>
+                  <option value="154.05">NPS 6" Sch 40 (ID 154.05 mm)</option>
+                  <option value="202.72">NPS 8" Sch 40 (ID 202.72 mm)</option>
+                  <option value="254.51">NPS 10" Sch 40 (ID 254.51 mm)</option>
+                  <option value="303.23">NPS 12" Sch 40 (ID 303.23 mm)</option>
+                  <option value="333.35">NPS 14" Sch 40 (ID 333.35 mm)</option>
+                  <option value="381.00">NPS 16" Sch 40 (ID 381.00 mm)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>흡입관 길이 <span class="unit">m</span></label>
+                <input type="number" id="pump_Lsuc" value="6.0" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>토출관 길이 <span class="unit">m</span></label>
+                <input type="number" id="pump_Ldis" value="85.0" step="5" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>조절밸브 차압 <span class="unit">bar</span></label>
+                <input type="number" id="pump_cv" value="0.70" step="0.1" oninput="App.recalc()" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-cyan"></span><span id="pump_tele_title">P-084A/B 펌프 수력학 및 다축 성능곡선</span></div>
+            <span class="card-badge" id="pump_impeller_badge">반경류 임펠러</span>
+          </div>
+          <div class="kpi-grid" id="pump_kpis"></div>
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span>API 610 다축 성능곡선 (POWER · TDH · EFFICIENCY · Max/Min Impeller)</span>
+              <span>Shaft Power & Duty Point</span>
+            </div>
+            <canvas id="canvas_pump" class="eng-canvas pump-curve-canvas"></canvas>
+          </div>
+          <div class="warn-list" id="pump_warnings"></div>
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>수렴 계산 이력 (HI Viscosity & Head Convergence Log)</span>
+              <span>ANSI/HI 9.6.7</span>
+            </div>
+            <table class="eng-table" id="pump_iter_table"></table>
+          </div>
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_pump" placeholder="수석 엔지니어 AI 검토 요청 (예: NPSH 마진 확보 및 캐비테이션 방지)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('pump')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_pump"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         MODULE 3: DISTILLATION COLUMN (FUG · McCabe-Thiele · NRTL/Antoine)
+         =================================================================== -->
+    <section class="module-panel" id="panel-column">
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-emerald"></span>다성분 정류탑 단수·탑경 및 수력학 설계</div>
+            <span class="card-badge">FUG · McCabe-Thiele · NRTL/Antoine</span>
+          </div>
+
+          <div class="form-grid cols-2" style="display:none;">
+            <div class="field">
+              <label><span class="dot dot-emerald"></span>탑 공정 설계 모드 <span class="unit">Tower Mode</span></label>
+              <select id="col_mode" onchange="App.onColumnModeChange()">
+                <option value="distillation" selected>이성분계 증류 컬럼 (Binary Distillation — NRTL VLE + McCabe-Thiele)</option>
+                <option value="absorption">가스 흡수·세정·건조 패킹탑 (Absorption / Scrubbing / Drying — GPDC + N_OG)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>세부 공정 목적 (Service Type)</label>
+              <select id="col_abs_service" onchange="App.onModelInputEdited('column')">
+                <option value="scrubbing" selected>가성소다 미스트/산성가스 제거 세정탑</option>
+                <option value="drying">98% 황산 염소가스 수분 건조탑</option>
+                <option value="cooling_wash">직접접촉 수세 냉각 패킹탑</option>
+                <option value="stripping">감압 탈염소 스트리핑 패킹탑</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="성분 검색 (예: 벤젠, 톨루엔, 에탄올, 물, 메탄올)..." oninput="App.filterColumnFluidSelects(this.value)" />
+            <div class="form-grid cols-3">
+              <div class="field" id="wrap_col_preset">
+                <label>NRTL 표준 혼합계 프리셋</label>
+                <select id="col_preset" onchange="App.onColumnPresetChange()"></select>
+              </div>
+              <div class="field">
+                <label id="lbl_col_lk"><span class="dot dot-emerald"></span>경질 성분 (Light Key, LK)</label>
+                <select id="col_lk" onchange="App.onColumnFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label id="lbl_col_hk"><span class="dot dot-cyan"></span>중질 성분 (Heavy Key, HK)</label>
+                <select id="col_hk" onchange="App.onColumnFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>탑 운전압력 (P_col) <span class="unit">bar.a</span></label>
+                <input type="number" id="col_P" value="1.05" step="0.05" oninput="App.onModelInputEdited('column')" />
+              </div>
+            </div>
+            <div class="auto-prop-strip" id="col_prop_strip"></div>
+          </div>
+
+          <!-- Subpanel A: Gas Absorption / Scrubbing / Drying Tower Inputs (hidden in Distillation Column mode) -->
+          <div id="col_abs_subpanel" style="display:none;">
+            <div class="section-sub-header">
+              <span>기액 유량 · 온도 및 흡수/세정/건조 제거 효율 (Mass Transfer N_OG & HTU_OG)</span>
+              <span>Colburn N_OG · Onda HTU</span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>가스 유량 (G_m) <span class="unit">kg/h</span></label>
+                <input type="number" id="col_gas_kgh" value="2024" step="50" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>세정/흡수액 유량 (L_m) <span class="unit">kg/h</span></label>
+                <input type="number" id="col_liq_kgh" value="18500" step="500" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>가스 입구 온도 (T_G,in) <span class="unit">°C</span></label>
+                <input type="number" id="col_T_gas_in" value="85.0" step="1" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>세정액 입구 온도 (T_L,in) <span class="unit">°C</span></label>
+                <input type="number" id="col_T_liq_in" value="32.0" step="1" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>입구 불순물/수분 (y_in) <span class="unit">ppmw</span></label>
+                <input type="number" id="col_y_in_ppm" value="650" step="10" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>출구 목표 농도 (y_out) <span class="unit">ppmw</span></label>
+                <input type="number" id="col_y_out_ppm" value="1.5" step="0.5" min="0.05" oninput="App.onModelInputEdited('column')" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Subpanel B: Binary Distillation Inputs -->
+          <div id="col_dist_subpanel">
+            <div class="section-sub-header">
+              <span>탑 물질수지 및 분리 순도 조건</span>
+              <span>FUG + McCabe-Thiele</span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>원료 유량 (F) <span class="unit">kmol/h</span></label>
+                <input type="number" id="col_F" value="100" step="5" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>원료 조성 (z_F) <span class="unit">mol</span></label>
+                <input type="number" id="col_zF" value="0.45" step="0.02" min="0.05" max="0.95" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>탑상 순도 (x_D) <span class="unit">mol</span></label>
+                <input type="number" id="col_xD" value="0.97" step="0.01" min="0.50" max="0.999" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>탑저 불순물 (x_B) <span class="unit">mol</span></label>
+                <input type="number" id="col_xB" value="0.02" step="0.005" min="0.001" max="0.45" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>환류비 배수 (R/R_min)</label>
+                <input type="number" id="col_R_mult" value="1.25" step="0.05" min="1.05" max="3.0" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>원료 열상태 (q)</label>
+                <select id="col_q" onchange="App.onModelInputEdited('column')">
+                  <option value="1.0" selected>q = 1.0 (포화 액체)</option>
+                  <option value="0.5">q = 0.5 (기액 혼합)</option>
+                  <option value="0.0">q = 0.0 (포화 증기)</option>
+                  <option value="1.2">q = 1.2 (과냉각 액체)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>컬럼 인터널 형식 (Tray vs. Packing) 및 세부 기하 규격</span>
+            <span>FRI / Eckert GPDC</span>
+          </div>
+          <div class="form-grid cols-2">
+            <div class="field">
+              <label>인터널 대분류 <span class="unit">Type</span></label>
+              <select id="col_internals" onchange="App.onColumnInternalsChange()">
+                <option value="tray" selected>단탑 (Trayed Column — Sieve / Valve / Bubble Cap)</option>
+                <option value="packed">충전탑 (Packed Column — Random / Structured Packing)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>설계 범람율 <span class="unit">% of Flood</span></label>
+              <input type="number" id="col_flood" value="80" step="2" min="45" max="90" oninput="App.onModelInputEdited('column')" />
+            </div>
+          </div>
+
+          <!-- Tray Detailed Spec Subpanel -->
+          <div id="col_tray_subpanel">
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>트레이 세부 형식 <span class="unit">Tray</span></label>
+                <select id="col_tray_type" onchange="App.onModelInputEdited('column')">
+                  <option value="sieve" selected>Sieve Tray (다공판 · 저차압 표준)</option>
+                  <option value="valve">Valve Tray (밸브형 · 고턴다운 4:1)</option>
+                  <option value="bubble_cap">Bubble Cap (포종관 · 극저유량 밀봉)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>유로 패스 수 <span class="unit">Passes</span></label>
+                <select id="col_tray_passes" onchange="App.onModelInputEdited('column')">
+                  <option value="1" selected>1-Pass (Crossflow 표준)</option>
+                  <option value="2">2-Pass (Split Flow 대유량)</option>
+                  <option value="4">4-Pass (초대형 탑경용)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>단간격 (Spacing) <span class="unit">m</span></label>
+                <select id="col_spacing" onchange="App.onModelInputEdited('column')">
+                  <option value="0.30">0.30 m (12 in 소형)</option>
+                  <option value="0.45">0.45 m (18 in)</option>
+                  <option value="0.60" selected>0.60 m (24 in 표준)</option>
+                  <option value="0.75">0.75 m (30 in 고부하)</option>
+                  <option value="0.90">0.90 m (36 in 포밍성)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>구멍/밸브 직경 (d_h) <span class="unit">mm</span></label>
+                <select id="col_hole_d" onchange="App.onModelInputEdited('column')">
+                  <option value="3.0">3.0 mm (정밀 고효율)</option>
+                  <option value="5.0" selected>5.0 mm (3/16" 표준 Sieve)</option>
+                  <option value="8.0">8.0 mm (파울링 대비)</option>
+                  <option value="12.7">12.7 mm (1/2" 대형/Valve)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>출구 위어 높이 (h_w) <span class="unit">mm</span></label>
+                <select id="col_weir_h" onchange="App.onModelInputEdited('column')">
+                  <option value="25">25 mm (진공 저차압)</option>
+                  <option value="38">38 mm (1.5 in)</option>
+                  <option value="50" selected>50 mm (2.0 in 표준)</option>
+                  <option value="65">65 mm (체류시간 증대)</option>
+                  <option value="75">75 mm (3.0 in 고체류)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>개공비 (A_h / A_a) <span class="unit">%</span></label>
+                <select id="col_hole_area" onchange="App.onModelInputEdited('column')">
+                  <option value="8">8.0 % (Weeping 억제)</option>
+                  <option value="10" selected>10.0 % (FRI 표준)</option>
+                  <option value="12">12.0 % (고증기부하)</option>
+                  <option value="14">14.0 % (최대 개공비)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Packing Detailed Spec Subpanel -->
+          <div id="col_pack_subpanel" style="display:none;">
+            <div class="form-grid cols-2">
+              <div class="field">
+                <label>패킹 종류 및 규격 (Random / Structured Packing DB)</label>
+                <select id="col_pack_key" onchange="App.onModelInputEdited('column')">
+                  <option value="pall_metal_25">SS316L Metal Pall Ring 25mm (1" · Fp=183 m⁻¹, a=205 m²/m³)</option>
+                  <option value="pall_metal_38" selected>SS316L Metal Pall Ring 38mm (1.5" · Fp=131 m⁻¹, a=130 m²/m³)</option>
+                  <option value="pall_metal_50">SS316L Metal Pall Ring 50mm (2" · Fp=89 m⁻¹, a=105 m²/m³)</option>
+                  <option value="imtp_25">IMTP #25 (Intalox Metal · Fp=135 m⁻¹, a=225 m²/m³)</option>
+                  <option value="imtp_40">IMTP #40 (Intalox 저차압 · Fp=79 m⁻¹, a=150 m²/m³)</option>
+                  <option value="mellapak_250y">Mellapak 250Y (Structured 규칙패킹 · Fp=66 m⁻¹, a=250 m²/m³)</option>
+                  <option value="pall_plastic_50">PP/PVDF Plastic Pall Ring 50mm (2" · Fp=85 m⁻¹, a=110 m²/m³)</option>
+                  <option value="intalox_ceramic_25">Ceramic Intalox Saddle 25mm (1" · Fp=300 m⁻¹, a=255 m²/m³)</option>
+                  <option value="intalox_ceramic_38">Ceramic Intalox Saddle 38mm (1.5" · Fp=170 m⁻¹, a=195 m²/m³)</option>
+                  <option value="berl_ceramic_25">Ceramic Berl Saddle 25mm (내산성 · Fp=360 m⁻¹, a=250 m²/m³)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>단일 패킹 베드 최대 높이 ( 액체 재분배기 간격 ) <span class="unit">m</span></label>
+                <select id="col_bed_max_h" onchange="App.onModelInputEdited('column')">
+                  <option value="4.5">4.5 m (불규칙 패킹 표준)</option>
+                  <option value="6.0" selected>6.0 m (표준 베드 분할)</option>
+                  <option value="7.5">7.5 m (규칙 패킹 최대)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="rigorous-only" id="col_nrtl_subpanel">
+            <div class="section-sub-header">
+              <span>NRTL 활동도 상호작용 에너지 및 단효율 보정</span>
+              <span>NRTL Binary Parameters</span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>NRTL A12 <span class="unit">cal/mol</span></label>
+                <input type="number" id="col_a12" value="0" step="10" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>NRTL A21 <span class="unit">cal/mol</span></label>
+                <input type="number" id="col_a21" value="0" step="10" oninput="App.onModelInputEdited('column')" />
+              </div>
+              <div class="field">
+                <label>기준 단효율 (E_o) <span class="unit">%</span></label>
+                <input type="number" id="col_eff" value="72" step="2" oninput="App.onModelInputEdited('column')" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Rigorous Solver Trigger Bar for Column -->
+          <div class="solver-trigger-bar" id="solver_bar_column">
+            <div class="solver-status-box">
+              <span class="dot dot-emerald" id="solver_dot_column"></span>
+              <div>
+                <div class="solver-status-title" id="solver_title_column">NRTL 기포점 & 수력학 수렴 완료</div>
+                <div class="solver-status-sub" id="solver_sub_column">파라미터 변경 시 [수렴해석 실행]을 눌러 반복 계산을 수행합니다</div>
+              </div>
+            </div>
+            <button type="button" class="btn-solver-exec" id="btn_solver_column" onclick="App.runRigorousConvergence('column')">
+              수렴해석 실행 (Run Solver)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-emerald"></span><span id="col_tele_title">C-101 정류탑 수렴 텔레메트리</span></div>
+            <span class="card-badge emerald" id="col_vle_badge">NRTL 기포점 수렴</span>
+          </div>
+          <div class="kpi-grid" id="col_kpis"></div>
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span id="col_canvas_title">비이상 NRTL 기액평형(VLE) 곡선 및 McCabe-Thiele 계단 작도</span>
+              <span id="col_alpha_label">Flood = 80%</span>
+            </div>
+            <canvas id="canvas_column" class="eng-canvas"></canvas>
+          </div>
+          <div class="warn-list" id="col_warnings"></div>
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>NRTL 기포점 · FUG 단수 · FRI/GPDC 수력학 수렴 로그</span>
+              <span>NRTL + Fair/GPDC</span>
+            </div>
+            <table class="eng-table" id="col_iter_table"></table>
+          </div>
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_column" placeholder="수석 엔지니어 AI 검토 요청 (예: 환류비 최적화 및 리보일러 열부하 절감)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('column')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_column"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         MODULE 4: PROCESS PIPING (ASME B31.3 + API RP 14E)
+         =================================================================== -->
+    <section class="module-panel" id="panel-piping">
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-amber"></span>배관 유체 지정 · 상상태 및 자유도 설정</div>
+            <span class="card-badge">ASME B31.3 · API RP 14E</span>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="유체 검색..." oninput="App.filterFluidSelect('pipe_fluid', this.value)" />
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>배관 유체 (Fluid)</label>
+                <select id="pipe_fluid" onchange="App.onPipeFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>운전 온도 (T) <span class="unit">°C</span></label>
+                <input type="number" id="pipe_T" value="30" step="1" oninput="App.onPipeFluidChange()" />
+              </div>
+              <div class="field">
+                <label>입구 압력 (P1) <span class="unit">barG</span></label>
+                <input type="number" id="pipe_P1" value="4.0" step="0.5" oninput="App.onPipeFluidChange()" />
+              </div>
+            </div>
+            <div class="auto-prop-strip" id="pipe_prop_strip"></div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>유동 상태 및 배관망 제원</span>
+            <span>Darcy-Weisbach</span>
+          </div>
+          <div class="form-grid cols-3">
+            <div class="field">
+              <label>유동 상태 (Regime)</label>
+              <select id="pipe_flow_mode" onchange="App.recalc()">
+                <option value="liquid" selected>단상 액체 (Liquid)</option>
+                <option value="gas">압축성 가스 (Gas/Steam)</option>
+                <option value="twophase">기액 2상 (Lockhart-Martinelli)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>계산 방향 (DOF)</label>
+              <select id="pipe_dof_mode" onchange="App.recalc()">
+                <option value="calc_dp" selected>유량 입력 → 관경 & ΔP 산출</option>
+                <option value="calc_max_flow">목표 ΔP 고정 → 최대유량 역산</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>스케줄 (Schedule)</label>
+              <select id="pipe_sched" onchange="App.recalc()">
+                <option value="40" selected>Sch 40 (표준 탄소강)</option>
+                <option value="80">Sch 80 (고압 후육관)</option>
+                <option value="10S">Sch 10S (스테인리스)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>체적 유량 (Q) <span class="unit">m³/h</span></label>
+              <input type="number" id="pipe_Q" value="85" step="5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>유체 밀도 (ρ) <span class="unit">kg/m³</span></label>
+              <input type="number" id="pipe_rho" value="995.7" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>유체 점도 (μ) <span class="unit">cP</span></label>
+              <input type="number" id="pipe_mu" value="0.80" step="0.05" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>직관 총 길이 (L) <span class="unit">m</span></label>
+              <input type="number" id="pipe_L" value="120" step="5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>수직 높이차 (ΔZ) <span class="unit">m</span></label>
+              <input type="number" id="pipe_dZ" value="6.0" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>목표ΔP / 기상분율 <span class="unit">bar / %</span></label>
+              <input type="number" id="pipe_target_dp" value="0.50" step="0.05" oninput="App.recalc()" />
+            </div>
+          </div>
+
+          <div class="rigorous-only">
+            <div class="section-sub-header">
+              <span>부속품(Fittings) 개수 및 국부저항 K-Factor</span>
+              <span>Crane TP-410</span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>90° 엘보 (K=0.75)</label>
+                <input type="number" id="pipe_elbow90" value="8" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>게이트 밸브 (K=0.17)</label>
+                <input type="number" id="pipe_gate" value="3" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>글로브 밸브 (K=6.0)</label>
+                <input type="number" id="pipe_globe" value="1" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>체크 밸브 (K=2.0)</label>
+                <input type="number" id="pipe_check" value="1" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>티(Tee) (K=0.4)</label>
+                <input type="number" id="pipe_tee" value="2" step="1" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>표면 조도 (ε) <span class="unit">mm</span></label>
+                <input type="number" id="pipe_rough" value="0.045" step="0.005" oninput="App.recalc()" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-amber"></span><span id="pipe_tele_title">L-101 최적 관경 선정 및 압력강하 분석</span></div>
+            <span class="card-badge" id="pipe_rec_badge">추천 관경: 4"</span>
+          </div>
+          <div class="kpi-grid" id="pipe_kpis"></div>
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span>NPS 호칭경별 실제 유속 분포 (행 클릭 시 관경 즉시 변경)</span>
+              <span>Swamee-Jain</span>
+            </div>
+            <canvas id="canvas_piping" class="eng-canvas"></canvas>
+          </div>
+          <div class="warn-list" id="pipe_warnings"></div>
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>표준 관경(NPS) 후보군 비교 (원하는 행 클릭 시 선택)</span>
+              <span>ASME B36.10M</span>
+            </div>
+            <table class="eng-table" id="pipe_cand_table"></table>
+          </div>
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_piping" placeholder="수석 엔지니어 AI 검토 요청 (예: 침식 유속 및 수격작용 방지 대책)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('piping')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_piping"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         MODULE 5: PRESSURE VESSEL & KO DRUM (Souders-Brown + ASME Sec. VIII)
+         =================================================================== -->
+    <section class="module-panel" id="panel-vessel">
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-cyan"></span>압력용기 · 기액분리기(KO Drum) 설계 조건</div>
+            <span class="card-badge">ASME Sec. VIII Div. 1 · GPSA</span>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="유체 검색..." oninput="App.filterVesselFluidSelects(this.value)" />
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>기상 유체 (Gas/Vapor)</label>
+                <select id="ves_gas_fluid" onchange="App.onVesselFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>액상 유체 (Liquid)</label>
+                <select id="ves_liq_fluid" onchange="App.onVesselFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>운전 온도 (T_op) <span class="unit">°C</span></label>
+                <input type="number" id="ves_T_op" value="65" step="5" oninput="App.onVesselFluidChange()" />
+              </div>
+            </div>
+            <div class="auto-prop-strip" id="ves_prop_strip"></div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>기액 분리 유량 및 기계 설계압력 조건</span>
+            <span>UG-27 / UG-32</span>
+          </div>
+          <div class="form-grid cols-3">
+            <div class="field">
+              <label>용기 배치 (Orientation)</label>
+              <select id="ves_orient" onchange="App.recalc()">
+                <option value="vertical" selected>수직형 (Vertical KO Drum)</option>
+                <option value="horizontal">수평형 (Horizontal Surge)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>기상 유량 (W_g) <span class="unit">kg/h</span></label>
+              <input type="number" id="ves_Wg" value="18000" step="500" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>액상 유량 (W_L) <span class="unit">kg/h</span></label>
+              <input type="number" id="ves_Wl" value="24000" step="500" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>기상 밀도 (ρ_G) <span class="unit">kg/m³</span></label>
+              <input type="number" id="ves_rhoG" value="14.2" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>액상 밀도 (ρ_L) <span class="unit">kg/m³</span></label>
+              <input type="number" id="ves_rhoL" value="780.0" step="5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>액체 체류시간 <span class="unit">min</span></label>
+              <input type="number" id="ves_holdup" value="7.0" step="1" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>운전 압력 (P_op) <span class="unit">barG</span></label>
+              <input type="number" id="ves_Pop" value="12.0" step="0.5" oninput="App.onVesselFluidChange()" />
+            </div>
+            <div class="field">
+              <label>설계 압력 (P_des) <span class="unit">barG</span></label>
+              <input type="number" id="ves_Pdes" value="14.5" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>부식 여유 (CA) <span class="unit">mm</span></label>
+              <input type="number" id="ves_CA" value="3.0" step="0.5" oninput="App.recalc()" />
+            </div>
+          </div>
+
+          <div class="rigorous-only">
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>ASME 강판 재질</label>
+                <select id="ves_mat" onchange="App.recalc()"></select>
+              </div>
+              <div class="field">
+                <label>용접 효율 (E)</label>
+                <select id="ves_E" onchange="App.recalc()">
+                  <option value="1.0" selected>E = 1.00 (Full RT)</option>
+                  <option value="0.85">E = 0.85 (Spot RT)</option>
+                  <option value="0.70">E = 0.70 (No RT)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>데미스터 패드</label>
+                <select id="ves_demister" onchange="App.recalc()">
+                  <option value="1" selected>설치 (Wire Mesh Pad)</option>
+                  <option value="0">미설치 (Gravity Only)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-cyan"></span><span id="ves_tele_title">D-210 압력용기 치수 · ASME 두께 · 중량 결과</span></div>
+            <span class="card-badge" id="ves_badge">ASME Sec. VIII Div. 1</span>
+          </div>
+          <div class="kpi-grid" id="ves_kpis"></div>
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span>용기 외형 · 액위 · 데미스터 및 ASME 두께 단면도</span>
+              <span id="ves_ld_label">L/D = 3.0</span>
+            </div>
+            <canvas id="canvas_vessel" class="eng-canvas"></canvas>
+          </div>
+          <div class="warn-list" id="ves_warnings"></div>
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>기액 분리 속도 및 ASME 두께 수렴 이력</span>
+              <span>Souders-Brown + UG-27</span>
+            </div>
+            <table class="eng-table" id="ves_iter_table"></table>
+          </div>
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_vessel" placeholder="수석 엔지니어 AI 검토 요청 (예: 산성가스 환경 재질 및 두께 적정성)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('vessel')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_vessel"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         MODULE 6: PRESSURE SAFETY VALVE / PSV (API 520 + API 521 + API 526)
+         =================================================================== -->
+    <section class="module-panel" id="panel-psv">
+      <div class="col-input">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-coral"></span>안전밸브(PSV) 방출 유체 및 비상 시나리오 설정</div>
+            <span class="card-badge">API 520 / 521 / 526</span>
+          </div>
+
+          <div class="fluid-selector-box">
+            <input type="text" class="fluid-search-input" placeholder="유체 검색..." oninput="App.filterFluidSelect('psv_fluid', this.value)" />
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>방출 유체 (Relief Fluid)</label>
+                <select id="psv_fluid" onchange="App.onPSVFluidChange()"></select>
+              </div>
+              <div class="field">
+                <label>방출 시나리오 (API 521)</label>
+                <select id="psv_scenario" onchange="App.onPSVFluidChange()">
+                  <option value="blocked_outlet" selected>출구 차단 (Blocked Outlet, 10%)</option>
+                  <option value="fire_case">외부 화재 (Fire Case, 21% · 자동산출)</option>
+                  <option value="tube_rupture">튜브 파열 (Tube Rupture, 10%)</option>
+                  <option value="thermal_exp">열팽창 (Thermal Expansion, 10%)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>방출 상상태 (Phase)</label>
+                <select id="psv_phase" onchange="App.recalc()">
+                  <option value="vapor" selected>기상 / 증기 (Gas / Vapor)</option>
+                  <option value="steam">수증기 (Steam)</option>
+                  <option value="liquid">액상 (Liquid Relief)</option>
+                </select>
+              </div>
+            </div>
+            <div class="auto-prop-strip" id="psv_prop_strip"></div>
+          </div>
+
+          <div class="section-sub-header">
+            <span>방출 조건 및 기체 열역학 계수</span>
+            <span>API RP 520 Part I</span>
+          </div>
+          <div class="form-grid cols-3">
+            <div class="field" id="wrap_psv_W">
+              <label>요구 방출량 (W) <span class="unit">kg/h</span></label>
+              <input type="number" id="psv_W" value="14500" step="500" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>설정 압력 (P_set) <span class="unit">barG</span></label>
+              <input type="number" id="psv_Pset" value="15.0" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>총 배압 (P_back) <span class="unit">barG</span></label>
+              <input type="number" id="psv_Pback" value="1.2" step="0.2" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>방출 온도 (T_rel) <span class="unit">°C</span></label>
+              <input type="number" id="psv_T" value="135" step="5" oninput="App.onPSVFluidChange()" />
+            </div>
+            <div class="field">
+              <label>분자량 (MW) <span class="unit">g/mol</span></label>
+              <input type="number" id="psv_mw" value="44.1" step="0.5" oninput="App.recalc()" />
+            </div>
+            <div class="field">
+              <label>비열비 (k = Cp/Cv)</label>
+              <input type="number" id="psv_k" value="1.22" step="0.02" oninput="App.recalc()" />
+            </div>
+          </div>
+
+          <div class="rigorous-only">
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>화재 접액면적 (A_wet) <span class="unit">m²</span></label>
+                <input type="number" id="psv_Awet" value="48.0" step="2" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>기화 잠열 (ΔH_vap) <span class="unit">kJ/kg</span></label>
+                <input type="number" id="psv_hv" value="365" step="5" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>압축성 인자 (Z)</label>
+                <input type="number" id="psv_Z" value="0.90" step="0.02" oninput="App.recalc()" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-telemetry">
+        <div class="eng-card">
+          <div class="card-header">
+            <div class="card-title"><span class="dot dot-coral"></span><span id="psv_tele_title">PSV-101 오리피스 면적 및 API 526 규격 선정</span></div>
+            <span class="card-badge" id="psv_orifice_badge">선정 오리피스: 'J'</span>
+          </div>
+          <div class="kpi-grid" id="psv_kpis"></div>
+          <div class="canvas-wrap">
+            <div class="canvas-title">
+              <span>API 526 표준 오리피스(D~T) 면적 대비 요구 면적 비교</span>
+              <span id="psv_flow_badge">임계(Sonic) 유동</span>
+            </div>
+            <canvas id="canvas_psv" class="eng-canvas"></canvas>
+          </div>
+          <div class="warn-list" id="psv_warnings"></div>
+          <div class="iter-box">
+            <div class="iter-title">
+              <span>API 520 유동 판별 및 오리피스 규격 매칭 로그</span>
+              <span>API 520 Part I</span>
+            </div>
+            <table class="eng-table" id="psv_iter_table"></table>
+          </div>
+          <div class="ai-review-card">
+            <div class="ai-btn-row">
+              <input type="text" class="ai-prompt-input" id="ai_q_psv" placeholder="수석 엔지니어 AI 검토 요청 (예: 배압비에 따른 벨로우즈 적용 여부)..." />
+              <button type="button" class="btn-ai-flash" onclick="App.runGeminiReview('psv')">AI 설계 감사 및 최적 재수렴</button>
+            </div>
+            <div class="ai-result-body" id="ai_res_psv"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================================================================
+         FULL-WIDTH ENGINEERING DWG (CAD BLUEPRINT) & QUOTATION DATASHEET
+         =================================================================== -->
+    <div class="eng-card dwg-datasheet-section" id="dwg_datasheet_anchor">
+      <div class="card-header">
+        <div class="card-title"><span class="dot dot-cyan"></span>STEP 3. 최종 확정 설계 Engineering DWG (CAD 도면) & 공식 Specification Datasheet</div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span class="card-badge emerald" id="dwg_sync_badge">실시간 설계 · AI 재수렴 동기화 완료</span>
+        </div>
+      </div>
+
+      <!-- 1. CAD Blueprint Engineering DWG Canvas -->
+      <div class="canvas-wrap" style="margin-bottom:14px;">
+        <div class="canvas-title">
+          <span>ENGINEERING GENERAL ARRANGEMENT & SECTIONAL DWG (치수선 · 노즐 스케줄 · 단면 상세도)</span>
+          <span>CAD Blueprint Scale · ASME / TEMA / API</span>
+        </div>
+        <canvas id="canvas_dwg" class="dwg-canvas"></canvas>
+      </div>
+
+      <!-- 2. Formal Vendor RFQ / EPC Quotation Datasheet Table -->
+      <div id="formal_datasheet_container" style="overflow-x:auto;"></div>
+
+      <!-- 3. Single Unified Export Toolbar (Only 1 Excel Download Button!) -->
+      <div class="action-bar" style="margin-top:12px;">
+        <button type="button" class="btn-excel-download" style="flex:1.6;padding:11px 14px;font-size:12.5px;" onclick="App.downloadExcelDatasheet()">표준 엑셀(.xlsx) 데이터시트 + 도면(Sheet 2) 다운로드</button>
+        <button type="button" class="btn-action primary" onclick="App.downloadCADcraftDXF()">CADcraft 도면(.dxf) 다운로드</button>
+        <button type="button" class="btn-action" onclick="App.downloadDWGImage()">CAD 도면(.png) 저장</button>
+        <button type="button" class="btn-action" onclick="App.copyDatasheet()">텍스트 복사</button>
+        <button type="button" class="btn-action" onclick="App.printDatasheet()">PDF / 인쇄</button>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Context-Aware Step Workflow Bottom Bar -->
+  <div class="stitch-bottom-bar" id="workflowBottomBar">
+    <button type="button" class="btn-stitch-export" id="btnBottomLeft" onclick="App.onBottomLeftClick()">
+      1. 설계조건 입력
+    </button>
+    <button type="button" class="btn-stitch-run" id="btnBottomRight" onclick="App.onBottomRightClick()">
+      <span class="dot dot-emerald"></span>2. 설계 수렴해석 실행 →
+    </button>
+  </div>
+
+  <!-- Custom Synthetix Telemetry Fluid / Option Picker Modal (Replaces Native Android White AlertDialog) -->
+  <div class="custom-select-backdrop" id="customSelectModal" onclick="if(event.target===this) App.closeCustomSelectModal()">
+    <div class="custom-select-sheet">
+      <div class="cs-sheet-header">
+        <div>
+          <div class="cs-sheet-title" id="csModalTitle">화학물질 / 공정 유체 선택</div>
+          <div class="cs-sheet-sub" id="csModalSubtitle">142종 표준 물성 데이터베이스 · 항목 클릭 시 즉시 반영</div>
+        </div>
+        <button type="button" class="cs-close-btn" onclick="App.closeCustomSelectModal()">닫기 [ESC]</button>
+      </div>
+      <div class="cs-search-wrap" id="csSearchWrap">
+        <input type="text" class="cs-search-input" id="csSearchInput" placeholder="물질명, 영문명, 화학식(H2O, C7H8), CAS 번호로 즉시 필터링..." oninput="App.onCustomModalSearch(this.value)" />
+      </div>
+      <div class="cs-cat-tabs" id="csCatTabs"></div>
+      <div class="cs-list-body" id="csListBody"></div>
+    </div>
+  </div>
+
+  <!-- Aspen / HTRI Style Rigorous Iterative Convergence Execution Modal -->
+  <div class="solver-modal-backdrop" id="solverRunModal">
+    <div class="solver-modal-box">
+      <div class="sm-head">
+        <div>
+          <div class="sm-title" id="smTitle">RIGOROUS ITERATIVE SOLVER — CONVERGENCE ENGINE</div>
+          <div class="sm-sub" id="smSub">Newton-Raphson & Bell-Delaware / FRI Hydraulic Loop</div>
+        </div>
+        <span class="sm-badge" id="smStatusBadge">RUNNING</span>
+      </div>
+      <div class="sm-progress-track">
+        <div class="sm-progress-fill" id="smProgressBar" style="width:0%;"></div>
+      </div>
+      <div class="sm-metrics-row">
+        <div class="sm-metric"><span class="sm-m-lbl">ITERATION</span><span class="sm-m-val" id="smIterNum">#1 / 5</span></div>
+        <div class="sm-metric"><span class="sm-m-lbl">RESIDUAL ERROR</span><span class="sm-m-val" id="smResidual">1.42e-1</span></div>
+        <div class="sm-metric"><span class="sm-m-lbl">CONVERGENCE TOL</span><span class="sm-m-val">1.00e-4</span></div>
+        <div class="sm-metric"><span class="sm-m-lbl">STATUS</span><span class="sm-m-val" id="smPhaseTxt">INITIALIZING</span></div>
+      </div>
+      <div class="sm-console" id="smConsole"></div>
+    </div>
+  </div>
+
+  <script src="exceljs.min.js?v=20261109d"></script>
+  <script src="chem_db.js?v=20261109d"></script>
+  <script src="eng_solvers.js?v=20261109d"></script>
+  <script src="excel_exporter.js?v=20261109d"></script>
+  <script src="app.js?v=20261109d"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      }).catch(() => {});
+    }
+  </script>
+</body>
+</html>

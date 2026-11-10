@@ -193,6 +193,8 @@ window.ChemEngSolvers = (function () {
     const P2_out = inp.P2_barG !== undefined ? inp.P2_barG : (P1_out + dP_Pump_bar);
 
     return {
+      equipTag: inp.equipTag || 'P-101',
+      equipName: inp.equipName || `${fluidObj.name} Transfer Pump`,
       fluidName: fluidObj.name,
       fluidFormula: fluidObj.formula,
       T_C: inp.T_C !== undefined ? inp.T_C : 25,
@@ -312,19 +314,205 @@ window.ChemEngSolvers = (function () {
     const { mh, Th_in, Th_out, mc, Tc_in, Tc_out, Qh_kW, Qc_kW, hotProps, coldProps, cph, cpc, dofTarget } = eb;
     const Q_kW = Qh_kW;
     const Q_W = Q_kW * 1000.0;
+    const hxType = inp.hx_type || 'shell_tube'; // 'shell_tube' | 'plate_phe'
 
     // Counter-current LMTD
     const dT1 = Th_in - Tc_out;
     const dT2 = Th_out - Tc_in;
     const tempCross = (dT1 <= 0 || dT2 <= 0);
-    const dT1_safe = Math.max(1.5, dT1);
-    const dT2_safe = Math.max(1.5, dT2);
+    const dT1_safe = Math.max(1.2, dT1);
+    const dT2_safe = Math.max(1.2, dT2);
 
     let lmtd = 0;
     if (Math.abs(dT1_safe - dT2_safe) < 0.05) {
       lmtd = 0.5 * (dT1_safe + dT2_safe);
     } else {
       lmtd = (dT1_safe - dT2_safe) / Math.log(dT1_safe / dT2_safe);
+    }
+
+    const kw = inp.phe_kw || inp.kw || 45.0;
+    const dnToNpsMap = {
+      25: '1"', 40: '1-1/2"', 50: '2"', 65: '2-1/2"', 80: '3"',
+      100: '4"', 125: '5"', 150: '6"', 200: '8"', 250: '10"',
+      300: '12"', 350: '14"', 400: '16"', 450: '18"', 500: '20"'
+    };
+    const calcNozzleDN = (m_kgh, rho_val) => {
+      const q_m3s = (m_kgh / 3600.0) / Math.max(1.0, rho_val);
+      const v_noz = rho_val < 50 ? 18.0 : 1.85;
+      const d_mm = Math.sqrt((4.0 * q_m3s) / (Math.PI * v_noz)) * 1000.0;
+      const stdDN = [25, 40, 50, 65, 80, 100, 125, 150, 200, 250, 300, 350, 400, 450, 500];
+      return stdDN.find(d => d >= d_mm) || 500;
+    };
+
+    // =========================================================================
+    // BRANCH A: PLATE HEAT EXCHANGER (PHE — Chevron Corrugated Plate Solver)
+    // =========================================================================
+    if (hxType === 'plate_phe') {
+      const beta_deg = inp.phe_chevron_deg || inp.phe_beta_deg || 60;
+      const b_mm = inp.phe_b_mm || 3.2;
+      const tp_mm = inp.phe_tp_mm || 0.6;
+      const Wp_mm = inp.phe_wp_mm || 650;
+      const Lp_mm = inp.phe_lp_mm || 1400;
+      const phePasses = inp.phe_passes || 1;
+
+      const b_m = b_mm / 1000.0;
+      const tp_m = tp_mm / 1000.0;
+      const Wp_m = Wp_mm / 1000.0;
+      const Lp_m = Lp_mm / 1000.0;
+
+      // Area enlargement factor phi (typical 1.17 ~ 1.22 for corrugated chevron plates)
+      const phi_enlarge = beta_deg >= 60 ? 1.21 : (beta_deg >= 45 ? 1.18 : 1.15);
+      const De_m = (2.0 * b_m) / phi_enlarge;
+      const A_single_plate_m2 = Wp_m * Lp_m * phi_enlarge;
+      const A_cross_1ch_m2 = b_m * Wp_m;
+
+      const Ft = phePasses === 1 ? 0.98 : calcFt(Th_in, Th_out, Tc_in, Tc_out, phePasses);
+      const CMTD = lmtd * Ft;
+
+      const rhoh = hotProps.rho, muh_Pas = hotProps.mu * 0.001, cph_J = cph * 1000.0, kh = hotProps.k;
+      const rhoc = coldProps.rho, muc_Pas = coldProps.mu * 0.001, cpc_J = cpc * 1000.0, kc = coldProps.k;
+      // PHE low fouling due to high wall shear stress
+      const rfh = Math.min(0.00005, hotProps.fouling * 0.35);
+      const rfc = Math.min(0.00005, coldProps.fouling * 0.35);
+
+      const Prh = (cph_J * muh_Pas) / kh;
+      const Prc = (cpc_J * muc_Pas) / kc;
+
+      // Muley-Manglik / Martin Chevron Nusselt & Friction constants
+      const Ch = beta_deg >= 60 ? 0.295 : (beta_deg >= 45 ? 0.215 : 0.145);
+      const m_exp = beta_deg >= 60 ? 0.720 : (beta_deg >= 45 ? 0.695 : 0.660);
+      const Kp_fric = beta_deg >= 60 ? 2.95 : (beta_deg >= 45 ? 1.65 : 0.88);
+
+      let Uk = 2200.0;
+      let U_calc = 2200.0;
+      let N_plates = 45, N_eff_plates = 43, N_ch_per_pass = 22;
+      let A_prov_m2 = 25.0, A_req_m2 = 21.0, overdesign_pct = 15.0;
+      let hh = 3500, hc = 3500, vh = 0.45, vc = 0.45, Reh = 2500, Rec = 2500;
+      let dPh_bar = 0.35, dPc_bar = 0.35;
+      const iterations = [];
+
+      for (let it = 1; it <= 12; it++) {
+        const A_trial = (Q_W / (Uk * CMTD)) * 1.14;
+        N_eff_plates = Math.max(9, Math.ceil(A_trial / A_single_plate_m2));
+        if (N_eff_plates % 2 === 0) N_eff_plates += 1; // Odd number of thermal plates -> equal channels
+        N_plates = N_eff_plates + 2;
+        N_ch_per_pass = Math.max(2, Math.round((N_plates - 1) / (2.0 * phePasses)));
+        A_prov_m2 = N_eff_plates * A_single_plate_m2;
+
+        const mh_kgs = mh / 3600.0;
+        const mc_kgs = mc / 3600.0;
+
+        const Gh = mh_kgs / (N_ch_per_pass * A_cross_1ch_m2);
+        const Gc = mc_kgs / (N_ch_per_pass * A_cross_1ch_m2);
+        vh = Gh / rhoh;
+        vc = Gc / rhoc;
+
+        Reh = (Gh * De_m) / muh_Pas;
+        Rec = (Gc * De_m) / muc_Pas;
+
+        const Nuh = Ch * Math.pow(Math.max(15, Reh), m_exp) * Math.pow(Prh, 1.0 / 3.0);
+        const Nuc = Ch * Math.pow(Math.max(15, Rec), m_exp) * Math.pow(Prc, 1.0 / 3.0);
+        hh = (Nuh * kh) / De_m;
+        hc = (Nuc * kc) / De_m;
+
+        const R_total = (1.0 / hh) + (1.0 / hc) + (tp_m / kw) + rfh + rfc;
+        U_calc = 1.0 / R_total;
+
+        const err = Math.abs(U_calc - Uk);
+        const errPct = (err / U_calc) * 100.0;
+        iterations.push({
+          iter: it,
+          param: `PHE N_p=${N_plates}매 (${N_ch_per_pass} Ch/Pass, β=${beta_deg}°)`,
+          assumed: `${Uk.toFixed(1)} W/m²K`,
+          calc: `${U_calc.toFixed(1)} W/m²K (A=${A_prov_m2.toFixed(1)} m²)`,
+          err: `${errPct.toFixed(2)}%`,
+          note: err < 1.0 ? '수렴 완료 (Muley-Manglik PHE)' : '판수 및 채널 유속 재수렴'
+        });
+        if (err < 1.0 && it >= 2) break;
+        Uk = 0.40 * Uk + 0.60 * U_calc;
+      }
+
+      A_req_m2 = Q_W / (U_calc * CMTD);
+      overdesign_pct = ((A_prov_m2 - A_req_m2) / Math.max(0.1, A_req_m2)) * 100.0;
+
+      // Channel + Port Pressure Drop (bar)
+      const fh = Kp_fric / Math.pow(Math.max(20, Reh), 0.24);
+      const fc = Kp_fric / Math.pow(Math.max(20, Rec), 0.24);
+      const port_d_m = Math.max(0.05, Math.min(0.20, Wp_m * 0.28));
+      const A_port_m2 = (Math.PI * port_d_m * port_d_m) / 4.0;
+      const v_port_h = (mh / 3600.0) / (rhoh * A_port_m2);
+      const v_port_c = (mc / 3600.0) / (rhoc * A_port_m2);
+
+      const dPh_Pa = phePasses * (4.0 * fh * (Lp_m / De_m) * 0.5 * rhoh * vh * vh) + 1.4 * phePasses * 0.5 * rhoh * v_port_h * v_port_h;
+      const dPc_Pa = phePasses * (4.0 * fc * (Lp_m / De_m) * 0.5 * rhoc * vc * vc) + 1.4 * phePasses * 0.5 * rhoc * v_port_c * v_port_c;
+      dPh_bar = dPh_Pa / 1e5;
+      dPc_bar = dPc_Pa / 1e5;
+
+      const U_clean = 1.0 / ((1.0 / hh) + (1.0 / hc) + (tp_m / kw));
+      const U_req = Q_W / Math.max(1.0, A_prov_m2 * CMTD);
+
+      const nozzle_hot_dn = calcNozzleDN(mh, rhoh);
+      const nozzle_cold_dn = calcNozzleDN(mc, rhoc);
+      const nozzle_shell_nps = dnToNpsMap[nozzle_hot_dn] || '4"';
+      const nozzle_tube_nps = dnToNpsMap[nozzle_cold_dn] || '4"';
+
+      const pack_pitch_mm = b_mm + tp_mm;
+      const L_pack_mm = Math.round(N_plates * pack_pitch_mm);
+      const L_frame_mm = L_pack_mm + 480;
+      const W_plates_kg = N_plates * A_single_plate_m2 * (tp_m * 8200);
+      const W_empty_kg = W_plates_kg + 420 + 0.65 * L_frame_mm;
+      const W_filled_kg = W_empty_kg + N_plates * A_cross_1ch_m2 * Lp_m * 1050;
+
+      const matName = inp.phe_mat_name || (kw > 60 ? 'Nickel 200' : (kw > 20 && kw < 25 ? 'Titanium Gr.1' : 'SS316L'));
+      const matFactor = kw > 60 ? 2.6 : (kw > 20 && kw < 25 ? 2.2 : 1.2);
+      const cost_usd = Math.round((5200 + 260 * Math.pow(A_prov_m2, 0.78)) * matFactor);
+      const cost_krw = Math.round((cost_usd * 1380) / 10000) * 10000;
+
+      const warnings = [];
+      if (tempCross && Ft < 0.75) {
+        warnings.push({ level: 'warn', text: `온도 교차(Temperature Cross) 조건 감지: 대향류 판형 열교환기(PHE)는 온도 접근차(ΔT_min=${Math.min(dT1_safe, dT2_safe).toFixed(1)}°C) 운전이 가능하나 패스 수(${phePasses}-${phePasses} Pass) 확인이 필요합니다.` });
+      } else {
+        warnings.push({ level: 'ok', text: `판형 열교환기(PHE) 고효율 열회수 적합: 총괄계수 U=${U_calc.toFixed(0)} W/m²K · 판수 ${N_plates}매 (전열면적 ${A_prov_m2.toFixed(1)} m²)` });
+      }
+      if (dPh_bar > 0.85 || dPc_bar > 0.85) {
+        warnings.push({ level: 'warn', text: `채널 압력강하 주의: 고온측 ΔP=${dPh_bar.toFixed(3)} bar / 저온측 ΔP=${dPc_bar.toFixed(3)} bar — 판 간격(b) 확대 또는 쉐브론 각도(45°) 완화 권장` });
+      } else {
+        warnings.push({ level: 'ok', text: `PHE 채널 차압 양호: 고온측 ΔP=${dPh_bar.toFixed(3)} bar (v=${vh.toFixed(2)} m/s) / 저온측 ΔP=${dPc_bar.toFixed(3)} bar (v=${vc.toFixed(2)} m/s)` });
+      }
+
+      return {
+        equipTag: inp.equipTag || 'E-332',
+        equipName: inp.equipName || `${hotProps.name} / ${coldProps.name} Plate Heat Exchanger`,
+        hxType: 'plate_phe',
+        mh, Th_in, Th_out, mc, Tc_in, Tc_out, dofTarget, allocation: 'hot_shell',
+        Qh_kW, Qc_kW, Q_kW,
+        hotProps, coldProps, cph, cpc, rfs: rfh, rft: rfc,
+        dT1, dT2, lmtd, Ft, CMTD,
+        U_calc, U_clean, U_req, A_req_m2, A_prov_m2, overdesign_pct,
+        // PHE Specific + Backward-compatible fields for UI & Export
+        N_plates, N_eff_plates, N_ch: N_ch_per_pass, N_ch_per_pass,
+        phe_chevron_deg: beta_deg, beta_deg,
+        phe_b_mm: b_mm, b_mm,
+        phe_tp_mm: tp_mm, tp_mm,
+        phe_wp_mm: Wp_mm, Wp_mm,
+        phe_lp_mm: Lp_mm, Lp_mm,
+        phe_mat_name: matName, matName,
+        phePasses,
+        phi_enlarge, A_1plate_m2: A_single_plate_m2, A_single_plate_m2, L_pack_mm, L_frame_mm,
+        N_tubes: N_plates, D_shell_mm: Wp_mm, D_bundle_mm: Wp_mm - 30,
+        nPasses: phePasses, nShell: 1, L_m: Number((Lp_mm / 1000).toFixed(2)),
+        do_mm: b_mm, di_mm: b_mm, tw_mm: tp_mm, pt_mm: b_mm + tp_mm, layoutAngle: beta_deg,
+        B_spacing_mm: L_pack_mm, N_baffles: N_ch_per_pass, baffleCutPct: beta_deg, baffleRatio: 0.3,
+        t_shell_mm: 25, t_tubesheet_mm: 32,
+        nozzle_shell_dn: nozzle_hot_dn, nozzle_tube_dn: nozzle_cold_dn,
+        nozzle_shell_nps, nozzle_tube_nps,
+        W_bundle_kg: W_plates_kg, W_empty_kg, W_filled_kg, cost_usd, cost_krw,
+        tema_type: `PHE Chevron ${beta_deg}° (${phePasses}-${phePasses} Pass)`,
+        hi: hc, ho: hh, vt: vc, vs: vh, Ret: Rec, Res: Reh, dPt_bar: dPc_bar, dPs_bar: dPh_bar,
+        Jc: 1.0, Jl: 1.0, Jb: 1.0, Js: 1.0, Jr: 1.0, J_total: phi_enlarge,
+        f_vs_Hz: 0, f_nat_Hz: 120, vibRatio: 0.12,
+        iterations, warnings
+      };
     }
 
     const nShell = inp.n_shell || 1;
@@ -375,7 +563,6 @@ window.ChemEngSolvers = (function () {
     const cpt_J = (inp.cpt || tubeProps.cp) * 1000.0;
     const kt = inp.kt || tubeProps.k;
     const rft = inp.rft !== undefined ? inp.rft : tubeProps.fouling;
-    const kw = inp.kw || 45.0;
 
     if (mode === 'quick') {
       U_calc = Math.max(20, U_assumed);
@@ -536,18 +723,6 @@ window.ChemEngSolvers = (function () {
     const U_req = Q_W / Math.max(1.0, A_prov_m2 * CMTD);
 
     // Nozzle sizing (Shell & Tube In/Out based on velocity ~ 1.8 m/s for liquid, ANSI/ASME B36.10M NPS default)
-    const dnToNpsMap = {
-      25: '1"', 40: '1-1/2"', 50: '2"', 65: '2-1/2"', 80: '3"',
-      100: '4"', 125: '5"', 150: '6"', 200: '8"', 250: '10"',
-      300: '12"', 350: '14"', 400: '16"', 450: '18"', 500: '20"'
-    };
-    const calcNozzleDN = (m_kgh, rho_val) => {
-      const q_m3s = (m_kgh / 3600.0) / Math.max(1.0, rho_val);
-      const v_noz = rho_val < 50 ? 18.0 : 1.85;
-      const d_mm = Math.sqrt((4.0 * q_m3s) / (Math.PI * v_noz)) * 1000.0;
-      const stdDN = [25, 40, 50, 65, 80, 100, 125, 150, 200, 250, 300, 350, 400, 450, 500];
-      return stdDN.find(d => d >= d_mm) || 500;
-    };
     const nozzle_shell_dn = calcNozzleDN(ms_kgh, rhos);
     const nozzle_tube_dn = calcNozzleDN(mt_kgh, rhot);
     const nozzle_shell_nps = dnToNpsMap[nozzle_shell_dn] || `${Math.round(nozzle_shell_dn / 25)}"`;
@@ -590,6 +765,9 @@ window.ChemEngSolvers = (function () {
     }
 
     return {
+      equipTag: inp.equipTag || 'E-101',
+      equipName: inp.equipName || `${hotProps.name} / ${coldProps.name} Exchanger`,
+      hxType: 'shell_tube',
       mh, Th_in, Th_out, mc, Tc_in, Tc_out, dofTarget, allocation,
       Qh_kW, Qc_kW, Q_kW,
       hotProps, coldProps, cph, cpc, rfs, rft,
@@ -664,12 +842,210 @@ window.ChemEngSolvers = (function () {
   }
 
   function solveColumn(inp, mode) {
-    const lkId = inp.lkFluidId || 'benzene';
-    const hkId = inp.hkFluidId || 'toluene';
+    const colMode = inp.col_mode || 'absorption'; // 'absorption' | 'distillation'
+    const lkId = inp.lkFluidId || 'h2_wet_gas';
+    const hkId = inp.hkFluidId || 'water';
     const lkBase = window.FLUID_DB[lkId] || window.FLUID_DB.benzene;
-    const hkBase = window.FLUID_DB[hkId] || window.FLUID_DB.toluene;
+    const hkBase = window.FLUID_DB[hkId] || window.FLUID_DB.water;
+    const P_bar = Math.max(0.05, inp.P_col_bar || 1.05);
 
-    const P_bar = Math.max(0.05, inp.P_col_bar || 1.20);
+    const PACKING_DB = {
+      pall_plastic_50:    { name: 'PP/PVDF Plastic Pall Ring 50mm (2")', type: 'Random', mat: 'PP / PVDF', size_mm: 50, Fp: 85, ap: 110, void_pct: 92, hetp_base: 0.65 },
+      intalox_ceramic_25: { name: 'Ceramic Intalox Saddle 25mm (1")', type: 'Random', mat: 'Acid-Proof Ceramic', size_mm: 25, Fp: 300, ap: 255, void_pct: 77, hetp_base: 0.45 },
+      intalox_ceramic_38: { name: 'Ceramic Intalox Saddle 38mm (1.5")', type: 'Random', mat: 'Acid-Proof Ceramic', size_mm: 38, Fp: 170, ap: 195, void_pct: 80, hetp_base: 0.58 },
+      pall_ti_38:         { name: 'Titanium Gr.2 Pall Ring 38mm (1.5")', type: 'Random', mat: 'Titanium Gr.2', size_mm: 38, Fp: 131, ap: 130, void_pct: 95, hetp_base: 0.56 },
+      pall_ss316_38:      { name: 'SS316L Metal Pall Ring 38mm (1.5")', type: 'Random', mat: 'SS316L / SS304L', size_mm: 38, Fp: 131, ap: 130, void_pct: 95, hetp_base: 0.56 },
+      tellerette_pp_50:   { name: 'PP/PVDF Tellerette 2" Rosette', type: 'Random', mat: 'PP / PVDF', size_mm: 50, Fp: 65, ap: 125, void_pct: 93, hetp_base: 0.55 },
+      pall_metal_16: { name: 'Metal Pall Ring 16mm (5/8")', type: 'Random', mat: 'SS316L', size_mm: 16, Fp: 266, ap: 340, void_pct: 93, hetp_base: 0.36 },
+      pall_metal_25: { name: 'Metal Pall Ring 25mm (1")', type: 'Random', mat: 'SS316L', size_mm: 25, Fp: 183, ap: 205, void_pct: 94, hetp_base: 0.48 },
+      pall_metal_38: { name: 'Metal Pall Ring 38mm (1.5")', type: 'Random', mat: 'SS316L / Ti Gr.2', size_mm: 38, Fp: 131, ap: 130, void_pct: 95, hetp_base: 0.64 },
+      pall_metal_50: { name: 'Metal Pall Ring 50mm (2")', type: 'Random', mat: 'SS316L', size_mm: 50, Fp: 89, ap: 105, void_pct: 96, hetp_base: 0.82 },
+      imtp_25:       { name: 'IMTP #25 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 25, Fp: 135, ap: 225, void_pct: 96.5, hetp_base: 0.42 },
+      imtp_40:       { name: 'IMTP #40 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 40, Fp: 79, ap: 150, void_pct: 97.0, hetp_base: 0.56 },
+      imtp_50:       { name: 'IMTP #50 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 50, Fp: 59, ap: 100, void_pct: 97.8, hetp_base: 0.72 },
+      raschig_metal_25: { name: 'Metal Raschig Ring 25mm', type: 'Random', mat: 'Carbon Steel / SS304', size_mm: 25, Fp: 450, ap: 190, void_pct: 86, hetp_base: 0.58 },
+      berl_ceramic_25:  { name: 'Ceramic Berl Saddle 25mm', type: 'Random', mat: 'Chemical Porcelain', size_mm: 25, Fp: 360, ap: 250, void_pct: 68, hetp_base: 0.52 },
+      mellapak_250y: { name: 'Mellapak 250Y (Structured)', type: 'Structured', mat: 'SS316L Sheet 0.15mm', size_mm: 250, Fp: 66, ap: 250, void_pct: 98.0, hetp_base: 0.38 },
+      mellapak_350y: { name: 'Mellapak 350Y (Structured)', type: 'Structured', mat: 'SS316L Sheet 0.15mm', size_mm: 350, Fp: 95, ap: 350, void_pct: 97.5, hetp_base: 0.29 },
+      mellapak_500y: { name: 'Mellapak 500Y (Structured)', type: 'Structured', mat: 'SS316L Gauze/Sheet', size_mm: 500, Fp: 145, ap: 500, void_pct: 96.5, hetp_base: 0.22 }
+    };
+    const packKey = inp.pack_key || 'pall_plastic_50';
+    const packSpec = PACKING_DB[packKey] || PACKING_DB.pall_plastic_50;
+    const bedMaxH_m = inp.bed_max_h_m || 4.5;
+    const floodFrac = Math.min(0.90, Math.max(0.45, (inp.flood_pct || 72) / 100.0));
+
+    // =========================================================================
+    // BRANCH A: GAS ABSORPTION / SCRUBBING / DRYING PACKED TOWER
+    // (T-410 ~ T-450 Cl2 Wash/H2SO4 Drying, T-610 H2 Caustic Scrubber, T-280, D-940)
+    // =========================================================================
+    if (colMode === 'absorption') {
+      const absService = inp.abs_service || 'scrubbing'; // 'scrubbing' | 'drying' | 'cooling_wash' | 'stripping'
+      const Gm_kgh = Math.max(20, inp.Wg_kgh || inp.gas_kgh || 2024);
+      const Lm_kgh = Math.max(100, inp.Wl_kgh || inp.liq_kgh || 18500);
+      const T_gas_in = inp.Tg_C !== undefined ? inp.Tg_C : (inp.T_gas_in !== undefined ? inp.T_gas_in : 85.0);
+      const T_liq_in = inp.Tl_C !== undefined ? inp.Tl_C : (inp.T_liq_in !== undefined ? inp.T_liq_in : 32.0);
+      const y_in_ppm = Math.max(1.0, inp.yin_ppm || inp.y_in_ppm || 4500);
+      const y_out_ppm = Math.max(0.05, Math.min(y_in_ppm * 0.8, inp.yout_ppm || inp.y_out_ppm || 5.0));
+      const m_eq = Math.max(0.01, inp.m_eq || 0.25);
+
+      const T_avg = 0.4 * T_gas_in + 0.6 * T_liq_in;
+      const gasProps = window.getFluidProps(lkId, T_avg);
+      const liqProps = window.getFluidProps(hkId, T_avg);
+
+      const mw_gas = Math.max(2.0, gasProps.mw);
+      const mw_liq = Math.max(18.0, liqProps.mw);
+      const rhoV = Math.max(0.08, (P_bar * 100.0 * mw_gas) / (R_GAS * (T_avg + 273.15)));
+      const rhoL = Math.max(600, liqProps.rho);
+      const muL_cP = Math.max(0.2, liqProps.mu);
+      const sigma = Math.max(15.0, liqProps.sigma || 55.0);
+
+      const Gm_kgs = Gm_kgh / 3600.0;
+      const Lm_kgs = Lm_kgh / 3600.0;
+      const Qv_m3s = Gm_kgs / rhoV;
+      const Ql_m3s = Lm_kgs / rhoL;
+
+      // Eckert GPDC Flow Parameter Flv
+      const Flv = Math.max(0.015, Math.min(2.5, (Lm_kgs / Math.max(0.005, Gm_kgs)) * Math.sqrt(rhoV / rhoL)));
+      const Y_flood = Math.exp(-3.635 - 1.164 * Math.log(Flv) - 0.124 * Math.pow(Math.log(Flv), 2));
+      const muFactor = Math.pow(muL_cP, 0.1);
+      const u_flood = Math.sqrt((Y_flood * G * (rhoL - rhoV)) / (packSpec.Fp * rhoV * muFactor));
+      const u_design = u_flood * floodFrac;
+      const F_factor = u_design * Math.sqrt(rhoV);
+      const Csb = u_flood / Math.sqrt((rhoL - rhoV) / rhoV);
+
+      const Ac_m2 = Qv_m3s / Math.max(0.05, u_design);
+      const D_col_raw_m = Math.sqrt((4.0 * Ac_m2) / Math.PI);
+      const D_col_m = Math.max(0.45, Math.ceil(D_col_raw_m * 20.0) / 20.0);
+      const Ac_actual_m2 = (Math.PI * D_col_m * D_col_m) / 4.0;
+      const u_op = Qv_m3s / Ac_actual_m2;
+
+      // Liquid Irrigation Rate Lw (m³ / m²·h) & Minimum Wetting Rate Check
+      const Lw_m3m2h = (Ql_m3s * 3600.0) / Ac_actual_m2;
+      const Lw_min_m3m2h = packSpec.mat.includes('PP') ? 7.5 : 4.5; // Plastics need higher wetting rate
+
+      // Mass Transfer: Colburn Number of Overall Gas Transfer Units (N_OG) & Onda HTU_OG
+      const removal_eff_pct = ((y_in_ppm - y_out_ppm) / y_in_ppm) * 100.0;
+      // Effective absorption factor A = (L_mol / G_mol) / m_eq (bounded to realistic chemical scrubbing/drying range)
+      const L_mol = Lm_kgh / mw_liq;
+      const G_mol = Gm_kgh / mw_gas;
+      const A_abs = Math.max(1.35, Math.min(25.0, (L_mol / Math.max(0.1, G_mol)) / Math.max(0.02, m_eq)));
+      const ratioY = y_in_ppm / Math.max(0.01, y_out_ppm);
+      const N_OG = Math.log(ratioY * (1.0 - 1.0 / A_abs) + 1.0 / A_abs) / (1.0 - 1.0 / A_abs);
+
+      // Onda / Cornell Height of an Overall Gas Transfer Unit (HTU_OG, m)
+      const HTU_G = Math.max(0.22, (0.38 / Math.pow(packSpec.ap / 150.0, 0.65)) * Math.pow(muL_cP / 1.0, 0.12) * Math.pow(15.0 / Math.max(3.0, Lw_m3m2h), 0.18));
+      const HTU_L = 0.18 * Math.pow(muL_cP, 0.25);
+      const HTU_OG_m = HTU_G + (1.0 / A_abs) * HTU_L;
+
+      const H_pack_calc_m = N_OG * HTU_OG_m;
+      const H_pack_total_m = Math.max(2.0, Math.ceil(H_pack_calc_m * 5.0) / 5.0);
+      const N_beds = Math.max(1, Math.ceil(H_pack_total_m / bedMaxH_m));
+
+      // Pressure Drop (mbar/m and total mbar)
+      const dP_pack_mbar_m = Math.max(0.12, (0.28 + 0.0075 * packSpec.Fp) * Math.pow(floodFrac / 0.75, 2.25) * (1.0 + 1.6 * Flv));
+      const dP_demister_mbar = 2.2; // Top Mesh / Chevron Mist Eliminator
+      const dP_total_mbar = dP_pack_mbar_m * H_pack_total_m + dP_demister_mbar;
+
+      // Direct-contact heat & absorption thermal duty
+      const T_gas_out = T_liq_in + Math.max(2.0, (T_gas_in - T_liq_in) * Math.exp(-0.65 * N_OG));
+      const Qc_kW = Math.abs(Gm_kgs * gasProps.cp * (T_gas_in - T_gas_out)) + (absService === 'drying' ? Gm_kgs * 42.0 : 12.0);
+      const dT_liq = (Qc_kW / Math.max(0.5, Lm_kgs * liqProps.cp));
+      const T_liq_out = T_liq_in + Math.min(22.0, dT_liq);
+
+      // Total column T/T height = packed height + liquid distributor + top demister + bottom liquid sump
+      const H_tangent_m = H_pack_total_m + N_beds * 1.1 + 3.4;
+      const internalsSummary = `${packSpec.name} (${packSpec.mat}, Fp=${packSpec.Fp} m⁻¹, a=${packSpec.ap} m²/m³)`;
+
+      // Build absorption profile curve along bed height z/Z (0 -> 1)
+      const vleCurve = [];
+      for (let i = 0; i <= 40; i++) {
+        const zFrac = i / 40.0;
+        const y_z = y_out_ppm * Math.pow(y_in_ppm / y_out_ppm, 1.0 - zFrac);
+        vleCurve.push({ x: zFrac, y: y_z / y_in_ppm, y_ppm: y_z, T: T_gas_out + (1.0 - zFrac) * (T_gas_in - T_gas_out) });
+      }
+
+      const iterations = [
+        {
+          iter: 1,
+          param: `기액 물성 및 유동인자 산출 (P=${P_bar.toFixed(2)} barA)`,
+          assumed: `G_m=${Gm_kgh} kg/h, L_m=${Lm_kgh} kg/h`,
+          calc: `ρ_G=${rhoV.toFixed(2)} kg/m³, ρ_L=${rhoL.toFixed(0)} kg/m³ → F_LV=${Flv.toFixed(3)}`,
+          err: '0.00%',
+          note: `${gasProps.name} / ${liqProps.name}`
+        },
+        {
+          iter: 2,
+          param: `Eckert GPDC 범람 유속 및 탑경 수렴 (${packSpec.name})`,
+          assumed: `Flood=${(floodFrac * 100).toFixed(0)}%, Fp=${packSpec.Fp} m⁻¹`,
+          calc: `u_flood=${u_flood.toFixed(2)} m/s, u_op=${u_op.toFixed(2)} m/s (F_s=${F_factor.toFixed(2)}) → ID Ø${(D_col_m * 1000).toFixed(0)} mm`,
+          err: '0.00%',
+          note: `액체 젖음율 L_w = ${Lw_m3m2h.toFixed(1)} m³/m²h`
+        },
+        {
+          iter: 3,
+          param: `Colburn 전달단위수(N_OG) & Onda 전달단위높이(HTU_OG)`,
+          assumed: `y_in=${y_in_ppm} ppm → y_out=${y_out_ppm} ppm (제거율 ${removal_eff_pct.toFixed(2)}%)`,
+          calc: `N_OG = ${N_OG.toFixed(2)} Units × HTU_OG = ${HTU_OG_m.toFixed(2)} m → Z_req = ${H_pack_calc_m.toFixed(2)} m`,
+          err: '0.00%',
+          note: `선정 패킹 높이 Z = ${H_pack_total_m.toFixed(1)} m (${N_beds} Beds)`
+        },
+        {
+          iter: 4,
+          param: `패킹층 + 상부 데미스터 총 압력강하 및 열수지 확정`,
+          assumed: `ΔP_pack = ${dP_pack_mbar_m.toFixed(2)} mbar/m`,
+          calc: `총 ΔP = ${dP_total_mbar.toFixed(1)} mbar (T/T 높이 = ${H_tangent_m.toFixed(1)} m)`,
+          err: '0.00%',
+          note: `가스 출구 ${T_gas_out.toFixed(1)}°C / 순환액 출구 ${T_liq_out.toFixed(1)}°C`
+        }
+      ];
+
+      const warnings = [];
+      if (Lw_m3m2h < Lw_min_m3m2h) {
+        warnings.push({ level: 'warn', text: `액체 젖음율(L_w = ${Lw_m3m2h.toFixed(1)} m³/m²h)이 최소 적심 기준(${Lw_min_m3m2h} m³/m²h)보다 낮아 채널링 위험이 있습니다 — 순환 세정액 유량(L_m) 증대 권장!` });
+      } else {
+        warnings.push({ level: 'ok', text: `패킹 적심(Wetting Rate) 양호: L_w = ${Lw_m3m2h.toFixed(1)} m³/m²·h ≥ 최소 기준 ${Lw_min_m3m2h} m³/m²·h` });
+      }
+      if (dP_pack_mbar_m > 6.0) {
+        warnings.push({ level: 'warn', text: `패킹 단위 차압 주의 (${dP_pack_mbar_m.toFixed(2)} mbar/m > 6.0 mbar/m) — 가스 블로워/압축기 흡입 부하 절감을 위해 50mm Pall Ring 또는 Tellerette 검토 권장` });
+      } else {
+        warnings.push({ level: 'ok', text: `Eckert GPDC 수력학 및 물질전달 최적: 제거율 ${removal_eff_pct.toFixed(2)}% (N_OG=${N_OG.toFixed(2)}, HTU=${HTU_OG_m.toFixed(2)}m) · 총 ΔP=${dP_total_mbar.toFixed(1)} mbar` });
+      }
+
+      return {
+        equipTag: inp.equipTag || 'T-410',
+        equipName: inp.equipName || `${gasProps.name} Packed Scrubbing / Drying Tower`,
+        colMode: 'absorption',
+        absService,
+        Wg_kgh: Gm_kgh, Wl_kgh: Lm_kgh,
+        Gm_kgh, Lm_kgh,
+        Tg_C: T_gas_in, Tl_C: T_liq_in,
+        T_gas_in, T_gas_out, T_liq_in, T_liq_out,
+        yin_ppm: y_in_ppm, yout_ppm: y_out_ppm,
+        y_in_ppm, y_out_ppm,
+        removal_pct: removal_eff_pct, removal_eff_pct,
+        N_OG, HTU_m: HTU_OG_m, HTU_OG_m,
+        H_pack_m: H_pack_total_m,
+        A_abs, m_eq, flood_pct: floodFrac * 100.0,
+        Lw_m3m2h, Lw_min_m3m2h, Flv,
+        lkBase: gasProps, hkBase: liqProps, P_bar,
+        internals: 'packed', trayType: 'sieve', trayPasses: 1, holeD_mm: 5, weirH_mm: 50, holeAreaPct: 10, traySpacing_m: 0.6,
+        packKey, packSpec, H_pack_total_m, N_beds, dP_pack_mbar_m, HETP_m: HTU_OG_m, internalsSummary,
+        T_top_C: T_gas_out, T_feed_C: T_avg, T_bot_C: T_gas_in,
+        gamma1_top: 1.0, gamma2_bot: 1.0,
+        alpha: A_abs, alpha_calc: A_abs, azeotropeX: null, vleCurve,
+        F: Gm_kgh / mw_gas, D: Gm_kgh / mw_gas, B: Lm_kgh / mw_liq,
+        zF: y_in_ppm / 1e6, xD: y_out_ppm / 1e6, xB: y_in_ppm / 1e6, q: 1.0, lk_recovery_pct: removal_eff_pct,
+        Nmin: N_OG * 0.7, Rmin: 1.0, R: Lm_kgh / Gm_kgh, N_theo: N_OG, N_actual: Math.ceil(N_OG), feed_stage_actual: 1, E_overall_pct: removal_eff_pct,
+        L_rect: Lm_kgh / mw_liq, V_rect: Gm_kgh / mw_gas, L_strip: Lm_kgh / mw_liq, V_strip: Gm_kgh / mw_gas,
+        Qc_kW, Qr_kW: 0,
+        Csb, u_flood, u_design, u_op, F_factor,
+        D_col_m, H_tangent_m,
+        weep_ratio: Lw_m3m2h / Lw_min_m3m2h, psi_entrain: 0.01, dc_backup_pct: floodFrac * 100,
+        dP_tray_mbar: dP_pack_mbar_m * HTU_OG_m, dP_total_mbar,
+        iterations, warnings
+      };
+    }
+
     const a12 = inp.nrtl_a12 !== undefined ? inp.nrtl_a12 : 0.0;
     const a21 = inp.nrtl_a21 !== undefined ? inp.nrtl_a21 : 0.0;
     const nrtlAlpha = inp.nrtl_alpha || 0.30;
@@ -789,24 +1165,6 @@ window.ChemEngSolvers = (function () {
     const weirH_mm = inp.weir_h_mm || 50.0;
     const holeAreaPct = inp.hole_area_pct || 10.0;
 
-    const PACKING_DB = {
-      pall_metal_16: { name: 'Metal Pall Ring 16mm (5/8")', type: 'Random', mat: 'SS316L', size_mm: 16, Fp: 266, ap: 340, void_pct: 93, hetp_base: 0.36 },
-      pall_metal_25: { name: 'Metal Pall Ring 25mm (1")', type: 'Random', mat: 'SS316L', size_mm: 25, Fp: 183, ap: 205, void_pct: 94, hetp_base: 0.48 },
-      pall_metal_38: { name: 'Metal Pall Ring 38mm (1.5")', type: 'Random', mat: 'SS316L', size_mm: 38, Fp: 131, ap: 130, void_pct: 95, hetp_base: 0.64 },
-      pall_metal_50: { name: 'Metal Pall Ring 50mm (2")', type: 'Random', mat: 'SS316L', size_mm: 50, Fp: 89, ap: 105, void_pct: 96, hetp_base: 0.82 },
-      imtp_25:       { name: 'IMTP #25 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 25, Fp: 135, ap: 225, void_pct: 96.5, hetp_base: 0.42 },
-      imtp_40:       { name: 'IMTP #40 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 40, Fp: 79, ap: 150, void_pct: 97.0, hetp_base: 0.56 },
-      imtp_50:       { name: 'IMTP #50 (Intalox Metal)', type: 'Random', mat: 'SS316L', size_mm: 50, Fp: 59, ap: 100, void_pct: 97.8, hetp_base: 0.72 },
-      raschig_metal_25: { name: 'Metal Raschig Ring 25mm', type: 'Random', mat: 'Carbon Steel / SS304', size_mm: 25, Fp: 450, ap: 190, void_pct: 86, hetp_base: 0.58 },
-      berl_ceramic_25:  { name: 'Ceramic Berl Saddle 25mm', type: 'Random', mat: 'Chemical Porcelain', size_mm: 25, Fp: 360, ap: 250, void_pct: 68, hetp_base: 0.52 },
-      mellapak_250y: { name: 'Mellapak 250Y (Structured)', type: 'Structured', mat: 'SS316L Sheet 0.15mm', size_mm: 250, Fp: 66, ap: 250, void_pct: 98.0, hetp_base: 0.38 },
-      mellapak_350y: { name: 'Mellapak 350Y (Structured)', type: 'Structured', mat: 'SS316L Sheet 0.15mm', size_mm: 350, Fp: 95, ap: 350, void_pct: 97.5, hetp_base: 0.29 },
-      mellapak_500y: { name: 'Mellapak 500Y (Structured)', type: 'Structured', mat: 'SS316L Gauze/Sheet', size_mm: 500, Fp: 145, ap: 500, void_pct: 96.5, hetp_base: 0.22 }
-    };
-    const packKey = inp.pack_key || 'pall_metal_25';
-    const packSpec = PACKING_DB[packKey] || PACKING_DB.pall_metal_25;
-    const bedMaxH_m = inp.bed_max_h_m || 6.0;
-
     // O'Connell Tray Efficiency adjusted by Tray Type & Hole Diameter / Weir Height
     const E_oconnell_base = Math.min(88.0, Math.max(28.0, 50.3 * Math.pow(alpha * muL_cP, -0.226)));
     const trayEffMod = trayType === 'valve' ? 1.06 : (trayType === 'bubble_cap' ? 0.96 : 1.00);
@@ -829,7 +1187,6 @@ window.ChemEngSolvers = (function () {
     const Qr_kW = (V_strip * hv_kJmol * 1000.0) / 3600.0;
 
     const traySpacing_m = inp.tray_spacing_m || 0.60;
-    const floodFrac = Math.min(0.90, Math.max(0.50, (inp.flood_pct || 80) / 100.0));
     const Lw_mgs = (L_max_kmolh * mw_avg) / 3600.0;
     const Vw_mgs = (V_max_kmolh * mw_avg) / 3600.0;
     const Qv_m3s = Vw_mgs / rhoV;
@@ -979,6 +1336,9 @@ window.ChemEngSolvers = (function () {
     }
 
     return {
+      equipTag: inp.equipTag || 'T-101',
+      equipName: inp.equipName || `${lkBase.name} / ${hkBase.name} Column`,
+      colMode: 'distillation',
       lkBase, hkBase, P_bar,
       internals, trayType, trayPasses, holeD_mm, weirH_mm, holeAreaPct, traySpacing_m,
       packKey, packSpec, H_pack_total_m, N_beds, dP_pack_mbar_m, HETP_m, internalsSummary,
@@ -1150,6 +1510,8 @@ window.ChemEngSolvers = (function () {
     }
 
     return {
+      equipTag: inp.equipTag || 'L-101',
+      equipName: inp.equipName || 'Process Piping Line',
       Q_m3h, W_kgs, flowMode, dofMode,
       selected: sel, recommended: rec, candidates,
       sumK, iterations, warnings
@@ -1284,6 +1646,8 @@ window.ChemEngSolvers = (function () {
     }
 
     return {
+      equipTag: inp.equipTag || 'D-210',
+      equipName: inp.equipName || 'Gas-Liquid Separator Vessel',
       orientation, hasDemister,
       D_m, L_m, LD_ratio: L_m / D_m,
       Kv_base, Vt_max_ms, Vg_des_ms,
@@ -1395,6 +1759,8 @@ window.ChemEngSolvers = (function () {
     }
 
     return {
+      equipTag: inp.equipTag || 'PSV-101',
+      equipName: inp.equipName || 'Pressure Safety Relief Valve',
       scenario, phase, W_kgh, W_rated_kgh, Q_fire_kW,
       P_set_barG, P_back_barG, P1_barA, P2_barA, overpress_pct,
       r_crit, backPressRatio, isCritical,
@@ -1793,6 +2159,57 @@ window.ChemEngSolvers = (function () {
     const p = prepCanvas(canvas);
     if (!p) return;
     const { ctx, w, h } = p;
+
+    if (res.colMode === 'absorption') {
+      const pad = { l: 48, r: 20, t: 22, b: 30 };
+      const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+
+      ctx.strokeStyle = 'rgba(148,163,184,0.22)';
+      ctx.strokeRect(pad.l, pad.t, pw, ph);
+
+      // Grid lines
+      ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+      for (let i = 1; i <= 3; i++) {
+        const gy = pad.t + (ph * i) / 4;
+        ctx.beginPath(); ctx.moveTo(pad.l, gy); ctx.lineTo(pad.l + pw, gy); ctx.stroke();
+      }
+
+      // Plot log-normalized gas concentration profile y(z) vs bed height z/Z
+      const pts = res.absProfile || [];
+      const yMaxLog = Math.log10(Math.max(10, res.y_in_ppm));
+      const yMinLog = Math.log10(Math.max(0.05, res.y_out_ppm * 0.5));
+
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      pts.forEach((pt, idx) => {
+        const yLog = Math.log10(Math.max(0.05, pt.y_ppm));
+        const xNorm = clamp((yLog - yMinLog) / Math.max(0.1, yMaxLog - yMinLog), 0, 1);
+        const px = pad.l + xNorm * pw;
+        const py = pad.t + ph - pt.z_norm * ph;
+        if (idx === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+
+      // Fill area under curve
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.12)';
+      ctx.lineTo(pad.l, pad.t);
+      ctx.lineTo(pad.l, pad.t + ph);
+      ctx.closePath();
+      ctx.fill();
+
+      // Labels
+      ctx.fillStyle = '#34d399';
+      ctx.font = 'bold 10.5px sans-serif';
+      ctx.fillText(`Top Out: ${res.y_out_ppm} ppm (${res.removal_pct.toFixed(2)}% 제거)`, pad.l + 8, pad.t + 15);
+      ctx.fillStyle = '#fcd34d';
+      ctx.fillText(`Bot In: ${res.y_in_ppm.toLocaleString()} ppm`, pad.l + pw - 135, pad.t + ph - 8);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText(`N_OG = ${res.N_OG.toFixed(2)} · HTU_OG = ${res.HTU_OG_m.toFixed(2)} m → Z = ${res.H_pack_total_m.toFixed(2)} m`, pad.l + 8, pad.t + ph + 20);
+      return;
+    }
+
     const size = Math.min(w - 56, h - 38);
     const ox = Math.floor((w - size) / 2) + 8;
     const oy = 14;
@@ -1986,6 +2403,30 @@ window.ChemEngSolvers = (function () {
     });
 
     if (eqType === 'hx') {
+      if (work.hx_type === 'plate_phe') {
+        for (let pass = 1; pass <= 5; pass++) {
+          const r = solveHX(work, 'rigorous');
+          let changed = false;
+          if ((r.dPs_bar > 0.78 || r.dPt_bar > 0.78) && (work.phe_passes || 1) > 1) {
+            work.phe_passes = 1;
+            redesignSteps.push(`Pass ${pass}: PHE 채널 ΔP(${Math.max(r.dPs_bar, r.dPt_bar).toFixed(2)} bar) 저감을 위해 1×1 단패스 병렬 구성으로 전환`);
+            changed = true;
+          } else if ((r.dPs_bar > 0.78 || r.dPt_bar > 0.78) && (work.phe_b_mm || 3.2) < 4.0) {
+            work.phe_b_mm = 4.0;
+            redesignSteps.push(`Pass ${pass}: PHE 채널 유로 확대를 위해 채널 프레스 간극(b) → 4.0 mm 상향`);
+            changed = true;
+          } else if ((r.dPs_bar > 0.78 || r.dPt_bar > 0.78) && (work.phe_beta_deg || 60) > 45) {
+            work.phe_beta_deg = 45;
+            redesignSteps.push(`Pass ${pass}: 압력강하 완화를 위해 쉐브론 주름각(β) → 45° 혼합 패턴 적용`);
+            changed = true;
+          }
+          work.U_assumed = Math.round(r.U_calc);
+          if (!changed) break;
+        }
+        const finalRes = solveHX(work, mode);
+        return { finalInputs: work, finalResults: finalRes, redesignSteps };
+      }
+
       // Normalize standard tube lengths & ODs if close
       const stdLengths = [2.44, 3.05, 3.66, 4.88, 6.00, 6.10, 7.32];
       if (work.tube_L_m) {
@@ -2073,6 +2514,13 @@ window.ChemEngSolvers = (function () {
 
     if (eqType === 'column') {
       const r0 = solveColumn(work, mode);
+      if (r0.colMode === 'absorption') {
+        if (r0.dP_pack_mbar_m > 3.5 && work.flood_frac > 0.65) {
+          work.flood_frac = 0.65;
+          redesignSteps.push(`Pass 1: 패킹 압력강하(${r0.dP_pack_mbar_m.toFixed(2)} mbar/m) 안정화를 위해 범람 안전율 → 65% 하향`);
+        }
+        return { finalInputs: work, finalResults: solveColumn(work, mode), redesignSteps };
+      }
       if (r0.dc_backup_pct > 45 && work.tray_spacing_m < 0.75) {
         work.tray_spacing_m = 0.75;
         redesignSteps.push(`Pass 1: 다운커머 백업(${r0.dc_backup_pct.toFixed(1)}%) 완화를 위해 단간격 → 0.75 m 확대`);
@@ -2175,9 +2623,119 @@ window.ChemEngSolvers = (function () {
     ctx.strokeRect(8, 8, w - 16, h - 16);
 
     const tagMap = { hx: 'E-101', pump: 'P-101', column: 'T-101', piping: 'L-101', vessel: 'V-101', psv: 'PSV-101' };
-    const codeMap = { hx: 'ASME SEC.VIII + TEMA R', pump: 'API 610 12th ED.', column: 'ASME SEC.VIII + FRI', piping: 'ASME B31.3', vessel: 'ASME SEC.VIII DIV.1', psv: 'API 520 / API 526' };
+    const codeMap = {
+      hx: res.hxType === 'plate_phe' ? 'API 662 / ISO 15547-1 PHE' : 'ASME SEC.VIII + TEMA R',
+      pump: 'API 610 12th ED.',
+      column: res.colMode === 'absorption' ? 'ASME SEC.VIII + ECKERT GPDC' : 'ASME SEC.VIII + FRI',
+      piping: 'ASME B31.3',
+      vessel: 'ASME SEC.VIII DIV.1',
+      psv: 'API 520 / API 526'
+    };
+    const itemTag = res.equipTag || tagMap[eqType];
 
-    if (eqType === 'hx') {
+    if (eqType === 'hx' && res.hxType === 'plate_phe') {
+      // 1. PLATE HEAT EXCHANGER (PHE) SIDE ELEVATION VIEW (Left 58%)
+      const fx = 68, fy = 62, fh = 178, packW = Math.min(220, Math.max(90, res.N_plates * 0.9));
+      const frameExt = packW + 76;
+
+      // Top Carrying Bar & Bottom Guide Bar
+      ctx.fillStyle = '#64748b';
+      ctx.fillRect(fx, fy + 8, frameExt, 10);
+      ctx.fillRect(fx, fy + fh - 16, frameExt, 8);
+
+      // Fixed Frame Plate (Left)
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(fx, fy, 18, fh);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(fx, fy, 18, fh);
+
+      // Corrugated Plate Pack (N_plates)
+      const px0 = fx + 18;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
+      ctx.fillRect(px0, fy + 18, packW, fh - 34);
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.1;
+      const nLines = Math.min(28, Math.max(10, Math.round(packW / 6)));
+      for (let i = 0; i <= nLines; i++) {
+        const lx = px0 + (packW * i) / nLines;
+        ctx.beginPath(); ctx.moveTo(lx, fy + 18); ctx.lineTo(lx, fy + fh - 16); ctx.stroke();
+      }
+
+      // Movable Pressure Plate (Follower)
+      ctx.fillStyle = '#0ea5e9';
+      ctx.fillRect(px0 + packW, fy + 6, 16, fh - 12);
+      ctx.strokeStyle = '#7dd3fc';
+      ctx.strokeRect(px0 + packW, fy + 6, 16, fh - 12);
+
+      // Rear Support Column
+      ctx.fillStyle = '#475569';
+      ctx.fillRect(fx + frameExt - 14, fy, 14, fh);
+      ctx.strokeStyle = '#94a3b8';
+      ctx.strokeRect(fx + frameExt - 14, fy, 14, fh);
+
+      // Tie Bolts (4 sets shown)
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.6;
+      [fy + 32, fy + 76, fy + 118, fy + 152].forEach(by => {
+        ctx.beginPath(); ctx.moveTo(fx - 8, by); ctx.lineTo(px0 + packW + 32, by); ctx.stroke();
+      });
+
+      // Inlet / Outlet Nozzles on Fixed Frame Plate
+      ctx.strokeStyle = '#fcd34d';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(fx - 26, fy + 26, 26, 18);
+      ctx.strokeRect(fx - 26, fy + fh - 44, 26, 18);
+      ctx.fillStyle = '#fcd34d';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      ctx.fillText(`S1/S4 (${res.nozzle_shell_nps} 150#)`, fx - 48, fy + 20);
+      ctx.fillStyle = '#34d399';
+      ctx.fillText(`S2/S3 (${res.nozzle_tube_nps} 150#)`, fx - 48, fy + fh - 48);
+
+      drawDimLine(ctx, px0, fy - 22, px0 + packW, fy - 22, `PACK L_pack = ${res.L_pack_mm} mm (${res.N_plates} Plates)`, '#38bdf8');
+      drawDimLine(ctx, fx - 38, fy, fx - 38, fy + fh, `Lp=${res.Lp_mm}mm`, '#f43f5e');
+      drawDimLine(ctx, fx, fy + fh + 26, fx + frameExt, fy + fh + 26, `CHEVRON β = ${res.phe_beta_deg}° · GAP b = ${res.phe_b_mm} mm · ${res.phe_passes}×${res.phe_passes} PASS`, '#f59e0b');
+
+      // 2. CHEVRON CORRUGATED PLATE FRONT ELEVATION (Right 35%)
+      const rpx = w - 195, rpy = 42, rpw = 96, rph = 168;
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.roundRect(rpx, rpy, rpw, rph, 12); ctx.stroke();
+
+      // 4 Corner Ports S1, S2, S3, S4
+      const portR = 11;
+      [
+        [rpx + 20, rpy + 20, 'S1', '#fcd34d'],
+        [rpx + rpw - 20, rpy + 20, 'S4', '#34d399'],
+        [rpx + 20, rpy + rph - 20, 'S2', '#fcd34d'],
+        [rpx + rpw - 20, rpy + rph - 20, 'S3', '#34d399']
+      ].forEach(([cx, cy, lbl, col]) => {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, portR, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = col;
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(lbl, cx - 6, cy + 3);
+      });
+
+      // Chevron Herringbone Corrugation Pattern
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.4;
+      for (let cy = rpy + 44; cy <= rpy + rph - 44; cy += 12) {
+        ctx.beginPath();
+        ctx.moveTo(rpx + 14, cy + 6);
+        ctx.lineTo(rpx + rpw / 2, cy - 4);
+        ctx.lineTo(rpx + rpw - 14, cy + 6);
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      ctx.fillText(`CHEVRON PLATE (β=${res.phe_beta_deg}°)`, rpx - 22, rpy - 8);
+      ctx.fillStyle = '#7dd3fc';
+      ctx.fillText(`Wp ${res.Wp_mm} × Lp ${res.Lp_mm} (${res.phe_tp_mm}t)`, rpx - 26, rpy + rph + 15);
+      ctx.fillText(`Area = ${res.A_prov_m2.toFixed(1)} m² (${res.N_channels} Ch)`, rpx - 24, rpy + rph + 29);
+    } else if (eqType === 'hx') {
       // 1. SIDE ELEVATION SECTIONAL VIEW (Left 68%)
       const sx = 64, sy = 96, sw = Math.min(370, w * 0.50), sh = 106;
       const frontW = 46, rearW = 42;
@@ -2305,7 +2863,8 @@ window.ChemEngSolvers = (function () {
       ctx.fillText(`Nt = ${res.N_tubes} EA (OD ${res.do_mm}×${res.tw_mm}t)`, cx - 76, cy + cr + 16);
       ctx.fillText(`Bundle Ø${res.D_bundle_mm} / Shell ID Ø${res.D_shell_mm} (${res.t_shell_mm}t)`, cx - 92, cy + cr + 30);
     } else if (eqType === 'column') {
-      // Distillation Column Elevation + Tray Cross-Section DWG
+      const isPacked = res.colMode === 'absorption' || res.internals === 'packed';
+      // Column Elevation + Internals DWG
       const tx = 140, ty = 42, tw = 78, th = 225;
       ctx.strokeStyle = '#e2e8f0';
       ctx.lineWidth = 2.4;
@@ -2315,36 +2874,93 @@ window.ChemEngSolvers = (function () {
 
       // Skirt
       ctx.strokeRect(tx + 4, ty + th - 10, tw - 8, 34);
-      // Trays
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 1.2;
-      for (let i = 1; i <= 10; i++) {
-        const y = ty + 24 + (i * (th - 48)) / 11;
-        ctx.beginPath(); ctx.moveTo(tx + 4, y); ctx.lineTo(tx + tw - 4, y); ctx.stroke();
+
+      if (isPacked) {
+        // Wire Mesh Mist Eliminator at Top
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.35)';
+        ctx.fillRect(tx + 6, ty + 24, tw - 12, 10);
+        // Liquid Distributor Pipe
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(tx + 10, ty + 44); ctx.lineTo(tx + tw + 35, ty + 44); ctx.stroke();
+        // Packed Beds (1 or 2 beds with cross-hatch)
+        const nBeds = res.N_beds || 1;
+        const bedH = nBeds >= 2 ? 64 : 132;
+        for (let b = 0; b < Math.min(2, nBeds); b++) {
+          const by0 = ty + 54 + b * (bedH + 22);
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.18)';
+          ctx.fillRect(tx + 6, by0, tw - 12, bedH);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(tx + 6, by0, tw - 12, bedH);
+          ctx.beginPath();
+          ctx.moveTo(tx + 6, by0); ctx.lineTo(tx + tw - 6, by0 + bedH);
+          ctx.moveTo(tx + tw - 6, by0); ctx.lineTo(tx + 6, by0 + bedH);
+          ctx.stroke();
+        }
+        // Bottom Gas Feed Nozzle
+        ctx.strokeStyle = '#fcd34d';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(tx - 48, ty + th - 36); ctx.lineTo(tx, ty + th - 36); ctx.stroke();
+        ctx.fillStyle = '#fcd34d';
+        ctx.font = 'bold 9.5px monospace';
+        ctx.fillText(`GAS IN (${res.gas_kgh ? res.gas_kgh.toFixed(0) + ' kg/h' : 'V_in'})`, tx - 135, ty + th - 40);
+        ctx.fillStyle = '#38bdf8';
+        ctx.fillText(`LIQ IN (${res.liq_kgh ? res.liq_kgh.toFixed(0) + ' kg/h' : 'L_in'})`, tx + tw + 8, ty + 38);
+
+        drawDimLine(ctx, tx + tw + 38, ty, tx + tw + 38, ty + th, `T/T H = ${res.H_tangent_m.toFixed(1)} m (Pack Z = ${res.H_pack_total_m.toFixed(2)} m)`, '#38bdf8');
+        drawDimLine(ctx, tx, ty - 18, tx + tw, ty - 18, `ID Ø${(res.D_col_m * 1000).toFixed(0)} mm`, '#f43f5e');
+
+        // Right Side Packed Bed Plan View
+        const cx = w - 165, cy = 135, cr = 64;
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 1.3;
+        for (let r = -2; r <= 2; r++) {
+          for (let c = -2; c <= 2; c++) {
+            if (Math.hypot(r * 18, c * 18) <= cr - 14) {
+              ctx.beginPath(); ctx.arc(cx + c * 18, cy + r * 18, 6.5, 0, Math.PI * 2); ctx.stroke();
+            }
+          }
+        }
+        ctx.fillStyle = '#7dd3fc';
+        ctx.fillText(`PACKED BED PLAN VIEW`, cx - 64, cy - cr - 12);
+        ctx.fillText(`${res.packSpec ? res.packSpec.name : 'Packed Bed'}`, cx - 84, cy + cr + 16);
+        ctx.fillText(`Fp=${res.packSpec ? res.packSpec.Fp : 65} m⁻¹ · Flood=${res.flood_pct.toFixed(0)}% · ΔP=${res.dP_total_mbar.toFixed(1)} mbar`, cx - 102, cy + cr + 30);
+      } else {
+        // Trays
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1.2;
+        for (let i = 1; i <= 10; i++) {
+          const y = ty + 24 + (i * (th - 48)) / 11;
+          ctx.beginPath(); ctx.moveTo(tx + 4, y); ctx.lineTo(tx + tw - 4, y); ctx.stroke();
+        }
+        // Feed Nozzle
+        const fy = ty + 24 + (th - 48) * (res.feed_stage_actual / Math.max(1, res.N_actual));
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.moveTo(tx - 45, fy); ctx.lineTo(tx, fy); ctx.stroke();
+        ctx.fillStyle = '#fcd34d';
+        ctx.font = 'bold 10px monospace';
+        ctx.fillText(`FEED #${res.feed_stage_actual} (${res.T_feed_C.toFixed(1)}°C)`, tx - 140, fy - 5);
+
+        drawDimLine(ctx, tx + tw + 35, ty, tx + tw + 35, ty + th, `T/T H = ${res.H_tangent_m.toFixed(1)} m (${res.N_actual} Trays)`, '#38bdf8');
+        drawDimLine(ctx, tx, ty - 18, tx + tw, ty - 18, `ID Ø${(res.D_col_m * 1000).toFixed(0)} mm`, '#f43f5e');
+
+        // Right Side Tray Detail
+        const cx = w - 165, cy = 135, cr = 64;
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#10b981';
+        ctx.beginPath(); ctx.moveTo(cx - cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx - cr * 0.72, cy + cr * 0.68); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx + cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx + cr * 0.72, cy + cr * 0.68); ctx.stroke();
+        ctx.fillStyle = '#7dd3fc';
+        ctx.fillText(`SIEVE TRAY PLAN VIEW`, cx - 58, cy - cr - 12);
+        ctx.fillText(`Spacing: ${(res.H_tangent_m - 3.5) / Math.max(1, res.N_actual) * 1000 | 0} mm | Weir: 50 mm`, cx - 72, cy + cr + 18);
       }
-      // Feed Nozzle
-      const fy = ty + 24 + (th - 48) * (res.feed_stage_actual / Math.max(1, res.N_actual));
-      ctx.strokeStyle = '#f59e0b';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.moveTo(tx - 45, fy); ctx.lineTo(tx, fy); ctx.stroke();
-      ctx.fillStyle = '#fcd34d';
-      ctx.font = 'bold 10px monospace';
-      ctx.fillText(`FEED #${res.feed_stage_actual} (${res.T_feed_C.toFixed(1)}°C)`, tx - 140, fy - 5);
-
-      drawDimLine(ctx, tx + tw + 35, ty, tx + tw + 35, ty + th, `T/T H = ${res.H_tangent_m.toFixed(1)} m (${res.N_actual} Trays)`, '#38bdf8');
-      drawDimLine(ctx, tx, ty - 18, tx + tw, ty - 18, `ID Ø${(res.D_col_m * 1000).toFixed(0)} mm`, '#f43f5e');
-
-      // Right Side Tray Detail
-      const cx = w - 165, cy = 135, cr = 64;
-      ctx.strokeStyle = '#e2e8f0';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = '#10b981';
-      ctx.beginPath(); ctx.moveTo(cx - cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx - cr * 0.72, cy + cr * 0.68); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(cx + cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx + cr * 0.72, cy + cr * 0.68); ctx.stroke();
-      ctx.fillStyle = '#7dd3fc';
-      ctx.fillText(`SIEVE TRAY PLAN VIEW`, cx - 58, cy - cr - 12);
-      ctx.fillText(`Spacing: ${(res.H_tangent_m - 3.5) / Math.max(1, res.N_actual) * 1000 | 0} mm | Weir: 50 mm`, cx - 72, cy + cr + 18);
     } else if (eqType === 'pump') {
       // API 610 OH2 Process Pump + Motor Skid GA Drawing + Impeller Detail
       const baseX = 56, baseY = 228, baseW = 355, baseH = 18;
@@ -2534,8 +3150,8 @@ window.ChemEngSolvers = (function () {
     ctx.font = 'bold 10px "JetBrains Mono", monospace';
     ctx.fillText(`CHEMENG STUDIO PRO — ENGINEERING DWG`, tbx + 8, tby + 14);
     ctx.fillStyle = '#e2e8f0';
-    ctx.fillText(`ITEM TAG: ${tagMap[eqType]}`, tbx + 8, tby + 34);
-    ctx.fillText(`DWG: GA-${tagMap[eqType]}-01`, tbx + 156, tby + 34);
+    ctx.fillText(`ITEM TAG: ${itemTag}`, tbx + 8, tby + 34);
+    ctx.fillText(`DWG: GA-${itemTag.replace(/[^A-Za-z0-9-]/g, '')}-01`, tbx + 156, tby + 34);
     ctx.fillStyle = '#a7f3d0';
     ctx.fillText(`CODE: ${codeMap[eqType]}`, tbx + 8, tby + 55);
     ctx.fillText(`REV: A (FINAL)`, tbx + 156, tby + 55);
@@ -2560,7 +3176,7 @@ window.ChemEngSolvers = (function () {
         <tbody>
           <tr class="tema-title-row">
             <td colspan="4" style="width:36%;text-align:center;background:#0f172a;color:#38bdf8;font-weight:900;font-size:12px;">
-              CHEMPRO SUITE v2.3<br/><span style="font-size:9.5px;color:#94a3b8;font-weight:600;">PROCESS EQUIPMENT ENGINEERING</span>
+              CHEMPRO SUITE v2.6<br/><span style="font-size:9.5px;color:#94a3b8;font-weight:600;">PROCESS EQUIPMENT ENGINEERING</span>
             </td>
             <td colspan="6" style="width:64%;text-align:center;background:#0f172a;color:#f8fafc;font-weight:900;font-size:13.5px;letter-spacing:0.4px;">
               ${docTitle}
@@ -2589,7 +3205,7 @@ window.ChemEngSolvers = (function () {
             <td style="text-align:center;">GEMINI FLASH</td>
             <td style="text-align:center;">${dateStr}</td>
             <td style="text-align:center;color:#38bdf8;font-weight:800;">AI OPT.</td>
-            <td colspan="2"><b>UNIT / AREA:</b> PROCESS UNIT 100</td>
+            <td colspan="2"><b>UNIT / AREA:</b> CHLOR-ALKALI PLANT</td>
             <td colspan="2"><b>SERVICE:</b> <b>${serviceName}</b></td>
             <td colspan="2"><b>INSTALLED BY:</b> EPC CONTRACTOR</td>
           </tr>
@@ -2603,7 +3219,166 @@ window.ChemEngSolvers = (function () {
     const dateStr = new Date().toISOString().slice(0, 10);
 
     // =======================================================================
-    // 1. SHELL-AND-TUBE HEAT EXCHANGER (Exact 44-Row TEMA Standard Layout!)
+    // 1A. PLATE HEAT EXCHANGER (PHE — API 662 / ISO 15547-1 Spec Sheet!)
+    // =======================================================================
+    if (eqType === 'hx' && res.hxType === 'plate_phe') {
+      const hFluid = res.hotProps;
+      const cFluid = res.coldProps;
+      const eqTag = res.equipTag || 'E-332';
+      const eqService = res.equipName || `${hFluid?.name || 'Hot'} / ${cFluid?.name || 'Cold'} Plate Exchanger`;
+      const pheSketchSvg = `
+        <svg viewBox="0 0 260 145" style="width:100%;height:135px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
+          <rect x="36" y="28" width="14" height="82" fill="#0284c7" stroke="#38bdf8" stroke-width="1.5"/>
+          <rect x="50" y="34" width="90" height="70" fill="rgba(56,189,248,0.16)" stroke="#38bdf8" stroke-width="1.5"/>
+          <line x1="65" y1="34" x2="65" y2="104" stroke="#38bdf8" stroke-width="1"/>
+          <line x1="80" y1="34" x2="80" y2="104" stroke="#38bdf8" stroke-width="1"/>
+          <line x1="95" y1="34" x2="95" y2="104" stroke="#38bdf8" stroke-width="1"/>
+          <line x1="110" y1="34" x2="110" y2="104" stroke="#38bdf8" stroke-width="1"/>
+          <line x1="125" y1="34" x2="125" y2="104" stroke="#38bdf8" stroke-width="1"/>
+          <rect x="140" y="30" width="12" height="78" fill="#0ea5e9" stroke="#7dd3fc" stroke-width="1.5"/>
+          <rect x="180" y="28" width="54" height="82" rx="6" fill="none" stroke="#e2e8f0" stroke-width="1.8"/>
+          <polyline points="188,52 207,42 226,52" fill="none" stroke="#38bdf8" stroke-width="1.5"/>
+          <polyline points="188,68 207,58 226,68" fill="none" stroke="#38bdf8" stroke-width="1.5"/>
+          <polyline points="188,84 207,74 226,84" fill="none" stroke="#38bdf8" stroke-width="1.5"/>
+          <text x="130" y="15" fill="#38bdf8" font-size="9" text-anchor="middle" font-weight="bold">GASKETED PHE — ${res.N_plates} Plates (${res.N_channels} Channels) · β=${res.phe_beta_deg}°</text>
+          <text x="130" y="124" fill="#34d399" font-size="8.5" text-anchor="middle">Wp=${res.Wp_mm}×Lp=${res.Lp_mm}mm (b=${res.phe_b_mm}mm) · Pack L=${res.L_pack_mm}mm</text>
+          <text x="130" y="137" fill="#94a3b8" font-size="8" text-anchor="middle">A = ${res.A_prov_m2.toFixed(1)} m² · Port ${res.nozzle_shell_nps} 150# · U = ${res.U_calc.toFixed(0)} W/m²K</text>
+        </svg>
+      `;
+
+      return `
+        ${buildTopSheetHeader('GASKETED PLATE HEAT EXCHANGER (PHE) SPECIFICATION SHEET — API 662 / ISO 15547-1', eqTag, eqService, `PHE-${eqTag}`, res.cost_krw, res.cost_usd, dateStr)}
+        <table class="tema-excel-table">
+          <tbody>
+            <tr>
+              <td class="ln">1</td>
+              <td colspan="2"><b>Plate Pack Size (Width × Length × Pack L)</b></td>
+              <td colspan="2" class="val-hi">Wp ${res.Wp_mm} mm × Lp ${res.Lp_mm} mm × Pack ${res.L_pack_mm} mm</td>
+              <td><b>Exchanger Type</b></td>
+              <td class="val-hi">Gasketed Chevron PHE</td>
+              <td colspan="2"><b>Pass Arrangement (Hot × Cold)</b></td>
+              <td class="val-hi">${res.phe_passes} × ${res.phe_passes} Counter-Current</td>
+            </tr>
+            <tr>
+              <td class="ln">2</td>
+              <td colspan="2"><b>Total Effective Heat Transfer Area</b></td>
+              <td colspan="2" class="val-hi">${res.A_prov_m2.toFixed(1)} m² (Req: ${res.A_req_m2.toFixed(1)} m²)</td>
+              <td><b>Total Plates (N_p)</b></td>
+              <td class="val-hi">${res.N_plates} EA (Eff: ${res.N_eff})</td>
+              <td colspan="2"><b>Total Channels (Hot / Cold)</b></td>
+              <td class="val">${res.N_channels} Ch (${res.N_ch_side}H / ${res.N_ch_side}C)</td>
+            </tr>
+            <tr class="sec-hdr">
+              <td class="ln">3</td>
+              <td colspan="9">PERFORMANCE OF ONE PHE UNIT (판형 열교환기 공정 및 열성능 사양)</td>
+            </tr>
+            <tr class="sub-hdr">
+              <td class="ln">4</td>
+              <td colspan="3"><b>Fluid Allocation (유체 배치)</b></td>
+              <td colspan="3" style="text-align:center;"><b>HOT SIDE CHANNELS (고온측 채널)</b></td>
+              <td colspan="3" style="text-align:center;"><b>COLD SIDE CHANNELS (저온측 채널)</b></td>
+            </tr>
+            <tr>
+              <td class="ln">5</td>
+              <td colspan="3"><b>Fluid Name (유체 명칭 및 화학식)</b></td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${hFluid?.name || '-'} [${hFluid?.formula || ''}]</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${cFluid?.name || '-'} [${cFluid?.formula || ''}]</td>
+            </tr>
+            <tr>
+              <td class="ln">6</td>
+              <td colspan="2"><b>Mass Flowrate (총 질량유량)</b></td>
+              <td class="unit-c">kg/h</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${res.mh.toFixed(0)} kg/h</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${res.mc.toFixed(0)} kg/h</td>
+            </tr>
+            <tr>
+              <td class="ln">7</td>
+              <td colspan="2"><b>Temperature (Inlet → Outlet)</b></td>
+              <td class="unit-c">°C</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${res.Th_in.toFixed(1)} °C → ${res.Th_out.toFixed(2)} °C</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">${res.Tc_in.toFixed(1)} °C → ${res.Tc_out.toFixed(2)} °C</td>
+            </tr>
+            <tr>
+              <td class="ln">8</td>
+              <td colspan="2"><b>Density / Viscosity / Specific Heat</b></td>
+              <td class="unit-c">kg/m³ / cP / kJ/kgK</td>
+              <td colspan="3" class="val" style="text-align:center;">${hFluid?.rho.toFixed(1)} / ${hFluid?.mu.toFixed(3)} / ${hFluid?.cp.toFixed(3)}</td>
+              <td colspan="3" class="val" style="text-align:center;">${cFluid?.rho.toFixed(1)} / ${cFluid?.mu.toFixed(3)} / ${cFluid?.cp.toFixed(3)}</td>
+            </tr>
+            <tr>
+              <td class="ln">9</td>
+              <td colspan="2"><b>Channel Velocity & Reynolds No. (Re_ch)</b></td>
+              <td class="unit-c">m/s (Re)</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">v_ch = ${res.vs.toFixed(2)} m/s · Re = ${Math.round(res.Res).toLocaleString()} (Port ${res.v_port_h.toFixed(2)} m/s)</td>
+              <td colspan="3" class="val-hi" style="text-align:center;">v_ch = ${res.vt.toFixed(2)} m/s · Re = ${Math.round(res.Ret).toLocaleString()} (Port ${res.v_port_c.toFixed(2)} m/s)</td>
+            </tr>
+            <tr>
+              <td class="ln">10</td>
+              <td colspan="2"><b>Pressure Drop Allow / Calc (채널+포트 ΔP)</b></td>
+              <td class="unit-c">bar (kPa)</td>
+              <td class="val">Allow: 0.800 bar</td>
+              <td colspan="2" class="val-hi" style="color:${res.dPs_bar <= 0.8 ? '#34d399' : '#fda4af'};">Calc: ${res.dPs_bar.toFixed(3)} bar (${(res.dPs_bar * 100).toFixed(1)} kPa)</td>
+              <td class="val">Allow: 0.800 bar</td>
+              <td colspan="2" class="val-hi" style="color:${res.dPt_bar <= 0.8 ? '#34d399' : '#fda4af'};">Calc: ${res.dPt_bar.toFixed(3)} bar (${(res.dPt_bar * 100).toFixed(1)} kPa)</td>
+            </tr>
+            <tr>
+              <td class="ln">11</td>
+              <td colspan="2"><b>Film Coeff. (h) & Fouling Factor (R_f)</b></td>
+              <td class="unit-c">W/m²K / m²K/W</td>
+              <td colspan="3" class="val" style="text-align:center;">h_h = ${res.ho.toFixed(0)} W/m²K (R_fh = ${res.rfs.toFixed(5)})</td>
+              <td colspan="3" class="val" style="text-align:center;">h_c = ${res.hi.toFixed(0)} W/m²K (R_fc = ${res.rft.toFixed(5)})</td>
+            </tr>
+            <tr>
+              <td class="ln">12</td>
+              <td colspan="2"><b>Heat Duty (Q) & Corrected LMTD</b></td>
+              <td class="unit-c">kW (Mcal/h)</td>
+              <td colspan="3" class="val-hi">${res.Q_kW.toFixed(1)} kW (${(res.Q_kW * 0.85985).toFixed(2)} Mcal/h)</td>
+              <td colspan="2"><b>CMTD / F_t</b></td>
+              <td class="val-hi">${res.CMTD.toFixed(2)} °C (LMTD ${res.lmtd.toFixed(2)}°C, Ft=${res.Ft.toFixed(3)})</td>
+            </tr>
+            <tr>
+              <td class="ln">13</td>
+              <td colspan="2"><b>Overall Heat Transfer Coeff. (U)</b></td>
+              <td class="unit-c">W/m²·K</td>
+              <td><b>Service (U_calc):</b></td>
+              <td class="val-hi">${res.U_calc.toFixed(0)} W/m²K</td>
+              <td><b>Clean (U_clean):</b></td>
+              <td class="val-hi">${res.U_clean.toFixed(0)} W/m²K</td>
+              <td><b>Overdesign:</b></td>
+              <td class="val-hi" style="color:#34d399;">+${res.overdesign_pct.toFixed(1)}% (Req ${res.U_req.toFixed(0)})</td>
+            </tr>
+            <tr class="sec-hdr">
+              <td class="ln">14</td>
+              <td colspan="9">PLATE GEOMETRY, FRAME & MATERIALS OF CONSTRUCTION (판형 열교환기 기계 및 재질 사양)</td>
+            </tr>
+            <tr>
+              <td class="ln">15</td>
+              <td colspan="2"><b>Chevron Angle (β) & Pressing Depth (b)</b></td>
+              <td colspan="4" class="val-hi">Chevron β = ${res.phe_beta_deg}° · Channel Gap b = ${res.phe_b_mm} mm · Hydraulic Dia D_h = ${res.di_mm.toFixed(2)} mm · Area/Plate = ${res.A_plate_m2.toFixed(3)} m²</td>
+              <td colspan="3" rowspan="4" style="padding:4px;vertical-align:middle;background:#050b18;">${pheSketchSvg}</td>
+            </tr>
+            <tr>
+              <td class="ln">16</td>
+              <td colspan="2"><b>Plate Thickness & Material</b></td>
+              <td colspan="4" class="val-hi">Thickness t_p = ${res.phe_tp_mm} mm · Material: Titanium Gr.1 / Nickel 200 / Hastelloy C-276 (Chlor-Alkali Spec)</td>
+            </tr>
+            <tr>
+              <td class="ln">17</td>
+              <td colspan="2"><b>Port Nozzle Size & Gasket Spec</b></td>
+              <td colspan="4" class="val-hi">Nozzles: ${res.nozzle_shell_nps} ASME B16.5 CL150 (Port Ø${res.D_port_mm}mm) · Gasket: EPDM Peroxide-Cured / PTFE Clip-On</td>
+            </tr>
+            <tr>
+              <td class="ln">18</td>
+              <td colspan="2"><b>Frame Design Press / Weights</b></td>
+              <td colspan="4" class="val">Design: 10.0 barG @ 160°C · Empty Weight: <b>${res.W_empty_kg.toFixed(0)} kg</b> / Plate Pack: <b>${res.W_bundle_kg.toFixed(0)} kg</b> / Operating: <b>${res.W_filled_kg.toFixed(0)} kg</b></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    // =======================================================================
+    // 1B. SHELL-AND-TUBE HEAT EXCHANGER (Exact 44-Row TEMA Standard Layout!)
     // =======================================================================
     if (eqType === 'hx') {
       const isHotShell = res.allocation !== 'hot_tube';
@@ -2618,6 +3393,8 @@ window.ChemEngSolvers = (function () {
       const bwgGauge = res.tw_mm >= 2.6 ? '12 BWG (2.77mm)' : (res.tw_mm >= 2.0 ? '14 BWG (2.11mm)' : '16 BWG (1.65mm)');
       const pitchRatio = (res.pt_mm / res.do_mm).toFixed(2);
       const aPerShell = (res.A_prov_m2 / Math.max(1, res.nShell)).toFixed(1);
+      const eqTag = res.equipTag || 'E-101';
+      const eqService = res.equipName || `${sFluid?.name || 'Hot'} / ${tFluid?.name || 'Cold'} Exchanger`;
 
       const miniSketchSvg = `
         <svg viewBox="0 0 260 145" style="width:100%;height:135px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
@@ -2642,7 +3419,7 @@ window.ChemEngSolvers = (function () {
       `;
 
       return `
-        ${buildTopSheetHeader('SHELL-AND-TUBE HEAT EXCHANGER SPECIFICATION SHEET', 'E-101', `${sFluid?.name || 'Hot'} / ${tFluid?.name || 'Cold'} Exchanger`, 'TEMA-R-E101', res.cost_krw, res.cost_usd, dateStr)}
+        ${buildTopSheetHeader('SHELL-AND-TUBE HEAT EXCHANGER SPECIFICATION SHEET', eqTag, eqService, `TEMA-R-${eqTag}`, res.cost_krw, res.cost_usd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr>
@@ -2973,6 +3750,8 @@ window.ChemEngSolvers = (function () {
       const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
       const qLmin = (res.Q_m3h * 1000 / 60).toFixed(1);
       const qGpm = (res.Q_m3h * 4.40287).toFixed(1);
+      const eqTag = res.equipTag || 'P-101 A/B';
+      const eqService = res.equipName || `${res.fluidName || 'Process'} Transfer Pump`;
 
       const pumpSketchSvg = `
         <svg viewBox="0 0 260 135" style="width:100%;height:125px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
@@ -2990,7 +3769,7 @@ window.ChemEngSolvers = (function () {
       `;
 
       return `
-        ${buildTopSheetHeader('CENTRIFUGAL PUMP SPECIFICATION SHEET — API 610 / ISO 13709', 'P-101 A/B', `${res.fluidName || 'Process'} Transfer Pump`, 'API610-P101', costKrw, costUsd, dateStr)}
+        ${buildTopSheetHeader('CENTRIFUGAL PUMP SPECIFICATION SHEET — API 610 / ISO 13709', eqTag, eqService, `API610-${eqTag}`, costKrw, costUsd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — GENERAL & OPERATING CONDITIONS (운전 조건 및 수력학 성능 사양)</td></tr>
@@ -3076,12 +3855,92 @@ window.ChemEngSolvers = (function () {
     }
 
     // =======================================================================
-    // 3. DISTILLATION COLUMN (ASME / FRI 25-Row Process Fractionation Sheet!)
+    // 3A. GAS ABSORPTION / SCRUBBING / DRYING PACKED TOWER SPECIFICATION SHEET
+    // =======================================================================
+    if (eqType === 'column' && res.colMode === 'absorption') {
+      const eqTag = res.equipTag || 'T-410';
+      const eqService = res.equipName || `${res.lkBase.name} / ${res.hkBase.name} Packed Absorption Tower`;
+      const costUsd = Math.round(24000 + 2800 * res.H_pack_total_m * Math.pow(res.D_col_m, 1.4));
+      const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
+      const absSketchSvg = `
+        <svg viewBox="0 0 260 155" style="width:100%;height:145px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
+          <rect x="64" y="18" width="44" height="114" rx="14" fill="none" stroke="#e2e8f0" stroke-width="2"/>
+          <rect x="68" y="34" width="36" height="34" fill="rgba(16,185,129,0.22)" stroke="#10b981" stroke-width="1.2"/>
+          <line x1="68" y1="34" x2="104" y2="68" stroke="#10b981" stroke-width="0.9"/>
+          <line x1="104" y1="34" x2="68" y2="68" stroke="#10b981" stroke-width="0.9"/>
+          <rect x="68" y="76" width="36" height="38" fill="rgba(16,185,129,0.22)" stroke="#10b981" stroke-width="1.2"/>
+          <line x1="68" y1="76" x2="104" y2="114" stroke="#10b981" stroke-width="0.9"/>
+          <line x1="104" y1="76" x2="68" y2="114" stroke="#10b981" stroke-width="0.9"/>
+          <line x1="28" y1="114" x2="64" y2="114" stroke="#f59e0b" stroke-width="2"/>
+          <line x1="108" y1="30" x2="144" y2="30" stroke="#38bdf8" stroke-width="2"/>
+          <circle cx="192" cy="72" r="34" fill="none" stroke="#10b981" stroke-width="1.8"/>
+          <circle cx="182" cy="62" r="7" fill="none" stroke="#38bdf8" stroke-width="1.2"/>
+          <circle cx="202" cy="62" r="7" fill="none" stroke="#38bdf8" stroke-width="1.2"/>
+          <circle cx="182" cy="82" r="7" fill="none" stroke="#38bdf8" stroke-width="1.2"/>
+          <circle cx="202" cy="82" r="7" fill="none" stroke="#38bdf8" stroke-width="1.2"/>
+          <text x="130" y="12" fill="#38bdf8" font-size="9" text-anchor="middle" font-weight="bold">PACKED TOWER — ID Ø${(res.D_col_m*1000).toFixed(0)}mm × H ${res.H_tangent_m.toFixed(1)}m (${res.N_beds} Beds)</text>
+          <text x="130" y="146" fill="#34d399" font-size="8.5" text-anchor="middle">N_OG=${res.N_OG.toFixed(2)} · HTU_OG=${res.HTU_OG_m.toFixed(2)}m · Z=${res.H_pack_total_m.toFixed(2)}m · Rem=${res.removal_pct.toFixed(2)}%</text>
+        </svg>
+      `;
+      return `
+        ${buildTopSheetHeader('PACKED GAS ABSORPTION / SCRUBBING / DRYING TOWER SPECIFICATION SHEET', eqTag, eqService, `GPDC-${eqTag}`, costKrw, costUsd, dateStr)}
+        <table class="tema-excel-table">
+          <tbody>
+            <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — GAS-LIQUID MASS TRANSFER & PROCESS OPERATING SUMMARY (가스 흡수/세정/건조 공정 사양)</td></tr>
+            <tr>
+              <td class="ln">2</td><td colspan="2"><b>Gas Stream / Absorbent Liquid</b></td><td colspan="3" class="val-hi">Gas: ${res.lkBase.name} / Liquid: ${res.hkBase.name}</td>
+              <td colspan="2"><b>Operating Pressure & Temps</b></td><td colspan="2" class="val-hi">${res.P_bar.toFixed(2)} barA · Gas In ${res.T_feed_C.toFixed(1)}°C / Liq In ${res.T_top_C.toFixed(1)}°C</td>
+            </tr>
+            <tr>
+              <td class="ln">3</td><td colspan="2"><b>Feed Gas / Scrubbing Liquid Flow</b></td><td class="unit-c">kg/h (kmol/h)</td>
+              <td colspan="2" class="val-hi">Gas G = ${res.gas_kgh.toFixed(0)} kg/h (${res.D.toFixed(1)} kmol/h)</td>
+              <td colspan="2"><b>Scrubbing / Drying Liquid Flow</b></td><td colspan="2" class="val-hi">Liquid L = ${res.liq_kgh.toFixed(0)} kg/h (${res.B.toFixed(1)} kmol/h · L/G = ${res.LG_mass_ratio.toFixed(2)})</td>
+            </tr>
+            <tr>
+              <td class="ln">4</td><td colspan="2"><b>Solute / Moisture Inlet → Outlet</b></td><td class="unit-c">ppm (vol)</td>
+              <td colspan="2" class="val-hi">Inlet y_in = ${res.y_in_ppm.toLocaleString()} ppm → Outlet y_out = ${res.y_out_ppm} ppm</td>
+              <td colspan="2"><b>Removal Efficiency & Absorption</b></td><td colspan="2" class="val-hi" style="color:#34d399;">${res.removal_pct.toFixed(3)} % Removed (${res.m_abs_kgh.toFixed(2)} kg/h · Q = ${res.Qc_kW.toFixed(1)} kW)</td>
+            </tr>
+            <tr class="sec-hdr"><td class="ln">5</td><td colspan="9">SECTION II — ECKERT GPDC HYDRAULICS, MASS TRANSFER (N_OG · HTU_OG) & PACKING INTERNALS</td></tr>
+            <tr>
+              <td class="ln">6</td><td colspan="2"><b>Transfer Units (N_OG) & Height (HTU_OG)</b></td><td class="unit-c">NTU / m</td>
+              <td colspan="4" class="val-hi">Colburn N_OG = ${res.N_OG.toFixed(2)} NTU · Onda HTU_OG = ${res.HTU_OG_m.toFixed(2)} m (Absorption Factor A = ${(1 / Math.max(0.01, 0.12)).toFixed(1)})</td>
+              <td colspan="2" rowspan="6" style="padding:4px;vertical-align:middle;background:#050b18;">${absSketchSvg}</td>
+            </tr>
+            <tr>
+              <td class="ln">7</td><td colspan="2"><b>Total Packed Bed Height (Z) & Beds</b></td><td class="unit-c">m / Beds</td>
+              <td colspan="4" class="val-hi" style="color:#34d399;">Total Packed Height Z = ${res.H_pack_total_m.toFixed(2)} m (${res.N_beds} Bed × ${res.H_bed_m.toFixed(2)} m/bed · ${res.N_beds > 1 ? (res.N_beds - 1) + ' Liquid Redistributor' : 'Single Bed'})</td>
+            </tr>
+            <tr>
+              <td class="ln">8</td><td colspan="2"><b>Tower Inside Diameter × T/T Height</b></td><td class="unit-c">mm × m</td>
+              <td colspan="4" class="val-hi">ID Ø${(res.D_col_m * 1000).toFixed(0)} mm (${res.D_col_m.toFixed(2)} m) × T/T Height ${res.H_tangent_m.toFixed(1)} m (Cross Area A_col = ${(Math.PI * 0.25 * res.D_col_m * res.D_col_m).toFixed(2)} m²)</td>
+            </tr>
+            <tr>
+              <td class="ln">9</td><td colspan="2"><b>Eckert GPDC Flooding & Gas Velocity</b></td><td class="unit-c">m/s / Pa^0.5</td>
+              <td colspan="4" class="val">F_LV = ${res.FLV.toFixed(3)} · u_op = ${res.u_op.toFixed(2)} m/s (${res.flood_pct.toFixed(0)}% of Flood u_f = ${res.u_flood.toFixed(2)} m/s) · F-Factor = ${res.F_factor.toFixed(2)} Pa^0.5</td>
+            </tr>
+            <tr>
+              <td class="ln">10</td><td colspan="2"><b>Packing Spec & Liquid Wetting Rate</b></td><td class="unit-c">Spec / m³/m²h</td>
+              <td colspan="4" class="val-hi">${res.packSpec.name} (Fp=${res.packSpec.Fp} m⁻¹, a_p=${res.packSpec.ap} m²/m³, ε=${res.packSpec.void_pct}%) · Wetting Rate L_w = ${res.wetting_rate_m3m2h.toFixed(1)} m³/m²h</td>
+            </tr>
+            <tr>
+              <td class="ln">11</td><td colspan="2"><b>Packing ΔP/m, Total ΔP & Shell Material</b></td><td class="unit-c">mbar / Spec</td>
+              <td colspan="4" class="val-hi">ΔP/m = ${res.dP_pack_mbar_m.toFixed(2)} mbar/m · Total Tower ΔP = ${res.dP_total_mbar.toFixed(1)} mbar · Shell: FRP / PVC-Lined CS / Rubber-Lined CS + Ti/PP Demister</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    }
+
+    // =======================================================================
+    // 3B. DISTILLATION COLUMN (ASME / FRI 25-Row Process Fractionation Sheet!)
     // =======================================================================
     if (eqType === 'column') {
       const isPacked = res.internals === 'packed';
       const costUsd = Math.round(28000 + 2200 * res.N_actual * Math.pow(res.D_col_m, 1.45) * (isPacked ? 1.15 : 1.0));
       const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
+      const eqTag = res.equipTag || 'T-101';
+      const eqService = res.equipName || `${res.lkBase.name} / ${res.hkBase.name} Fractionator (${isPacked ? 'PACKED' : 'TRAYED'})`;
       const colSketchSvg = `
         <svg viewBox="0 0 260 155" style="width:100%;height:145px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="64" y="18" width="44" height="114" rx="14" fill="none" stroke="#e2e8f0" stroke-width="2"/>
@@ -3108,7 +3967,7 @@ window.ChemEngSolvers = (function () {
         </svg>
       `;
       return `
-        ${buildTopSheetHeader('PROCESS FRACTIONATION COLUMN & INTERNALS SPECIFICATION SHEET', 'T-101', `${res.lkBase.name} / ${res.hkBase.name} Fractionator (${isPacked ? 'PACKED' : 'TRAYED'})`, 'FRI-T101', costKrw, costUsd, dateStr)}
+        ${buildTopSheetHeader('PROCESS FRACTIONATION COLUMN & INTERNALS SPECIFICATION SHEET', eqTag, eqService, `FRI-${eqTag}`, costKrw, costUsd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — PROCESS MATERIAL & HEAT BALANCE SUMMARY (탑 물질수지 및 열부하 사양)</td></tr>
@@ -3176,6 +4035,8 @@ window.ChemEngSolvers = (function () {
     // =======================================================================
     if (eqType === 'piping') {
       const s = res.selected;
+      const eqTag = res.equipTag || `L-101-${s.nps.replace('"', 'IN')}`;
+      const eqService = res.equipName || `ASME B31.3 Process Line (${res.flowMode.toUpperCase()})`;
       const pipeSketchSvg = `
         <svg viewBox="0 0 260 120" style="width:100%;height:115px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="24" y="42" width="140" height="28" fill="none" stroke="#38bdf8" stroke-width="2.2"/>
@@ -3187,7 +4048,7 @@ window.ChemEngSolvers = (function () {
         </svg>
       `;
       return `
-        ${buildTopSheetHeader('PROCESS PIPING HYDRAULIC & MECHANICAL SPECIFICATION SHEET', `L-101-${s.nps.replace('"', 'IN')}`, `ASME B31.3 Process Line (${res.flowMode.toUpperCase()})`, 'B31.3-L101', 0, 0, dateStr)}
+        ${buildTopSheetHeader('PROCESS PIPING HYDRAULIC & MECHANICAL SPECIFICATION SHEET', eqTag, eqService, `B31.3-${eqTag}`, 0, 0, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — HYDRAULIC SIZING, EROSIONAL VELOCITY & ANSI/ASME B31.3 MECHANICAL DATA</td></tr>
@@ -3223,6 +4084,8 @@ window.ChemEngSolvers = (function () {
     if (eqType === 'vessel') {
       const costUsd = Math.round(6500 + 4.8 * res.W_empty_kg);
       const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
+      const eqTag = res.equipTag || 'V-101';
+      const eqService = res.equipName || `${res.orientation.toUpperCase()} Knock-Out Separator`;
       const vesSketchSvg = `
         <svg viewBox="0 0 260 125" style="width:100%;height:120px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="40" y="28" width="180" height="62" rx="22" fill="none" stroke="#e2e8f0" stroke-width="2.2"/>
@@ -3233,7 +4096,7 @@ window.ChemEngSolvers = (function () {
         </svg>
       `;
       return `
-        ${buildTopSheetHeader('PRESSURE VESSEL / SEPARATOR SPECIFICATION SHEET — ASME SEC. VIII DIV. 1', 'V-101', `${res.orientation.toUpperCase()} Knock-Out Separator`, 'ASME-V101', costKrw, costUsd, dateStr)}
+        ${buildTopSheetHeader('PRESSURE VESSEL / SEPARATOR SPECIFICATION SHEET — ASME SEC. VIII DIV. 1', eqTag, eqService, `ASME-${eqTag}`, costKrw, costUsd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — SOUDERS-BROWN SIZING & ASME SEC. VIII DIV. 1 THICKNESS (압력용기 기계 사양)</td></tr>
@@ -3263,6 +4126,8 @@ window.ChemEngSolvers = (function () {
     // 6. PRESSURE SAFETY VALVE / PSV (API 520 / 526 Specification Sheet!)
     // =======================================================================
     if (eqType === 'psv') {
+      const eqTag = res.equipTag || 'PSV-101';
+      const eqService = res.equipName || `Overpressure Protection (${res.scenario.toUpperCase()})`;
       const psvSketchSvg = `
         <svg viewBox="0 0 260 125" style="width:100%;height:120px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="98" y="22" width="44" height="72" fill="none" stroke="#38bdf8" stroke-width="2"/>
@@ -3276,7 +4141,7 @@ window.ChemEngSolvers = (function () {
         </svg>
       `;
       return `
-        ${buildTopSheetHeader('PRESSURE RELIEF VALVE SPECIFICATION SHEET — API RP 520 / STD 526', 'PSV-101', `Overpressure Protection (${res.scenario.toUpperCase()})`, 'API526-PSV101', 0, 0, dateStr)}
+        ${buildTopSheetHeader('PRESSURE RELIEF VALVE SPECIFICATION SHEET — API RP 520 / STD 526', eqTag, eqService, `API526-${eqTag}`, 0, 0, dateStr)}
         <table class="tema-excel-table">
           <tbody>
             <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — API 520 ORIFICE SIZING & API 526 STANDARD SELECTION (안전밸브 정밀 사양)</td></tr>
