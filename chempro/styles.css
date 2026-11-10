@@ -5,31 +5,31 @@
    ========================================================================== */
 
 :root {
-  --bg-app: #FAF9F6;
+  --bg-app: #F6F7F2;
   --bg-surface: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-inset: #F4F3EF;
+  --bg-inset: #EFECE5;
   --bg-input: #FFFFFF;
 
-  --border-subtle: #E6E4DD;
+  --border-subtle: #E5E2DC;
   --border-card: #E2E0D8;
-  --border-active: #6D28D9;
-  --border-emerald: rgba(109, 40, 217, 0.35);
+  --border-active: #1A2F44;
+  --border-emerald: rgba(26, 47, 68, 0.35);
 
   --text-main: #18181B;
   --text-secondary: #3F3F46;
   --text-muted: #71717A;
 
-  --cyan: #6D28D9;
-  --cyan-strong: #5B21B6;
-  --cyan-glow: rgba(109, 40, 217, 0.12);
-  --emerald: #6D28D9;
-  --emerald-bright: #5B21B6;
-  --emerald-bg: #F3E8FF;
-  --coral: #7C3AED;
-  --coral-bright: #6D28D9;
-  --amber: #7E22CE;
-  --amber-bright: #6D28D9;
+  --cyan: #1A2F44;
+  --cyan-strong: #1A2F44;
+  --cyan-glow: rgba(26, 47, 68, 0.12);
+  --emerald: #1A2F44;
+  --emerald-bright: #1A2F44;
+  --emerald-bg: #EFECE5;
+  --coral: #202C3C;
+  --coral-bright: #1A2F44;
+  --amber: #1A2F44;
+  --amber-bright: #1A2F44;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -306,7 +306,7 @@ body.embed-mode .app-header {
    MAIN WORKSPACE & RESPONSIVE TELEMETRY LAYOUT
    ========================================================================== */
 .workspace {
-  max-width: 1440px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 12px;
 }
@@ -1164,7 +1164,7 @@ canvas.dwg-canvas {
   padding: 9px 14px calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex;
   gap: 10px;
-  max-width: 1440px;
+  max-width: 100%;
   margin: 0 auto;
 }
 
@@ -1755,22 +1755,22 @@ canvas.dwg-canvas {
 }
 
 /* ==========================================================================
-   NEWTNOTE MINIMAL WHITE + ROYAL PLUM (#6D28D9) THEME HARMONIZATION
+   NEWTNOTE MINIMAL WHITE + ROYAL PLUM (#1A2F44) THEME HARMONIZATION
    ========================================================================== */
 body {
-  background-color: #FAF9F6 !important;
+  background-color: #F6F7F2 !important;
   color: #18181B !important;
 }
 
 .app-header {
   background: rgba(255, 255, 255, 0.96) !important;
-  border-bottom: 1px solid #E6E4DD !important;
+  border-bottom: 1px solid #E5E2DC !important;
   box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
 }
 
 .brand-logo {
-  background: #6D28D9 !important;
-  border-color: #6D28D9 !important;
+  background: #1A2F44 !important;
+  border-color: #1A2F44 !important;
   color: #FFFFFF !important;
 }
 
@@ -1780,28 +1780,28 @@ body {
 
 .pro-badge,
 .db-sync-pill {
-  background: #F3E8FF !important;
-  border-color: rgba(109, 40, 217, 0.3) !important;
-  color: #5B21B6 !important;
+  background: #EFECE5 !important;
+  border-color: rgba(26, 47, 68, 0.3) !important;
+  color: #1A2F44 !important;
 }
 
 .dot-cyan,
 .dot-emerald,
 .dot-coral,
 .dot-amber {
-  background: #6D28D9 !important;
+  background: #1A2F44 !important;
   box-shadow: none !important;
 }
 
 .tab-btn {
-  background: #FAF9F6 !important;
-  border: 1px solid #E6E4DD !important;
+  background: #F6F7F2 !important;
+  border: 1px solid #E5E2DC !important;
   color: #3F3F46 !important;
 }
 
 .tab-btn.active {
-  background: #6D28D9 !important;
-  border-color: #6D28D9 !important;
+  background: #1A2F44 !important;
+  border-color: #1A2F44 !important;
   color: #FFFFFF !important;
 }
 
@@ -1814,8 +1814,8 @@ body {
 }
 
 .subview-bar {
-  background: #F4F3EF !important;
-  border-color: #E6E4DD !important;
+  background: #EFECE5 !important;
+  border-color: #E5E2DC !important;
 }
 
 .subview-btn {
@@ -1829,13 +1829,13 @@ body {
 
 .subview-btn.active {
   background: #FFFFFF !important;
-  color: #5B21B6 !important;
-  border-bottom: 2px solid #6D28D9 !important;
+  color: #1A2F44 !important;
+  border-bottom: 2px solid #1A2F44 !important;
   box-shadow: 0 1px 2px rgba(24, 24, 27, 0.05);
 }
 
 .subview-btn.active .step-num {
-  background: #6D28D9 !important;
+  background: #1A2F44 !important;
   color: #FFFFFF !important;
 }
 
@@ -1849,7 +1849,7 @@ body {
 .kpi-box,
 .metric-tile {
   background: #FFFFFF !important;
-  border-color: #E6E4DD !important;
+  border-color: #E5E2DC !important;
   color: #18181B !important;
   box-shadow: 0 1px 3px rgba(24, 24, 27, 0.04) !important;
 }
@@ -1868,9 +1868,9 @@ body {
 }
 
 .card-badge {
-  background: #F3E8FF !important;
-  border-color: rgba(109, 40, 217, 0.25) !important;
-  color: #5B21B6 !important;
+  background: #EFECE5 !important;
+  border-color: rgba(26, 47, 68, 0.25) !important;
+  color: #1A2F44 !important;
 }
 
 input[type="text"],
@@ -1879,57 +1879,57 @@ select,
 textarea,
 .fluid-search-input {
   background: #FFFFFF !important;
-  border: 1px solid #D6D3CD !important;
+  border: 1px solid #DFDCD4 !important;
   color: #18181B !important;
 }
 
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: #6D28D9 !important;
-  box-shadow: 0 0 0 2px #F3E8FF !important;
+  border-color: #1A2F44 !important;
+  box-shadow: 0 0 0 2px #EFECE5 !important;
   outline: none !important;
 }
 
 .solver-trigger-bar {
-  background: #FAF5FF !important;
-  border: 1px solid rgba(109, 40, 217, 0.3) !important;
+  background: #F6F7F2 !important;
+  border: 1px solid rgba(26, 47, 68, 0.3) !important;
 }
 
 .btn-solver-exec,
 .btn-stitch-solve,
 .btn-ai-audit,
 .btn-excel-download {
-  background: #6D28D9 !important;
-  border: 1px solid #6D28D9 !important;
+  background: #1A2F44 !important;
+  border: 1px solid #1A2F44 !important;
   color: #FFFFFF !important;
-  box-shadow: 0 2px 6px rgba(109, 40, 217, 0.22) !important;
+  box-shadow: 0 2px 6px rgba(26, 47, 68, 0.22) !important;
 }
 
 .btn-solver-exec:hover,
 .btn-stitch-solve:hover,
 .btn-ai-audit:hover,
 .btn-excel-download:hover {
-  background: #5B21B6 !important;
+  background: #1A2F44 !important;
 }
 
 .stitch-bottom-bar {
   background: rgba(255, 255, 255, 0.96) !important;
-  border-top: 1px solid #E6E4DD !important;
+  border-top: 1px solid #E5E2DC !important;
   box-shadow: 0 -2px 10px rgba(24, 24, 27, 0.05) !important;
 }
 
 .btn-stitch-export {
-  background: #F3E8FF !important;
-  border: 1px solid #6D28D9 !important;
-  color: #5B21B6 !important;
+  background: #EFECE5 !important;
+  border: 1px solid #1A2F44 !important;
+  color: #1A2F44 !important;
 }
 
 .spec-table th,
 table th {
-  background: #F4F3EF !important;
-  color: #5B21B6 !important;
-  border-color: #E6E4DD !important;
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+  border-color: #E5E2DC !important;
 }
 
 .spec-table td,
@@ -1941,14 +1941,14 @@ table td {
 
 .solver-modal-box {
   background: #FFFFFF !important;
-  border: 1px solid #D6D3CD !important;
-  border-top: 3px solid #6D28D9 !important;
+  border: 1px solid #DFDCD4 !important;
+  border-top: 3px solid #1A2F44 !important;
   color: #18181B !important;
 }
 
 .sm-metric {
-  background: #FAF9F6 !important;
-  border-color: #E6E4DD !important;
+  background: #F6F7F2 !important;
+  border-color: #E5E2DC !important;
 }
 
 .sm-m-val {
@@ -1956,8 +1956,16 @@ table td {
 }
 
 .sm-console {
-  background: #FAF9F6 !important;
-  border-color: #E6E4DD !important;
+  background: #F6F7F2 !important;
+  border-color: #E5E2DC !important;
   color: #27272A !important;
 }
 
+
+.workspace,
+.module-panel {
+  max-width: 100% !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
