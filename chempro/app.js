@@ -245,7 +245,7 @@ window.App = (function () {
       });
 
       if (!html) {
-        html = `<div style="padding:20px;text-align:center;color:#94a3b8;font-size:11.5px;">검색 조건에 일치하는 화학물질이 없습니다.</div>`;
+        html = `<div style="padding:20px;text-align:center;color:#3F3F46;font-size:11.5px;">검색 조건에 일치하는 화학물질이 없습니다.</div>`;
       }
       listBody.innerHTML = html;
       return;
@@ -1110,10 +1110,10 @@ window.App = (function () {
         const uFactor = 1.04 - 0.08 * z;
         const U_loc = hxRes.U_calc * uFactor;
         sHtml += `<tr>
-          <td style="font-weight:700;color:#cbd5e1;">${segLabels[idx]}</td>
+          <td style="font-weight:700;color:#1A2F44;">${segLabels[idx]}</td>
           <td style="color:#fb7185;font-weight:700;">${Th_z.toFixed(1)}</td>
           <td style="color:#38bdf8;font-weight:700;">${Tc_z.toFixed(1)}</td>
-          <td style="color:#f8fafc;">${dT_z.toFixed(1)}</td>
+          <td style="color:#1A2F44;font-weight:700;">${dT_z.toFixed(1)}</td>
           <td style="color:#34d399;font-weight:700;">${U_loc.toFixed(1)}</td>
         </tr>`;
       });
@@ -1737,7 +1737,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         <span style="font-weight:800;color:#10b981;">초기 진단: ${reviewData.verdict} -> 재설계 후: OPTIMAL 수렴 완료</span>
         <span class="card-badge">${reviewData.model_used || 'gemini-2.5-flash'}</span>
       </div>
-      <div style="font-weight:700;color:#f8fafc;margin-bottom:6px;">"${reviewData.headline || ''}"</div>
+      <div style="font-weight:700;color:#1A2F44;font-weight:700;margin-bottom:6px;">"${reviewData.headline || ''}"</div>
       <div class="ai-section">
         <h4>[1] 설계 자동 반영 & 재계산 결과 (진단 전 Before vs. AI 수정 후 After)</h4>
         <div style="margin-bottom:6px;color:#a7f3d0;">${reviewData.optimization_rationale || ''}</div>

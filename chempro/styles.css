@@ -1969,3 +1969,64 @@ table td {
   margin-left: 0 !important;
   margin-right: 0 !important;
 }
+
+
+/* High-Contrast Text Readability Fixes on NewtNote Light Theme */
+.dof-status-val {
+  color: #1A2F44 !important;
+  font-weight: 800 !important;
+}
+.dof-err-badge {
+  background: #1A2F44 !important;
+  color: #FFFFFF !important;
+  border-color: #1A2F44 !important;
+}
+.eng-table tr.selected-row,
+.eng-table tr.selected-row td {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+  font-weight: 800 !important;
+}
+.tema-excel-table td.ln {
+  background: #EFECE5 !important;
+  color: #3F3F46 !important;
+}
+.tema-excel-table tr.sec-hdr td {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+  font-weight: 800 !important;
+}
+.tema-excel-table tr.sub-hdr td {
+  background: #F6F7F2 !important;
+  color: #2C353E !important;
+  font-weight: 700 !important;
+}
+.cs-modal {
+  background: #FFFFFF !important;
+  border: 1px solid #DFDCD4 !important;
+  color: #1A2F44 !important;
+}
+.cs-close-btn,
+.cs-cat-btn {
+  background: #F6F7F2 !important;
+  border: 1px solid #DFDCD4 !important;
+  color: #2C353E !important;
+}
+.cs-cat-btn.active {
+  background: #1A2F44 !important;
+  border-color: #1A2F44 !important;
+  color: #FFFFFF !important;
+}
+.cs-group-header {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+}
+.cs-item {
+  background: #FFFFFF !important;
+  color: #1A2F44 !important;
+  border-bottom: 1px solid #EFECE5 !important;
+}
+.cs-item:hover,
+.cs-item.selected {
+  background: #EFECE5 !important;
+}
