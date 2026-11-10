@@ -5,31 +5,31 @@
    ========================================================================== */
 
 :root {
-  --bg-app: #070b14;
-  --bg-surface: #0c1220;
-  --bg-card: #101829;
-  --bg-inset: #090e1a;
-  --bg-input: #0b111e;
+  --bg-app: #FAF9F6;
+  --bg-surface: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-inset: #F4F3EF;
+  --bg-input: #FFFFFF;
 
-  --border-subtle: #1e293b;
-  --border-card: #1f2d42;
-  --border-active: #0ea5e9;
-  --border-emerald: rgba(16, 185, 129, 0.45);
+  --border-subtle: #E6E4DD;
+  --border-card: #E2E0D8;
+  --border-active: #6D28D9;
+  --border-emerald: rgba(109, 40, 217, 0.35);
 
-  --text-main: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-main: #18181B;
+  --text-secondary: #3F3F46;
+  --text-muted: #71717A;
 
-  --cyan: #38bdf8;
-  --cyan-strong: #0ea5e9;
-  --cyan-glow: rgba(14, 165, 233, 0.16);
-  --emerald: #10b981;
-  --emerald-bright: #34d399;
-  --emerald-bg: rgba(16, 185, 129, 0.10);
-  --coral: #f43f5e;
-  --coral-bright: #fb7185;
-  --amber: #f59e0b;
-  --amber-bright: #fbbf24;
+  --cyan: #6D28D9;
+  --cyan-strong: #5B21B6;
+  --cyan-glow: rgba(109, 40, 217, 0.12);
+  --emerald: #6D28D9;
+  --emerald-bright: #5B21B6;
+  --emerald-bg: #F3E8FF;
+  --coral: #7C3AED;
+  --coral-bright: #6D28D9;
+  --amber: #7E22CE;
+  --amber-bright: #6D28D9;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -1753,3 +1753,211 @@ canvas.dwg-canvas {
     padding-bottom: 0 !important;
   }
 }
+
+/* ==========================================================================
+   NEWTNOTE MINIMAL WHITE + ROYAL PLUM (#6D28D9) THEME HARMONIZATION
+   ========================================================================== */
+body {
+  background-color: #FAF9F6 !important;
+  color: #18181B !important;
+}
+
+.app-header {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-bottom: 1px solid #E6E4DD !important;
+  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.04);
+}
+
+.brand-logo {
+  background: #6D28D9 !important;
+  border-color: #6D28D9 !important;
+  color: #FFFFFF !important;
+}
+
+.brand-title {
+  color: #18181B !important;
+}
+
+.pro-badge,
+.db-sync-pill {
+  background: #F3E8FF !important;
+  border-color: rgba(109, 40, 217, 0.3) !important;
+  color: #5B21B6 !important;
+}
+
+.dot-cyan,
+.dot-emerald,
+.dot-coral,
+.dot-amber {
+  background: #6D28D9 !important;
+  box-shadow: none !important;
+}
+
+.tab-btn {
+  background: #FAF9F6 !important;
+  border: 1px solid #E6E4DD !important;
+  color: #3F3F46 !important;
+}
+
+.tab-btn.active {
+  background: #6D28D9 !important;
+  border-color: #6D28D9 !important;
+  color: #FFFFFF !important;
+}
+
+.tab-btn.active .dot {
+  background: #FFFFFF !important;
+}
+
+.tab-btn.active .tab-code {
+  color: #E9D5FF !important;
+}
+
+.subview-bar {
+  background: #F4F3EF !important;
+  border-color: #E6E4DD !important;
+}
+
+.subview-btn {
+  color: #52525B !important;
+}
+
+.subview-btn .step-num {
+  background: #E4E4E7 !important;
+  color: #3F3F46 !important;
+}
+
+.subview-btn.active {
+  background: #FFFFFF !important;
+  color: #5B21B6 !important;
+  border-bottom: 2px solid #6D28D9 !important;
+  box-shadow: 0 1px 2px rgba(24, 24, 27, 0.05);
+}
+
+.subview-btn.active .step-num {
+  background: #6D28D9 !important;
+  color: #FFFFFF !important;
+}
+
+.eng-card,
+.telemetry-card,
+.cad-card,
+.spec-sheet-card,
+.ai-review-card,
+.hb-convergence-box,
+.fluid-selector-box,
+.kpi-box,
+.metric-tile {
+  background: #FFFFFF !important;
+  border-color: #E6E4DD !important;
+  color: #18181B !important;
+  box-shadow: 0 1px 3px rgba(24, 24, 27, 0.04) !important;
+}
+
+.card-header {
+  border-bottom-color: #ECEAE4 !important;
+}
+
+.card-title,
+.spec-title,
+.cad-title,
+.kpi-val,
+.hb-val,
+.solver-status-title {
+  color: #18181B !important;
+}
+
+.card-badge {
+  background: #F3E8FF !important;
+  border-color: rgba(109, 40, 217, 0.25) !important;
+  color: #5B21B6 !important;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea,
+.fluid-search-input {
+  background: #FFFFFF !important;
+  border: 1px solid #D6D3CD !important;
+  color: #18181B !important;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: #6D28D9 !important;
+  box-shadow: 0 0 0 2px #F3E8FF !important;
+  outline: none !important;
+}
+
+.solver-trigger-bar {
+  background: #FAF5FF !important;
+  border: 1px solid rgba(109, 40, 217, 0.3) !important;
+}
+
+.btn-solver-exec,
+.btn-stitch-solve,
+.btn-ai-audit,
+.btn-excel-download {
+  background: #6D28D9 !important;
+  border: 1px solid #6D28D9 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 2px 6px rgba(109, 40, 217, 0.22) !important;
+}
+
+.btn-solver-exec:hover,
+.btn-stitch-solve:hover,
+.btn-ai-audit:hover,
+.btn-excel-download:hover {
+  background: #5B21B6 !important;
+}
+
+.stitch-bottom-bar {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border-top: 1px solid #E6E4DD !important;
+  box-shadow: 0 -2px 10px rgba(24, 24, 27, 0.05) !important;
+}
+
+.btn-stitch-export {
+  background: #F3E8FF !important;
+  border: 1px solid #6D28D9 !important;
+  color: #5B21B6 !important;
+}
+
+.spec-table th,
+table th {
+  background: #F4F3EF !important;
+  color: #5B21B6 !important;
+  border-color: #E6E4DD !important;
+}
+
+.spec-table td,
+table td {
+  background: #FFFFFF !important;
+  color: #18181B !important;
+  border-color: #ECEAE4 !important;
+}
+
+.solver-modal-box {
+  background: #FFFFFF !important;
+  border: 1px solid #D6D3CD !important;
+  border-top: 3px solid #6D28D9 !important;
+  color: #18181B !important;
+}
+
+.sm-metric {
+  background: #FAF9F6 !important;
+  border-color: #E6E4DD !important;
+}
+
+.sm-m-val {
+  color: #18181B !important;
+}
+
+.sm-console {
+  background: #FAF9F6 !important;
+  border-color: #E6E4DD !important;
+  color: #27272A !important;
+}
+

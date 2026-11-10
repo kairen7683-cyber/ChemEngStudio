@@ -1,6 +1,6 @@
 1:"$Sreact.fragment"
-3:I[97367,["/ChemEngStudio/_next/static/chunks/10tpxri567pvb.js","/ChemEngStudio/_next/static/chunks/0d3shmwh5_nmn.js","/ChemEngStudio/_next/static/chunks/0m00yf9tkv1qa.js"],"OutletBoundary"]
+3:I[97367,["/ChemEngStudio/_next/static/chunks/15_f5qipet0b8.js","/ChemEngStudio/_next/static/chunks/0d3shmwh5_nmn.js","/ChemEngStudio/_next/static/chunks/0m00yf9tkv1qa.js"],"OutletBoundary"]
 4:"$Sreact.suspense"
-0:{"rsc":["$","$1","c",{"children":["$L2",null,["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"Paoq7atLO3_CKbj_y6yrv"}
+0:{"rsc":["$","$1","c",{"children":["$L2",null,["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"S58L0QOdKdkWQQfDApQ5_"}
 5:null
 2:E{"digest":"NEXT_REDIRECT;replace;/material-balance;307;"}

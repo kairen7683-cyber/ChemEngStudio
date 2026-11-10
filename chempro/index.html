@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#070b14" />
+  <meta name="theme-color" content="#FFFFFF" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="ChemPro Suite" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-512.png" />
   <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
-  <link rel="stylesheet" href="styles.css?v=20261109d" />
+  <link rel="stylesheet" href="styles.css?v=20261110c" />
 </head>
 <body class="mode-rigorous">
 
@@ -32,10 +32,10 @@
     </div>
 
     <!-- Chlor-Alkali Plant PFD Equipment Sync Bar -->
-    <div id="caPlantSyncBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 14px; background:linear-gradient(90deg, rgba(249,115,22,0.16), rgba(56,189,248,0.12)); border-top:1px solid rgba(249,115,22,0.3); border-bottom:1px solid rgba(56,189,248,0.25);">
+    <div id="caPlantSyncBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 14px; background:#FAF5FF; border-top:1px solid rgba(109,40,217,0.22); border-bottom:1px solid rgba(109,40,217,0.22);">
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <span style="font-size:11px; font-weight:800; color:#fb923c; letter-spacing:0.3px;">⚡ 전해공장 PFD 장치 연동:</span>
-        <select id="ca_equip_tag" onchange="App.loadChlorAlkaliPreset(this.value)" style="background:#0f172a; color:#f8fafc; border:1px solid #334155; border-radius:6px; padding:5px 10px; font-size:11px; font-family:monospace; min-width:320px;">
+        <span style="font-size:11px; font-weight:800; color:#5B21B6; letter-spacing:0.3px;">전해공장 PFD 장치 연동:</span>
+        <select id="ca_equip_tag" onchange="App.loadChlorAlkaliPreset(this.value)" style="background:#FFFFFF; color:#18181B; border:1px solid #D6D3CD; border-radius:6px; padding:5px 10px; font-size:11px; font-family:monospace; min-width:320px;">
           <optgroup label="열교환기 (Heat Exchangers — HEX, 판형 PHE & 다관원통형 TEMA)">
             <option value="E-332" selected>E-332 — 1효 가성소다 열회수 예열기 (PHE 판형, L11→L12 / L8→L10, 54 m²)</option>
             <option value="E-333">E-333 — 1효 응축수 열회수 예열기 (PHE 판형, C1→C2 / L9→L10, 14 m²)</option>
@@ -83,14 +83,14 @@
             <option value="D-680">D-680 — 고압 수소 버퍼 드럼 (H2 Header Drum)</option>
           </optgroup>
         </select>
-        <button type="button" onclick="App.loadChlorAlkaliPreset(document.getElementById('ca_equip_tag').value)" style="background:rgba(56,189,248,0.18); color:#38bdf8; border:1px solid rgba(56,189,248,0.45); border-radius:6px; padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;">
-          🔄 공정조건 자동입력
+        <button type="button" onclick="App.loadChlorAlkaliPreset(document.getElementById('ca_equip_tag').value)" style="background:#F3E8FF; color:#5B21B6; border:1px solid #6D28D9; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer;">
+          공정조건 자동입력
         </button>
       </div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <span id="ca_sync_status" style="font-size:11px; color:#34d399; font-weight:700;"></span>
-        <button type="button" onclick="App.saveToChlorAlkaliEquipList()" style="background:linear-gradient(135deg,#f97316,#ea580c); color:#ffffff; border:none; border-radius:6px; padding:6px 14px; font-size:11px; font-weight:800; cursor:pointer; box-shadow:0 0 12px rgba(249,115,22,0.4);">
-          💾 설계 실행 및 장치 목록(Equipment List) 업데이트
+        <span id="ca_sync_status" style="font-size:11px; color:#6D28D9; font-weight:700;"></span>
+        <button type="button" onclick="App.saveToChlorAlkaliEquipList()" style="background:#6D28D9; color:#ffffff; border:none; border-radius:6px; padding:6px 14px; font-size:11px; font-weight:800; cursor:pointer;">
+          설계 실행 및 장치 목록(Equipment List) 업데이트
         </button>
       </div>
     </div>
