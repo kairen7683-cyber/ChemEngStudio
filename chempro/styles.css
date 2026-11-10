@@ -2030,3 +2030,219 @@ table td {
 .cs-item.selected {
   background: #EFECE5 !important;
 }
+
+
+/* ==========================================================================
+   MOBILE & TABLET RESPONSIVE + NEWTNOTE HIGH-CONTRAST FIXES (v20261110h)
+   ========================================================================== */
+body.embed-mode .header-top {
+  display: none !important;
+}
+
+body.standalone-mode #caPlantSyncBar {
+  display: none !important;
+}
+
+/* Fix custom fluid selector trigger & sheet text contrast (was white-on-white!) */
+.custom-select-trigger {
+  background: #EFECE5 !important;
+  border: 1px solid #DFDCD4 !important;
+  color: #1A2F44 !important;
+}
+
+.custom-select-trigger:hover,
+.custom-select-trigger:active {
+  background: #FFFFFF !important;
+  border-color: #1A2F44 !important;
+}
+
+.cs-trig-name {
+  color: #1A2F44 !important;
+  font-weight: 800 !important;
+}
+
+.cs-trig-badge {
+  background: #1A2F44 !important;
+  border-color: #1A2F44 !important;
+  color: #FFFFFF !important;
+}
+
+.cs-trig-arrow {
+  color: #1A2F44 !important;
+}
+
+.custom-select-sheet {
+  background: #FFFFFF !important;
+  border: 1px solid #DFDCD4 !important;
+  border-top: 3px solid #1A2F44 !important;
+  color: #1A2F44 !important;
+}
+
+.cs-sheet-header {
+  background: #F6F7F2 !important;
+  border-bottom: 1px solid #E5E2DC !important;
+}
+
+.cs-sheet-title {
+  color: #1A2F44 !important;
+}
+
+.cs-search-wrap,
+.cs-cat-tabs {
+  background: #F6F7F2 !important;
+  border-bottom: 1px solid #E5E2DC !important;
+}
+
+.cs-search-input {
+  background: #FFFFFF !important;
+  border: 1px solid #DFDCD4 !important;
+  color: #1A2F44 !important;
+}
+
+.cs-item-row {
+  background: #FFFFFF !important;
+  border: 1px solid #E5E2DC !important;
+  color: #1A2F44 !important;
+}
+
+.cs-item-row:hover,
+.cs-item-row:active,
+.cs-item-row.selected {
+  background: #EFECE5 !important;
+  border-color: #1A2F44 !important;
+}
+
+.cs-item-title {
+  color: #1A2F44 !important;
+}
+
+.cs-item-formula {
+  background: #EFECE5 !important;
+  border-color: #DFDCD4 !important;
+  color: #1A2F44 !important;
+}
+
+.cs-prop-tag {
+  background: #F6F7F2 !important;
+  border: 1px solid #DFDCD4 !important;
+  color: #2C353E !important;
+}
+
+/* Fix property telemetry cells & DP gauge bars on NewtNote light theme */
+.t-cell {
+  background: #FFFFFF !important;
+  border: 1px solid #DFDCD4 !important;
+}
+
+.t-cell-lbl {
+  color: #5A6570 !important;
+  font-weight: 600 !important;
+}
+
+.t-cell-val {
+  color: #1A2F44 !important;
+  font-weight: 800 !important;
+}
+
+.dp-gauge-bar {
+  background: #DFDCD4 !important;
+}
+
+/* Mobile Smartphone Optimization (<= 768px) */
+@media (max-width: 768px) {
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .app-header {
+    padding: 5px 8px 4px !important;
+  }
+
+  #caPlantSyncBar {
+    padding: 5px 8px !important;
+    gap: 5px !important;
+  }
+
+  #caPlantSyncBar select {
+    min-width: 0 !important;
+    width: 100% !important;
+    font-size: 10.5px !important;
+  }
+
+  #caPlantSyncBar button {
+    font-size: 10px !important;
+    padding: 4px 8px !important;
+  }
+
+  .equip-tabs {
+    gap: 4px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .tab-btn {
+    padding: 5px 9px !important;
+    font-size: 11px !important;
+    border-radius: 14px !important;
+  }
+
+  /* Hide 4th button ("PC 통합뷰") on mobile so 3 steps fit cleanly without cutoff */
+  .subview-bar {
+    grid-template-columns: repeat(3, 1fr) !important;
+    padding: 2px !important;
+    gap: 2px !important;
+  }
+
+  .subview-btn[data-subview="all"] {
+    display: none !important;
+  }
+
+  .subview-btn {
+    font-size: 10.5px !important;
+    padding: 5px 2px !important;
+    gap: 3px !important;
+  }
+
+  .workspace {
+    padding: 8px !important;
+  }
+
+  .eng-card {
+    padding: 10px !important;
+    margin-bottom: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  .card-header {
+    flex-wrap: wrap !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 10px !important;
+  }
+
+  .card-title {
+    font-size: 12.5px !important;
+  }
+
+  /* Stack Hot/Cold fluid selectors vertically on mobile so fluid names are never squished */
+  .fluid-selector-box .form-grid.cols-3,
+  .form-grid.cols-3 {
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  .telemetry-prop-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .dof-pills {
+    grid-template-columns: 1fr !important;
+  }
+
+  .kpi-grid,
+  .dp-gauge-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .stitch-bottom-bar {
+    padding: 6px 10px !important;
+  }
+}
