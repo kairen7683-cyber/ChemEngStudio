@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-512.png" />
   <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
-  <link rel="stylesheet" href="styles.css?v=20261111a" />
+  <link rel="stylesheet" href="styles.css?v=20261111b" />
 </head>
 <body class="mode-rigorous">
   <script>
@@ -103,6 +103,18 @@
           설계 실행 및 장치 목록(Equipment List) 업데이트
         </button>
       </div>
+    </div>
+
+    <!-- Flowsheet Simulator Live Fluid Condition Handoff Banner -->
+    <div id="simHandoffBanner" style="display:none; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:0 0 8px 0; padding:7px 14px; background:linear-gradient(90deg,#ECFDF5 0%,#EFF6FF 100%); border:1.5px solid #34D399; border-radius:8px;">
+      <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <span id="simHandoffSource" style="background:#065F46; color:#FFFFFF; font-size:10px; font-weight:800; padding:2px 7px; border-radius:4px;">시뮬레이터 실시간 연동</span>
+        <span id="simHandoffEquip" style="font-size:12px; font-weight:900; color:#1A2F44;"></span>
+        <span id="simHandoffFluid" style="font-size:11px; font-weight:700; color:#0369A1;"></span>
+      </div>
+      <button type="button" onclick="try{window.parent.history.back();}catch(_){}" style="background:#1A2F44; color:#FFFFFF; border:none; border-radius:5px; padding:4px 10px; font-size:11px; font-weight:800; cursor:pointer;">
+        ← 이전 시뮬레이터 화면으로 복귀
+      </button>
     </div>
 
     <!-- 6 Equipment Module Tabs (Zero Emojis) -->
@@ -1487,11 +1499,11 @@
     </div>
   </div>
 
-  <script src="exceljs.min.js?v=20261111a"></script>
-  <script src="chem_db.js?v=20261111a"></script>
-  <script src="eng_solvers.js?v=20261111a"></script>
-  <script src="excel_exporter.js?v=20261111a"></script>
-  <script src="app.js?v=20261111a"></script>
+  <script src="exceljs.min.js?v=20261111b"></script>
+  <script src="chem_db.js?v=20261111b"></script>
+  <script src="eng_solvers.js?v=20261111b"></script>
+  <script src="excel_exporter.js?v=20261111b"></script>
+  <script src="app.js?v=20261111b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {

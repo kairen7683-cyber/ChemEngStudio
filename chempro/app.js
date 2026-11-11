@@ -12,7 +12,8 @@ window.App = (function () {
     hxDof: 'mc_auto', // 'mc_auto' | 'tco_auto' | 'tho_auto' | 'mh_auto'
     pipeSelectedIdx: undefined,
     lastResults: {},
-    pendingOptInputs: {}
+    pendingOptInputs: {},
+    handoffEquip: null
   };
 
   function numVal(id, fallback) {
@@ -819,6 +820,9 @@ window.App = (function () {
   // MAIN SOLVER EXECUTION & UI UPDATE
   // =========================================================================
   function getSelectedEquipInfo(tab) {
+    if (state.handoffEquip && state.handoffEquip.tab === tab) {
+      return { equipTag: state.handoffEquip.equipTag, equipName: state.handoffEquip.equipName };
+    }
     const rawTag = document.getElementById('ca_equip_tag')?.value || '';
     const tag = resolveChlorAlkaliTag(rawTag);
     const p = CA_EQUIP_PRESETS[tag];
@@ -2059,8 +2063,20 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       }
     } catch (_) {}
 
-    if (!isStandaloneUnitMode) {
-      loadChlorAlkaliPreset(initialCaTag);
+    let isHandoffMode = false;
+    let requestedSubTab = '';
+    try {
+      const params2 = new URLSearchParams(window.location.search);
+      isHandoffMode = params2.get('handoff') === '1';
+      requestedSubTab = params2.get('sub') || params2.get('tab') || '';
+    } catch (_) {}
+
+    if (isHandoffMode) {
+      if (!applySimulatorHandoff(null)) {
+        recalc();
+      }
+    } else if (!isStandaloneUnitMode) {
+      loadChlorAlkaliPreset(initialCaTag, requestedSubTab);
     } else {
       recalc();
     }
@@ -2071,7 +2087,10 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (d.type === 'CHEMPRO_SET_TAB' && d.tab) setTab(d.tab);
       if (d.type === 'CHEMPRO_SET_VIEW' && d.view) setSubView(d.view);
       if (d.type === 'CHEMPRO_SELECT_EQUIP_TAG' && d.tag) {
-        loadChlorAlkaliPreset(d.tag);
+        loadChlorAlkaliPreset(d.tag, d.subTab || '');
+      }
+      if (d.type === 'CHEMPRO_APPLY_SIM_HANDOFF') {
+        applySimulatorHandoff(d.payload || null);
       }
       if (d.type === 'CHEMPRO_EXPORT_EXCEL') downloadExcelDatasheet();
       if (d.type === 'CHEMPRO_EXPORT_DWG') downloadDWGImage();
@@ -2087,7 +2106,11 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     if (badge) {
       badge.innerHTML = `<span class="dot"></span> ${syncInfo.count}종 물성 DB 동기화`;
     }
-    syncAllCustomSelects();
+    if (isHandoffMode) {
+      applySimulatorHandoff(null);
+    } else {
+      syncAllCustomSelects();
+    }
 
     window.addEventListener('resize', () => recalc());
   }
@@ -2166,10 +2189,20 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     return t;
   }
 
-  function loadChlorAlkaliPreset(rawTag) {
+  function loadChlorAlkaliPreset(rawTag, fallbackSubTab) {
+    state.handoffEquip = null;
+    const banner = document.getElementById('simHandoffBanner');
+    if (banner) banner.style.display = 'none';
     const tag = resolveChlorAlkaliTag(rawTag);
     const p = CA_EQUIP_PRESETS[tag];
-    if (!p) return;
+    if (!p) {
+      if (fallbackSubTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(fallbackSubTab)) {
+        setTab(fallbackSubTab);
+        state.handoffEquip = { tab: fallbackSubTab, equipTag: tag, equipName: '' };
+        recalc();
+      }
+      return;
+    }
     const sel = document.getElementById('ca_equip_tag');
     if (sel && sel.value !== tag) {
       sel.value = tag;
@@ -2234,12 +2267,12 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (pkEl) pkEl.value = p.pack;
       setVal('col_P', p.P, 2);
       setVal('col_F', p.F || 300, 0);
-      if (p.Wg !== undefined) setVal('col_Wg', p.Wg, 0);
-      if (p.Wl !== undefined) setVal('col_Wl', p.Wl, 0);
-      if (p.Tg !== undefined) setVal('col_Tg', p.Tg, 1);
-      if (p.Tl !== undefined) setVal('col_Tl', p.Tl, 1);
-      if (p.yin !== undefined) setVal('col_yin', p.yin, 0);
-      if (p.yout !== undefined) setVal('col_yout', p.yout, 1);
+      if (p.Wg !== undefined) setVal('col_gas_kgh', p.Wg, 0);
+      if (p.Wl !== undefined) setVal('col_liq_kgh', p.Wl, 0);
+      if (p.Tg !== undefined) setVal('col_T_gas_in', p.Tg, 1);
+      if (p.Tl !== undefined) setVal('col_T_liq_in', p.Tl, 1);
+      if (p.yin !== undefined) setVal('col_y_in_ppm', p.yin, 0);
+      if (p.yout !== undefined) setVal('col_y_out_ppm', p.yout, 1);
       if (p.m !== undefined) setVal('col_m', p.m, 2);
       onColumnModeChange();
       onColumnInternalsChange();
@@ -2433,7 +2466,140 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
 
   document.addEventListener('DOMContentLoaded', init);
 
+
+  function applySimulatorHandoff(rawPayload) {
+    let p = rawPayload;
+    if (!p) {
+      try {
+        const raw = localStorage.getItem('chempro_sim_handoff_v1');
+        if (raw) p = JSON.parse(raw);
+      } catch (_) {}
+    }
+    if (!p || !p.tab) return false;
+
+    const tab = p.tab;
+    if (!['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(tab)) return false;
+
+    state.handoffEquip = {
+      tab,
+      equipTag: p.equipTag || 'SIM-EQ',
+      equipName: p.equipName || '',
+      sourceLabel: p.sourceLabel || '시뮬레이터 연동'
+    };
+
+    setTab(tab);
+
+    // Show live handoff banner
+    const banner = document.getElementById('simHandoffBanner');
+    if (banner) {
+      banner.style.display = 'flex';
+      const srcEl = document.getElementById('simHandoffSource');
+      const eqEl = document.getElementById('simHandoffEquip');
+      const flEl = document.getElementById('simHandoffFluid');
+      if (srcEl) srcEl.textContent = p.sourceLabel || '시뮬레이터 실시간 연동';
+      if (eqEl) eqEl.textContent = `[${p.equipTag || 'UNIT'}] ${p.equipName || ''}`;
+      if (flEl) flEl.textContent = p.detectedFluidSummary ? `· 유입조건: ${p.detectedFluidSummary}` : '';
+    }
+
+    const setSelectSafe = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el || val === undefined || val === null) return;
+      if ([...el.options].some(o => o.value === String(val))) {
+        el.value = String(val);
+      }
+    };
+
+    if (tab === 'hx' && p.hx) {
+      const h = p.hx;
+      setSelectSafe('hx_type', h.hx_type || 'shell_tube');
+      setSelectSafe('hx_hot_fluid', h.hotFluidId);
+      setSelectSafe('hx_cold_fluid', h.coldFluidId);
+      setSelectSafe('hx_allocation', h.allocation || 'hot_tube');
+      if (h.dofTarget) setHXDof(h.dofTarget);
+      setVal('hx_mh', h.mh_kgh, 0);
+      setVal('hx_Thi', h.Th_in, 1);
+      setVal('hx_Tho', h.Th_out, 1);
+      setVal('hx_mc', h.mc_kgh, 0);
+      setVal('hx_Tci', h.Tc_in, 1);
+      setVal('hx_Tco', h.Tc_out, 1);
+      setSelectSafe('hx_hot_mode', h.hot_mode || 'sensible');
+      setSelectSafe('hx_cold_mode', h.cold_mode || 'sensible');
+      syncHXPhaseDefaultsFromFluid();
+      if (h.Th_sat !== undefined) setVal('hx_Th_sat', h.Th_sat, 1);
+      if (h.hot_xfrac !== undefined) setVal('hx_hot_xfrac', h.hot_xfrac, 2);
+      if (h.hot_hv !== undefined) setVal('hx_hot_hv', h.hot_hv, 0);
+      if (h.Tc_sat !== undefined) setVal('hx_Tc_sat', h.Tc_sat, 1);
+      if (h.cold_xfrac !== undefined) setVal('hx_cold_xfrac', h.cold_xfrac, 2);
+      if (h.cold_hv !== undefined) setVal('hx_cold_hv', h.cold_hv, 0);
+      if (h.U_assumed !== undefined) setVal('hx_U_assumed', h.U_assumed, 0);
+      onHXTypeChange();
+      onHXPhaseModeChange();
+      onHXFluidOrTempChange('temp');
+    } else if (tab === 'pump' && p.pump) {
+      const pm = p.pump;
+      setSelectSafe('pump_fluid', pm.fluidId);
+      setVal('pump_T', pm.T_C, 1);
+      setVal('pump_Q', pm.Q_m3h, 1);
+      setVal('pump_P1', pm.P1_barG, 2);
+      setVal('pump_P2', pm.P2_barG, 2);
+      if (pm.eff_pct !== undefined) setVal('pump_eff', pm.eff_pct, 0);
+      setSelectSafe('pump_dsuc', pm.dsuc_mm);
+      setSelectSafe('pump_ddis', pm.ddis_mm);
+      onPumpFluidChange();
+      if (pm.rho_kgm3 !== undefined && pm.rho_kgm3 > 100) {
+        setVal('pump_rho', pm.rho_kgm3, 1);
+      }
+    } else if (tab === 'column' && p.column) {
+      const c = p.column;
+      setSelectSafe('col_mode', c.col_mode || 'absorption');
+      setSelectSafe('col_abs_service', c.abs_service || 'scrubbing');
+      setSelectSafe('col_internals', c.internals || 'packed');
+      setSelectSafe('col_pack_key', c.pack_key || 'pall_plastic_50');
+      setSelectSafe('col_lk', c.lkFluidId);
+      setSelectSafe('col_hk', c.hkFluidId);
+      setVal('col_P', c.P_col_barA, 2);
+      setVal('col_gas_kgh', c.gas_kgh, 0);
+      setVal('col_liq_kgh', c.liq_kgh, 0);
+      setVal('col_T_gas_in', c.T_gas_in, 1);
+      setVal('col_T_liq_in', c.T_liq_in, 1);
+      setVal('col_y_in_ppm', c.y_in_ppm, 0);
+      setVal('col_y_out_ppm', c.y_out_ppm, 1);
+      onColumnModeChange();
+      onColumnInternalsChange();
+      onColumnFluidChange();
+    } else if (tab === 'vessel' && p.vessel) {
+      const v = p.vessel;
+      setSelectSafe('ves_orient', v.orientation || 'vertical');
+      setSelectSafe('ves_mat', v.mat_key || 'SA-240-316L');
+      setSelectSafe('ves_gas_fluid', v.gasFluidId);
+      setSelectSafe('ves_liq_fluid', v.liqFluidId);
+      onVesselFluidChange();
+      setVal('ves_Wg', v.Wg_kgh, 0);
+      setVal('ves_Wl', v.Wl_kgh, 0);
+      setVal('ves_rhoG', v.rhoG, 2);
+      setVal('ves_rhoL', v.rhoL, 0);
+      setVal('ves_Pop', v.P_op_barG, 2);
+      setVal('ves_Pdes', v.P_des_barG, 1);
+    } else if (tab === 'piping' && p.piping) {
+      const pp = p.piping;
+      setSelectSafe('pipe_fluid', pp.fluidId);
+      setSelectSafe('pipe_flow_mode', pp.flowMode || 'gas');
+      setVal('pipe_T', pp.T_C, 1);
+      setVal('pipe_P1', pp.P1_barG, 2);
+      setVal('pipe_Q', pp.Q_m3h, 1);
+      onPipeFluidChange();
+      if (pp.rho_kgm3 !== undefined && pp.rho_kgm3 > 0) {
+        setVal('pipe_rho', pp.rho_kgm3, 2);
+      }
+    }
+
+    syncAllCustomSelects();
+    recalc();
+    return true;
+  }
+
   return {
+    applySimulatorHandoff,
     loadChlorAlkaliPreset,
     saveToChlorAlkaliEquipList,
     downloadCADcraftDXF,
