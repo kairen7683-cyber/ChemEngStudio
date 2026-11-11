@@ -409,7 +409,73 @@ window.App = (function () {
     recalc();
   }
 
-  function onHXFluidOrTempChange() {
+  function syncHXPhaseDefaultsFromFluid(side) {
+    if (side === 'hot' || !side) {
+      const hMode = document.getElementById('hx_hot_mode')?.value || 'sensible';
+      const hBox = document.getElementById('hx_hot_phase_box');
+      if (hBox) hBox.style.display = hMode === 'sensible' ? 'none' : 'block';
+      if (hMode !== 'sensible') {
+        const hId = document.getElementById('hx_hot_fluid')?.value || 'steam_lp';
+        const fp = window.getFluidProps(hId, numVal('hx_Thi', 100));
+        const xEl = document.getElementById('hx_hot_xfrac');
+        if (hMode === 'cond_full' && xEl) xEl.value = '1.00';
+        const hvEl = document.getElementById('hx_hot_hv');
+        if (hvEl) hvEl.value = Math.round(fp.hv_T || fp.hv || 250);
+      }
+    }
+    if (side === 'cold' || !side) {
+      const cMode = document.getElementById('hx_cold_mode')?.value || 'sensible';
+      const cBox = document.getElementById('hx_cold_phase_box');
+      if (cBox) cBox.style.display = cMode === 'sensible' ? 'none' : 'block';
+      if (cMode !== 'sensible') {
+        const cId = document.getElementById('hx_cold_fluid')?.value || 'r134a_refrig';
+        const fp = window.getFluidProps(cId, numVal('hx_Tci', -25));
+        const xEl = document.getElementById('hx_cold_xfrac');
+        if (cMode === 'boil_full' && xEl) xEl.value = '1.00';
+        const hvEl = document.getElementById('hx_cold_hv');
+        if (hvEl) hvEl.value = Math.round(fp.hv_T || fp.hv || 215);
+      }
+    }
+  }
+
+  function onHXPhaseModeChange(side) {
+    if (side === 'hot') {
+      const hMode = document.getElementById('hx_hot_mode')?.value || 'sensible';
+      if (hMode !== 'sensible') {
+        const hId = document.getElementById('hx_hot_fluid')?.value || 'steam_lp';
+        const Thi = numVal('hx_Thi', 120);
+        const Tho = numVal('hx_Tho', 60);
+        const fp = window.getFluidProps(hId, 0.5 * (Thi + Tho));
+        // Suggest practical Tsat between Tho and Thi (or compound Tb if within range)
+        const sugTsat = (fp.tb >= Tho - 5 && fp.tb <= Thi + 5) ? fp.tb : Number((0.6 * Thi + 0.4 * Tho).toFixed(1));
+        setVal('hx_Th_sat', sugTsat, 1);
+        setVal('hx_hot_xfrac', hMode === 'cond_partial' ? 0.92 : 1.00, 2);
+        const pSat = window.getFluidProps(hId, sugTsat);
+        setVal('hx_hot_hv', pSat.hv_T || fp.hv || 250, 0);
+      }
+    } else if (side === 'cold') {
+      const cMode = document.getElementById('hx_cold_mode')?.value || 'sensible';
+      if (cMode !== 'sensible') {
+        const cId = document.getElementById('hx_cold_fluid')?.value || 'r134a_refrig';
+        const Tci = numVal('hx_Tci', -30);
+        const Tco = numVal('hx_Tco', -25);
+        const fp = window.getFluidProps(cId, 0.5 * (Tci + Tco));
+        const sugTsat = (fp.tb >= Tci - 5 && fp.tb <= Tco + 5) ? fp.tb : Number((0.7 * Tci + 0.3 * Tco).toFixed(1));
+        setVal('hx_Tc_sat', sugTsat, 1);
+        setVal('hx_cold_xfrac', cMode === 'boil_partial' ? 0.75 : 1.00, 2);
+        const pSat = window.getFluidProps(cId, sugTsat);
+        setVal('hx_cold_hv', pSat.hv_T || fp.hv || 215, 0);
+      }
+    }
+    syncHXPhaseDefaultsFromFluid(side);
+    markSolverPending('hx');
+    recalc();
+  }
+
+  function onHXFluidOrTempChange(reason) {
+    if (reason === 'fluid') {
+      syncHXPhaseDefaultsFromFluid();
+    }
     markSolverPending('hx');
     recalc();
   }
@@ -810,6 +876,14 @@ window.App = (function () {
         mc_kgh: numVal('hx_mc', 55800),
         Tc_in: numVal('hx_Tci', 28),
         Tc_out: numVal('hx_Tco', 52),
+        hot_phase_mode: document.getElementById('hx_hot_mode')?.value || 'sensible',
+        Th_sat: numVal('hx_Th_sat', 100),
+        hot_xfrac: numVal('hx_hot_xfrac', 1.0),
+        hot_hv: numVal('hx_hot_hv', 0),
+        cold_phase_mode: document.getElementById('hx_cold_mode')?.value || 'sensible',
+        Tc_sat: numVal('hx_Tc_sat', -30),
+        cold_xfrac: numVal('hx_cold_xfrac', 1.0),
+        cold_hv: numVal('hx_cold_hv', 0),
         U_assumed: numVal('hx_U_assumed', 520),
         tube_od_mm: numVal('hx_tube_od', 19.05),
         tube_L_m: numVal('hx_tube_L', 4.88),
@@ -1097,28 +1171,68 @@ window.App = (function () {
       `;
     }
 
-    // Stitch 5-Segment Thermal Profile Table (#hx_seg_table)
+    // Update Phase-Change Mode Badge & Superheat/Subcool Info Spans
+    const zoneModeBadge = document.getElementById('hx_zone_mode_badge');
+    if (zoneModeBadge) {
+      zoneModeBadge.textContent = hxRes.hasPhaseChange
+        ? `다구간 상변화 적분 (${hxRes.zones.length}-Zone · 최소 핀치 ΔT=${hxRes.minPinchDT.toFixed(1)}°C)`
+        : '단상 현열 모드 (Single-Phase)';
+      zoneModeBadge.style.color = hxRes.hasPhaseChange ? '#be123c' : '#0284c7';
+    }
+    const hInfoEl = document.getElementById('hx_hot_sh_sc_info');
+    if (hInfoEl && hxRes.hotBreak) {
+      const qDes = ((hxRes.mh / 3600) * hxRes.hotBreak.dh_desup).toFixed(0);
+      const qLat = ((hxRes.mh / 3600) * hxRes.hotBreak.dh_lat).toFixed(0);
+      const qSub = ((hxRes.mh / 3600) * hxRes.hotBreak.dh_sub).toFixed(0);
+      hInfoEl.textContent = `과열 +${hxRes.hotBreak.superheatC.toFixed(1)}°C(${qDes}kW) · 잠열(${qLat}kW) · 과냉 -${hxRes.hotBreak.subcoolC.toFixed(1)}°C(${qSub}kW)`;
+    }
+    const cInfoEl = document.getElementById('hx_cold_sh_sc_info');
+    if (cInfoEl && hxRes.coldBreak) {
+      const qPre = ((hxRes.mc / 3600) * hxRes.coldBreak.dh_pre).toFixed(0);
+      const qLat = ((hxRes.mc / 3600) * hxRes.coldBreak.dh_lat).toFixed(0);
+      const qSup = ((hxRes.mc / 3600) * hxRes.coldBreak.dh_sup).toFixed(0);
+      cInfoEl.textContent = `예열 -${hxRes.coldBreak.subcoolInC.toFixed(1)}°C(${qPre}kW) · 비등(${qLat}kW) · 과열 +${hxRes.coldBreak.superheatOutC.toFixed(1)}°C(${qSup}kW)`;
+    }
+
+    // Zonal Phase-Change Breakdown Table OR 5-Segment Profile Table (#hx_seg_table)
     const segTable = document.getElementById('hx_seg_table');
     if (segTable) {
-      const segLabels = ['0% (Inlet)', '25% (1/4 L)', '50% (Center)', '75% (3/4 L)', '100% (Outlet)'];
-      const fracs = [0.0, 0.25, 0.50, 0.75, 1.0];
-      let sHtml = `<thead><tr><th>세그먼트</th><th>T_hot (°C)</th><th>T_cold (°C)</th><th>ΔT (°C)</th><th>U_loc (W/m²K)</th></tr></thead><tbody>`;
-      fracs.forEach((z, idx) => {
-        const Th_z = hxRes.Th_in - Math.pow(z, 0.92) * (hxRes.Th_in - hxRes.Th_out);
-        const Tc_z = hxRes.Tc_out - Math.pow(z, 0.92) * (hxRes.Tc_out - hxRes.Tc_in);
-        const dT_z = Th_z - Tc_z;
-        const uFactor = 1.04 - 0.08 * z;
-        const U_loc = hxRes.U_calc * uFactor;
-        sHtml += `<tr>
-          <td style="font-weight:700;color:#1A2F44;">${segLabels[idx]}</td>
-          <td style="color:#fb7185;font-weight:700;">${Th_z.toFixed(1)}</td>
-          <td style="color:#38bdf8;font-weight:700;">${Tc_z.toFixed(1)}</td>
-          <td style="color:#1A2F44;font-weight:700;">${dT_z.toFixed(1)}</td>
-          <td style="color:#34d399;font-weight:700;">${U_loc.toFixed(1)}</td>
-        </tr>`;
-      });
-      sHtml += `</tbody>`;
-      segTable.innerHTML = sHtml;
+      if (hxRes.hasPhaseChange && hxRes.zones && hxRes.zones.length > 0) {
+        let sHtml = `<thead><tr><th>구간 (Zone)</th><th>열량 Q_k (비중)</th><th>T_hot (°C)</th><th>T_cold (°C)</th><th>LMTD_k</th><th>U_k (W/m²K)</th><th>요구면적 A_k</th></tr></thead><tbody>`;
+        hxRes.zones.forEach(z => {
+          sHtml += `<tr>
+            <td style="font-weight:800;color:#1A2F44;">Z${z.idx}: ${z.zoneName}</td>
+            <td style="font-weight:700;color:#0f5338;">${z.dQ_kW.toFixed(1)} kW (${z.qSharePct.toFixed(0)}%)</td>
+            <td style="color:#e11d48;font-weight:700;">${z.Th_a.toFixed(1)} → ${z.Th_b.toFixed(1)}</td>
+            <td style="color:#0284c7;font-weight:700;">${z.Tc_b.toFixed(1)} → ${z.Tc_a.toFixed(1)}</td>
+            <td style="color:#1A2F44;font-weight:700;">${z.zoneLMTD.toFixed(1)}°C</td>
+            <td style="color:#059669;font-weight:800;">${z.U_z.toFixed(0)}</td>
+            <td style="color:#4338ca;font-weight:800;">${z.A_z.toFixed(2)} m²</td>
+          </tr>`;
+        });
+        sHtml += `</tbody>`;
+        segTable.innerHTML = sHtml;
+      } else {
+        const segLabels = ['0% (Inlet)', '25% (1/4 L)', '50% (Center)', '75% (3/4 L)', '100% (Outlet)'];
+        const fracs = [0.0, 0.25, 0.50, 0.75, 1.0];
+        let sHtml = `<thead><tr><th>세그먼트</th><th>T_hot (°C)</th><th>T_cold (°C)</th><th>ΔT (°C)</th><th>U_loc (W/m²K)</th></tr></thead><tbody>`;
+        fracs.forEach((z, idx) => {
+          const Th_z = hxRes.Th_in - Math.pow(z, 0.92) * (hxRes.Th_in - hxRes.Th_out);
+          const Tc_z = hxRes.Tc_out - Math.pow(z, 0.92) * (hxRes.Tc_out - hxRes.Tc_in);
+          const dT_z = Th_z - Tc_z;
+          const uFactor = 1.04 - 0.08 * z;
+          const U_loc = hxRes.U_calc * uFactor;
+          sHtml += `<tr>
+            <td style="font-weight:700;color:#1A2F44;">${segLabels[idx]}</td>
+            <td style="color:#fb7185;font-weight:700;">${Th_z.toFixed(1)}</td>
+            <td style="color:#38bdf8;font-weight:700;">${Tc_z.toFixed(1)}</td>
+            <td style="color:#1A2F44;font-weight:700;">${dT_z.toFixed(1)}</td>
+            <td style="color:#34d399;font-weight:700;">${U_loc.toFixed(1)}</td>
+          </tr>`;
+        });
+        sHtml += `</tbody>`;
+        segTable.innerHTML = sHtml;
+      }
     }
 
     renderWarnings('hx_warnings', hxRes.warnings);
@@ -1988,12 +2102,12 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     'E-342': { tab: 'hx', hx_type: 'plate_phe', phe_chevron: '60', phe_mat: '0.6_Ni200', name: '2효 가성소다 열회수 판형 예열기 (PHE E-5342)', hot: 'naoh_50', cold: 'naoh_32', alloc: 'hot_shell', mh: 42824, Thi: 120.0, Tho: 75.0, mc: 44444, Tci: 68.4, Tco: 108.2, mat: 'Nickel 200 PHE (0.6t)' },
     'E-343': { tab: 'hx', hx_type: 'plate_phe', phe_chevron: '60', phe_mat: '0.6_Ni200', name: '2효 응축수 열회수 판형 예열기 (PHE E-5343)', hot: 'water', cold: 'naoh_32', alloc: 'hot_shell', mh: 10356, Thi: 126.6, Tho: 74.7, mc: 14422, Tci: 68.4, Tco: 114.0, mat: 'Nickel 200 PHE (0.6t)' },
     'E-352': { tab: 'hx', hx_type: 'plate_phe', phe_chevron: '60', phe_mat: '0.6_Ni200', name: '50% 가성소다 제품 판형 냉각기 (PHE E-5352)', hot: 'naoh_50', cold: 'water', alloc: 'hot_tube', mh: 42824, Thi: 75.0, Tho: 42.0, mc: 132508, Tci: 32.0, Tco: 40.0, mat: 'Nickel 200 / SS316L PHE' },
-    'E-350': { tab: 'hx', hx_type: 'shell_tube', name: '3효 진공 표면응축기 (Surface Condenser E-5350)', hot: 'steam_lp', cold: 'water', alloc: 'hot_shell', mh: 8797, Thi: 68.4, Tho: 42.9, mc: 626493, Tci: 32.0, Tco: 40.0, mat: 'SS316L / CS' },
-    'E-360': { tab: 'hx', hx_type: 'shell_tube', name: '3효 진공 표면응축기 (Surface Condenser E-5350)', hot: 'steam_lp', cold: 'water', alloc: 'hot_shell', mh: 8797, Thi: 68.4, Tho: 42.9, mc: 626493, Tci: 32.0, Tco: 40.0, mat: 'SS316L / CS' },
+    'E-350': { tab: 'hx', hx_type: 'shell_tube', name: '3효 진공 표면응축기 (Surface Condenser — 과열증기 응축·과냉)', hot: 'steam_lp', cold: 'water', alloc: 'hot_shell', mh: 8797, Thi: 68.4, Tho: 42.9, mc: 626493, Tci: 32.0, Tco: 40.0, hot_mode: 'cond_partial', Th_sat: 64.5, hot_xfrac: 0.98, hot_hv: 2346, mat: 'SS316L / CS' },
+    'E-360': { tab: 'hx', hx_type: 'shell_tube', name: '3효 진공 표면응축기 (Surface Condenser — 과열증기 응축·과냉)', hot: 'steam_lp', cold: 'water', alloc: 'hot_shell', mh: 8797, Thi: 68.4, Tho: 42.9, mc: 626493, Tci: 32.0, Tco: 40.0, hot_mode: 'cond_partial', Th_sat: 64.5, hot_xfrac: 0.98, hot_hv: 2346, mat: 'SS316L / CS' },
     'E-413': { tab: 'hx', hx_type: 'shell_tube', name: '1단 염소가스 냉각기 (1st Cl2 Cooler)', hot: 'cl2_wet_gas', cold: 'water', alloc: 'hot_tube', mh: 23470, Thi: 85, Tho: 45, mc: 62000, Tci: 30, Tco: 38, mat: 'Titanium Gr.2 / CS' },
     'E-423': { tab: 'hx', hx_type: 'shell_tube', name: '2단 염소가스 냉각기 (2nd Cl2 Cooler)', hot: 'cl2_wet_gas', cold: 'chilled_water_7c', alloc: 'hot_tube', mh: 20100, Thi: 45, Tho: 22, mc: 48000, Tci: 7, Tco: 14, mat: 'Titanium Gr.2 / CS' },
     'E-433': { tab: 'hx', hx_type: 'shell_tube', name: '3단 염소가스 냉각기 (3rd Cl2 Chiller Cooler)', hot: 'cl2_wet_gas', cold: 'chilled_water_7c', alloc: 'hot_tube', mh: 19650, Thi: 22, Tho: 13, mc: 28000, Tci: 7, Tco: 12, mat: 'Titanium Gr.2 / CS' },
-    'D-484': { tab: 'hx', hx_type: 'shell_tube', name: '염소 냉동 액화기 (Cl2 Liquefier)', hot: 'cl2_dry_gas', cold: 'r134a_refrig', alloc: 'hot_tube', mh: 19450, Thi: 40, Tho: -22, mc: 45000, Tci: -32, Tco: -25, mat: 'LTCS (SA-516-70N)' },
+    'D-484': { tab: 'hx', hx_type: 'shell_tube', name: '염소 냉동 액화기 (Cl2 Liquefier — 과열제거·액화·과냉 / 냉매증발)', hot: 'cl2_dry_gas', cold: 'r507a', alloc: 'hot_tube', mh: 19450, Thi: 40, Tho: -22, mc: 28500, Tci: -33, Tco: -26, hot_mode: 'cond_partial', Th_sat: -12.0, hot_xfrac: 0.95, hot_hv: 274, cold_mode: 'boil_full', Tc_sat: -31.0, cold_xfrac: 1.00, cold_hv: 188, mat: 'LTCS (SA-516-70N)' },
     'E-5613': { tab: 'hx', hx_type: 'shell_tube', name: '1단 수소가스 냉각기 (1st H2 Cooler)', hot: 'h2_wet_gas', cold: 'water', alloc: 'hot_tube', mh: 2024, Thi: 90, Tho: 42, mc: 42000, Tci: 30, Tco: 38, mat: 'SS304L / CS' },
     'E-5630': { tab: 'hx', hx_type: 'shell_tube', name: '2단 수소가스 CCW 냉각기 (2nd H2 Cooler)', hot: 'h2_wet_gas', cold: 'chilled_water_7c', alloc: 'hot_tube', mh: 1150, Thi: 42, Tho: 15, mc: 25730, Tci: 7, Tco: 14, mat: 'SS304L / CS' },
     'E-5680': { tab: 'hx', hx_type: 'shell_tube', name: '고압 수소 정제 냉각기 (HP H2 Cooler)', hot: 'hydrogen_gas', cold: 'chilled_water_7c', alloc: 'hot_tube', mh: 580, Thi: 95, Tho: 10, mc: 18500, Tci: 7, Tco: 14, mat: 'SS316L / CS' },
@@ -2082,8 +2196,19 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       setVal('hx_mc', p.mc, 0);
       setVal('hx_Tci', p.Tci, 1);
       setVal('hx_Tco', p.Tco, 1);
+      const hmEl = document.getElementById('hx_hot_mode');
+      const cmEl = document.getElementById('hx_cold_mode');
+      if (hmEl) hmEl.value = p.hot_mode || 'sensible';
+      if (cmEl) cmEl.value = p.cold_mode || 'sensible';
+      if (p.Th_sat !== undefined) setVal('hx_Th_sat', p.Th_sat, 1);
+      if (p.hot_xfrac !== undefined) setVal('hx_hot_xfrac', p.hot_xfrac, 2);
+      if (p.hot_hv !== undefined) setVal('hx_hot_hv', p.hot_hv, 0);
+      if (p.Tc_sat !== undefined) setVal('hx_Tc_sat', p.Tc_sat, 1);
+      if (p.cold_xfrac !== undefined) setVal('hx_cold_xfrac', p.cold_xfrac, 2);
+      if (p.cold_hv !== undefined) setVal('hx_cold_hv', p.cold_hv, 0);
+      syncHXPhaseDefaultsFromFluid();
       onHXTypeChange();
-      onHXFluidOrTempChange('fluid');
+      onHXFluidOrTempChange('temp');
     } else if (p.tab === 'pump') {
       const flEl = document.getElementById('pump_fluid');
       if (flEl) flEl.value = p.fluid;
@@ -2319,6 +2444,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     onHXTypeChange,
     onHXThermalInput,
     onHXFluidOrTempChange,
+    onHXPhaseModeChange,
     onColumnModeChange,
     onColumnInternalsChange,
     onModelInputEdited,

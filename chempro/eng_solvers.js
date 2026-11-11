@@ -214,13 +214,93 @@ window.ChemEngSolvers = (function () {
   }
 
   // =========================================================================
-  // 2. HEAT EXCHANGER ENERGY BALANCE AUTO-DOF + BELL-DELAWARE ITERATIVE SOLVER
+  // 2. HEAT EXCHANGER 3-ZONE PHASE-CHANGE (DESUPERHEAT · CONDENSE/BOIL · SUBCOOL)
+  //    + AUTO-DOF ENERGY BALANCE + BELL-DELAWARE / CHEVRON PHE ITERATIVE SOLVER
   // =========================================================================
+
+  function evalHotSpecificEnthalpy(Th_in, Th_out, hotMode, Th_sat, xCond, hvHot, cphLiq, cphVap) {
+    if (!hotMode || hotMode === 'sensible') {
+      const dhSens = cphLiq * Math.max(0.05, Math.abs(Th_in - Th_out));
+      return {
+        dh_desup: 0,
+        dh_lat: 0,
+        dh_sub: 0,
+        dh_sens: dhSens,
+        dh_tot: dhSens,
+        superheatC: 0,
+        subcoolC: 0,
+        xFrac: 0,
+        Tsat: Th_sat
+      };
+    }
+    const x = hotMode === 'cond_full' ? 1.0 : Math.max(0.01, Math.min(1.0, xCond || 1.0));
+    const Tsat = Number.isFinite(Th_sat) ? Th_sat : 0.5 * (Th_in + Th_out);
+    const dT_desup = Th_in > Tsat ? (Th_in - Math.max(Th_out, Tsat)) : 0;
+    const dh_desup = cphVap * Math.max(0, dT_desup);
+    const crossesSat = (Th_in >= Tsat - 0.25 && Th_out <= Tsat + 0.25);
+    const dh_lat = crossesSat ? (x * Math.max(0, hvHot)) : 0;
+    const cpMixSub = x * cphLiq + (1.0 - x) * cphVap;
+    const dT_sub = Th_out < Tsat ? (Math.min(Th_in, Tsat) - Th_out) : 0;
+    const dh_sub = cpMixSub * Math.max(0, dT_sub);
+    const dh_tot = Math.max(0.15, dh_desup + dh_lat + dh_sub);
+    return {
+      dh_desup,
+      dh_lat,
+      dh_sub,
+      dh_sens: dh_desup + dh_sub,
+      dh_tot,
+      superheatC: Math.max(0, Th_in - Tsat),
+      subcoolC: Math.max(0, Tsat - Th_out),
+      xFrac: crossesSat ? x : 0,
+      Tsat
+    };
+  }
+
+  function evalColdSpecificEnthalpy(Tc_in, Tc_out, coldMode, Tc_sat, xVap, hvCold, cpcLiq, cpcVap) {
+    if (!coldMode || coldMode === 'sensible') {
+      const dhSens = cpcLiq * Math.max(0.05, Math.abs(Tc_out - Tc_in));
+      return {
+        dh_pre: 0,
+        dh_lat: 0,
+        dh_sup: 0,
+        dh_sens: dhSens,
+        dh_tot: dhSens,
+        subcoolInC: 0,
+        superheatOutC: 0,
+        xFrac: 0,
+        Tsat: Tc_sat
+      };
+    }
+    const x = coldMode === 'boil_full' ? 1.0 : Math.max(0.01, Math.min(1.0, xVap || 1.0));
+    const Tsat = Number.isFinite(Tc_sat) ? Tc_sat : 0.5 * (Tc_in + Tc_out);
+    const dT_pre = Tc_in < Tsat ? (Math.min(Tc_out, Tsat) - Tc_in) : 0;
+    const dh_pre = cpcLiq * Math.max(0, dT_pre);
+    const crossesSat = (Tc_in <= Tsat + 0.25 && Tc_out >= Tsat - 0.25);
+    const dh_lat = crossesSat ? (x * Math.max(0, hvCold)) : 0;
+    const cpMixSup = x * cpcVap + (1.0 - x) * cpcLiq;
+    const dT_sup = Tc_out > Tsat ? (Tc_out - Math.max(Tc_in, Tsat)) : 0;
+    const dh_sup = cpMixSup * Math.max(0, dT_sup);
+    const dh_tot = Math.max(0.15, dh_pre + dh_lat + dh_sup);
+    return {
+      dh_pre,
+      dh_lat,
+      dh_sup,
+      dh_sens: dh_pre + dh_sup,
+      dh_tot,
+      subcoolInC: Math.max(0, Tsat - Tc_in),
+      superheatOutC: Math.max(0, Tc_out - Tsat),
+      xFrac: crossesSat ? x : 0,
+      Tsat
+    };
+  }
+
   function solveHXEnergyBalance(inp) {
-    // Returns balanced { mh, Th_in, Th_out, mc, Tc_in, Tc_out, Qh_kW, Qc_kW, hotProps, coldProps, dofTarget }
     const hotFluidId = inp.hotFluidId || 'crude_oil';
     const coldFluidId = inp.coldFluidId || 'water';
     const dofTarget = inp.dofTarget || 'mc_auto'; // 'mc_auto' | 'tco_auto' | 'tho_auto' | 'mh_auto'
+
+    const hotMode = inp.hot_phase_mode || 'sensible';
+    const coldMode = inp.cold_phase_mode || 'sensible';
 
     let mh = Math.max(10, inp.mh_kgh || 45000);
     let Th_in = inp.Th_in !== undefined ? inp.Th_in : 135.0;
@@ -229,57 +309,275 @@ window.ChemEngSolvers = (function () {
     let Tc_in = inp.Tc_in !== undefined ? inp.Tc_in : 28.0;
     let Tc_out = inp.Tc_out !== undefined ? inp.Tc_out : 52.0;
 
-    // 3-step inner temperature-property loop so Cp(T_avg) and auto-calculated T/m are 100% consistent
     let hotProps = window.getFluidProps(hotFluidId, 0.5 * (Th_in + Th_out));
     let coldProps = window.getFluidProps(coldFluidId, 0.5 * (Tc_in + Tc_out));
 
-    const cph_use = (inp.manualProp && inp.cph_manual > 0) ? inp.cph_manual : hotProps.cp;
-    const cpc_use = (inp.manualProp && inp.cpc_manual > 0) ? inp.cpc_manual : coldProps.cp;
+    const Th_sat = inp.Th_sat !== undefined && Number.isFinite(inp.Th_sat) ? inp.Th_sat : hotProps.tb;
+    const Tc_sat = inp.Tc_sat !== undefined && Number.isFinite(inp.Tc_sat) ? inp.Tc_sat : coldProps.tb;
+    const xCond = inp.hot_xfrac !== undefined ? inp.hot_xfrac : 1.0;
+    const xVap = inp.cold_xfrac !== undefined ? inp.cold_xfrac : 1.0;
 
-    for (let k = 0; k < 4; k++) {
+    const hotSatProps = window.getFluidProps(hotFluidId, Th_sat);
+    const coldSatProps = window.getFluidProps(coldFluidId, Tc_sat);
+    const hvHot = (inp.hot_hv !== undefined && inp.hot_hv > 0) ? inp.hot_hv : (hotSatProps.hv_T || hotProps.hv || 250);
+    const hvCold = (inp.cold_hv !== undefined && inp.cold_hv > 0) ? inp.cold_hv : (coldSatProps.hv_T || coldProps.hv || 220);
+
+    let hotBreak = null;
+    let coldBreak = null;
+
+    for (let k = 0; k < 5; k++) {
       hotProps = window.getFluidProps(hotFluidId, 0.5 * (Th_in + Th_out));
       coldProps = window.getFluidProps(coldFluidId, 0.5 * (Tc_in + Tc_out));
-      const cph = (inp.manualProp && inp.cph_manual > 0) ? inp.cph_manual : hotProps.cp;
-      const cpc = (inp.manualProp && inp.cpc_manual > 0) ? inp.cpc_manual : coldProps.cp;
+      const cphLiq = (inp.manualProp && inp.cph_manual > 0) ? inp.cph_manual : hotProps.cp;
+      const cphVap = hotProps.cp_vap || Math.max(0.45, cphLiq * 0.62);
+      const cpcLiq = (inp.manualProp && inp.cpc_manual > 0) ? inp.cpc_manual : coldProps.cp;
+      const cpcVap = coldProps.cp_vap || Math.max(0.45, cpcLiq * 0.62);
+
+      hotBreak = evalHotSpecificEnthalpy(Th_in, Th_out, hotMode, Th_sat, xCond, hvHot, cphLiq, cphVap);
+      coldBreak = evalColdSpecificEnthalpy(Tc_in, Tc_out, coldMode, Tc_sat, xVap, hvCold, cpcLiq, cpcVap);
 
       if (dofTarget === 'mc_auto') {
-        const Qh = (mh / 3600.0) * cph * Math.max(0.5, Math.abs(Th_in - Th_out));
-        const dTc = Math.max(0.5, Math.abs(Tc_out - Tc_in));
-        mc = (Qh / (cpc * dTc)) * 3600.0;
-      } else if (dofTarget === 'tco_auto') {
-        const Qh = (mh / 3600.0) * cph * Math.max(0.5, Math.abs(Th_in - Th_out));
-        const dTc = Qh / Math.max(0.01, (mc / 3600.0) * cpc);
-        Tc_out = Math.min(Th_in - 1.0, Tc_in + dTc);
-      } else if (dofTarget === 'tho_auto') {
-        const Qc = (mc / 3600.0) * cpc * Math.max(0.5, Math.abs(Tc_out - Tc_in));
-        const dTh = Qc / Math.max(0.01, (mh / 3600.0) * cph);
-        Th_out = Math.max(Tc_in + 1.0, Th_in - dTh);
+        const Qh = (mh / 3600.0) * hotBreak.dh_tot;
+        mc = Math.max(5.0, (Qh / Math.max(0.15, coldBreak.dh_tot)) * 3600.0);
       } else if (dofTarget === 'mh_auto') {
-        const Qc = (mc / 3600.0) * cpc * Math.max(0.5, Math.abs(Tc_out - Tc_in));
-        const dTh = Math.max(0.5, Math.abs(Th_in - Th_out));
-        mh = (Qc / (cph * dTh)) * 3600.0;
+        const Qc = (mc / 3600.0) * coldBreak.dh_tot;
+        mh = Math.max(5.0, (Qc / Math.max(0.15, hotBreak.dh_tot)) * 3600.0);
+      } else if (dofTarget === 'tco_auto') {
+        const Qh = (mh / 3600.0) * hotBreak.dh_tot;
+        const dhReq = (Qh * 3600.0) / Math.max(1.0, mc);
+        if (coldMode === 'sensible') {
+          Tc_out = Math.min(Th_in - 0.5, Tc_in + dhReq / cpcLiq);
+        } else {
+          const x = coldMode === 'boil_full' ? 1.0 : Math.max(0.01, Math.min(1.0, xVap));
+          const dhPreMax = Tc_in < Tc_sat ? cpcLiq * (Tc_sat - Tc_in) : 0;
+          const dhLatMax = x * hvCold;
+          const cpMixSup = x * cpcVap + (1.0 - x) * cpcLiq;
+          if (dhReq <= dhPreMax) {
+            Tc_out = Tc_in + dhReq / cpcLiq;
+          } else if (dhReq <= dhPreMax + dhLatMax) {
+            Tc_out = Tc_sat;
+          } else {
+            Tc_out = Math.max(Tc_in, Tc_sat) + (dhReq - dhPreMax - dhLatMax) / cpMixSup;
+          }
+          Tc_out = Math.min(Th_in - 0.5, Tc_out);
+        }
+      } else if (dofTarget === 'tho_auto') {
+        const Qc = (mc / 3600.0) * coldBreak.dh_tot;
+        const dhReq = (Qc * 3600.0) / Math.max(1.0, mh);
+        if (hotMode === 'sensible') {
+          Th_out = Math.max(Tc_in + 0.5, Th_in - dhReq / cphLiq);
+        } else {
+          const x = hotMode === 'cond_full' ? 1.0 : Math.max(0.01, Math.min(1.0, xCond));
+          const dhDesupMax = Th_in > Th_sat ? cphVap * (Th_in - Th_sat) : 0;
+          const dhLatMax = x * hvHot;
+          const cpMixSub = x * cphLiq + (1.0 - x) * cphVap;
+          if (dhReq <= dhDesupMax) {
+            Th_out = Th_in - dhReq / cphVap;
+          } else if (dhReq <= dhDesupMax + dhLatMax) {
+            Th_out = Th_sat;
+          } else {
+            Th_out = Math.min(Th_in, Th_sat) - (dhReq - dhDesupMax - dhLatMax) / cpMixSub;
+          }
+          Th_out = Math.max(Tc_in + 0.5, Th_out);
+        }
       }
     }
 
     const cph_final = (inp.manualProp && inp.cph_manual > 0) ? inp.cph_manual : hotProps.cp;
     const cpc_final = (inp.manualProp && inp.cpc_manual > 0) ? inp.cpc_manual : coldProps.cp;
-    const Qh_kW = (mh / 3600.0) * cph_final * Math.abs(Th_in - Th_out);
-    const Qc_kW = (mc / 3600.0) * cpc_final * Math.abs(Tc_out - Tc_in);
+    const cph_vap_final = hotProps.cp_vap || Math.max(0.45, cph_final * 0.62);
+    const cpc_vap_final = coldProps.cp_vap || Math.max(0.45, cpc_final * 0.62);
+
+    hotBreak = evalHotSpecificEnthalpy(Th_in, Th_out, hotMode, Th_sat, xCond, hvHot, cph_final, cph_vap_final);
+    coldBreak = evalColdSpecificEnthalpy(Tc_in, Tc_out, coldMode, Tc_sat, xVap, hvCold, cpc_final, cpc_vap_final);
+
+    const Qh_kW = (mh / 3600.0) * hotBreak.dh_tot;
+    const Qc_kW = (mc / 3600.0) * coldBreak.dh_tot;
 
     return {
       mh, Th_in, Th_out, mc, Tc_in, Tc_out,
       Qh_kW, Qc_kW,
       hotProps, coldProps,
       cph: cph_final, cpc: cpc_final,
+      cphVap: cph_vap_final, cpcVap: cpc_vap_final,
+      hotMode, coldMode,
+      Th_sat, Tc_sat, xCond, xVap, hvHot, hvCold,
+      hotBreak, coldBreak,
       dofTarget
     };
+  }
+
+  // Piecewise Enthalpy Profile & Zonal Heat Transfer Evaluator (f in [0, 1] from Hot-In/Cold-Out -> Hot-Out/Cold-In)
+  function buildHXPiecewiseProfile(eb) {
+    const { mh, mc, Th_in, Th_out, Tc_in, Tc_out, hotMode, coldMode, hotBreak, coldBreak } = eb;
+    const Q_kW = Math.max(0.1, eb.Qh_kW);
+
+    // Hot piecewise nodes (f: 0 -> 1)
+    const hotNodes = [{ f: 0.0, T: Th_in }];
+    if (hotMode !== 'sensible' && hotBreak.dh_tot > 0) {
+      const f1 = hotBreak.dh_desup / hotBreak.dh_tot;
+      const f2 = (hotBreak.dh_desup + hotBreak.dh_lat) / hotBreak.dh_tot;
+      const Tsat_top = Math.min(Th_in, Math.max(Th_out, hotBreak.Tsat));
+      if (f1 > 0.002 && f1 < 0.998) hotNodes.push({ f: f1, T: Tsat_top });
+      if (f2 > f1 + 0.002 && f2 < 0.998) hotNodes.push({ f: f2, T: Tsat_top });
+      else if (f1 <= 0.002 && f2 > 0.002 && f2 < 0.998) hotNodes.push({ f: f2, T: Tsat_top });
+    }
+    hotNodes.push({ f: 1.0, T: Th_out });
+
+    // Cold piecewise nodes (f: 0 is Cold-Out Tc_out, f: 1 is Cold-In Tc_in!)
+    const coldNodes = [{ f: 0.0, T: Tc_out }];
+    if (coldMode !== 'sensible' && coldBreak.dh_tot > 0) {
+      const fc1 = coldBreak.dh_sup / coldBreak.dh_tot; // superheat zone near Hot-In (f: 0 -> fc1)
+      const fc2 = (coldBreak.dh_sup + coldBreak.dh_lat) / coldBreak.dh_tot; // boiling zone (f: fc1 -> fc2)
+      const Tsat_c = Math.max(Tc_in, Math.min(Tc_out, coldBreak.Tsat));
+      if (fc1 > 0.002 && fc1 < 0.998) coldNodes.push({ f: fc1, T: Tsat_c });
+      if (fc2 > fc1 + 0.002 && fc2 < 0.998) coldNodes.push({ f: fc2, T: Tsat_c });
+      else if (fc1 <= 0.002 && fc2 > 0.002 && fc2 < 0.998) coldNodes.push({ f: fc2, T: Tsat_c });
+    }
+    coldNodes.push({ f: 1.0, T: Tc_in });
+
+    const interpLinear = (nodes, f) => {
+      if (f <= 0) return nodes[0].T;
+      if (f >= 1) return nodes[nodes.length - 1].T;
+      for (let i = 0; i < nodes.length - 1; i++) {
+        const a = nodes[i], b = nodes[i + 1];
+        if (f >= a.f - 1e-7 && f <= b.f + 1e-7) {
+          const span = Math.max(1e-9, b.f - a.f);
+          return a.T + ((f - a.f) / span) * (b.T - a.T);
+        }
+      }
+      return nodes[nodes.length - 1].T;
+    };
+
+    const rawBreaks = [0.0, 1.0];
+    hotNodes.forEach(n => rawBreaks.push(n.f));
+    coldNodes.forEach(n => rawBreaks.push(n.f));
+    rawBreaks.sort((a, b) => a - b);
+
+    const breaks = [0.0];
+    for (let i = 1; i < rawBreaks.length; i++) {
+      if (rawBreaks[i] - breaks[breaks.length - 1] > 0.003) {
+        breaks.push(rawBreaks[i]);
+      }
+    }
+    breaks[breaks.length - 1] = 1.0;
+
+    // Classify hot/cold regime on midpoint fMid
+    const fh1 = hotMode !== 'sensible' ? hotBreak.dh_desup / hotBreak.dh_tot : 0;
+    const fh2 = hotMode !== 'sensible' ? (hotBreak.dh_desup + hotBreak.dh_lat) / hotBreak.dh_tot : 0;
+    const fc1 = coldMode !== 'sensible' ? coldBreak.dh_sup / coldBreak.dh_tot : 0;
+    const fc2 = coldMode !== 'sensible' ? (coldBreak.dh_sup + coldBreak.dh_lat) / coldBreak.dh_tot : 0;
+
+    let minPinchDT = Infinity;
+    let pinchF = 0;
+    breaks.forEach(fb => {
+      const dT = interpLinear(hotNodes, fb) - interpLinear(coldNodes, fb);
+      if (dT < minPinchDT) {
+        minPinchDT = dT;
+        pinchF = fb;
+      }
+    });
+
+    const zones = [];
+    for (let i = 0; i < breaks.length - 1; i++) {
+      const fa = breaks[i], fb = breaks[i + 1];
+      const fMid = 0.5 * (fa + fb);
+      const dQ_kW = Q_kW * (fb - fa);
+      const Th_a = interpLinear(hotNodes, fa);
+      const Th_b = interpLinear(hotNodes, fb);
+      const Tc_a = interpLinear(coldNodes, fa);
+      const Tc_b = interpLinear(coldNodes, fb);
+
+      let hotRegime = 'sensible';
+      let hotLabel = '현열냉각';
+      if (hotMode !== 'sensible') {
+        if (fMid < fh1 - 1e-4) { hotRegime = 'desuperheat'; hotLabel = '과열증기 제거'; }
+        else if (fMid < fh2 - 1e-4) { hotRegime = 'condense'; hotLabel = hotMode === 'cond_partial' ? `부분응축(${Math.round(hotBreak.xFrac * 100)}%)` : '상변화 응축'; }
+        else { hotRegime = 'subcool'; hotLabel = '응축액 과냉각'; }
+      }
+
+      let coldRegime = 'sensible';
+      let coldLabel = '현열가열';
+      if (coldMode !== 'sensible') {
+        if (fMid < fc1 - 1e-4) { coldRegime = 'superheat'; coldLabel = '증기 과열'; }
+        else if (fMid < fc2 - 1e-4) { coldRegime = 'boil'; coldLabel = coldMode === 'boil_partial' ? `부분비등(${Math.round(coldBreak.xFrac * 100)}%)` : '비등 증발'; }
+        else { coldRegime = 'preheat'; coldLabel = '과냉액 예열'; }
+      }
+
+      const dTa = Math.max(0.8, Th_a - Tc_a);
+      const dTb = Math.max(0.8, Th_b - Tc_b);
+      const zoneLMTD = Math.abs(dTa - dTb) < 0.05 ? 0.5 * (dTa + dTb) : (dTa - dTb) / Math.log(dTa / dTb);
+
+      zones.push({
+        idx: i + 1,
+        fa, fb,
+        qSharePct: (fb - fa) * 100.0,
+        dQ_kW,
+        Th_a, Th_b, Tc_a, Tc_b,
+        hotRegime, coldRegime,
+        zoneName: `${hotLabel} / ${coldLabel}`,
+        zoneLMTD,
+        isIsothermalSide: (hotRegime === 'condense' || coldRegime === 'boil')
+      });
+    }
+
+    return {
+      hotNodes,
+      coldNodes,
+      breaks,
+      zones,
+      minPinchDT,
+      pinchF,
+      interpHot: f => interpLinear(hotNodes, f),
+      interpCold: f => interpLinear(coldNodes, f)
+    };
+  }
+
+  // Estimate phase-specific film coefficient (condensing / boiling / vapor superheat)
+  function adjustFilmForPhaseRegime(hBaseSinglePhase, regime, fluidProps, isPHE, xPhaseFrac) {
+    if (regime === 'sensible' || regime === 'subcool' || regime === 'preheat') {
+      return hBaseSinglePhase;
+    }
+    const id = (fluidProps.id || '').toLowerCase();
+    const isWaterSteam = id.includes('water') || id.includes('steam');
+    const isAmmonia = id.includes('ammonia') || id.includes('r717');
+    if (regime === 'desuperheat' || regime === 'superheat') {
+      // If base fluid is already gas (rho < 45), hBaseSinglePhase is already gas-phase; if liquid DB entry, scale down for dry gas convection
+      if (fluidProps.rho < 45.0) return Math.max(65.0, hBaseSinglePhase);
+      return Math.max(85.0, Math.min(620.0, hBaseSinglePhase * 0.24));
+    }
+    if (regime === 'condense') {
+      let hCond = 2100.0;
+      if (isWaterSteam) hCond = isPHE ? 6800.0 : 5800.0;
+      else if (isAmmonia) hCond = isPHE ? 5100.0 : 4300.0;
+      else {
+        // Nusselt / Boyko-Kruzhilin scaling for Chlorine, Refrigerants & Organics
+        hCond = 2050.0 * Math.pow(Math.max(0.055, fluidProps.k) / 0.10, 0.72) * Math.pow(0.25 / Math.max(0.08, fluidProps.mu), 0.25);
+        if (isPHE) hCond *= 1.32;
+      }
+      // Silver-Bell-Ghaly non-condensable gas resistance factor for partial condensation
+      const ncgFactor = (xPhaseFrac !== undefined && xPhaseFrac < 0.99) ? (0.45 + 0.55 * xPhaseFrac) : 1.0;
+      return Math.max(550.0, Math.min(8500.0, hCond * ncgFactor));
+    }
+    if (regime === 'boil') {
+      let hBoil = 2650.0;
+      if (isWaterSteam) hBoil = isPHE ? 6200.0 : 4900.0;
+      else if (isAmmonia) hBoil = isPHE ? 4800.0 : 4000.0;
+      else {
+        // Chen / Mostinski boiling correlation for HFC/HFO/HCFC Refrigerants & Hydrocarbons
+        hBoil = 2700.0 * Math.pow(Math.max(0.055, fluidProps.k) / 0.08, 0.65) * Math.pow(0.20 / Math.max(0.07, fluidProps.mu), 0.20);
+        if (isPHE) hBoil *= 1.28;
+      }
+      return Math.max(900.0, Math.min(8000.0, hBoil));
+    }
+    return hBaseSinglePhase;
   }
 
   function calcFt(Th_in, Th_out, Tc_in, Tc_out, nShellPasses) {
     const N = nShellPasses || 1;
     const dT_cold = Tc_out - Tc_in;
     const dT_hot = Th_in - Th_out;
-    if (Math.abs(dT_cold) < 1e-4 || Math.abs(Th_in - Tc_in) < 1e-4) return 1.0;
+    if (Math.abs(dT_cold) < 1e-4 || Math.abs(dT_hot) < 1e-4 || Math.abs(Th_in - Tc_in) < 1e-4) return 1.0;
 
     let P = (Tc_out - Tc_in) / (Th_in - Tc_in);
     let R = (Th_in - Th_out) / (Tc_out - Tc_in);
@@ -309,26 +607,40 @@ window.ChemEngSolvers = (function () {
   }
 
   function solveHX(inp, mode) {
-    // 1. Run Energy Balance Auto-DOF Solver first
+    // 1. Run 3-Zone Phase-Change Energy Balance Auto-DOF Solver first
     const eb = solveHXEnergyBalance(inp);
-    const { mh, Th_in, Th_out, mc, Tc_in, Tc_out, Qh_kW, Qc_kW, hotProps, coldProps, cph, cpc, dofTarget } = eb;
+    const {
+      mh, Th_in, Th_out, mc, Tc_in, Tc_out,
+      Qh_kW, Qc_kW, hotProps, coldProps, cph, cpc,
+      hotMode, coldMode, hotBreak, coldBreak, dofTarget
+    } = eb;
+    const hasPhaseChange = (hotMode !== 'sensible' || coldMode !== 'sensible');
+    const pwProfile = buildHXPiecewiseProfile(eb);
+
     const Q_kW = Qh_kW;
     const Q_W = Q_kW * 1000.0;
     const hxType = inp.hx_type || 'shell_tube'; // 'shell_tube' | 'plate_phe'
 
-    // Counter-current LMTD
+    // Terminal & Zonal Effective Counter-current LMTD
     const dT1 = Th_in - Tc_out;
     const dT2 = Th_out - Tc_in;
-    const tempCross = (dT1 <= 0 || dT2 <= 0);
+    const tempCross = (dT1 <= 0 || dT2 <= 0 || pwProfile.minPinchDT <= 0.2);
     const dT1_safe = Math.max(1.2, dT1);
     const dT2_safe = Math.max(1.2, dT2);
 
-    let lmtd = 0;
+    let lmtd_terminal = 0;
     if (Math.abs(dT1_safe - dT2_safe) < 0.05) {
-      lmtd = 0.5 * (dT1_safe + dT2_safe);
+      lmtd_terminal = 0.5 * (dT1_safe + dT2_safe);
     } else {
-      lmtd = (dT1_safe - dT2_safe) / Math.log(dT1_safe / dT2_safe);
+      lmtd_terminal = (dT1_safe - dT2_safe) / Math.log(dT1_safe / dT2_safe);
     }
+
+    // Harmonic duty-weighted zonal LMTD: 1 / LMTD_eff = sum( (dQ_k / Q) / LMTD_k )
+    let sumQOverLMTD = 0;
+    pwProfile.zones.forEach(z => {
+      sumQOverLMTD += (z.dQ_kW / Math.max(0.01, Q_kW)) / Math.max(0.8, z.zoneLMTD);
+    });
+    const lmtd = hasPhaseChange ? (1.0 / Math.max(1e-4, sumQOverLMTD)) : lmtd_terminal;
 
     const kw = inp.phe_kw || inp.kw || 45.0;
     const dnToNpsMap = {
@@ -342,6 +654,35 @@ window.ChemEngSolvers = (function () {
       const d_mm = Math.sqrt((4.0 * q_m3s) / (Math.PI * v_noz)) * 1000.0;
       const stdDN = [25, 40, 50, 65, 80, 100, 125, 150, 200, 250, 300, 350, 400, 450, 500];
       return stdDN.find(d => d >= d_mm) || 500;
+    };
+
+    // Helper: Evaluate exact zone-by-zone U_k, A_k and effective U_calc given single-phase base hh_sp, hc_sp
+    const evaluateZonalTransfer = (hh_sp, hc_sp, R_wall_plus_foul, Ft_sensible, isPHE, areaRatioHotToOut, areaRatioColdToOut) => {
+      let totalA_req = 0;
+      let sumQOverCMTD = 0;
+      const detailedZones = pwProfile.zones.map(z => {
+        const hh_z = adjustFilmForPhaseRegime(hh_sp, z.hotRegime, hotProps, isPHE, hotBreak.xFrac);
+        const hc_z = adjustFilmForPhaseRegime(hc_sp, z.coldRegime, coldProps, isPHE, coldBreak.xFrac);
+        const R_z = (areaRatioHotToOut / hh_z) + (areaRatioColdToOut / hc_z) + R_wall_plus_foul;
+        const U_z = 1.0 / Math.max(1e-5, R_z);
+        const Ft_z = z.isIsothermalSide ? 1.0 : Ft_sensible;
+        const cmtd_z = Math.max(0.8, z.zoneLMTD * Ft_z);
+        const A_z = (z.dQ_kW * 1000.0) / Math.max(1.0, U_z * cmtd_z);
+        totalA_req += A_z;
+        sumQOverCMTD += z.dQ_kW / cmtd_z;
+        return {
+          ...z,
+          Ft_z,
+          cmtd_z,
+          hh_z,
+          hc_z,
+          U_z,
+          A_z
+        };
+      });
+      const CMTD_eff = Q_kW / Math.max(1e-4, sumQOverCMTD);
+      const U_eff = Q_W / Math.max(1.0, totalA_req * CMTD_eff);
+      return { detailedZones, totalA_req, CMTD_eff, U_eff };
     };
 
     // =========================================================================
@@ -360,25 +701,23 @@ window.ChemEngSolvers = (function () {
       const Wp_m = Wp_mm / 1000.0;
       const Lp_m = Lp_mm / 1000.0;
 
-      // Area enlargement factor phi (typical 1.17 ~ 1.22 for corrugated chevron plates)
       const phi_enlarge = beta_deg >= 60 ? 1.21 : (beta_deg >= 45 ? 1.18 : 1.15);
       const De_m = (2.0 * b_m) / phi_enlarge;
       const A_single_plate_m2 = Wp_m * Lp_m * phi_enlarge;
       const A_cross_1ch_m2 = b_m * Wp_m;
 
-      const Ft = phePasses === 1 ? 0.98 : calcFt(Th_in, Th_out, Tc_in, Tc_out, phePasses);
-      const CMTD = lmtd * Ft;
+      const Ft_sens = phePasses === 1 ? 0.98 : calcFt(Th_in, Th_out, Tc_in, Tc_out, phePasses);
+      let Ft = hasPhaseChange ? 1.0 : Ft_sens;
+      let CMTD = lmtd * Ft;
 
       const rhoh = hotProps.rho, muh_Pas = hotProps.mu * 0.001, cph_J = cph * 1000.0, kh = hotProps.k;
       const rhoc = coldProps.rho, muc_Pas = coldProps.mu * 0.001, cpc_J = cpc * 1000.0, kc = coldProps.k;
-      // PHE low fouling due to high wall shear stress
       const rfh = Math.min(0.00005, hotProps.fouling * 0.35);
       const rfc = Math.min(0.00005, coldProps.fouling * 0.35);
 
       const Prh = (cph_J * muh_Pas) / kh;
       const Prc = (cpc_J * muc_Pas) / kc;
 
-      // Muley-Manglik / Martin Chevron Nusselt & Friction constants
       const Ch = beta_deg >= 60 ? 0.295 : (beta_deg >= 45 ? 0.215 : 0.145);
       const m_exp = beta_deg >= 60 ? 0.720 : (beta_deg >= 45 ? 0.695 : 0.660);
       const Kp_fric = beta_deg >= 60 ? 2.95 : (beta_deg >= 45 ? 1.65 : 0.88);
@@ -389,12 +728,13 @@ window.ChemEngSolvers = (function () {
       let A_prov_m2 = 25.0, A_req_m2 = 21.0, overdesign_pct = 15.0;
       let hh = 3500, hc = 3500, vh = 0.45, vc = 0.45, Reh = 2500, Rec = 2500;
       let dPh_bar = 0.35, dPc_bar = 0.35;
+      let zoneResults = [];
       const iterations = [];
 
       for (let it = 1; it <= 12; it++) {
-        const A_trial = (Q_W / (Uk * CMTD)) * 1.14;
+        const A_trial = (Q_W / Math.max(10.0, Uk * CMTD)) * 1.14;
         N_eff_plates = Math.max(9, Math.ceil(A_trial / A_single_plate_m2));
-        if (N_eff_plates % 2 === 0) N_eff_plates += 1; // Odd number of thermal plates -> equal channels
+        if (N_eff_plates % 2 === 0) N_eff_plates += 1;
         N_plates = N_eff_plates + 2;
         N_ch_per_pass = Math.max(2, Math.round((N_plates - 1) / (2.0 * phePasses)));
         A_prov_m2 = N_eff_plates * A_single_plate_m2;
@@ -415,27 +755,29 @@ window.ChemEngSolvers = (function () {
         hh = (Nuh * kh) / De_m;
         hc = (Nuc * kc) / De_m;
 
-        const R_total = (1.0 / hh) + (1.0 / hc) + (tp_m / kw) + rfh + rfc;
-        U_calc = 1.0 / R_total;
+        const zEval = evaluateZonalTransfer(hh, hc, (tp_m / kw) + rfh + rfc, Ft_sens, true, 1.0, 1.0);
+        zoneResults = zEval.detailedZones;
+        A_req_m2 = zEval.totalA_req;
+        CMTD = zEval.CMTD_eff;
+        Ft = CMTD / Math.max(0.5, lmtd);
+        U_calc = zEval.U_eff;
 
         const err = Math.abs(U_calc - Uk);
-        const errPct = (err / U_calc) * 100.0;
+        const errPct = (err / Math.max(1, U_calc)) * 100.0;
         iterations.push({
           iter: it,
-          param: `PHE N_p=${N_plates}매 (${N_ch_per_pass} Ch/Pass, β=${beta_deg}°)`,
+          param: `PHE N_p=${N_plates}매 (${N_ch_per_pass} Ch/Pass, ${zoneResults.length}구간 해석)`,
           assumed: `${Uk.toFixed(1)} W/m²K`,
           calc: `${U_calc.toFixed(1)} W/m²K (A=${A_prov_m2.toFixed(1)} m²)`,
           err: `${errPct.toFixed(2)}%`,
-          note: err < 1.0 ? '수렴 완료 (Muley-Manglik PHE)' : '판수 및 채널 유속 재수렴'
+          note: err < 1.0 ? '수렴 완료 (Zonal PHE)' : '판수 및 구간별 열전달계수 재수렴'
         });
         if (err < 1.0 && it >= 2) break;
         Uk = 0.40 * Uk + 0.60 * U_calc;
       }
 
-      A_req_m2 = Q_W / (U_calc * CMTD);
       overdesign_pct = ((A_prov_m2 - A_req_m2) / Math.max(0.1, A_req_m2)) * 100.0;
 
-      // Channel + Port Pressure Drop (bar)
       const fh = Kp_fric / Math.pow(Math.max(20, Reh), 0.24);
       const fc = Kp_fric / Math.pow(Math.max(20, Rec), 0.24);
       const port_d_m = Math.max(0.05, Math.min(0.20, Wp_m * 0.28));
@@ -469,15 +811,20 @@ window.ChemEngSolvers = (function () {
       const cost_krw = Math.round((cost_usd * 1380) / 10000) * 10000;
 
       const warnings = [];
-      if (tempCross && Ft < 0.75) {
-        warnings.push({ level: 'warn', text: `온도 교차(Temperature Cross) 조건 감지: 대향류 판형 열교환기(PHE)는 온도 접근차(ΔT_min=${Math.min(dT1_safe, dT2_safe).toFixed(1)}°C) 운전이 가능하나 패스 수(${phePasses}-${phePasses} Pass) 확인이 필요합니다.` });
+      if (pwProfile.minPinchDT <= 0.5) {
+        warnings.push({ level: 'danger', text: `내부 상변화 핀치 온도교차 발생! 최소 접근온도 ΔT_pinch = ${pwProfile.minPinchDT.toFixed(1)}°C — 포화온도(Tsat) 또는 유량 조건을 조정하세요.` });
+      } else if (pwProfile.minPinchDT < 3.0) {
+        warnings.push({ level: 'warn', text: `내부 핀치 접근온도 주의: 최소 ΔT_pinch = ${pwProfile.minPinchDT.toFixed(1)}°C (< 3.0°C) — 판수 급증 유의` });
+      }
+      if (hasPhaseChange) {
+        warnings.push({ level: 'ok', text: `다구간(${zoneResults.length}-Zone) 상변화·과열·과냉 적분 설계 적용: A_req = ${A_req_m2.toFixed(1)} m², 유효 U = ${U_calc.toFixed(0)} W/m²K, 최소 핀치 ΔT = ${pwProfile.minPinchDT.toFixed(1)}°C` });
       } else {
         warnings.push({ level: 'ok', text: `판형 열교환기(PHE) 고효율 열회수 적합: 총괄계수 U=${U_calc.toFixed(0)} W/m²K · 판수 ${N_plates}매 (전열면적 ${A_prov_m2.toFixed(1)} m²)` });
       }
       if (dPh_bar > 0.85 || dPc_bar > 0.85) {
-        warnings.push({ level: 'warn', text: `채널 압력강하 주의: 고온측 ΔP=${dPh_bar.toFixed(3)} bar / 저온측 ΔP=${dPc_bar.toFixed(3)} bar — 판 간격(b) 확대 또는 쉐브론 각도(45°) 완화 권장` });
+        warnings.push({ level: 'warn', text: `채널 압력강하 주의: 고온측 ΔP=${dPh_bar.toFixed(3)} bar / 저온측 ΔP=${dPc_bar.toFixed(3)} bar — 판 간격(b) 확대 권장` });
       } else {
-        warnings.push({ level: 'ok', text: `PHE 채널 차압 양호: 고온측 ΔP=${dPh_bar.toFixed(3)} bar (v=${vh.toFixed(2)} m/s) / 저온측 ΔP=${dPc_bar.toFixed(3)} bar (v=${vc.toFixed(2)} m/s)` });
+        warnings.push({ level: 'ok', text: `PHE 채널 차압 양호: 고온측 ΔP=${dPh_bar.toFixed(3)} bar / 저온측 ΔP=${dPc_bar.toFixed(3)} bar` });
       }
 
       return {
@@ -487,11 +834,13 @@ window.ChemEngSolvers = (function () {
         mh, Th_in, Th_out, mc, Tc_in, Tc_out, dofTarget, allocation: 'hot_shell',
         Qh_kW, Qc_kW, Q_kW,
         hotProps, coldProps, cph, cpc, rfs: rfh, rft: rfc,
+        hotMode, coldMode, hasPhaseChange, hotBreak, coldBreak,
+        zones: zoneResults, hotNodes: pwProfile.hotNodes, coldNodes: pwProfile.coldNodes,
+        minPinchDT: pwProfile.minPinchDT, pinchF: pwProfile.pinchF,
         dT1, dT2, lmtd, Ft, CMTD,
         U_calc, U_clean, U_req, A_req_m2, A_prov_m2, overdesign_pct,
-        // PHE Specific + Backward-compatible fields for UI & Export
-        N_plates, N_eff_plates, N_ch: N_ch_per_pass, N_ch_per_pass,
-        phe_chevron_deg: beta_deg, beta_deg,
+        N_plates, N_eff_plates, N_ch: N_ch_per_pass, N_ch_per_pass, N_channels: N_plates - 1,
+        phe_beta_deg: beta_deg, phe_chevron_deg: beta_deg, beta_deg,
         phe_b_mm: b_mm, b_mm,
         phe_tp_mm: tp_mm, tp_mm,
         phe_wp_mm: Wp_mm, Wp_mm,
@@ -515,10 +864,14 @@ window.ChemEngSolvers = (function () {
       };
     }
 
+    // =========================================================================
+    // BRANCH B: SHELL & TUBE HEAT EXCHANGER (TEMA + Bell-Delaware + 3-Zone Phase Change)
+    // =========================================================================
     const nShell = inp.n_shell || 1;
     const nPasses = inp.n_passes || 2;
-    const Ft = nPasses === 1 ? 1.0 : calcFt(Th_in, Th_out, Tc_in, Tc_out, nShell);
-    const CMTD = lmtd * Ft;
+    const Ft_sens = nPasses === 1 ? 1.0 : calcFt(Th_in, Th_out, Tc_in, Tc_out, nShell);
+    let Ft = hasPhaseChange ? 1.0 : Ft_sens;
+    let CMTD = lmtd * Ft;
 
     let U_calc = 550;
     let U_assumed = inp.U_assumed || 600;
@@ -531,6 +884,7 @@ window.ChemEngSolvers = (function () {
     let overdesign_pct = 15.0;
     let Jc = 1.0, Jl = 1.0, Jb = 1.0, Js = 1.0, Jr = 1.0, J_total = 1.0;
     let f_vs_Hz = 0, f_nat_Hz = 45.0, vibRatio = 0.25;
+    let zoneResults = [];
     const iterations = [];
 
     const do_mm = inp.tube_od_mm || 19.05;
@@ -545,12 +899,12 @@ window.ChemEngSolvers = (function () {
     const baffleRatio = Math.min(0.60, Math.max(0.18, inp.baffle_ratio || 0.30));
     const baffleCutPct = Math.min(45, Math.max(15, inp.baffle_cut_pct || 25));
 
-    // Fluid allocation: default Hot on Shell, Cold on Tube (or reversed if user chooses)
-    const allocation = inp.allocation || 'hot_shell'; // 'hot_shell' | 'hot_tube'
-    const shellProps = allocation === 'hot_shell' ? hotProps : coldProps;
-    const tubeProps = allocation === 'hot_shell' ? coldProps : hotProps;
-    const ms_kgh = allocation === 'hot_shell' ? mh : mc;
-    const mt_kgh = allocation === 'hot_shell' ? mc : mh;
+    const allocation = inp.allocation || 'hot_shell';
+    const isHotShell = allocation !== 'hot_tube';
+    const shellProps = isHotShell ? hotProps : coldProps;
+    const tubeProps = isHotShell ? coldProps : hotProps;
+    const ms_kgh = isHotShell ? mh : mc;
+    const mt_kgh = isHotShell ? mc : mh;
 
     const rhos = inp.rhos || shellProps.rho;
     const mus_Pas = (inp.mus_cP || shellProps.mu) * 0.001;
@@ -564,9 +918,18 @@ window.ChemEngSolvers = (function () {
     const kt = inp.kt || tubeProps.k;
     const rft = inp.rft !== undefined ? inp.rft : tubeProps.fouling;
 
+    const R_wall_fixed = (do_m * Math.log(do_m / di_m)) / (2.0 * kw);
+    const R_foul_fixed = (do_m / di_m) * rft + rfs;
+    const areaRatioHot = isHotShell ? 1.0 : (do_m / di_m);
+    const areaRatioCold = isHotShell ? (do_m / di_m) : 1.0;
+
     if (mode === 'quick') {
       U_calc = Math.max(20, U_assumed);
-      A_req_m2 = Q_W / (U_calc * CMTD);
+      const zQuick = evaluateZonalTransfer(U_calc * 2.2, U_calc * 2.2, R_wall_fixed + R_foul_fixed, Ft_sens, false, areaRatioHot, areaRatioCold);
+      zoneResults = zQuick.detailedZones;
+      CMTD = zQuick.CMTD_eff;
+      Ft = CMTD / Math.max(0.5, lmtd);
+      A_req_m2 = Q_W / Math.max(1.0, U_calc * CMTD);
       A_prov_m2 = A_req_m2 * 1.15;
       N_tubes = Math.max(16, Math.ceil(A_prov_m2 / (Math.PI * do_m * L_m)));
       const CL = layoutAngle === 30 ? 0.866 : 1.0;
@@ -582,9 +945,7 @@ window.ChemEngSolvers = (function () {
         note: '빠른 개략 모드 직접 산정'
       });
     } else {
-      // ASPEN / HTRI-STYLE ITERATIVE CONVERGENCE LOOP:
-      // Assume U_k -> Required Area with 12% design margin -> Tube Count N_t & Shell ID D_s ->
-      // Tube-side Gnielinski h_i & Bell-Delaware Shell-side h_o (Jc, Jl, Jb, Js, Jr) -> U_calc -> Damped update
+      // HTRI-STYLE RIGOROUS ZONAL + BELL-DELAWARE ITERATIVE CONVERGENCE LOOP
       let Uk = Math.max(80, U_assumed);
       const CL = layoutAngle === 30 ? 0.866 : 1.0;
       const CTP = nPasses === 1 ? 0.93 : (nPasses === 2 ? 0.90 : 0.85);
@@ -592,7 +953,7 @@ window.ChemEngSolvers = (function () {
       const Prs = (cps_J * mus_Pas) / ks;
 
       for (let it = 1; it <= 12; it++) {
-        const A_trial = (Q_W / (Uk * CMTD)) * 1.12;
+        const A_trial = (Q_W / Math.max(10.0, Uk * CMTD)) * 1.12;
         let Nt_trial = Math.max(20, Math.ceil(A_trial / (Math.PI * do_m * L_m)));
         if (Nt_trial % nPasses !== 0) Nt_trial += (nPasses - (Nt_trial % nPasses));
         N_tubes = Nt_trial;
@@ -603,7 +964,7 @@ window.ChemEngSolvers = (function () {
         const Ds_m = D_bundle_m + clearance_m;
         D_shell_mm = Ds_m * 1000.0;
 
-        // Tube-side film coefficient h_i
+        // Tube-side single-phase baseline h_i
         const mt_kgs = mt_kgh / 3600.0;
         const nTubesPerPass = N_tubes / nPasses;
         const At_flow = nTubesPerPass * (Math.PI * di_m * di_m / 4.0);
@@ -616,9 +977,9 @@ window.ChemEngSolvers = (function () {
           Nut = ((ft_darcy / 8.0) * (Ret - 1000.0) * Prt) / (1.0 + 12.7 * Math.sqrt(ft_darcy / 8.0) * (Math.pow(Prt, 2.0 / 3.0) - 1.0));
           Nut = Math.max(4.0, Nut);
         }
-        hi = (Nut * kt) / di_m;
+        const hi_sp = (Nut * kt) / di_m;
 
-        // Bell-Delaware Shell-side film coefficient h_o
+        // Bell-Delaware Shell-side single-phase baseline h_o
         const B_m = Ds_m * baffleRatio;
         const c_gap_m = pt_m - do_m;
         const As_cross = (Ds_m * c_gap_m * B_m) / pt_m;
@@ -634,56 +995,61 @@ window.ChemEngSolvers = (function () {
         const Nu_ideal = 0.36 * Math.pow(Math.max(10, Res), 0.55) * Math.pow(Prs, 1.0 / 3.0);
         const ho_ideal = (Nu_ideal * ks) / De_m;
 
-        // Bell-Delaware 5 Correction Factors:
-        // Jc (Baffle cut & configuration factor)
         Jc = Math.max(0.55, Math.min(1.12, 1.15 - 0.008 * baffleCutPct));
-        // Jl (Tube-to-baffle & Baffle-to-shell leakage factor)
         const sm_ratio = 0.14 + 0.08 * (0.30 / baffleRatio);
         Jl = Math.max(0.52, Math.min(0.92, 0.44 * (1.0 - sm_ratio) + (1.0 - 0.44) * Math.exp(-1.5 * sm_ratio)));
-        // Jb (Bundle bypass stream factor)
         const Fbp = (clearance_m * B_m) / As_cross;
         Jb = Math.max(0.68, Math.min(0.96, Math.exp(-1.25 * Fbp)));
-        // Js (Unequal inlet/outlet baffle spacing factor)
         Js = 0.96;
-        // Jr (Laminar temperature gradient factor if Re_s < 100)
         Jr = Res < 100 ? Math.max(0.45, Math.pow(10.0 / Math.max(10, Res), 0.18)) : 1.0;
 
         J_total = Jc * Jl * Jb * Js * Jr;
-        ho = ho_ideal * J_total * 1.32; // Normalized to Bell-Delaware ideal tube bank
+        const ho_sp = ho_ideal * J_total * 1.32;
 
-        const R_tube_inside = (do_m / di_m) * (1.0 / hi);
-        const R_foul_in = (do_m / di_m) * rft;
-        const R_wall = (do_m * Math.log(do_m / di_m)) / (2.0 * kw);
-        const R_foul_out = rfs;
-        const R_shell = 1.0 / ho;
+        const hh_sp = isHotShell ? ho_sp : hi_sp;
+        const hc_sp = isHotShell ? hi_sp : ho_sp;
 
-        U_calc = 1.0 / (R_tube_inside + R_foul_in + R_wall + R_foul_out + R_shell);
+        const zEval = evaluateZonalTransfer(hh_sp, hc_sp, R_wall_fixed + R_foul_fixed, Ft_sens, false, areaRatioHot, areaRatioCold);
+        zoneResults = zEval.detailedZones;
+        A_req_m2 = zEval.totalA_req;
+        CMTD = zEval.CMTD_eff;
+        Ft = Math.min(1.0, CMTD / Math.max(0.5, lmtd));
+        U_calc = zEval.U_eff;
+
+        // Duty-weighted effective film coefficients for KPI display
+        let hh_avg = 0, hc_avg = 0;
+        zoneResults.forEach(z => {
+          const w = z.dQ_kW / Math.max(0.01, Q_kW);
+          hh_avg += w * z.hh_z;
+          hc_avg += w * z.hc_z;
+        });
+        ho = isHotShell ? hh_avg : hc_avg;
+        hi = isHotShell ? hc_avg : hh_avg;
+
         const err = Math.abs(U_calc - Uk);
-        const errPct = (err / U_calc) * 100.0;
+        const errPct = (err / Math.max(1.0, U_calc)) * 100.0;
 
         iterations.push({
           iter: it,
-          param: `Nt=${N_tubes}본, Ds=${D_shell_mm.toFixed(0)}mm (J=${J_total.toFixed(3)})`,
+          param: `Nt=${N_tubes}본, Ds=${D_shell_mm.toFixed(0)}mm (${zoneResults.length}구간 적분)`,
           assumed: `${Uk.toFixed(1)} W/m²K`,
           calc: `${U_calc.toFixed(1)} W/m²K`,
           err: `${errPct.toFixed(2)}%`,
-          note: err < 0.1 ? '수렴 완료 (Bell-Delaware)' : '총괄열전달계수 재가정'
+          note: err < 0.2 ? '수렴 완료 (Zonal Bell-Delaware)' : '구간별 열전달계수 재가정'
         });
 
-        if (err < 0.1 && it >= 2) break;
-        // Damped Wegstein relaxation
+        if (err < 0.2 && it >= 2) break;
         Uk = 0.35 * Uk + 0.65 * U_calc;
       }
 
-      A_req_m2 = Q_W / (U_calc * CMTD);
-      overdesign_pct = ((A_prov_m2 - A_req_m2) / A_req_m2) * 100.0;
+      overdesign_pct = ((A_prov_m2 - A_req_m2) / Math.max(0.1, A_req_m2)) * 100.0;
 
       // Tube-side Pressure Drop
       const ft_d = swameeJain(Ret, 0.000045 / di_m);
       const dPt_Pa = nPasses * (ft_d * (L_m / di_m) + 2.5) * 0.5 * rhot * vt * vt;
       dPt_bar = dPt_Pa / 1e5;
 
-      // Shell-side Pressure Drop (Bell-Delaware crossflow + window with leakage & bypass correction)
+      // Shell-side Pressure Drop
       const Ds_m = D_shell_mm / 1000.0;
       const B_m = Ds_m * baffleRatio;
       const De_hyd_m = layoutAngle === 30
@@ -696,10 +1062,10 @@ window.ChemEngSolvers = (function () {
       const dPs_Pa = ((fs_kern * (Nb + 1) * Ds_m) / Math.max(0.008, De_hyd_m)) * 0.5 * rhos * vs * vs * Rl_dp * Rb_dp;
       dPs_bar = dPs_Pa / 1e5;
 
-      // TEMA Tube Vibration Check (Vortex Shedding Frequency vs Tube Natural Frequency)
+      // TEMA Tube Vibration Check
       const Strouhal = layoutAngle === 30 ? 0.22 : 0.20;
       f_vs_Hz = (Strouhal * vs) / do_m;
-      const E_steel = 2.0e11; // Pa
+      const E_steel = 2.0e11;
       const I_tube = (Math.PI / 64.0) * (Math.pow(do_m, 4) - Math.pow(di_m, 4));
       const m_eff_kgm = (Math.PI / 4.0) * ((do_m * do_m - di_m * di_m) * 7850 + di_m * di_m * rhot + 1.5 * do_m * do_m * rhos);
       const L_span = Math.max(0.25, B_m);
@@ -707,7 +1073,7 @@ window.ChemEngSolvers = (function () {
       vibRatio = f_vs_Hz / Math.max(1.0, f_nat_Hz);
     }
 
-    // Mechanical & Quotation Specifications for TEMA Datasheet & Engineering DWG
+    // Mechanical & Quotation Specifications for TEMA Datasheet
     const stdShells = [203, 254, 305, 337, 387, 438, 489, 540, 591, 635, 686, 737, 787, 838, 889, 940, 991, 1067, 1143, 1219, 1372, 1524, 1676, 1829];
     const D_shell_std_mm = stdShells.find(s => s >= D_shell_mm) || Math.ceil(D_shell_mm / 50) * 50;
     const D_bundle_mm = Math.max(150, D_shell_std_mm - 32);
@@ -717,18 +1083,15 @@ window.ChemEngSolvers = (function () {
     const t_shell_mm = D_shell_std_mm <= 400 ? 8 : (D_shell_std_mm <= 750 ? 10 : (D_shell_std_mm <= 1100 ? 12 : 16));
     const t_tubesheet_mm = Math.max(25, Math.round(D_shell_std_mm * 0.045 + 12));
 
-    // Clean overall coefficient U_clean (without fouling)
-    const R_clean = (do_m / di_m) * (1.0 / Math.max(50, hi || 1200)) + (do_m * Math.log(do_m / di_m)) / (2.0 * kw) + (1.0 / Math.max(50, ho || 800));
+    const R_clean = (do_m / di_m) * (1.0 / Math.max(50, hi || 1200)) + R_wall_fixed + (1.0 / Math.max(50, ho || 800));
     const U_clean = 1.0 / R_clean;
     const U_req = Q_W / Math.max(1.0, A_prov_m2 * CMTD);
 
-    // Nozzle sizing (Shell & Tube In/Out based on velocity ~ 1.8 m/s for liquid, ANSI/ASME B36.10M NPS default)
     const nozzle_shell_dn = calcNozzleDN(ms_kgh, rhos);
     const nozzle_tube_dn = calcNozzleDN(mt_kgh, rhot);
     const nozzle_shell_nps = dnToNpsMap[nozzle_shell_dn] || `${Math.round(nozzle_shell_dn / 25)}"`;
     const nozzle_tube_nps = dnToNpsMap[nozzle_tube_dn] || `${Math.round(nozzle_tube_dn / 25)}"`;
 
-    // Equipment Weights & Budgetary Cost (TEMA Class R)
     const W_tubes_kg = N_tubes * (Math.PI / 4.0) * (do_m * do_m - di_m * di_m) * L_m * 7850 * nShell;
     const W_baffles_ts_kg = (N_baffles * 0.75 * (Math.PI / 4.0) * Math.pow(D_shell_std_mm / 1000.0, 2) * 0.0095 * 7850 + 2 * (Math.PI / 4.0) * Math.pow(D_shell_std_mm / 1000.0, 2) * (t_tubesheet_mm / 1000.0) * 7850) * nShell;
     const W_bundle_kg = W_tubes_kg + W_baffles_ts_kg;
@@ -740,16 +1103,29 @@ window.ChemEngSolvers = (function () {
     const matFactor = kw < 25 ? 2.4 : (kw > 80 ? 1.8 : 1.0);
     const cost_usd = Math.round((8500 + 340 * Math.pow(A_prov_m2 * nShell, 0.72)) * matFactor);
     const cost_krw = Math.round((cost_usd * 1380) / 10000) * 10000;
-    const tema_type = Math.abs(Th_in - Tc_in) > 85 ? 'AES (Floating Head)' : 'BEM (Fixed Tubesheet)';
+    const tema_type = coldMode !== 'sensible' && isHotShell === false
+      ? 'BKM (Kettle Reboiler / Chiller)'
+      : (Math.abs(Th_in - Tc_in) > 85 ? 'AES (Floating Head)' : 'BEM (Fixed Tubesheet)');
 
     const warnings = [];
-    if (tempCross) {
-      warnings.push({ level: 'danger', text: `온도 역전(Temperature Cross) 발생! dT1=${dT1.toFixed(1)}°C, dT2=${dT2.toFixed(1)}°C — 입출구 온도 조건을 점검하세요.` });
+    if (pwProfile.minPinchDT <= 0.5) {
+      warnings.push({ level: 'danger', text: `상변화 핀치/온도 역전(Pinch Cross) 감지! 최소 접근온도 ΔT_pinch = ${pwProfile.minPinchDT.toFixed(1)}°C — 포화온도(Tsat) 또는 유량 조건을 점검하세요.` });
+    } else if (pwProfile.minPinchDT < 3.0) {
+      warnings.push({ level: 'warn', text: `내부 상변화 핀치 근접 주의: ΔT_pinch = ${pwProfile.minPinchDT.toFixed(1)}°C (< 3.0°C) — 전열면적 증가 유의` });
+    }
+    if (hasPhaseChange) {
+      const shInfo = hotMode !== 'sensible'
+        ? `고온[과열 ${(hotBreak.superheatC).toFixed(1)}°C · 잠열 ${(mh / 3600 * hotBreak.dh_lat).toFixed(0)}kW · 과냉 ${(hotBreak.subcoolC).toFixed(1)}°C]`
+        : '';
+      const cInfo = coldMode !== 'sensible'
+        ? `${shInfo ? ' / ' : ''}저온[예열 ${(coldBreak.subcoolInC).toFixed(1)}°C · 비등잠열 ${(mc / 3600 * coldBreak.dh_lat).toFixed(0)}kW · 과열 ${(coldBreak.superheatOutC).toFixed(1)}°C]`
+        : '';
+      warnings.push({ level: 'ok', text: `다구간(${zoneResults.length}-Zone) 상변화 적분 완료: ${shInfo}${cInfo} → 총 요구면적 A_req = ${A_req_m2.toFixed(1)} m²` });
     }
     if (Ft < 0.75) {
       warnings.push({ level: 'danger', text: `LMTD 보정계수 Ft = ${Ft.toFixed(3)} (< 0.75 부적합) — 직렬 쉘 패스 수(N_shell)를 2 이상으로 늘리세요!` });
     } else {
-      warnings.push({ level: 'ok', text: `LMTD 보정계수 Ft = ${Ft.toFixed(3)} ≥ 0.75 (TEMA 기준 적합)` });
+      warnings.push({ level: 'ok', text: `유효 온도차 보정 적합: Ft = ${Ft.toFixed(3)} ≥ 0.75 (최소 핀치 ΔT_min = ${pwProfile.minPinchDT.toFixed(1)}°C)` });
     }
     if (mode === 'rigorous') {
       if (dPt_bar > 0.7 || dPs_bar > 0.7) {
@@ -758,7 +1134,7 @@ window.ChemEngSolvers = (function () {
         warnings.push({ level: 'ok', text: `압력강하 양호: Tube ΔP=${dPt_bar.toFixed(3)} bar / Shell ΔP=${dPs_bar.toFixed(3)} bar` });
       }
       if (vibRatio > 0.80) {
-        warnings.push({ level: 'danger', text: `튜브 유체유발 진동(FIV) 공진 위험! 와류주파수/고유진동수 비(f_vs/f_n) = ${vibRatio.toFixed(2)} (> 0.80) — 배플 간격(B/Ds) 축소 필요` });
+        warnings.push({ level: 'danger', text: `튜브 유체유발 진동(FIV) 공진 위험! f_vs/f_n = ${vibRatio.toFixed(2)} (> 0.80) — 배플 간격(B/Ds) 축소 필요` });
       } else {
         warnings.push({ level: 'ok', text: `TEMA 튜브 진동 안전: f_vs=${f_vs_Hz.toFixed(1)} Hz vs 고유진동수 f_n=${f_nat_Hz.toFixed(1)} Hz (비율 ${vibRatio.toFixed(2)} < 0.80)` });
       }
@@ -771,6 +1147,9 @@ window.ChemEngSolvers = (function () {
       mh, Th_in, Th_out, mc, Tc_in, Tc_out, dofTarget, allocation,
       Qh_kW, Qc_kW, Q_kW,
       hotProps, coldProps, cph, cpc, rfs, rft,
+      hotMode, coldMode, hasPhaseChange, hotBreak, coldBreak,
+      zones: zoneResults, hotNodes: pwProfile.hotNodes, coldNodes: pwProfile.coldNodes,
+      minPinchDT: pwProfile.minPinchDT, pinchF: pwProfile.pinchF,
       dT1, dT2, lmtd, Ft, CMTD,
       U_calc, U_clean, U_req, A_req_m2, A_prov_m2, overdesign_pct,
       N_tubes, D_shell_mm: D_shell_std_mm, D_bundle_mm,
@@ -2112,47 +2491,120 @@ window.ChemEngSolvers = (function () {
     const p = prepCanvas(canvas);
     if (!p) return;
     const { ctx, w, h } = p;
-    const pad = { l: 44, r: 22, t: 24, b: 30 };
+    const pad = { l: 46, r: 24, t: 26, b: 32 };
     const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
 
-    const tMin = Math.min(res.Tc_in, res.Th_out) - 10;
-    const tMax = Math.max(res.Th_in, res.Tc_out) + 10;
-    const toX = f => pad.l + f * pw;
-    const toY = t => pad.t + ph - ((t - tMin) / Math.max(10, tMax - tMin)) * ph;
+    const hNodes = (res.hotNodes && res.hotNodes.length >= 2)
+      ? res.hotNodes
+      : [{ f: 0, T: res.Th_in }, { f: 1, T: res.Th_out }];
+    const cNodes = (res.coldNodes && res.coldNodes.length >= 2)
+      ? res.coldNodes
+      : [{ f: 0, T: res.Tc_out }, { f: 1, T: res.Tc_in }];
 
-    ctx.strokeStyle = 'rgba(148,163,184,0.14)';
+    const allT = [...hNodes.map(n => n.T), ...cNodes.map(n => n.T)];
+    const tMin = Math.min(...allT) - 10;
+    const tMax = Math.max(...allT) + 12;
+    const toX = f => pad.l + f * pw;
+    const toY = t => pad.t + ph - ((t - tMin) / Math.max(8, tMax - tMin)) * ph;
+
+    ctx.strokeStyle = 'rgba(148,163,184,0.16)';
+    ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
       const y = pad.t + (ph * i) / 4;
       ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); ctx.stroke();
+      const tVal = tMax - ((tMax - tMin) * i) / 4;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px monospace';
+      ctx.fillText(`${tVal.toFixed(0)}°`, 6, y + 3);
     }
 
-    ctx.fillStyle = 'rgba(56,189,248,0.10)';
+    // Zone vertical boundary dashed lines if multi-zone phase change is active
+    if (res.zones && res.zones.length > 1) {
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = 'rgba(99,102,241,0.32)';
+      res.zones.forEach((z, idx) => {
+        if (idx > 0) {
+          const x = toX(z.fa);
+          ctx.beginPath(); ctx.moveTo(x, pad.t); ctx.lineTo(x, pad.t + ph); ctx.stroke();
+        }
+        const xm = toX(0.5 * (z.fa + z.fb));
+        if ((z.fb - z.fa) * pw > 54) {
+          ctx.fillStyle = '#4338ca';
+          ctx.font = 'bold 9.5px sans-serif';
+          ctx.fillText(`Z${z.idx} (${z.qSharePct.toFixed(0)}%)`, xm - 22, pad.t + ph + 14);
+        }
+      });
+      ctx.restore();
+    }
+
+    // Shaded driving-force polygon between piecewise hot & cold curves
+    ctx.fillStyle = 'rgba(56,189,248,0.11)';
     ctx.beginPath();
-    ctx.moveTo(toX(0), toY(res.Th_in));
-    ctx.lineTo(toX(1), toY(res.Th_out));
-    ctx.lineTo(toX(1), toY(res.Tc_in));
-    ctx.lineTo(toX(0), toY(res.Tc_out));
+    hNodes.forEach((n, i) => {
+      if (i === 0) ctx.moveTo(toX(n.f), toY(n.T));
+      else ctx.lineTo(toX(n.f), toY(n.T));
+    });
+    for (let i = cNodes.length - 1; i >= 0; i--) {
+      ctx.lineTo(toX(cNodes[i].f), toY(cNodes[i].T));
+    }
     ctx.closePath();
     ctx.fill();
 
-    // Hot stream
+    // Hot stream piecewise curve (Desuperheat -> Condense Plateau -> Subcool)
     ctx.strokeStyle = '#fb7185';
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(toX(0), toY(res.Th_in)); ctx.lineTo(toX(1), toY(res.Th_out)); ctx.stroke();
+    ctx.beginPath();
+    hNodes.forEach((n, i) => {
+      if (i === 0) ctx.moveTo(toX(n.f), toY(n.T));
+      else ctx.lineTo(toX(n.f), toY(n.T));
+    });
+    ctx.stroke();
 
-    // Cold stream
-    ctx.strokeStyle = '#38bdf8';
+    // Knee dots on hot stream
+    hNodes.forEach((n, i) => {
+      if (i > 0 && i < hNodes.length - 1) {
+        ctx.fillStyle = '#e11d48';
+        ctx.beginPath(); ctx.arc(toX(n.f), toY(n.T), 4, 0, Math.PI * 2); ctx.fill();
+        ctx.font = 'bold 9.5px sans-serif';
+        ctx.fillText(`Tsat ${n.T.toFixed(1)}°C`, toX(n.f) - 24, toY(n.T) - 8);
+      }
+    });
+
+    // Cold stream piecewise curve (Preheat -> Boiling Plateau -> Superheat)
+    ctx.strokeStyle = '#0284c7';
     ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(toX(1), toY(res.Tc_in)); ctx.lineTo(toX(0), toY(res.Tc_out)); ctx.stroke();
+    ctx.beginPath();
+    cNodes.forEach((n, i) => {
+      if (i === 0) ctx.moveTo(toX(n.f), toY(n.T));
+      else ctx.lineTo(toX(n.f), toY(n.T));
+    });
+    ctx.stroke();
 
-    ctx.fillStyle = '#fda4af';
+    // Knee dots on cold stream
+    cNodes.forEach((n, i) => {
+      if (i > 0 && i < cNodes.length - 1) {
+        ctx.fillStyle = '#0284c7';
+        ctx.beginPath(); ctx.arc(toX(n.f), toY(n.T), 4, 0, Math.PI * 2); ctx.fill();
+        ctx.font = 'bold 9.5px sans-serif';
+        ctx.fillText(`Tsat ${n.T.toFixed(1)}°C`, toX(n.f) - 24, toY(n.T) + 14);
+      }
+    });
+
+    ctx.fillStyle = '#e11d48';
     ctx.font = 'bold 11px sans-serif';
     ctx.fillText(`고온 In ${res.Th_in.toFixed(1)}°C`, toX(0) + 4, toY(res.Th_in) - 6);
-    ctx.fillText(`고온 Out ${res.Th_out.toFixed(1)}°C`, toX(1) - 85, toY(res.Th_out) - 6);
+    ctx.fillText(`고온 Out ${res.Th_out.toFixed(1)}°C`, toX(1) - 92, toY(res.Th_out) - 6);
 
-    ctx.fillStyle = '#7dd3fc';
+    ctx.fillStyle = '#0369a1';
     ctx.fillText(`저온 Out ${res.Tc_out.toFixed(1)}°C`, toX(0) + 4, toY(res.Tc_out) + 15);
-    ctx.fillText(`저온 In ${res.Tc_in.toFixed(1)}°C`, toX(1) - 80, toY(res.Tc_in) + 15);
+    ctx.fillText(`저온 In ${res.Tc_in.toFixed(1)}°C`, toX(1) - 88, toY(res.Tc_in) + 15);
+
+    if (res.minPinchDT !== undefined && Number.isFinite(res.minPinchDT)) {
+      ctx.fillStyle = res.minPinchDT < 3.0 ? '#dc2626' : '#0f766e';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(`Pinch ΔT_min = ${res.minPinchDT.toFixed(1)}°C`, pad.l + pw - 142, pad.t + 12);
+    }
   }
 
   function drawColumnCanvas(canvas, res) {

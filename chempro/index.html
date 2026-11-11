@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-512.png" />
   <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
-  <link rel="stylesheet" href="styles.css?v=20261110h" />
+  <link rel="stylesheet" href="styles.css?v=20261111a" />
 </head>
 <body class="mode-rigorous">
   <script>
@@ -151,7 +151,7 @@
           </div>
 
           <div class="fluid-selector-box">
-            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 톨루엔, 원유, 에탄올, 냉각수)..." oninput="App.filterHXFluidSelects(this.value)" />
+            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: R-134a, R-404A, R-507A, 염소, 스팀, 가성소다)..." oninput="App.filterHXFluidSelects(this.value)" />
             <div class="form-grid cols-3">
               <div class="field">
                 <label><span class="dot dot-coral"></span>고온측 (Hot) <span class="unit">Fluid</span></label>
@@ -236,6 +236,71 @@
             <div class="field" id="wrap_hx_Tco">
               <label>저온 출구 (Tc,out) <span class="unit" id="tag_hx_Tco">°C</span></label>
               <input type="number" id="hx_Tco" value="52.0" step="1" oninput="App.onHXThermalInput('tco')" />
+            </div>
+          </div>
+
+          <div class="section-sub-header" style="margin-top:10px;">
+            <span>상변화(응축·증발) · 과열도 · 과냉도 구간 설계 (3-Zone Phase Change)</span>
+            <span id="hx_zone_mode_badge" style="color:#0284c7;font-weight:800;">단상 현열 모드</span>
+          </div>
+          <div class="form-grid cols-2" style="margin-bottom:6px;">
+            <div class="field">
+              <label><span class="dot dot-coral"></span>고온측 상변화 모드 <span class="unit">Hot Regime</span></label>
+              <select id="hx_hot_mode" onchange="App.onHXPhaseModeChange('hot')">
+                <option value="sensible" selected>단상 현열 냉각 (상변화 없음)</option>
+                <option value="cond_full">상변화 전응축 (과열제거 → 잠열응축 → 과냉각)</option>
+                <option value="cond_partial">부분 응축 · 액화기 (응축 분율 x_cond 지정)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label><span class="dot dot-cyan"></span>저온측 상변화 모드 <span class="unit">Cold Regime</span></label>
+              <select id="hx_cold_mode" onchange="App.onHXPhaseModeChange('cold')">
+                <option value="sensible" selected>단상 현열 가열 (냉각수 · 브라인 · 공정액)</option>
+                <option value="boil_full">냉매/액체 전증발 (과냉예열 → 비등잠열 → 증기과열)</option>
+                <option value="boil_partial">부분 증발 · 리보일러 (기화분율 x_vap 지정)</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="hx_hot_phase_box" style="display:none; padding:9px 11px; margin-bottom:8px; border-radius:8px; background:rgba(251,113,133,0.08); border:1px solid rgba(251,113,133,0.32);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:6px; font-size:11px; font-weight:800; color:#be123c;">
+              <span>🔥 고온측 3-구간 응축 (Th,in &gt; Tsat: 과열제거 | Tsat: 잠열응축 | Th,out &lt; Tsat: 과냉각)</span>
+              <span id="hx_hot_sh_sc_info" style="font-family:monospace; color:#9f1239;"></span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>응축 포화온도 (Tsat,h) <span class="unit">°C</span></label>
+                <input type="number" id="hx_Th_sat" value="100.0" step="0.5" oninput="App.onHXThermalInput('th_sat')" />
+              </div>
+              <div class="field">
+                <label>응축 질량분율 (x_cond) <span class="unit">0~1</span></label>
+                <input type="number" id="hx_hot_xfrac" value="1.00" min="0.01" max="1.00" step="0.02" oninput="App.onHXThermalInput('hx_xfrac')" />
+              </div>
+              <div class="field">
+                <label>응축 잠열 (ΔHv,h) <span class="unit">kJ/kg</span></label>
+                <input type="number" id="hx_hot_hv" value="2257" step="5" oninput="App.onHXThermalInput('hx_hv')" />
+              </div>
+            </div>
+          </div>
+
+          <div id="hx_cold_phase_box" style="display:none; padding:9px 11px; margin-bottom:8px; border-radius:8px; background:rgba(56,189,248,0.09); border:1px solid rgba(56,189,248,0.35);">
+            <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:6px; font-size:11px; font-weight:800; color:#0369a1;">
+              <span>❄️ 저온측 3-구간 증발 (Tc,in &lt; Tsat: 과냉예열 | Tsat: 비등증발 | Tc,out &gt; Tsat: 증기과열)</span>
+              <span id="hx_cold_sh_sc_info" style="font-family:monospace; color:#075985;"></span>
+            </div>
+            <div class="form-grid cols-3">
+              <div class="field">
+                <label>비등 포화온도 (Tsat,c) <span class="unit">°C</span></label>
+                <input type="number" id="hx_Tc_sat" value="-30.0" step="0.5" oninput="App.onHXThermalInput('tc_sat')" />
+              </div>
+              <div class="field">
+                <label>증발 기화분율 (x_vap) <span class="unit">0~1</span></label>
+                <input type="number" id="hx_cold_xfrac" value="1.00" min="0.01" max="1.00" step="0.02" oninput="App.onHXThermalInput('cx_xfrac')" />
+              </div>
+              <div class="field">
+                <label>증발 잠열 (ΔHv,c) <span class="unit">kJ/kg</span></label>
+                <input type="number" id="hx_cold_hv" value="215" step="5" oninput="App.onHXThermalInput('cx_hv')" />
+              </div>
             </div>
           </div>
 
@@ -1399,7 +1464,7 @@
     </div>
   </div>
 
-  <!-- Aspen / HTRI Style Rigorous Iterative Convergence Execution Modal -->
+  <!-- Rigorous Iterative Convergence Execution Modal -->
   <div class="solver-modal-backdrop" id="solverRunModal">
     <div class="solver-modal-box">
       <div class="sm-head">
@@ -1422,11 +1487,11 @@
     </div>
   </div>
 
-  <script src="exceljs.min.js?v=20261110h"></script>
-  <script src="chem_db.js?v=20261110h"></script>
-  <script src="eng_solvers.js?v=20261110h"></script>
-  <script src="excel_exporter.js?v=20261110h"></script>
-  <script src="app.js?v=20261110h"></script>
+  <script src="exceljs.min.js?v=20261111a"></script>
+  <script src="chem_db.js?v=20261111a"></script>
+  <script src="eng_solvers.js?v=20261111a"></script>
+  <script src="excel_exporter.js?v=20261111a"></script>
+  <script src="app.js?v=20261111a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {
