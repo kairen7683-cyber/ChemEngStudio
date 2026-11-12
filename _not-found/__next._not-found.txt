@@ -2,4 +2,4 @@
 2:I[39756,["/ChemEngStudio/_next/static/chunks/152damsp-s3pv.js","/ChemEngStudio/_next/static/chunks/0y_c0ows-h-g3.js","/ChemEngStudio/_next/static/chunks/0jusx7b.p77ph.js","/ChemEngStudio/_next/static/chunks/0d3shmwh5_nmn.js"],"default"]
 3:I[37457,["/ChemEngStudio/_next/static/chunks/152damsp-s3pv.js","/ChemEngStudio/_next/static/chunks/0y_c0ows-h-g3.js","/ChemEngStudio/_next/static/chunks/0jusx7b.p77ph.js","/ChemEngStudio/_next/static/chunks/0d3shmwh5_nmn.js"],"default"]
 4:[]
-0:{"rsc":["$","$1","c",{"children":[null,["$","$L2",null,{"parallelRouterKey":"children","template":["$","$L3",null,{}]}]]}],"isPartial":false,"staleTime":300,"varyParams":"$W4","buildId":"Ymfv4Mk9gfVmZyov0NANl"}
+0:{"rsc":["$","$1","c",{"children":[null,["$","$L2",null,{"parallelRouterKey":"children","template":["$","$L3",null,{}]}]]}],"isPartial":false,"staleTime":300,"varyParams":"$W4","buildId":"MggAY9fsUWJi1b0Bqo0Vk"}
