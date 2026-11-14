@@ -14,6 +14,7 @@ import {
   adminUpdateUser,
   changeMyPassword,
 } from '@/lib/auth/authClient';
+import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import { useAuth } from './AuthContext';
 
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -89,6 +90,7 @@ export function HeaderUserControls() {
 
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+      <PwaInstallButton variant="header" />
       <button
         type="button"
         onClick={() => void forceSyncNow()}

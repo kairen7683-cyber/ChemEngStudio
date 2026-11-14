@@ -989,10 +989,18 @@ def serve_static_frontend(full_path: str):
         fp = _safe_out_path(rel)
         if fp and fp.is_file():
             headers: dict[str, str] = {}
-            if rel.endswith(".html"):
+            media_type: Optional[str] = None
+            if rel == "manifest.json":
+                media_type = "application/manifest+json"
+                headers["Cache-Control"] = "no-cache, must-revalidate"
+            elif rel == "sw.js":
+                media_type = "application/javascript"
+                headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+                headers["Service-Worker-Allowed"] = "/"
+            elif rel.endswith(".html"):
                 headers["Cache-Control"] = "no-store, must-revalidate"
             elif "_next/static/" in rel:
                 headers["Cache-Control"] = "public, max-age=31536000, immutable"
-            return FileResponse(str(fp), headers=headers)
+            return FileResponse(str(fp), headers=headers, media_type=media_type)
 
     raise HTTPException(status_code=404, detail="Not Found")

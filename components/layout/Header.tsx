@@ -221,22 +221,18 @@ export default function Header() {
               flexShrink: 0,
             }}
           >
-            <span
+            <img
+              src="/icon-192.png?v=2"
+              alt="ChemEng Studio"
               style={{
-                width: 25,
-                height: 25,
+                width: 26,
+                height: 26,
                 borderRadius: 6,
-                background: '#2563EB',
-                color: '#FFFFFF',
-                fontWeight: 900,
-                fontSize: 10.5,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                objectFit: 'cover',
+                flexShrink: 0,
+                border: '1px solid rgba(56, 189, 248, 0.35)',
               }}
-            >
-              CP
-            </span>
+            />
             {!isMobile && (
               <span
                 style={{

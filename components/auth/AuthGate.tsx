@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { loginWithPassword, registerUserAccount } from '@/lib/auth/authClient';
+import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import { useAuth } from './AuthContext';
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
@@ -48,7 +49,19 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             width: '100%',
           }}
         >
-          <div style={{ fontSize: 28, marginBottom: 10 }}>⚗️</div>
+          <img
+            src="/icon-192.png?v=2"
+            alt="ChemEng Studio"
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 12,
+              margin: '0 auto 10px',
+              display: 'block',
+              objectFit: 'cover',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+            }}
+          />
           <div style={{ fontSize: 16, fontWeight: 900, color: '#FFFFFF', marginBottom: 6 }}>
             ChemEng Studio
           </div>
@@ -161,20 +174,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span
+              <img
+                src="/icon-192.png?v=2"
+                alt="ChemEng Studio"
                 style={{
-                  width: 34,
-                  height: 34,
+                  width: 38,
+                  height: 38,
                   borderRadius: 9,
-                  background: '#1D4ED8',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 18,
+                  objectFit: 'cover',
+                  flexShrink: 0,
+                  border: '1px solid rgba(56, 189, 248, 0.35)',
                 }}
-              >
-                ⚗️
-              </span>
+              />
               <div>
                 <div style={{ fontSize: 16.5, fontWeight: 900, letterSpacing: '-0.02em' }}>
                   ChemEng Studio
@@ -525,6 +536,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               </button>
             </form>
           )}
+
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #E2E8F0' }}>
+            <PwaInstallButton variant="login" />
+          </div>
         </div>
       </div>
     </div>
