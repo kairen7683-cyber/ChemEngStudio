@@ -15,6 +15,7 @@ import {
   type SimUiMode,
 } from '@/lib/simUiHandoff';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
+import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 
 export default function Header() {
   const pathname = usePathname() || '/';
@@ -222,7 +223,7 @@ export default function Header() {
             }}
           >
             <img
-              src="/icon-192.png?v=2"
+              src="/icon-192-v2.png"
               alt="ChemEng Studio"
               style={{
                 width: 26,
@@ -247,6 +248,8 @@ export default function Header() {
               </span>
             )}
           </button>
+
+          {isMobile && <PwaInstallButton variant="header" />}
 
           {!isMobile && (
             <>

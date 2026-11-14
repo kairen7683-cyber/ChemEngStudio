@@ -24,10 +24,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/icon-192.png?v=2', sizes: '192x192', type: 'image/png' },
-      { url: '/icon-512.png?v=2', sizes: '512x512', type: 'image/png' },
+      { url: '/icon-192-v2.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icon-512-v2.png', sizes: '512x512', type: 'image/png' },
     ],
-    apple: [{ url: '/apple-touch-icon.png?v=2', sizes: '180x180', type: 'image/png' }],
+    apple: [{ url: '/apple-touch-icon-v2.png', sizes: '180x180', type: 'image/png' }],
     shortcut: '/favicon.ico?v=2',
   },
 };
@@ -35,6 +35,13 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{window.__chemengDeferredPrompt=null;window.__chemengInstalled=false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__chemengDeferredPrompt=e;window.dispatchEvent(new Event('chemeng:pwa-updated'));});window.addEventListener('appinstalled',function(){window.__chemengDeferredPrompt=null;window.__chemengInstalled=true;window.dispatchEvent(new Event('chemeng:pwa-updated'));});if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});}}catch(_){}})();`,
+          }}
+        />
+      </head>
       <body>
         <PwaRegistrar />
         <AuthProvider>

@@ -50,7 +50,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           }}
         >
           <img
-            src="/icon-192.png?v=2"
+            src="/icon-192-v2.png"
             alt="ChemEng Studio"
             style={{
               width: 52,
@@ -173,9 +173,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
               <img
-                src="/icon-192.png?v=2"
+                src="/icon-192-v2.png"
                 alt="ChemEng Studio"
                 style={{
                   width: 38,
@@ -195,20 +195,23 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
             </div>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 800,
-                padding: '3px 8px',
-                borderRadius: 999,
-                background: 'rgba(59, 130, 246, 0.18)',
-                color: '#93C5FD',
-                border: '1px solid rgba(96, 165, 250, 0.35)',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {modeNotice}
-            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
+              <PwaInstallButton variant="login-header" />
+              <span
+                style={{
+                  fontSize: 9.5,
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: 999,
+                  background: 'rgba(59, 130, 246, 0.18)',
+                  color: '#93C5FD',
+                  border: '1px solid rgba(96, 165, 250, 0.35)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {modeNotice}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -392,21 +395,6 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               >
                 {submitting ? '로그인 및 개인 환경 불러오는 중...' : '로그인'}
               </button>
-
-              <div
-                style={{
-                  marginTop: 4,
-                  padding: '9px 11px',
-                  borderRadius: 8,
-                  background: '#F8FAFC',
-                  border: '1px solid #E2E8F0',
-                  fontSize: 11,
-                  color: '#475569',
-                  lineHeight: 1.5,
-                }}
-              >
-                각 사용자의 플로우시트·장치 설계·시뮬레이션 케이스는 개인 계정에만 독립 저장되며 타인에게 노출되지 않습니다.
-              </div>
             </form>
           ) : (
             <form onSubmit={handleSubmitRegister} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -537,8 +525,21 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             </form>
           )}
 
-          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #E2E8F0' }}>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <PwaInstallButton variant="login" />
+            <div
+              style={{
+                padding: '9px 11px',
+                borderRadius: 8,
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                fontSize: 11,
+                color: '#475569',
+                lineHeight: 1.5,
+              }}
+            >
+              각 사용자의 플로우시트·장치 설계·시뮬레이션 케이스는 개인 계정에만 독립 저장되며 타인에게 노출되지 않습니다.
+            </div>
           </div>
         </div>
       </div>

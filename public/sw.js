@@ -1,8 +1,8 @@
-const CACHE_NAME = 'chemeng-shell-v2';
+const CACHE_NAME = 'chemeng-shell-v3';
 const PRECACHE_URLS = [
   '/manifest.json',
-  '/icon-192.png?v=2',
-  '/icon-512.png?v=2',
+  '/icon-192-v2.png',
+  '/icon-512-v2.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -43,14 +43,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static Next.js hashed assets and versioned PWA icons: cache-first with network fallback
   const isStaticAsset =
     url.pathname.startsWith('/_next/static/') ||
-    url.pathname === '/icon-192.png' ||
-    url.pathname === '/icon-512.png' ||
-    url.pathname === '/icon-maskable-192.png' ||
-    url.pathname === '/icon-maskable-512.png' ||
+    /^\/icon-(maskable-)?(192|512)(-v2)?\.png$/.test(url.pathname) ||
     url.pathname === '/apple-touch-icon.png' ||
+    url.pathname === '/apple-touch-icon-v2.png' ||
     url.pathname === '/favicon.ico';
 
   if (isStaticAsset) {
@@ -69,7 +66,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // HTML page navigations: always network-first, minimal Korean retry notice if offline
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(
