@@ -16,6 +16,51 @@ import {
 } from '@/lib/auth/authClient';
 import { useAuth } from './AuthContext';
 
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below handles non-HTTPS / permission-restricted contexts
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
+}
+
+function generateStrongPassword(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let suffix = '';
+  const buf = new Uint32Array(6);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(buf);
+    for (let i = 0; i < buf.length; i++) {
+      suffix += chars[buf[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < 6; i++) {
+      suffix += chars[Math.floor(Math.random() * chars.length)];
+    }
+  }
+  return `Chem!${suffix}`;
+}
+
 export function HeaderUserControls() {
   const {
     user,
@@ -142,6 +187,7 @@ export default function AdminConsoleModal() {
   // 내 비밀번호 변경 상태
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const [showNewPw, setShowNewPw] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // 관리자 콘솔 상태
@@ -159,11 +205,17 @@ export default function AdminConsoleModal() {
   const [invMaxUses, setInvMaxUses] = useState(5);
   const [invExpDays, setInvExpDays] = useState(30);
 
-  // 신규 사용자 직접 생성 폼
+  // 신규 사용자 직접 생성 폼 & 발급된 비밀번호 복사 배너
   const [newUsername, setNewUsername] = useState('');
   const [newDispName, setNewDispName] = useState('');
   const [newUserPw, setNewUserPw] = useState('');
   const [newUserRole, setNewUserRole] = useState<'user' | 'admin'>('user');
+  const [showCreateUserPw, setShowCreateUserPw] = useState(true);
+  const [lastIssuedCreds, setLastIssuedCreds] = useState<{
+    username: string;
+    password: string;
+    mode: '생성' | '재설정';
+  } | null>(null);
 
   const loadAdminOverview = useCallback(async () => {
     if (!user || user.role !== 'admin') return;
@@ -275,21 +327,30 @@ export default function AdminConsoleModal() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminMsg(null);
-    if (!newUsername.trim() || !newUserPw) {
+    const uname = newUsername.trim();
+    const pw = newUserPw;
+    if (!uname || !pw) {
       setAdminMsg({ type: 'err', text: '생성할 아이디와 비밀번호를 입력하세요.' });
       return;
     }
     try {
       await adminCreateUser({
-        username: newUsername.trim(),
-        display_name: newDispName.trim() || newUsername.trim(),
-        password: newUserPw,
+        username: uname,
+        display_name: newDispName.trim() || uname,
+        password: pw,
         role: newUserRole,
       });
+      setLastIssuedCreds({ username: uname, password: pw, mode: '생성' });
+      const copied = await copyToClipboard(pw);
       setNewUsername('');
       setNewDispName('');
       setNewUserPw('');
-      setAdminMsg({ type: 'ok', text: `계정 [${newUsername.trim()}] 생성 완료` });
+      setAdminMsg({
+        type: 'ok',
+        text: copied
+          ? `계정 [${uname}] 생성 완료 · 초기 비밀번호가 클립보드에 복사되었습니다.`
+          : `계정 [${uname}] 생성 완료`,
+      });
       await loadAdminOverview();
     } catch (err) {
       setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '사용자 생성 실패' });
@@ -297,11 +358,22 @@ export default function AdminConsoleModal() {
   };
 
   const handleResetUserPw = async (u: AdminUserSummary) => {
-    const pw = window.prompt(`[${u.username}] 계정의 새 임시 비밀번호를 입력하세요 (6자 이상):`);
+    const suggested = generateStrongPassword();
+    const pw = window.prompt(
+      `[${u.username}] 계정의 새 임시 비밀번호를 입력하세요 (6자 이상 · 자동 제안값 수정 가능):`,
+      suggested
+    );
     if (!pw) return;
     try {
       await adminUpdateUser(u.id, { new_password: pw });
-      setAdminMsg({ type: 'ok', text: `[${u.username}] 비밀번호 재설정 완료` });
+      setLastIssuedCreds({ username: u.username, password: pw, mode: '재설정' });
+      const copied = await copyToClipboard(pw);
+      setAdminMsg({
+        type: 'ok',
+        text: copied
+          ? `[${u.username}] 비밀번호 재설정 완료 · 새 비밀번호가 클립보드에 복사되었습니다.`
+          : `[${u.username}] 비밀번호 재설정 완료`,
+      });
     } catch (err) {
       setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '비밀번호 재설정 실패' });
     }
@@ -511,13 +583,60 @@ export default function AdminConsoleModal() {
                   onChange={e => setCurPw(e.target.value)}
                   style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #CBD5E1', fontSize: 12.5 }}
                 />
-                <input
-                  type="password"
-                  placeholder="새 비밀번호 (6자 이상)"
-                  value={newPw}
-                  onChange={e => setNewPw(e.target.value)}
-                  style={{ padding: '8px 10px', borderRadius: 7, border: '1px solid #CBD5E1', fontSize: 12.5 }}
-                />
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    type={showNewPw ? 'text' : 'password'}
+                    placeholder="새 비밀번호 (6자 이상)"
+                    value={newPw}
+                    onChange={e => setNewPw(e.target.value)}
+                    style={{ flex: 1, padding: '8px 10px', borderRadius: 7, border: '1px solid #CBD5E1', fontSize: 12.5 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPw(v => !v)}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 7,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      color: '#334155',
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {showNewPw ? '숨김' : '보기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!newPw) {
+                        setProfileMsg({ type: 'err', text: '복사할 새 비밀번호가 비어 있습니다.' });
+                        return;
+                      }
+                      const ok = await copyToClipboard(newPw);
+                      setProfileMsg(
+                        ok
+                          ? { type: 'ok', text: '새 비밀번호가 클립보드에 복사되었습니다.' }
+                          : { type: 'err', text: '클립보드 복사에 실패했습니다.' }
+                      );
+                    }}
+                    style={{
+                      padding: '8px 10px',
+                      borderRadius: 7,
+                      border: '1px solid #93C5FD',
+                      background: '#EFF6FF',
+                      color: '#1D4ED8',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    📋 비번 복사
+                  </button>
+                </div>
                 <button
                   type="submit"
                   style={{
@@ -717,9 +836,13 @@ export default function AdminConsoleModal() {
                           <td style={{ padding: '5px 8px', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                             <button
                               type="button"
-                              onClick={() => {
-                                void navigator.clipboard?.writeText(inv.code);
-                                setAdminMsg({ type: 'ok', text: `[${inv.code}] 클립보드에 복사되었습니다.` });
+                              onClick={async () => {
+                                const ok = await copyToClipboard(inv.code);
+                                setAdminMsg(
+                                  ok
+                                    ? { type: 'ok', text: `[${inv.code}] 클립보드에 복사되었습니다.` }
+                                    : { type: 'err', text: '클립보드 복사에 실패했습니다. 직접 선택하여 복사해 주세요.' }
+                                );
                               }}
                               style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 10.5, cursor: 'pointer' }}
                             >
@@ -759,6 +882,108 @@ export default function AdminConsoleModal() {
                   </button>
                 </div>
 
+                {lastIssuedCreds && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      padding: '8px 10px',
+                      marginBottom: 10,
+                      borderRadius: 7,
+                      background: '#F0FDF4',
+                      border: '1px solid #86EFAC',
+                      fontSize: 11.5,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', color: '#166534' }}>
+                      <span style={{ fontWeight: 800 }}>
+                        [{lastIssuedCreds.username}] {lastIssuedCreds.mode} 비밀번호:
+                      </span>
+                      <code
+                        style={{
+                          padding: '2px 7px',
+                          borderRadius: 4,
+                          background: '#FFFFFF',
+                          border: '1px solid #BBF7D0',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          fontWeight: 800,
+                          color: '#0F172A',
+                          userSelect: 'all',
+                        }}
+                      >
+                        {lastIssuedCreds.password}
+                      </code>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await copyToClipboard(lastIssuedCreds.password);
+                          setAdminMsg(
+                            ok
+                              ? { type: 'ok', text: `[${lastIssuedCreds.username}] 비밀번호가 복사되었습니다.` }
+                              : { type: 'err', text: '클립보드 복사에 실패했습니다.' }
+                          );
+                        }}
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: 5,
+                          border: 'none',
+                          background: '#16A34A',
+                          color: '#FFFFFF',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📋 비번 복사
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const combo = `아이디: ${lastIssuedCreds.username}\n비밀번호: ${lastIssuedCreds.password}`;
+                          const ok = await copyToClipboard(combo);
+                          setAdminMsg(
+                            ok
+                              ? { type: 'ok', text: `[${lastIssuedCreds.username}] 아이디와 비밀번호를 함께 복사했습니다.` }
+                              : { type: 'err', text: '클립보드 복사에 실패했습니다.' }
+                          );
+                        }}
+                        style={{
+                          padding: '3px 8px',
+                          borderRadius: 5,
+                          border: '1px solid #16A34A',
+                          background: '#FFFFFF',
+                          color: '#166534',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        📋 아이디+비번 함께 복사
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setLastIssuedCreds(null)}
+                        style={{
+                          padding: '3px 6px',
+                          borderRadius: 5,
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          color: '#475569',
+                          fontSize: 10.5,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        닫기
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <form
                   onSubmit={handleCreateUser}
                   style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10, alignItems: 'center' }}
@@ -768,22 +993,68 @@ export default function AdminConsoleModal() {
                     value={newUsername}
                     onChange={e => setNewUsername(e.target.value)}
                     placeholder="아이디"
-                    style={{ width: 120, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5 }}
+                    style={{ width: 115, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5 }}
                   />
                   <input
                     type="text"
                     value={newDispName}
                     onChange={e => setNewDispName(e.target.value)}
                     placeholder="표시 이름"
-                    style={{ width: 130, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5 }}
+                    style={{ width: 115, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5 }}
                   />
                   <input
-                    type="password"
+                    type={showCreateUserPw ? 'text' : 'password'}
                     value={newUserPw}
                     onChange={e => setNewUserPw(e.target.value)}
                     placeholder="초기 비밀번호"
-                    style={{ width: 130, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5 }}
+                    style={{ width: 130, padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 11.5, fontFamily: showCreateUserPw ? 'JetBrains Mono, monospace' : 'inherit' }}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateUserPw(v => !v)}
+                    title="비밀번호 표시 전환"
+                    style={{ padding: '6px 7px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    {showCreateUserPw ? '숨김' : '보기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const generated = generateStrongPassword();
+                      setNewUserPw(generated);
+                      setShowCreateUserPw(true);
+                      const ok = await copyToClipboard(generated);
+                      setAdminMsg({
+                        type: 'ok',
+                        text: ok
+                          ? `강력한 비밀번호 [${generated}] 생성 및 클립보드 복사 완료`
+                          : `비밀번호 [${generated}] 생성 완료`,
+                      });
+                    }}
+                    title="초기 비밀번호 자동 생성 후 복사"
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#0F172A', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    자동생성
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!newUserPw) {
+                        setAdminMsg({ type: 'err', text: '복사할 비밀번호를 입력하거나 자동생성을 누르세요.' });
+                        return;
+                      }
+                      const ok = await copyToClipboard(newUserPw);
+                      setAdminMsg(
+                        ok
+                          ? { type: 'ok', text: '입력된 비밀번호가 클립보드에 복사되었습니다.' }
+                          : { type: 'err', text: '클립보드 복사에 실패했습니다.' }
+                      );
+                    }}
+                    title="입력된 비밀번호 복사"
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #93C5FD', background: '#EFF6FF', color: '#1D4ED8', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
+                  >
+                    📋 비번 복사
+                  </button>
                   <select
                     value={newUserRole}
                     onChange={e => setNewUserRole(e.target.value as 'user' | 'admin')}
