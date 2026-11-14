@@ -1,0 +1,379 @@
+{
+  "generatedAt": "2026-11-14T07:09:36.407Z",
+  "engineExportsDetected": {
+    "bubblePressureBarA": true,
+    "bubbleTemperatureC": true,
+    "liquidActivityCoefficients": true,
+    "mode": "rigorousThermo-W1"
+  },
+  "databankCounts": {
+    "nrtlBinaryPairs": 204,
+    "prKijPairs": 71
+  },
+  "overallMetrics": {
+    "meanBubblePressureAAD_pct": 0.86,
+    "targetBubblePressureAAD_pct": 5,
+    "passesBubblePressureTarget": true,
+    "meanIsobaricBubbleTempAAD_C": 0.214,
+    "meanVaporCompAAD_molFrac": 0.0125,
+    "meanElectrolyteBpeAAD_K": 0.4,
+    "meanGammaInfRelErr_pct": 1.2
+  },
+  "vleSystems": [
+    {
+      "id": "vle-01-etoh-h2o",
+      "system": "EtOH - H2O @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 11,
+      "aadT_C": 0.194,
+      "aadP_pct": 0.77,
+      "aadY": 0.0085,
+      "azeotrope": {
+        "expX1": 0.8943,
+        "expTC": 78.15,
+        "calcTCAtExpX1": 77.907,
+        "calcY1AtExpX1": 0.8874,
+        "errTC": 0.243,
+        "errY1MinusX1": 0.0069
+      }
+    },
+    {
+      "id": "vle-02-meoh-h2o",
+      "system": "MeOH - H2O @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.147,
+      "aadP_pct": 0.56,
+      "aadY": 0.0049
+    },
+    {
+      "id": "vle-03-ipa-h2o",
+      "system": "IPA - H2O @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.21,
+      "aadP_pct": 0.84,
+      "aadY": 0.0117,
+      "azeotrope": {
+        "expX1": 0.685,
+        "expTC": 80.32,
+        "calcTCAtExpX1": 80.154,
+        "calcY1AtExpX1": 0.681,
+        "errTC": 0.166,
+        "errY1MinusX1": 0.004
+      }
+    },
+    {
+      "id": "vle-04-acetone-h2o",
+      "system": "Acetone - H2O @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.376,
+      "aadP_pct": 1.32,
+      "aadY": 0.0173
+    },
+    {
+      "id": "vle-05-acetone-chcl3",
+      "system": "Acetone - CHCl3 @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.146,
+      "aadP_pct": 0.48,
+      "aadY": 0.0044,
+      "azeotrope": {
+        "expX1": 0.339,
+        "expTC": 64.43,
+        "calcTCAtExpX1": 64.67,
+        "calcY1AtExpX1": 0.3392,
+        "errTC": 0.24,
+        "errY1MinusX1": 0.0002
+      }
+    },
+    {
+      "id": "vle-06-acetone-meoh",
+      "system": "Acetone - MeOH @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 9,
+      "aadT_C": 0.218,
+      "aadP_pct": 0.79,
+      "aadY": 0.0268,
+      "azeotrope": {
+        "expX1": 0.78,
+        "expTC": 55.5,
+        "calcTCAtExpX1": 55.062,
+        "calcY1AtExpX1": 0.7804,
+        "errTC": 0.438,
+        "errY1MinusX1": 0.0004
+      }
+    },
+    {
+      "id": "vle-07-etoac-etoh",
+      "system": "EtOAc - EtOH @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.182,
+      "aadP_pct": 0.67,
+      "aadY": 0.0072,
+      "azeotrope": {
+        "expX1": 0.54,
+        "expTC": 71.8,
+        "calcTCAtExpX1": 71.66,
+        "calcY1AtExpX1": 0.5416,
+        "errTC": 0.14,
+        "errY1MinusX1": 0.0016
+      }
+    },
+    {
+      "id": "vle-08-benzene-toluene",
+      "system": "Benzene - Toluene @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 9,
+      "aadT_C": 0.286,
+      "aadP_pct": 0.84,
+      "aadY": 0.0057
+    },
+    {
+      "id": "vle-09-nc6-benzene",
+      "system": "nC6H14 - Benzene @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 9,
+      "aadT_C": 0.265,
+      "aadP_pct": 0.83,
+      "aadY": 0.0388
+    },
+    {
+      "id": "vle-10-aceticacid-h2o",
+      "system": "AceticAcid - H2O @ 1.01325 bar",
+      "kind": "isobaric-vle",
+      "method": "NRTL",
+      "nPoints": 10,
+      "aadT_C": 0.118,
+      "aadP_pct": 0.4,
+      "aadY": 0.0159
+    },
+    {
+      "id": "vle-11-c3h6-c3h8-40c",
+      "system": "C3H6 - C3H8 @ 40 C",
+      "kind": "isothermal-vle",
+      "method": "PR",
+      "nPoints": 5,
+      "aadT_C": null,
+      "aadP_pct": 0.61,
+      "aadY": 0.0014
+    },
+    {
+      "id": "vle-12-c3h8-nc4-40c",
+      "system": "C3H8 - nC4H10 @ 40 C",
+      "kind": "isothermal-vle",
+      "method": "PR",
+      "nPoints": 5,
+      "aadT_C": null,
+      "aadP_pct": 1.94,
+      "aadY": 0.0143
+    },
+    {
+      "id": "vle-13-co2-c3h8-20c",
+      "system": "CO2 - C3H8 @ 20 C",
+      "kind": "isothermal-vle",
+      "method": "PR",
+      "nPoints": 5,
+      "aadT_C": null,
+      "aadP_pct": 1.07,
+      "aadY": 0.0056
+    }
+  ],
+  "electrolyteBpeSystems": [
+    {
+      "id": "elec-14-hcl-h2o-azeotrope",
+      "system": "HCl - H2O",
+      "nPoints": 3,
+      "aadT_K": 0.32,
+      "details": [
+        {
+          "wtPct": 10,
+          "expT_C": 103,
+          "calcT_C": 103.57,
+          "absErr_K": 0.57
+        },
+        {
+          "wtPct": 15,
+          "expT_C": 106.2,
+          "calcT_C": 106.22,
+          "absErr_K": 0.02
+        },
+        {
+          "wtPct": 20.22,
+          "expT_C": 108.58,
+          "calcT_C": 108.2,
+          "absErr_K": 0.38
+        }
+      ]
+    },
+    {
+      "id": "elec-15-naoh-h2o-bpe",
+      "system": "NaOH - H2O",
+      "nPoints": 5,
+      "aadT_K": 0.78,
+      "details": [
+        {
+          "wtPct": 10,
+          "expT_C": 102.8,
+          "calcT_C": 102.93,
+          "absErr_K": 0.13
+        },
+        {
+          "wtPct": 20,
+          "expT_C": 107.8,
+          "calcT_C": 107.81,
+          "absErr_K": 0.01
+        },
+        {
+          "wtPct": 30,
+          "expT_C": 115.8,
+          "calcT_C": 115.52,
+          "absErr_K": 0.28
+        },
+        {
+          "wtPct": 40,
+          "expT_C": 128,
+          "calcT_C": 127.4,
+          "absErr_K": 0.6
+        },
+        {
+          "wtPct": 50,
+          "expT_C": 143,
+          "calcT_C": 145.86,
+          "absErr_K": 2.86
+        }
+      ]
+    },
+    {
+      "id": "elec-16-nacl-h2o-bpe",
+      "system": "NaCl - H2O",
+      "nPoints": 3,
+      "aadT_K": 0.11,
+      "details": [
+        {
+          "wtPct": 10,
+          "expT_C": 101.9,
+          "calcT_C": 101.93,
+          "absErr_K": 0.03
+        },
+        {
+          "wtPct": 20,
+          "expT_C": 105.1,
+          "calcT_C": 105.24,
+          "absErr_K": 0.14
+        },
+        {
+          "wtPct": 26,
+          "expT_C": 108.7,
+          "calcT_C": 108.52,
+          "absErr_K": 0.18
+        }
+      ]
+    }
+  ],
+  "mutualLleSystems": [
+    {
+      "id": "lle-17a-etoac-h2o-25c",
+      "system": "EtOAc - H2O @ 25 C",
+      "expOrgInAqWtPct": 8.08,
+      "calcOrgInAqWtPct": 8.0761,
+      "relErrAqPct": 0.05,
+      "expWaterInOrgWtPct": 2.94,
+      "calcWaterInOrgWtPct": 2.9503,
+      "relErrOrgPct": 0.35
+    },
+    {
+      "id": "lle-17b-ech-h2o-25c",
+      "system": "ECH - H2O @ 25 C",
+      "expOrgInAqWtPct": 6.59,
+      "calcOrgInAqWtPct": 6.5743,
+      "relErrAqPct": 0.24,
+      "expWaterInOrgWtPct": 1.52,
+      "calcWaterInOrgWtPct": 1.5228,
+      "relErrOrgPct": 0.19
+    },
+    {
+      "id": "lle-17c-benzene-h2o-25c",
+      "system": "Benzene - H2O @ 25 C",
+      "expOrgInAqWtPct": 0.178,
+      "calcOrgInAqWtPct": 0.1781,
+      "relErrAqPct": 0.06,
+      "expWaterInOrgWtPct": 0.063,
+      "calcWaterInOrgWtPct": 0.0632,
+      "relErrOrgPct": 0.25
+    },
+    {
+      "id": "lle-17d-chcl3-h2o-25c",
+      "system": "CHCl3 - H2O @ 25 C",
+      "expOrgInAqWtPct": 0.815,
+      "calcOrgInAqWtPct": 0.815,
+      "relErrAqPct": 0,
+      "expWaterInOrgWtPct": 0.093,
+      "calcWaterInOrgWtPct": 0.0931,
+      "relErrOrgPct": 0.09
+    }
+  ],
+  "infiniteDilutionGammaWater25C": [
+    {
+      "solute": "MeOH",
+      "T_C": 25,
+      "expGammaInf": 1.58,
+      "calcGammaInf": 1.6,
+      "pctErr": 1.32
+    },
+    {
+      "solute": "EtOH",
+      "T_C": 25,
+      "expGammaInf": 4.05,
+      "calcGammaInf": 4.12,
+      "pctErr": 1.62
+    },
+    {
+      "solute": "IPA",
+      "T_C": 25,
+      "expGammaInf": 7.6,
+      "calcGammaInf": 7.7,
+      "pctErr": 1.34
+    },
+    {
+      "solute": "Acetone",
+      "T_C": 25,
+      "expGammaInf": 6.95,
+      "calcGammaInf": 6.92,
+      "pctErr": 0.4
+    },
+    {
+      "solute": "EtOAc",
+      "T_C": 25,
+      "expGammaInf": 65.4,
+      "calcGammaInf": 66.5,
+      "pctErr": 1.68
+    },
+    {
+      "solute": "Benzene",
+      "T_C": 25,
+      "expGammaInf": 2430,
+      "calcGammaInf": 2466.21,
+      "pctErr": 1.49
+    },
+    {
+      "solute": "Toluene",
+      "T_C": 25,
+      "expGammaInf": 9840,
+      "calcGammaInf": 9891.31,
+      "pctErr": 0.52
+    }
+  ]
+}

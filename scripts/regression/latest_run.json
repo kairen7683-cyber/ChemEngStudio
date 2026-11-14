@@ -1,0 +1,877 @@
+{
+  "generatedAt": "2026-11-14T14:56:25.477Z",
+  "sheets": [
+    {
+      "plant": "electrolysis",
+      "sheetId": "master",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 295.49,
+      "iterations": 2,
+      "ms": 64,
+      "boundaryFeedKgH": 98676.44,
+      "boundaryProductKgH": 98911.17,
+      "rawBoundaryGapKgH": -234.73,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 513.7,
+      "massImbalanceKgH": -0.13,
+      "physicalMassImbalanceKgH": -295.62,
+      "makeupInKgH": 295.49,
+      "unroutedOutKgH": 60.88,
+      "unroutedOutletCount": 1,
+      "makeupInletCount": 3,
+      "energyResidualKW": 0.3,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "PROD-COND",
+          "kgH": 23336.52,
+          "tempC": 112,
+          "topWtPct": "H2O 100.00%"
+        },
+        {
+          "tag": "PROD-50%NaOH",
+          "kgH": 43178.26,
+          "tempC": 120.8,
+          "topWtPct": "H2O 50.00%, NaOH 50.00%, H2 0.00%"
+        },
+        {
+          "tag": "DRN-CL2-COND",
+          "kgH": 5274.96,
+          "tempC": 14,
+          "topWtPct": "H2O 98.99%, Cl2 1.01%, O2 0.00%"
+        },
+        {
+          "tag": "PROD-78%H2SO4",
+          "kgH": 320.44,
+          "tempC": 54,
+          "topWtPct": "H2SO4 77.99%, H2O 22.01%"
+        },
+        {
+          "tag": "PROD-LIQ-CL2",
+          "kgH": 16051.41,
+          "tempC": -24,
+          "topWtPct": "Cl2 99.86%, O2 0.14%, H2O 0.00%"
+        },
+        {
+          "tag": "PROD-12%NaOCl",
+          "kgH": 0,
+          "tempC": 0,
+          "topWtPct": "-"
+        },
+        {
+          "tag": "PROD-H2-23K",
+          "kgH": 448.8,
+          "tempC": 25,
+          "topWtPct": "H2 100.00%, H2O 0.00%"
+        },
+        {
+          "tag": "DRN-H2-KO",
+          "kgH": 1313.35,
+          "tempC": 25,
+          "topWtPct": "H2O 100.00%, H2 0.00%"
+        },
+        {
+          "tag": "DRN-D650-H2O",
+          "kgH": 5.9,
+          "tempC": 30,
+          "topWtPct": "H2O 99.99%"
+        },
+        {
+          "tag": "VENT-C502",
+          "kgH": 19.07,
+          "tempC": 40,
+          "topWtPct": "H2 61.88%, O2 21.80%, Cl2 16.01%"
+        },
+        {
+          "tag": "PROD-35%HCl",
+          "kgH": 8962.46,
+          "tempC": 75,
+          "topWtPct": "H2O 65.00%, HCl 35.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_400_drying",
+      "converged": true,
+      "overallStatus": "converged_with_warnings",
+      "failedUnitCount": 0,
+      "warningUnitCount": 1,
+      "makeupTotalKgH": 0,
+      "iterations": 5,
+      "ms": 122,
+      "boundaryFeedKgH": 19429.26,
+      "boundaryProductKgH": 19429.26,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": -0.1,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": -0.1,
+      "energyResidualPct": -0.01,
+      "products": [
+        {
+          "tag": "OUT-78%H2SO4",
+          "kgH": 320.44,
+          "tempC": 50,
+          "topWtPct": "H2SO4 77.99%, H2O 22.01%"
+        },
+        {
+          "tag": "OUT-DRY-CL2",
+          "kgH": 19108.82,
+          "tempC": 20,
+          "topWtPct": "Cl2 99.86%, O2 0.14%, H2O 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_100_primary",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 21.24,
+      "iterations": 2,
+      "ms": 6,
+      "boundaryFeedKgH": 225533.35,
+      "boundaryProductKgH": 225554.59,
+      "rawBoundaryGapKgH": -21.24,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 44.3,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": -21.24,
+      "makeupInKgH": 21.24,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 1,
+      "energyResidualKW": 2.8,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-SLUDGE",
+          "kgH": 451.11,
+          "tempC": 66,
+          "topWtPct": "H2O 74.35%, NaCl 25.65%"
+        },
+        {
+          "tag": "OUT-1ST-BRINE",
+          "kgH": 225103.48,
+          "tempC": 66,
+          "topWtPct": "H2O 74.35%, NaCl 25.65%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_100_secondary",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 5,
+      "boundaryFeedKgH": 225472.6,
+      "boundaryProductKgH": 225472.6,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0.2,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0.2,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-PURE-BRINE",
+          "kgH": 225472.6,
+          "tempC": 74,
+          "topWtPct": "H2O 74.35%, NaCl 25.65%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_200_cell",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 6,
+      "ms": 66,
+      "boundaryFeedKgH": 240997.6,
+      "boundaryProductKgH": 240997.71,
+      "rawBoundaryGapKgH": -0.11,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0.5,
+      "massImbalanceKgH": -0.11,
+      "physicalMassImbalanceKgH": -0.11,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0.5,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-WET-CL2",
+          "kgH": 22238.67,
+          "tempC": 87,
+          "topWtPct": "Cl2 85.75%, H2O 14.13%, O2 0.12%"
+        },
+        {
+          "tag": "OUT-ANOLYTE",
+          "kgH": 150087.99,
+          "tempC": 87,
+          "topWtPct": "H2O 82.44%, NaCl 17.52%, Cl2 0.04%"
+        },
+        {
+          "tag": "OUT-WET-H2",
+          "kgH": 2156.16,
+          "tempC": 89,
+          "topWtPct": "H2O 74.61%, H2 25.39%"
+        },
+        {
+          "tag": "OUT-32%NaOH",
+          "kgH": 66514.89,
+          "tempC": 89,
+          "topWtPct": "H2O 67.54%, NaOH 32.46%, H2 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_200_dechlor",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0.25,
+      "iterations": 2,
+      "ms": 15,
+      "boundaryFeedKgH": 150087.99,
+      "boundaryProductKgH": 150088.24,
+      "rawBoundaryGapKgH": -0.25,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 1.8,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": -0.25,
+      "makeupInKgH": 0.25,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 1,
+      "energyResidualKW": 1.3,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-REC-CL2",
+          "kgH": 2208.57,
+          "tempC": 38,
+          "topWtPct": "H2O 97.00%, Cl2 3.00%, O2 0.00%"
+        },
+        {
+          "tag": "OUT-RETURN-BRINE",
+          "kgH": 147879.67,
+          "tempC": 77.9,
+          "topWtPct": "H2O 82.22%, NaCl 17.78%, O2 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_300_evap",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 14,
+      "boundaryFeedKgH": 66514.78,
+      "boundaryProductKgH": 66514.78,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-50%NaOH",
+          "kgH": 43178.26,
+          "tempC": 42,
+          "topWtPct": "H2O 50.00%, NaOH 50.00%, H2 0.00%"
+        },
+        {
+          "tag": "OUT-CONDENSATE",
+          "kgH": 23336.52,
+          "tempC": 45,
+          "topWtPct": "H2O 100.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_400_cooling",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 7,
+      "boundaryFeedKgH": 24449.22,
+      "boundaryProductKgH": 24449.22,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-COOLED-CL2",
+          "kgH": 19174.26,
+          "tempC": 14,
+          "topWtPct": "Cl2 99.52%, H2O 0.34%, O2 0.14%"
+        },
+        {
+          "tag": "OUT-CL2-WATER",
+          "kgH": 5274.96,
+          "tempC": 14,
+          "topWtPct": "H2O 98.99%, Cl2 1.01%, O2 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_400_liquefaction",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 7,
+      "boundaryFeedKgH": 16051.41,
+      "boundaryProductKgH": 16051.41,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-SNIFF-GAS",
+          "kgH": 0,
+          "tempC": 0,
+          "topWtPct": "-"
+        },
+        {
+          "tag": "OUT-LIQ-CL2",
+          "kgH": 16051.41,
+          "tempC": -17.2,
+          "topWtPct": "Cl2 99.86%, O2 0.14%, H2O 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_600_h2",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 9,
+      "boundaryFeedKgH": 1768.05,
+      "boundaryProductKgH": 1768.06,
+      "rawBoundaryGapKgH": -0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-H2-COND",
+          "kgH": 1278.53,
+          "tempC": 10,
+          "topWtPct": "H2O 100.00%, H2 0.00%"
+        },
+        {
+          "tag": "D-680 (H₂ 출하)",
+          "kgH": 448.85,
+          "tempC": 25,
+          "topWtPct": "H2 100.00%, H2O 0.00%"
+        },
+        {
+          "tag": "DRN-C620-KO",
+          "kgH": 27.01,
+          "tempC": 40,
+          "topWtPct": "H2O 99.98%, H2 0.00%"
+        },
+        {
+          "tag": "DRN-D650-H2O",
+          "kgH": 13.67,
+          "tempC": 30,
+          "topWtPct": "H2O 99.97%"
+        }
+      ]
+    },
+    {
+      "plant": "electrolysis",
+      "sheetId": "sub_500_700_hcl_hypo",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 120.24,
+      "iterations": 2,
+      "ms": 33,
+      "boundaryFeedKgH": 14935.45,
+      "boundaryProductKgH": 15055.69,
+      "rawBoundaryGapKgH": -120.24,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 413.2,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": -120.24,
+      "makeupInKgH": 120.24,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 2,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "VENT-C502",
+          "kgH": 19.08,
+          "tempC": 38,
+          "topWtPct": "H2 61.85%, O2 21.79%, Cl2 16.00%"
+        },
+        {
+          "tag": "TK-510 (35% HCl)",
+          "kgH": 8962.46,
+          "tempC": 73,
+          "topWtPct": "H2O 65.00%, HCl 35.00%"
+        },
+        {
+          "tag": "SAFE-VENT",
+          "kgH": 45,
+          "tempC": 25,
+          "topWtPct": "O2 100.00%, Cl2 0.00%"
+        },
+        {
+          "tag": "OUT-SCRUB-LIQ",
+          "kgH": 80.01,
+          "tempC": 25.7,
+          "topWtPct": "NaOH 99.97%, NaOCl 0.02%, NaCl 0.01%"
+        },
+        {
+          "tag": "OUT-12%NaOCl",
+          "kgH": 5949.14,
+          "tempC": 63,
+          "topWtPct": "H2O 77.03%, NaOCl 12.00%, NaCl 9.42%"
+        }
+      ]
+    },
+    {
+      "plant": "hcl1A",
+      "sheetId": "master",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 8,
+      "ms": 346,
+      "boundaryFeedKgH": 11620.2,
+      "boundaryProductKgH": 11620.52,
+      "rawBoundaryGapKgH": -0.32,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 6309.3,
+      "massImbalanceKgH": -0.32,
+      "physicalMassImbalanceKgH": -0.32,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "PROD-35%HCL",
+          "kgH": 5446.34,
+          "tempC": 71,
+          "topWtPct": "H2O 65.00%, HCl 35.00%"
+        },
+        {
+          "tag": "PROD-SPENT-H2SO4",
+          "kgH": 60,
+          "tempC": 61,
+          "topWtPct": "H2SO4 98.00%, H2O 2.00%"
+        },
+        {
+          "tag": "PROD-5N-AHCL",
+          "kgH": 1851.91,
+          "tempC": -12.7,
+          "topWtPct": "HCl 100.00%, Cl2 0.00%, O2 0.00%"
+        },
+        {
+          "tag": "VENT-CLEAN",
+          "kgH": 8.34,
+          "tempC": 30,
+          "topWtPct": "H2 51.94%, O2 47.96%, Cl2 0.04%"
+        },
+        {
+          "tag": "DRN-NACL",
+          "kgH": 854.03,
+          "tempC": 65,
+          "topWtPct": "H2O 67.91%, NaOH 16.98%, HCl 15.11%"
+        },
+        {
+          "tag": "PROD-REC-H2O",
+          "kgH": 3399.9,
+          "tempC": 54,
+          "topWtPct": "H2O 100.00%, HCl 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "hcl1A",
+      "sheetId": "sub_1a_100_synth",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 13,
+      "boundaryFeedKgH": 6835.2,
+      "boundaryProductKgH": 6835.19,
+      "rawBoundaryGapKgH": 0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "TO-200-AHCL",
+          "kgH": 1383.98,
+          "tempC": 42,
+          "topWtPct": "HCl 99.75%, H2 0.13%, O2 0.12%"
+        },
+        {
+          "tag": "OUT-35%HCL",
+          "kgH": 5446.34,
+          "tempC": 70,
+          "topWtPct": "H2O 65.00%, HCl 35.00%"
+        },
+        {
+          "tag": "TO-T130-SCRUB",
+          "kgH": 4.87,
+          "tempC": 35,
+          "topWtPct": "H2 51.59%, O2 47.64%, HCl 0.78%"
+        }
+      ]
+    },
+    {
+      "plant": "hcl1A",
+      "sheetId": "sub_1a_200_ahcl",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 91,
+      "boundaryFeedKgH": 2044.41,
+      "boundaryProductKgH": 2044.4,
+      "rawBoundaryGapKgH": 0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 12.4,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-SPENT-ACID",
+          "kgH": 60,
+          "tempC": 61,
+          "topWtPct": "H2SO4 98.00%, H2O 2.00%"
+        },
+        {
+          "tag": "TO-SCRUBBER",
+          "kgH": 132.48,
+          "tempC": -11.3,
+          "topWtPct": "HCl 97.36%, H2 1.37%, O2 1.27%"
+        },
+        {
+          "tag": "PROD-5N-AHCL",
+          "kgH": 1851.92,
+          "tempC": -12.7,
+          "topWtPct": "HCl 100.00%, Cl2 0.00%, O2 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "hcl1A",
+      "sheetId": "sub_1a_300_psd",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 8,
+      "ms": 649,
+      "boundaryFeedKgH": 4000,
+      "boundaryProductKgH": 3998.8,
+      "rawBoundaryGapKgH": 1.2,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 6290.6,
+      "massImbalanceKgH": 1.2,
+      "physicalMassImbalanceKgH": 1.2,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": -4.6,
+      "energyResidualPct": -0.02,
+      "products": [
+        {
+          "tag": "OUT-CLEAN-H2O",
+          "kgH": 3399.02,
+          "tempC": 54,
+          "topWtPct": "H2O 100.00%, HCl 0.00%"
+        },
+        {
+          "tag": "OUT-REC-HCL-GAS",
+          "kgH": 599.78,
+          "tempC": 62.5,
+          "topWtPct": "HCl 100.00%, H2O 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "ech",
+      "sheetId": "master",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 26,
+      "boundaryFeedKgH": 33717,
+      "boundaryProductKgH": 33716.99,
+      "rawBoundaryGapKgH": 0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 3642,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-BRINE",
+          "kgH": 25024.27,
+          "tempC": 55,
+          "topWtPct": "H2O 72.23%, NaCl 24.36%, ECH 1.36%"
+        },
+        {
+          "tag": "OUT-DEC-H2O",
+          "kgH": 203.12,
+          "tempC": 64.4,
+          "topWtPct": "H2O 92.53%, ECH 7.47%, DCH 0.00%"
+        },
+        {
+          "tag": "OUT-LIGHT",
+          "kgH": 880.75,
+          "tempC": 64.4,
+          "topWtPct": "ECH 97.45%, H2O 2.55%, DCH 0.00%"
+        },
+        {
+          "tag": "PROD-ECH",
+          "kgH": 7242.9,
+          "tempC": 58.2,
+          "topWtPct": "ECH 100.00%, DCH 0.00%, H2O 0.00%"
+        },
+        {
+          "tag": "REC-HEAVY",
+          "kgH": 365.95,
+          "tempC": 79.8,
+          "topWtPct": "ECH 50.99%, DCH 45.00%, MCH 3.95%"
+        }
+      ]
+    },
+    {
+      "plant": "ech",
+      "sheetId": "sub_ech_100_hydro",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 10,
+      "boundaryFeedKgH": 16517,
+      "boundaryProductKgH": 16517,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "TO-200-SAPON",
+          "kgH": 16517,
+          "tempC": 55,
+          "topWtPct": "DCH 74.24%, H2O 21.28%, HCl 2.31%"
+        }
+      ]
+    },
+    {
+      "plant": "ech",
+      "sheetId": "sub_ech_200_sapon",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 12,
+      "boundaryFeedKgH": 32242,
+      "boundaryProductKgH": 32242,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "TO-300-ECH",
+          "kgH": 8786.7,
+          "tempC": 55,
+          "topWtPct": "ECH 95.68%, H2O 2.40%, DCH 1.91%"
+        },
+        {
+          "tag": "OUT-BRINE",
+          "kgH": 23455.3,
+          "tempC": 55,
+          "topWtPct": "H2O 72.85%, NaCl 23.62%, ECH 1.36%"
+        }
+      ]
+    },
+    {
+      "plant": "ech",
+      "sheetId": "sub_ech_300_purif",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 191,
+      "boundaryFeedKgH": 9505,
+      "boundaryProductKgH": 9505.01,
+      "rawBoundaryGapKgH": -0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 3867.2,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-DEC-H2O",
+          "kgH": 131.89,
+          "tempC": 62.3,
+          "topWtPct": "H2O 93.72%, ECH 6.21%, DCP 0.07%"
+        },
+        {
+          "tag": "OUT-LIGHT-DCP",
+          "kgH": 906.07,
+          "tempC": 62.3,
+          "topWtPct": "ECH 81.78%, DCP 16.41%, H2O 1.81%"
+        },
+        {
+          "tag": "PROD-ECH-99.9%",
+          "kgH": 8080.05,
+          "tempC": 58.1,
+          "topWtPct": "ECH 99.80%, DCP 0.20%, DCH 0.00%"
+        },
+        {
+          "tag": "REC-HEAVY-DCH",
+          "kgH": 387,
+          "tempC": 117.9,
+          "topWtPct": "DCH 98.19%, ECH 1.81%, DCP 0.00%"
+        }
+      ]
+    }
+  ]
+}

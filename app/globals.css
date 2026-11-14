@@ -1,0 +1,549 @@
+/* ============================================================
+   ChemPlant Studio v3.0 Master
+   Global Design System — NewtNote (뉴트 노트) Signature Theme
+   Base: #F6F7F2 | Card: #FFFFFF | Inset: #EFECE5 | Accent: #1A2F44
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* Surfaces — NewtNote Warm Ivory & Pure White Cards */
+  --bg-base: #F6F7F2;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #EFECE5;
+  --bg-card: #FFFFFF;
+  --bg-hover: #EFECE5;
+
+  /* Single Primary Accent — NewtNote Deep Navy-Charcoal (#1A2F44) */
+  --accent-primary: #1A2F44;
+  --accent-secondary: #202C3C;
+  --accent-deep: #142435;
+  --accent-soft: #EFECE5;
+  --accent-tint: #F6F7F2;
+  --accent-h2: #1A2F44;
+  --accent-warn: #1A2F44;
+  --accent-danger: #B91C1C;
+  --accent-success: #1A2F44;
+
+  /* Typography */
+  --text-primary: #1A2F44;
+  --text-secondary: #2C353E;
+  --text-muted: #7A7872;
+  --text-accent: #1A2F44;
+
+  /* Borders */
+  --border-subtle: #E5E2DC;
+  --border-default: #DFDCD4;
+  --border-accent: #1A2F44;
+
+  /* Stream colors (NewtNote Navy & Slate Monochrome) */
+  --stream-brine: #1A2F44;
+  --stream-cl2: #3A4D63;
+  --stream-naoh: #1A2F44;
+  --stream-h2: #5A6570;
+  --stream-steam: #7A7872;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(26, 47, 68, 0.05);
+  --shadow-md: 0 4px 12px rgba(26, 47, 68, 0.08);
+  --shadow-lg: 0 8px 24px rgba(26, 47, 68, 0.12);
+  --shadow-glow-blue: 0 2px 8px rgba(26, 47, 68, 0.15);
+  --shadow-glow-orange: 0 2px 8px rgba(26, 47, 68, 0.12);
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+
+  /* Layout */
+  --sidebar-width: 256px;
+  --header-height: 42px;
+
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.22s ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #F6F7F2; }
+::-webkit-scrollbar-thumb { background: #D5D2CA; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #1A2F44; }
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: none !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Force full left-to-right width on all inner containers */
+.app-main > div,
+.app-main > div > div {
+  max-width: none !important;
+}
+
+.header {
+  width: 100%;
+  height: var(--header-height);
+  background: #F6F7F2;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 14px;
+  z-index: 100;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-logo-icon {
+  width: 34px;
+  height: 34px;
+  background: #1A2F44;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+}
+
+.header-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1A2F44;
+  letter-spacing: -0.3px;
+}
+
+.header-subtitle {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.header-spacer { flex: 1; }
+
+.header-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #EFECE5;
+  border: 1px solid #DFDCD4;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #1A2F44;
+}
+
+.header-badge-dot {
+  width: 6px;
+  height: 6px;
+  background: #1A2F44;
+  border-radius: 50%;
+}
+
+.sidebar {
+  background: #FFFFFF;
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.pfd-area {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.pfd-canvas-wrapper {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.pfd-canvas-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #F6F7F2;
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(26, 47, 68, 0.10) 1px, transparent 0);
+  background-size: 24px 24px;
+  overflow: hidden;
+}
+
+.react-flow__background { background: transparent !important; }
+.react-flow__edge-path { stroke-width: 2; }
+
+.react-flow__minimap {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.react-flow__controls {
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-sm) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.react-flow__controls button {
+  background: #FFFFFF !important;
+  border-color: var(--border-subtle) !important;
+  color: var(--text-secondary) !important;
+}
+
+.react-flow__controls button:hover {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+}
+
+.pfd-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  position: relative;
+  overflow: visible;
+}
+
+.pfd-node-body {
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  position: relative;
+  box-shadow: none;
+}
+
+.pfd-node-body:hover {
+  border-color: rgba(26, 47, 68, 0.25);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.react-flow__node.selected .pfd-node-body {
+  border-color: #1A2F44 !important;
+  background: rgba(26, 47, 68, 0.06);
+  box-shadow: 0 0 0 2px rgba(26, 47, 68, 0.18);
+}
+
+.pfd-node-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: #1A2F44;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.3px;
+  text-align: center;
+  max-width: 80px;
+  line-height: 1.2;
+}
+
+.pfd-node-name {
+  font-size: 9px;
+  color: var(--text-secondary);
+  text-align: center;
+  max-width: 90px;
+}
+
+.stream-label-node {
+  background: #FFFFFF;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 3px 7px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 36px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.stream-label-node:hover {
+  border-color: #1A2F44;
+  background: #EFECE5;
+}
+
+.stream-label-number {
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  color: #1A2F44;
+}
+
+.stream-label-flow {
+  font-size: 9px;
+  color: #5A6570;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.stream-table-area {
+  background: #FFFFFF;
+  border-top: 1px solid var(--border-subtle);
+  overflow: auto;
+  flex-shrink: 0;
+  width: 100%;
+  height: var(--table-height, 260px);
+}
+
+.stream-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.stream-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #EFECE5;
+}
+
+.stream-table th {
+  padding: 8px 10px;
+  text-align: center;
+  font-weight: 700;
+  color: #1A2F44;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-default);
+  white-space: nowrap;
+}
+
+.stream-table th:first-child {
+  text-align: left;
+  min-width: 120px;
+  position: sticky;
+  left: 0;
+  background: #EFECE5;
+  z-index: 11;
+}
+
+.stream-table td {
+  padding: 6px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+.stream-table td:first-child {
+  text-align: left;
+  font-family: 'Inter', sans-serif;
+  color: #1A2F44;
+  font-weight: 600;
+  position: sticky;
+  left: 0;
+  background: #FFFFFF;
+}
+
+.stream-table tr:hover td {
+  background: #F6F7F2;
+}
+
+.stream-table tr:hover td:first-child {
+  background: #F6F7F2;
+}
+
+.cell-highlight { color: #1A2F44 !important; font-weight: 800; }
+.cell-warn { color: #1A2F44 !important; font-weight: 700; }
+.cell-zero { color: #A1A1AA !important; }
+
+.app-main input[type="number"],
+.app-main input[type="text"],
+.app-main select,
+.app-main textarea {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+  border: 1px solid #DFDCD4 !important;
+}
+
+.app-main input[type="number"]:focus,
+.app-main input[type="text"]:focus,
+.app-main select:focus,
+.app-main textarea:focus {
+  background: #FFFFFF !important;
+  border-color: #1A2F44 !important;
+  box-shadow: 0 0 0 2px rgba(26, 47, 68, 0.12) !important;
+  outline: none !important;
+}
+
+.app-main input[type="range"] {
+  accent-color: #1A2F44 !important;
+}
+
+.app-main table th {
+  background: #EFECE5 !important;
+  color: #1A2F44 !important;
+  border-bottom: 1px solid #DFDCD4 !important;
+}
+
+.app-main table td {
+  color: #2C353E !important;
+  border-bottom: 1px solid #EAE8E1 !important;
+}
+
+.mono { font-family: 'JetBrains Mono', monospace; }
+.text-accent { color: #1A2F44; }
+.text-muted  { color: var(--text-muted); }
+
+/* ============================================================
+   MOBILE & TABLET RESPONSIVE OPTIMIZATION (<= 768px)
+   Compact 2-row NewtNote Header + 100% Viewport Content Area
+   ============================================================ */
+@supports (height: 100dvh) {
+  body,
+  .app-layout {
+    height: 100dvh;
+  }
+}
+
+.master-nav::-webkit-scrollbar,
+.mobile-plant-subbar::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 노트북 및 125~150% 배율 해상도(<= 1680px)에서 상단 헤더 부제목·배지를 자동 생략하여 항상 1줄 유지 */
+@media (max-width: 1680px) {
+  .master-nav-sub {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1480px) {
+  .header-badge-wrap {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .master-header {
+    height: auto !important;
+    flex-wrap: wrap !important;
+    padding: 5px 10px !important;
+    gap: 5px !important;
+    min-height: 0 !important;
+  }
+
+  .header-logo {
+    gap: 7px !important;
+    margin-right: 0 !important;
+    width: 100%;
+  }
+
+  .header-logo-icon {
+    width: 26px !important;
+    height: 26px !important;
+    font-size: 10.5px !important;
+  }
+
+  .header-title {
+    font-size: 13.5px !important;
+  }
+
+  .header-subtitle,
+  .header-badge-wrap {
+    display: none !important;
+  }
+
+  .master-nav {
+    width: 100% !important;
+    flex: none !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    gap: 5px !important;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .master-nav-pill {
+    padding: 5px 11px !important;
+    border-radius: 16px !important;
+  }
+
+  .master-nav-label {
+    font-size: 11px !important;
+  }
+
+  .master-nav-sub {
+    display: none !important;
+  }
+
+  .app-body {
+    flex-direction: column !important;
+  }
+
+  .stream-table-area {
+    height: 180px !important;
+  }
+}

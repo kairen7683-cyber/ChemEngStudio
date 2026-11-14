@@ -1,0 +1,183 @@
+'use client';
+
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from 'react';
+import {
+  type AuthStatusResponse,
+  type RegistrationMode,
+  type UserProfile,
+  fetchAuthStatus,
+  flushPendingWorkspaceSyncs,
+  hydrateUserWorkspaceFromServer,
+  installStorageSyncInterceptor,
+  logoutAccount,
+  purgeUserLocalStorageKeys,
+  saveAllLocalWorkspacesToServer,
+  setWorkspaceSyncListener,
+} from '@/lib/auth/authClient';
+import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { usePFDStore } from '@/lib/stores/pfdStore';
+
+export type SyncState = 'idle' | 'saving' | 'saved' | 'error';
+
+interface AuthContextValue {
+  loading: boolean;
+  authenticated: boolean;
+  user: UserProfile | null;
+  registrationMode: RegistrationMode;
+  dailyAiLimit: number;
+  hasServerGemini: boolean;
+  localDevBypass: boolean;
+  authError: string | null;
+  syncStatus: SyncState;
+  syncError: string | undefined;
+  accountModalOpen: boolean;
+  accountModalTab: 'profile' | 'admin';
+  openAccountModal: (tab?: 'profile' | 'admin') => void;
+  closeAccountModal: () => void;
+  refreshAuthAndHydrate: () => Promise<void>;
+  handleLoginSuccess: () => Promise<void>;
+  handleLogout: () => Promise<void>;
+  forceSyncNow: () => Promise<number>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [loading, setLoading] = useState(true);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [registrationMode, setRegistrationMode] = useState<RegistrationMode>('invite_only');
+  const [dailyAiLimit, setDailyAiLimit] = useState(30);
+  const [hasServerGemini, setHasServerGemini] = useState(false);
+  const [localDevBypass, setLocalDevBypass] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<SyncState>('idle');
+  const [syncError, setSyncError] = useState<string | undefined>(undefined);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [accountModalTab, setAccountModalTab] = useState<'profile' | 'admin'>('profile');
+
+  const applyStatusAndHydrate = useCallback(async () => {
+    setLoading(true);
+    setAuthError(null);
+    try {
+      const st: AuthStatusResponse = await fetchAuthStatus();
+      setRegistrationMode(st.registration_mode || 'invite_only');
+      setDailyAiLimit(st.daily_ai_limit ?? 30);
+      setHasServerGemini(Boolean(st.has_server_gemini));
+      setLocalDevBypass(Boolean(st.local_dev_bypass));
+
+      if (st.authenticated && st.user) {
+        if (!st.local_dev_bypass) {
+          await hydrateUserWorkspaceFromServer(st.user.id);
+        } else {
+          installStorageSyncInterceptor();
+        }
+        try {
+          await usePFDStore.persist.rehydrate();
+        } catch {
+          // ignore rehydrate edge case
+        }
+        try {
+          useBalanceStore.getState().hydrateActivePlant();
+        } catch {
+          // ignore
+        }
+        setUser(st.user);
+        setAuthenticated(true);
+        setSyncStatus('saved');
+      } else {
+        purgeUserLocalStorageKeys();
+        setUser(null);
+        setAuthenticated(false);
+        setSyncStatus('idle');
+      }
+    } catch (err) {
+      setUser(null);
+      setAuthenticated(false);
+      setAuthError(err instanceof Error ? err.message : '인증 서버와 통신할 수 없습니다.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setWorkspaceSyncListener((state, errMsg) => {
+      setSyncStatus(state);
+      setSyncError(errMsg);
+    });
+    void applyStatusAndHydrate();
+    return () => {
+      setWorkspaceSyncListener(null);
+    };
+  }, [applyStatusAndHydrate]);
+
+  const handleLoginSuccess = useCallback(async () => {
+    await applyStatusAndHydrate();
+  }, [applyStatusAndHydrate]);
+
+  const handleLogout = useCallback(async () => {
+    setAccountModalOpen(false);
+    await logoutAccount();
+    setUser(null);
+    setAuthenticated(false);
+    setSyncStatus('idle');
+    setSyncError(undefined);
+    await applyStatusAndHydrate();
+  }, [applyStatusAndHydrate]);
+
+  const forceSyncNow = useCallback(async (): Promise<number> => {
+    if (localDevBypass) return 0;
+    await flushPendingWorkspaceSyncs();
+    return await saveAllLocalWorkspacesToServer();
+  }, [localDevBypass]);
+
+  const openAccountModal = useCallback((tab: 'profile' | 'admin' = 'profile') => {
+    setAccountModalTab(tab);
+    setAccountModalOpen(true);
+  }, []);
+
+  const closeAccountModal = useCallback(() => {
+    setAccountModalOpen(false);
+  }, []);
+
+  return (
+    <AuthContext.Provider
+      value={{
+        loading,
+        authenticated,
+        user,
+        registrationMode,
+        dailyAiLimit,
+        hasServerGemini,
+        localDevBypass,
+        authError,
+        syncStatus,
+        syncError,
+        accountModalOpen,
+        accountModalTab,
+        openAccountModal,
+        closeAccountModal,
+        refreshAuthAndHydrate: applyStatusAndHydrate,
+        handleLoginSuccess,
+        handleLogout,
+        forceSyncNow,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error('useAuth must be used inside <AuthProvider>');
+  }
+  return ctx;
+}
