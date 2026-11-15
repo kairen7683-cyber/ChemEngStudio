@@ -15,6 +15,7 @@ import {
   flushPendingWorkspaceSyncs,
   hydrateUserWorkspaceFromServer,
   installStorageSyncInterceptor,
+  isEphemeralSessionExpiredOnBoot,
   logoutAccount,
   purgeUserLocalStorageKeys,
   saveAllLocalWorkspacesToServer,
@@ -66,6 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setAuthError(null);
     try {
+      if (isEphemeralSessionExpiredOnBoot()) {
+        await logoutAccount();
+      }
       const st: AuthStatusResponse = await fetchAuthStatus();
       setRegistrationMode(st.registration_mode || 'invite_only');
       setDailyAiLimit(st.daily_ai_limit ?? 30);

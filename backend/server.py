@@ -42,6 +42,7 @@ CREDS_PATH = DATA_DIR / ".admin_credentials"
 
 SESSION_COOKIE_NAME = "chemplant_session"
 SESSION_TTL_DAYS = 14
+EPHEMERAL_SESSION_TTL_HOURS = 12
 PBKDF2_ITERS = 260_000
 MAX_WORKSPACE_BYTES = 5 * 1024 * 1024
 MAX_WORKSPACE_KEYS_PER_USER = 50
@@ -125,16 +126,20 @@ def is_https_request(request: Request) -> bool:
     return request.url.scheme == "https"
 
 
-def set_session_cookie(response: Response, request: Request, raw_token: str) -> None:
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=raw_token,
-        max_age=SESSION_TTL_DAYS * 86400,
-        httponly=True,
-        samesite="lax",
-        secure=is_https_request(request),
-        path="/",
-    )
+def set_session_cookie(
+    response: Response, request: Request, raw_token: str, remember_me: bool = True
+) -> None:
+    cookie_kwargs: dict[str, Any] = {
+        "key": SESSION_COOKIE_NAME,
+        "value": raw_token,
+        "httponly": True,
+        "samesite": "lax",
+        "secure": is_https_request(request),
+        "path": "/",
+    }
+    if remember_me:
+        cookie_kwargs["max_age"] = SESSION_TTL_DAYS * 86400
+    response.set_cookie(**cookie_kwargs)
 
 
 def clear_session_cookie(response: Response, request: Request) -> None:
@@ -365,11 +370,16 @@ def require_admin_or_master(
 
 
 def create_session_for_user(
-    conn: sqlite3.Connection, user_id: int, request: Request
+    conn: sqlite3.Connection, user_id: int, request: Request, remember_me: bool = True
 ) -> str:
     raw_token = secrets.token_urlsafe(32)
     t_hash = hash_token(raw_token)
-    exp = (utcnow() + timedelta(days=SESSION_TTL_DAYS)).isoformat()
+    ttl = (
+        timedelta(days=SESSION_TTL_DAYS)
+        if remember_me
+        else timedelta(hours=EPHEMERAL_SESSION_TTL_HOURS)
+    )
+    exp = (utcnow() + ttl).isoformat()
     conn.execute(
         """
         INSERT INTO sessions(token_hash, user_id, expires_at, ip_addr, user_agent, created_at)
@@ -392,6 +402,7 @@ def create_session_for_user(
 class LoginPayload(BaseModel):
     username: str
     password: str
+    remember_me: bool = True
 
 
 class RegisterPayload(BaseModel):
@@ -399,6 +410,7 @@ class RegisterPayload(BaseModel):
     password: str
     display_name: str = ""
     invite_code: Optional[str] = None
+    remember_me: bool = True
 
 
 class ChangePwPayload(BaseModel):
@@ -492,8 +504,8 @@ def api_auth_login(payload: LoginPayload, request: Request, response: Response):
         if row["status"] != "active":
             raise HTTPException(status_code=403, detail="비활성화(정지)된 계정입니다. 관리자에게 문의하세요.")
         clear_auth_failures(ip)
-        raw_token = create_session_for_user(conn, row["id"], request)
-        set_session_cookie(response, request, raw_token)
+        raw_token = create_session_for_user(conn, row["id"], request, remember_me=payload.remember_me)
+        set_session_cookie(response, request, raw_token, remember_me=payload.remember_me)
         refreshed = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
         return {"user": serialize_user(refreshed)}
 
@@ -557,8 +569,8 @@ def api_auth_register(payload: RegisterPayload, request: Request, response: Resp
         new_id = cur.lastrowid
         new_user = conn.execute("SELECT * FROM users WHERE id = ?", (new_id,)).fetchone()
         if new_status == "active":
-            raw_token = create_session_for_user(conn, new_id, request)
-            set_session_cookie(response, request, raw_token)
+            raw_token = create_session_for_user(conn, new_id, request, remember_me=payload.remember_me)
+            set_session_cookie(response, request, raw_token, remember_me=payload.remember_me)
         clear_auth_failures(ip)
         return {"status": new_status, "message": msg, "user": serialize_user(new_user)}
 

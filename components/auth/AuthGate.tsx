@@ -1,9 +1,52 @@
 'use client';
 
-import React, { useState } from 'react';
-import { loginWithPassword, registerUserAccount } from '@/lib/auth/authClient';
+import React, { useEffect, useState } from 'react';
+import {
+  getRememberMePreference,
+  loginWithPassword,
+  registerUserAccount,
+  setRememberMePreference,
+} from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import { useAuth } from './AuthContext';
+
+function RememberMeOption({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+        padding: '8px 11px',
+        borderRadius: 8,
+        background: checked ? '#EFF6FF' : '#F8FAFC',
+        border: checked ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={e => onChange(e.target.checked)}
+          style={{ width: 15, height: 15, accentColor: '#1D4ED8', cursor: 'pointer', margin: 0 }}
+        />
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>로그인 상태 유지</span>
+      </span>
+      <span style={{ fontSize: 10.5, fontWeight: 600, color: checked ? '#1D4ED8' : '#64748B' }}>
+        {checked ? '14일간 자동 로그인' : '창·앱 닫으면 로그아웃'}
+      </span>
+    </label>
+  );
+}
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const {
@@ -23,6 +66,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
+
+  useEffect(() => {
+    setRememberMe(getRememberMePreference());
+  }, []);
+
+  const handleToggleRememberMe = (checked: boolean) => {
+    setRememberMe(checked);
+    setRememberMePreference(checked);
+  };
 
   if (loading) {
     return (
@@ -87,7 +140,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }
     setSubmitting(true);
     try {
-      await loginWithPassword(username.trim(), password);
+      await loginWithPassword(username.trim(), password, rememberMe);
       await handleLoginSuccess();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
@@ -115,10 +168,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         password,
         display_name: displayName.trim() || username.trim(),
         invite_code: inviteCode.trim() || undefined,
+        remember_me: rememberMe,
       });
       if (res.status === 'active') {
         setFormSuccess(res.message || '가입이 완료되었습니다. 자동 로그인 중...');
-        await loginWithPassword(username.trim(), password);
+        await loginWithPassword(username.trim(), password, rememberMe);
         await handleLoginSuccess();
       } else {
         setFormSuccess(
@@ -378,6 +432,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 />
               </div>
 
+              <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} />
+
               <button
                 type="submit"
                 disabled={submitting}
@@ -500,6 +556,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   }}
                 />
               </div>
+
+              {registrationMode !== 'approval' && (
+                <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} />
+              )}
 
               <button
                 type="submit"

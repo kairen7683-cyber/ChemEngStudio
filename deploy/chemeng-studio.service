@@ -1,0 +1,29 @@
+[Unit]
+Description=ChemEng Studio Multi-User FastAPI & Static Platform
+After=network.target
+
+[Service]
+Type=simple
+User=kairen7683
+Group=kairen7683
+WorkingDirectory=/home/kairen7683/chemeng-studio
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/home/kairen7683/chemeng-studio/venv/bin/uvicorn backend.server:app --host 127.0.0.1 --port 8090 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=3
+
+# Kernel-level Mount Namespace & Process Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/kairen7683/chemeng-studio
+BindPaths=/home/kairen7683/chemeng-studio/backend/data
+ReadWritePaths=/home/kairen7683/chemeng-studio/backend/data
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

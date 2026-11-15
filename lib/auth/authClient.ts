@@ -39,6 +39,9 @@ export interface InviteCodeItem {
 }
 
 const ACTIVE_UID_KEY = '__chemplant_active_uid__';
+const REMEMBER_PREF_KEY = '__chemplant_remember_pref__';
+const REMEMBER_MODE_KEY = '__chemplant_remember_mode__';
+const TAB_ALIVE_SESSION_KEY = '__chemplant_tab_alive__';
 const TRACKED_PREFIXES = [
   'chemplant-',
   'electro-pfd-',
@@ -288,20 +291,66 @@ export async function fetchAuthStatus(): Promise<AuthStatusResponse> {
   }
 }
 
+export function getRememberMePreference(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    return window.localStorage.getItem(REMEMBER_PREF_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+export function setRememberMePreference(rememberMe: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    getRawSetItem().call(window.localStorage, REMEMBER_PREF_KEY, rememberMe ? '1' : '0');
+  } catch {
+    // ignore storage quota / privacy errors
+  }
+}
+
+export function markClientSessionMode(rememberMe: boolean): void {
+  if (typeof window === 'undefined') return;
+  setRememberMePreference(rememberMe);
+  try {
+    getRawSetItem().call(
+      window.localStorage,
+      REMEMBER_MODE_KEY,
+      rememberMe ? 'persistent' : 'ephemeral'
+    );
+    window.sessionStorage.setItem(TAB_ALIVE_SESSION_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
+export function isEphemeralSessionExpiredOnBoot(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const mode = window.localStorage.getItem(REMEMBER_MODE_KEY);
+    if (mode !== 'ephemeral') return false;
+    return window.sessionStorage.getItem(TAB_ALIVE_SESSION_KEY) !== '1';
+  } catch {
+    return false;
+  }
+}
+
 export async function loginWithPassword(
   username: string,
-  password: string
+  password: string,
+  rememberMe = true
 ): Promise<{ user: UserProfile }> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username, password, remember_me: rememberMe }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.detail || '아이디 또는 비밀번호가 올바르지 않습니다.');
   }
+  markClientSessionMode(rememberMe);
   return data;
 }
 
@@ -310,6 +359,7 @@ export async function registerUserAccount(payload: {
   password: string;
   display_name: string;
   invite_code?: string;
+  remember_me?: boolean;
 }): Promise<{ status: 'active' | 'pending'; message: string; user?: UserProfile }> {
   const res = await fetch('/api/auth/register', {
     method: 'POST',
@@ -320,6 +370,9 @@ export async function registerUserAccount(payload: {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(data.detail || '가입 요청에 실패했습니다.');
+  }
+  if (data.status === 'active') {
+    markClientSessionMode(payload.remember_me ?? true);
   }
   return data;
 }
@@ -337,6 +390,11 @@ export async function logoutAccount(): Promise<void> {
   }
   purgeUserLocalStorageKeys();
   if (typeof window !== 'undefined') {
+    try {
+      getRawRemoveItem().call(window.localStorage, REMEMBER_MODE_KEY);
+    } catch {
+      // ignore
+    }
     window.sessionStorage.clear();
   }
 }
