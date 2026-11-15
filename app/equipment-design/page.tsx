@@ -8,7 +8,7 @@ import { saveChemProHandoffPayload } from '@/lib/calculations/unitDesignHandoff'
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
-const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'compressor'];
+const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'cms_hub', 'compressor'];
 
 const PackingTower             = dynamic(() => import('@/components/equipment-design/PackingTower'),             { ssr: false });
 const BrinePurificationDesign  = dynamic(() => import('@/components/equipment-design/BrinePurificationDesign'),  { ssr: false });
@@ -42,17 +42,34 @@ const ECH_DESIGN_TABS = [
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
 ];
 
+const CMS_DESIGN_TABS = [
+  { key: 'cms_hub',    label: 'CMS 핵심장치 (E-101·R-101·C-201~302)' },
+  { key: 'packing',    label: 'C-201~302 증류·탈거탑 패킹/트레이 설계' },
+  { key: 'chempro',    label: '기화기(E-101)·냉각기(E-301)·펌프(P-202) 상세설계' },
+  { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+];
+
 interface EchHxHandoffConfig {
+  sourceLabel?: string;
   tag: string;
   name: string;
   fluidSummary: string;
   hotFluidId: string;
+  coldFluidId?: string;
+  allocation?: 'hot_shell' | 'hot_tube';
+  dofTarget?: 'mc_auto' | 'mh_auto';
   mh_kgh: number;
   Th_in: number;
   Th_out: number;
   mc_kgh: number;
   Tc_in: number;
   Tc_out: number;
+  hot_mode?: 'sensible' | 'cond_full';
+  cold_mode?: 'sensible' | 'boil_full';
+  Th_sat?: number;
+  Tc_sat?: number;
+  hot_hv?: number;
+  cold_hv?: number;
   U_assumed: number;
 }
 
@@ -60,7 +77,7 @@ function saveEchChemProHXHandoff(cfg: EchHxHandoffConfig) {
   saveChemProHandoffPayload({
     version: 1,
     timestamp: Date.now(),
-    sourceLabel: 'PLANT 03 바이오 ECH',
+    sourceLabel: cfg.sourceLabel ?? 'PLANT 03 바이오 ECH',
     tab: 'hx',
     equipTag: cfg.tag,
     equipName: cfg.name,
@@ -68,17 +85,21 @@ function saveEchChemProHXHandoff(cfg: EchHxHandoffConfig) {
     hx: {
       hx_type: 'shell_tube',
       hotFluidId: cfg.hotFluidId,
-      coldFluidId: 'water',
-      allocation: 'hot_tube',
-      dofTarget: 'mc_auto',
+      coldFluidId: cfg.coldFluidId ?? 'water',
+      allocation: cfg.allocation ?? 'hot_tube',
+      dofTarget: cfg.dofTarget ?? 'mc_auto',
       mh_kgh: cfg.mh_kgh,
       Th_in: cfg.Th_in,
       Th_out: cfg.Th_out,
       mc_kgh: cfg.mc_kgh,
       Tc_in: cfg.Tc_in,
       Tc_out: cfg.Tc_out,
-      hot_mode: 'sensible',
-      cold_mode: 'sensible',
+      hot_mode: cfg.hot_mode ?? 'sensible',
+      cold_mode: cfg.cold_mode ?? 'sensible',
+      ...(cfg.Th_sat !== undefined ? { Th_sat: cfg.Th_sat, hot_xfrac: 1.0 } : {}),
+      ...(cfg.Tc_sat !== undefined ? { Tc_sat: cfg.Tc_sat, cold_xfrac: 1.0 } : {}),
+      ...(cfg.hot_hv !== undefined ? { hot_hv: cfg.hot_hv } : {}),
+      ...(cfg.cold_hv !== undefined ? { cold_hv: cfg.cold_hv } : {}),
       U_assumed: cfg.U_assumed,
     },
   });
@@ -122,15 +143,19 @@ export default function EquipmentDesignPage() {
       if (qTab === 'distill' && activeTab === 'distill') return;
     }
     if (activePlantId === 'hcl_synth') {
-      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'distill') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'distill' || activeTab === 'cms_hub') {
         setActiveTab('hcl_hub');
       }
     } else if (activePlantId === 'ech_gte') {
-      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'cms_hub') {
         setActiveTab('distill');
       }
+    } else if (activePlantId === 'cms_plant') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill') {
+        setActiveTab('cms_hub');
+      }
     } else if (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') {
-      if (activeTab === 'hcl_hub' || activeTab === 'distill') {
+      if (activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub') {
         setActiveTab('evap');
       }
     }
@@ -230,18 +255,23 @@ export default function EquipmentDesignPage() {
   }
 
   // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공)
-  const isEchMode = activePlantId === 'ech_gte' || activeTab === 'distill';
-  const subTabs = isEchMode
-    ? ECH_DESIGN_TABS
-    : activePlantId === 'hcl_synth'
-      ? HCL1A_DESIGN_TABS
-      : CA_DESIGN_TABS;
+  const isCmsMode = activePlantId === 'cms_plant' || activeTab === 'cms_hub';
+  const isEchMode = !isCmsMode && (activePlantId === 'ech_gte' || activeTab === 'distill');
+  const subTabs = isCmsMode
+    ? CMS_DESIGN_TABS
+    : isEchMode
+      ? ECH_DESIGN_TABS
+      : activePlantId === 'hcl_synth'
+        ? HCL1A_DESIGN_TABS
+        : CA_DESIGN_TABS;
   const effectiveDesignTab =
-    isEchMode && !ECH_DESIGN_TABS.some(t => t.key === activeTab)
-      ? 'distill'
-      : !isEchMode && activePlantId === 'hcl_synth' && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
-        ? 'hcl_hub'
-        : activeTab;
+    isCmsMode && !CMS_DESIGN_TABS.some(t => t.key === activeTab)
+      ? 'cms_hub'
+      : isEchMode && !ECH_DESIGN_TABS.some(t => t.key === activeTab)
+        ? 'distill'
+        : !isCmsMode && !isEchMode && activePlantId === 'hcl_synth' && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
+          ? 'hcl_hub'
+          : activeTab;
 
   const switchDesignSubTab = (key: string) => {
     setActiveTab(key);
@@ -256,9 +286,10 @@ export default function EquipmentDesignPage() {
     sheetId: string,
     nodeIdOrTag: string,
     workbenchView?: 'mesh' | 'internals' | 'thermal' | 'mechanical',
-    forceEchPlant?: boolean
+    forcePlant?: boolean | 'ech_gte' | 'cms_plant'
   ) => {
-    if (forceEchPlant) setActivePlantId('ech_gte');
+    if (forcePlant === true) setActivePlantId('ech_gte');
+    else if (forcePlant) setActivePlantId(forcePlant);
     requestSimNodeAction({
       sheetId,
       nodeIdOrTag,
@@ -268,8 +299,9 @@ export default function EquipmentDesignPage() {
     router.push('/material-balance');
   };
 
-  const openSimSheet = (sheetId: string, forceEchPlant?: boolean) => {
-    if (forceEchPlant) setActivePlantId('ech_gte');
+  const openSimSheet = (sheetId: string, forcePlant?: boolean | 'ech_gte' | 'cms_plant') => {
+    if (forcePlant === true) setActivePlantId('ech_gte');
+    else if (forcePlant) setActivePlantId(forcePlant);
     requestSimSheet(sheetId);
     router.push('/material-balance');
   };
@@ -284,8 +316,140 @@ export default function EquipmentDesignPage() {
     });
   };
 
+  const openCmsChemProPump = () => {
+    saveChemProHandoffPayload({
+      version: 1,
+      timestamp: Date.now(),
+      sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+      tab: 'pump',
+      equipTag: 'P-202',
+      equipName: '고압 순환 메틸클로라이드 승압펌프 (MC Recycle Pump)',
+      detectedFluidSummary: '순환 액상 메틸클로라이드 (CH₃Cl · 24 kG 승압)',
+      pump: {
+        fluidId: 'vcm',
+        T_C: 40.0,
+        Q_m3h: 12.6,
+        rho_kgm3: 880,
+        P1_barG: 9.2,
+        P2_barG: 24.5,
+        eff_pct: 72,
+        dsuc_mm: '62.71',
+        ddis_mm: '52.50',
+      },
+    });
+    setActiveDesignRequest({
+      tab: 'pump',
+      tag: 'P-202',
+      chemproSubTab: 'pump',
+      handoff: true,
+    });
+  };
+
   const hubCards =
-    effectiveDesignTab === 'distill'
+    effectiveDesignTab === 'cms_hub'
+      ? [
+          {
+            key: 'cms_100_rxn',
+            sec: '100 SEC · 액체염소 기화 & AIBN 고압 반응',
+            title: 'E-101 액체염소 기화기 · R-101 24kG·120°C AIBN 반응기',
+            units: 'E-101 (220 T/D · 25→95°C) · R-101 (24.0 kG · 120°C · AIBN 350 ppm)',
+            desc: '액화 Cl₂ 가압 기화 전열 설계 및 MC/Cl₂ 몰비 2.08 연속 라디칼 염소화(MCL/CFM 선택도) 연동',
+            actions: [
+              { label: '🔧 [E-101] 액체염소 기화기 내장설계 직행', onClick: () => openSimNode('sub_cms_100_rxn', 'E-101', 'thermal', 'cms_plant') },
+              { label: '🔧 [R-101] 24kG·120°C AIBN 반응기 조건·수지 확인', onClick: () => openSimNode('sub_cms_100_rxn', 'R-101', undefined, 'cms_plant') },
+              {
+                label: '📐 [E-101] Cl₂ Vaporizer 상세설계 열기',
+                onClick: () =>
+                  openEchChemProHX({
+                    sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+                    tag: 'E-101',
+                    name: '액체염소 기화기 (Cl₂ Vaporizer)',
+                    fluidSummary: '액화염소 (9,167 kg/h, 25→95°C 기화 · 24.5 kG)',
+                    hotFluidId: 'steam_lp',
+                    coldFluidId: 'liquid_cl2',
+                    allocation: 'hot_shell',
+                    dofTarget: 'mh_auto',
+                    mh_kgh: 1480,
+                    Th_in: 151.0,
+                    Th_out: 145.0,
+                    mc_kgh: 9167,
+                    Tc_in: 25.0,
+                    Tc_out: 95.0,
+                    hot_mode: 'cond_full',
+                    Th_sat: 151.0,
+                    hot_hv: 2110,
+                    cold_mode: 'boil_full',
+                    Tc_sat: 76.0,
+                    cold_hv: 255,
+                    U_assumed: 680,
+                  }),
+              },
+            ],
+            sheetButtons: [
+              { label: '100 Sec 기화·반응 PFD 이동 →', onClick: () => openSimSheet('sub_cms_100_rxn', 'cms_plant') },
+            ],
+          },
+          {
+            key: 'cms_200_rec',
+            sec: '200 SEC · 고압 무수 HCl 탈거 & MC 순환회수',
+            title: 'C-201 무수 HCl 탈거탑 · C-202 MC 순환탑 (MCL 무순환)',
+            units: 'C-201 (17.5 kG · 칠드 브라인 응축 · 113 T/D AHCl) · C-202 (9.2 kG · 미반응 MC 회수) · P-202',
+            desc: '부생 무수 HCl 고압 탈거 MESH 프로파일 및 미반응 메틸클로라이드 전량 순환(MCL 미순환) 공정 연동',
+            actions: [
+              { label: '🔧 [C-201] 무수 HCl 탈거탑 인터널·단별 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-201', 'internals', 'cms_plant') },
+              { label: '🔧 [C-202] MC 순환탑 (MCL 무순환) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-202', 'internals', 'cms_plant') },
+              { label: '📐 [P-202] MC Recycle Pump 상세설계 열기', onClick: openCmsChemProPump },
+            ],
+            sheetButtons: [
+              { label: '200 Sec 탈거·순환 PFD 이동 →', onClick: () => openSimSheet('sub_cms_200_rec', 'cms_plant') },
+            ],
+          },
+          {
+            key: 'cms_300_purif',
+            sec: '300 SEC · MCL 120 · CFM 80 T/D 정제 & CTC 폐기',
+            title: 'C-301 MCL 정제탑 · C-302 CFM 정제탑 & CTC 폐기',
+            units: 'C-301 (MCL 120 T/D · 99.9%) · C-302 (CFM 80 T/D · 99.9% & 잔류 CTC·헤비 18 T/D)',
+            desc: 'PR EOS 정밀증류 2탑 단별 조성·리보일러·응축기 전열 및 고순도 MCL 제품 냉각기 상세설계',
+            actions: [
+              { label: '🔧 [C-301] MCL 정제탑(120 T/D) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-301', 'internals', 'cms_plant') },
+              { label: '🔧 [C-302] CFM 정제탑(80 T/D) & CTC 폐기 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-302', 'internals', 'cms_plant') },
+              {
+                label: '📐 [E-301] MCL Cooler 상세설계 열기',
+                onClick: () =>
+                  openEchChemProHX({
+                    sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+                    tag: 'E-301',
+                    name: '고순도 MCL 제품 냉각기 (MCL Cooler)',
+                    fluidSummary: '정제 메틸렌클로라이드 (5,000 kg/h, 78→32°C · CW)',
+                    hotFluidId: 'dcm',
+                    coldFluidId: 'water',
+                    allocation: 'hot_tube',
+                    dofTarget: 'mc_auto',
+                    mh_kgh: 5000,
+                    Th_in: 78.0,
+                    Th_out: 32.0,
+                    mc_kgh: 18500,
+                    Tc_in: 28.0,
+                    Tc_out: 34.0,
+                    hot_mode: 'sensible',
+                    cold_mode: 'sensible',
+                    U_assumed: 560,
+                  }),
+              },
+            ],
+            sheetButtons: [
+              { label: '300 Sec MCL·CFM 정제 PFD 이동 →', onClick: () => openSimSheet('sub_cms_300_purif', 'cms_plant') },
+              {
+                label: '단위장치 상세설계 브리지 열기 →',
+                onClick: () => {
+                  setActivePlantId('cms_plant');
+                  router.push('/unit-equipment');
+                },
+              },
+            ],
+          },
+        ]
+      : effectiveDesignTab === 'distill'
       ? [
           {
             key: 'ech_300_distill',
@@ -443,11 +607,13 @@ export default function EquipmentDesignPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', marginRight: 4, whiteSpace: 'nowrap' }}>
-            {isEchMode
-              ? 'PLANT 03 바이오 ECH:'
-              : activePlantId === 'hcl_synth'
-                ? 'PLANT 02 1A 염산:'
-                : '전해공장 상세설계:'}
+            {isCmsMode
+              ? 'PLANT 04 클로로메탄(CMS):'
+              : isEchMode
+                ? 'PLANT 03 바이오 ECH:'
+                : activePlantId === 'hcl_synth'
+                  ? 'PLANT 02 1A 염산:'
+                  : '전해공장 상세설계:'}
           </span>
           {subTabs.map(st => {
             const isSel = effectiveDesignTab === st.key;
@@ -474,11 +640,12 @@ export default function EquipmentDesignPage() {
           })}
         </div>
 
-        {(activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode) && (
+        {(activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode || isCmsMode) && (
           <button
             type="button"
             onClick={() => {
-              if (isEchMode) setActivePlantId('ech_gte');
+              if (isCmsMode) setActivePlantId('cms_plant');
+              else if (isEchMode) setActivePlantId('ech_gte');
               router.push('/material-balance');
             }}
             style={{
@@ -517,7 +684,7 @@ export default function EquipmentDesignPage() {
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, background: '#F6F7F2' }}>
           <MultiEffectEvapStudio />
         </div>
-      ) : (effectiveDesignTab === 'hcl_hub' || effectiveDesignTab === 'distill') ? (
+      ) : (effectiveDesignTab === 'hcl_hub' || effectiveDesignTab === 'distill' || effectiveDesignTab === 'cms_hub') ? (
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, padding: '14px 20px', background: '#F6F7F2' }}>
           <div
             style={{
@@ -535,14 +702,18 @@ export default function EquipmentDesignPage() {
           >
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A' }}>
-                {effectiveDesignTab === 'distill'
-                  ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
-                  : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계'}
+                {effectiveDesignTab === 'cms_hub'
+                  ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
+                  : effectiveDesignTab === 'distill'
+                    ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
+                    : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계'}
               </div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-                {effectiveDesignTab === 'distill'
-                  ? '70,000 TPA GTE-ECH 공정 연동 · 증류탑(C-101/C-102) · 반응기(R-101/R-201) · 열교환기(E-102/E-301)'
-                  : '실시간 PFD 유량·조성·압력 연동 내장 워크벤치 (증류탑 · 열교환기 · 급랭·심냉액화기)'}
+                {effectiveDesignTab === 'cms_hub'
+                  ? 'Cl₂ 220 · MCL 120 · CFM 80 T/D · 기화기(E-101) · 반응기(R-101) · 증류탑(C-201~C-302) · 제품냉각·순환펌프(E-301/P-202)'
+                  : effectiveDesignTab === 'distill'
+                    ? '70,000 TPA GTE-ECH 공정 연동 · 증류탑(C-101/C-102) · 반응기(R-101/R-201) · 열교환기(E-102/E-301)'
+                    : '실시간 PFD 유량·조성·압력 연동 내장 워크벤치 (증류탑 · 열교환기 · 급랭·심냉액화기)'}
               </div>
             </div>
           </div>

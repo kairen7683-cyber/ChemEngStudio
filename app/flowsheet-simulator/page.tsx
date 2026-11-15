@@ -74,6 +74,10 @@ import {
 } from '@/lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
+import {
+  createInitialCmsHierarchySheets,
+  syncCmsSubDefsFromMaster,
+} from '@/lib/calculations/cmsPlantHierarchy';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import {
@@ -87,13 +91,15 @@ import {
   saveChemProHandoffPayload,
 } from '@/lib/calculations/unitDesignHandoff';
 
-// ── 모드별 분리 영구 자동저장 키 (PLANT 02 ↔ PLANT 03 ↔ PLANT 04 ↔ 공정 시뮬레이터 완전 격리) ──
+// ── 모드별 분리 영구 자동저장 키 (PLANT 01 ↔ PLANT 02 ↔ PLANT 03 ↔ PLANT 04 ↔ 공정 시뮬레이터 완전 격리) ──
 const PLANT02_AUTO_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT02_SLOTS_SAVE_KEY = 'chemplant-plant02-electrolyzer-slots-v1';
 const PLANT03_AUTO_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT03_SLOTS_SAVE_KEY = 'chemplant-plant03-hcl1a-slots-v1';
 const PLANT04_AUTO_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT04_SLOTS_SAVE_KEY = 'chemplant-plant04-ech-slots-v1';
+const PLANT05_AUTO_SAVE_KEY = 'chemplant-plant05-cms-v1';
+const PLANT05_SLOTS_KEY = 'chemplant-plant05-cms-slots-v1';
 const BUILDER_AUTO_SAVE_KEY = 'chemplant-newplant-builder-v1';
 const BUILDER_SLOTS_SAVE_KEY = 'chemplant-newplant-builder-slots-v1';
 
@@ -996,7 +1002,7 @@ const NODE_TYPES = { flowUnit: FlowUnitNode };
 // ── 프리셋 시나리오 ──────────────────────────────────────────
 interface PresetScenario {
   id: string;
-  group?: 'general' | 'plant02' | 'plant03' | 'plant04';
+  group?: 'general' | 'plant02' | 'plant03' | 'plant04' | 'plant05';
   btnLabel: string;
   title: string;
   nodes: Array<FlowNodeDef & { position: { x: number; y: number } }>;
@@ -1633,6 +1639,7 @@ interface ConvergedBaselinesBundle {
     electrolysis: Record<string, BaselineSheetEntry>;
     hcl1A: Record<string, BaselineSheetEntry>;
     ech: Record<string, BaselineSheetEntry>;
+    cms?: Record<string, BaselineSheetEntry>;
   };
 }
 
@@ -1662,7 +1669,7 @@ function loadConvergedBaselines(): Promise<ConvergedBaselinesBundle | null> {
 
 function sheetToStandalonePreset(
   sheet: SheetRuntimeData,
-  group: 'plant02' | 'plant03' | 'plant04',
+  group: 'plant02' | 'plant03' | 'plant04' | 'plant05',
   prefix: string
 ): PresetScenario {
   return {
@@ -1714,11 +1721,18 @@ function getAllPresets(): PresetScenario[] {
     .filter(k => p4Sheets[k])
     .map(k => sheetToStandalonePreset(p4Sheets[k], 'plant04', 'PLANT 03 ECH ·'));
 
+  const p5Sheets = createInitialCmsHierarchySheets();
+  const p5Order = ['master', 'sub_cms_100_rxn', 'sub_cms_200_rec', 'sub_cms_300_purif'];
+  const p5Presets = p5Order
+    .filter(k => p5Sheets[k])
+    .map(k => sheetToStandalonePreset(p5Sheets[k], 'plant05', 'PLANT 04 CMS ·'));
+
   _cachedAllPresets = [
     ...PRESETS.map(p => ({ ...p, group: 'general' as const })),
     ...p2Presets,
     ...p3Presets,
     ...p4Presets,
+    ...p5Presets,
   ];
   return _cachedAllPresets;
 }
@@ -1879,7 +1893,7 @@ function createDefaultParamsForType(type: FlowUnitType) {
 }
 
 export interface FlowsheetWorkspaceProps {
-  workspaceMode?: 'new_plant_builder' | 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant';
+  workspaceMode?: 'new_plant_builder' | 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant';
   embeddedInPlant?: boolean;
 }
 
@@ -1894,28 +1908,35 @@ export function FlowsheetWorkspace({
   const isElectrolyzerMode = workspaceMode === 'electrolyzer_plant';
   const isHcl1AMode = workspaceMode === 'hcl_1a_plant';
   const isEchGteMode = workspaceMode === 'ech_gte_plant';
-  const isPlantSimMode = isElectrolyzerMode || isHcl1AMode || isEchGteMode;
+  const isCmsMode = workspaceMode === 'cms_plant';
+  const isPlantSimMode = isElectrolyzerMode || isHcl1AMode || isEchGteMode || isCmsMode;
   const AUTO_SAVE_KEY = isElectrolyzerMode
     ? PLANT02_AUTO_SAVE_KEY
     : isHcl1AMode
       ? PLANT03_AUTO_SAVE_KEY
       : isEchGteMode
         ? PLANT04_AUTO_SAVE_KEY
-        : BUILDER_AUTO_SAVE_KEY;
+        : isCmsMode
+          ? PLANT05_AUTO_SAVE_KEY
+          : BUILDER_AUTO_SAVE_KEY;
   const SLOTS_SAVE_KEY = isElectrolyzerMode
     ? PLANT02_SLOTS_SAVE_KEY
     : isHcl1AMode
       ? PLANT03_SLOTS_SAVE_KEY
       : isEchGteMode
         ? PLANT04_SLOTS_SAVE_KEY
-        : BUILDER_SLOTS_SAVE_KEY;
+        : isCmsMode
+          ? PLANT05_SLOTS_KEY
+          : BUILDER_SLOTS_SAVE_KEY;
   const PROJECTS_SAVE_KEY = isElectrolyzerMode
     ? 'chemplant-plant02-projects-v1'
     : isHcl1AMode
       ? 'chemplant-plant03-projects-v1'
       : isEchGteMode
         ? 'chemplant-plant04-projects-v1'
-        : 'chemplant-builder-projects-v1';
+        : isCmsMode
+          ? 'chemplant-plant05-projects-v1'
+          : 'chemplant-builder-projects-v1';
 
   const router = useRouter();
   const setSimActiveSheetId = useBalanceStore(s => s.setSimActiveSheetId);
@@ -1926,6 +1947,9 @@ export function FlowsheetWorkspace({
   const plant02SyncSeq = useBalanceStore(s => s.plant02SyncSeq);
   const plant03Inputs = useBalanceStore(s => s.plant03Inputs);
   const plant03SyncSeq = useBalanceStore(s => s.plant03SyncSeq);
+  const cmsPlantInputs = useBalanceStore(s => s.cmsPlantInputs);
+  const cmsPlantSummary = useBalanceStore(s => s.cmsPlantSummary);
+  const cmsPlantSyncSeq = useBalanceStore(s => s.cmsPlantSyncSeq);
   const setActivePlantId = useBalanceStore(s => s.setActivePlantId);
   const requestSimSheet = useBalanceStore(s => s.requestSimSheet);
   const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
@@ -1937,19 +1961,25 @@ export function FlowsheetWorkspace({
       ? 'full_hcl_1a_plant'
       : isEchGteMode
         ? 'full_ech_gte_plant'
-        : 'blank';
+        : isCmsMode
+          ? 'full_cms_plant'
+          : 'blank';
   const defaultSelectedNodeId = isElectrolyzerMode
     ? 'fp_t430'
     : isHcl1AMode
       ? 'h1a_c310'
       : isEchGteMode
         ? 'ech_c102'
-        : null;
+        : isCmsMode
+          ? 'cms_m_r101'
+          : null;
+  const defaultModePropertyMethod: SimPropertyMethod = isCmsMode ? 'PR' : 'AUTO';
 
   // 초기 상태 분기:
-  // - PLANT 02 (electrolyzer_plant): 전해공장 전공정 풀패키지(100~700 SEC) 마스터 + 10개 하위 세부공정 시트
-  // - PLANT 03 (hcl_1a_plant): 1A 초고순도·무수염산 & 폐염산 공비증류(PSD) 마스터 + 3개 하위 세부공정 시트
-  // - PLANT 04 (ech_gte_plant): ECH 70,000 TPA (GTE 글리세린 공정) 마스터 + 3개 하위 세부공정 시트
+  // - PLANT 01 (electrolyzer_plant): 전해공장 전공정 풀패키지(100~700 SEC) 마스터 + 10개 하위 세부공정 시트
+  // - PLANT 02 (hcl_1a_plant): 1A 초고순도·무수염산 & 폐염산 공비증류(PSD) 마스터 + 3개 하위 세부공정 시트
+  // - PLANT 03 (ech_gte_plant): ECH 70,000 TPA (GTE 글리세린 공정) 마스터 + 3개 하위 세부공정 시트
+  // - PLANT 04 (cms_plant): 클로로메탄(CMS · MCL 120 + CFM 80 T/D) 마스터 + 3개 하위 세부공정 시트
   // - 공정 시뮬레이터 (new_plant_builder): 깔끔한 빈 캔버스로 시작 (상단 프리셋/저장 프로젝트에서 선택 불러오기 가능)
   const [initialSheets] = useState<Record<string, SheetRuntimeData>>(() => {
     if (isElectrolyzerMode) {
@@ -1960,6 +1990,9 @@ export function FlowsheetWorkspace({
     }
     if (isEchGteMode) {
       return createInitialEchHierarchySheets();
+    }
+    if (isCmsMode) {
+      return createInitialCmsHierarchySheets();
     }
     return {
       master: {
@@ -2040,7 +2073,7 @@ export function FlowsheetWorkspace({
   const [activeComponents, setActiveComponents] = useState<SimCompKey[]>(() =>
     mergeSheetFeedComponents(initialSheets.master.simDefs, getPlantDefaultComponents(workspaceMode))
   );
-  const [propertyMethod, setPropertyMethod] = useState<SimPropertyMethod>('AUTO');
+  const [propertyMethod, setPropertyMethod] = useState<SimPropertyMethod>(defaultModePropertyMethod);
   const [compSetupModalOpen, setCompSetupModalOpen] = useState<boolean>(false);
   const [optModalOpen, setOptModalOpen] = useState<boolean>(false);
   const [tearMethod, setTearMethod] = useState<TearSolverMethod>('auto');
@@ -2078,7 +2111,7 @@ export function FlowsheetWorkspace({
     lastRunTime: string;
   }>(() => ({
     result: createIdleFlowsheetResult(initialSheets.master.simDefs, initialSheets.master.flowEdges, {
-      propertyMethod: 'AUTO',
+      propertyMethod: defaultModePropertyMethod,
       activeComponents: mergeSheetFeedComponents(
         initialSheets.master.simDefs,
         getPlantDefaultComponents(workspaceMode)
@@ -2288,11 +2321,18 @@ export function FlowsheetWorkspace({
         masterCached &&
         !masterCached.result.convergence.isIdle
       ) {
-        const { syncedDefs, syncedDescriptions } = applyMasterBoundaryToSubDefs(
-          nextTargetDefs,
-          nextSheets.master.flowEdges,
-          masterCached.result.streams
-        );
+        const { syncedDefs, syncedDescriptions } = isCmsMode
+          ? syncCmsSubDefsFromMaster(
+              targetSheetId,
+              nextTargetDefs,
+              nextSheets.master.flowEdges,
+              masterCached.result.streams
+            )
+          : applyMasterBoundaryToSubDefs(
+              nextTargetDefs,
+              nextSheets.master.flowEdges,
+              masterCached.result.streams
+            );
         nextTargetDefs = syncedDefs;
         boundaryUpdated = syncedDescriptions.length > 0;
         nextSheets[targetSheetId] = { ...targetSheet, simDefs: nextTargetDefs };
@@ -2363,7 +2403,9 @@ export function FlowsheetWorkspace({
             ? createInitialHcl1AHierarchySheets()
             : isEchGteMode
               ? createInitialEchHierarchySheets()
-              : createInitialHierarchySheets()
+              : isCmsMode
+                ? createInitialCmsHierarchySheets()
+                : createInitialHierarchySheets()
           : isPlantSimMode && activeSheetId !== 'master'
             ? (() => {
                 const curPos = extractCurrentPositions(rfNodes);
@@ -2400,11 +2442,13 @@ export function FlowsheetWorkspace({
               })()
             : hierarchySheets;
 
-      const pKey: 'electrolysis' | 'hcl1A' | 'ech' = isHcl1AMode
+      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' = isHcl1AMode
         ? 'hcl1A'
         : isEchGteMode
           ? 'ech'
-          : 'electrolysis';
+          : isCmsMode
+            ? 'cms'
+            : 'electrolysis';
       const baselinePlant = resetToFactory ? convergedBaselinesRef.current?.plants[pKey] : undefined;
       const sheets: Record<string, SheetRuntimeData> = { ...sheetsRaw };
       if (baselinePlant) {
@@ -2468,7 +2512,7 @@ export function FlowsheetWorkspace({
       setSelectedEdgeId(null);
       setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
     },
-    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isEchGteMode, isHcl1AMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
+    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isEchGteMode, isHcl1AMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
   );
 
   // 사용자가 마스터 도면에 새로 추가한 커스텀 블록에도 내부 세부 시트를 생성해 진입할 수 있게 지원
@@ -2637,7 +2681,7 @@ export function FlowsheetWorkspace({
             parsed.propertyMethod === 'SRK' ||
             parsed.propertyMethod === 'AUTO'
               ? parsed.propertyMethod
-              : 'AUTO';
+              : defaultModePropertyMethod;
           const baseComps =
             Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
               ? (parsed.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
@@ -2723,13 +2767,15 @@ export function FlowsheetWorkspace({
     loadConvergedBaselines().then(bundle => {
       if (!alive || !bundle) return;
       convergedBaselinesRef.current = bundle;
-      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | null = isHcl1AMode
+      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | null = isHcl1AMode
         ? 'hcl1A'
         : isEchGteMode
           ? 'ech'
-          : isElectrolyzerMode
-            ? 'electrolysis'
-            : null;
+          : isCmsMode
+            ? 'cms'
+            : isElectrolyzerMode
+              ? 'electrolysis'
+              : null;
       if (!pKey) return;
       const pBaselines = bundle.plants[pKey];
       if (!pBaselines) return;
@@ -2779,7 +2825,7 @@ export function FlowsheetWorkspace({
     return () => {
       alive = false;
     };
-  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultSelectedNodeId, initialSheets.master.simDefs.length, isEchGteMode, isElectrolyzerMode, isHcl1AMode, workspaceMode]);
+  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, workspaceMode]);
 
   const switchToClassicUi = useCallback(() => {
     const positions = extractCurrentPositions(rfNodes);
@@ -3082,6 +3128,135 @@ export function FlowsheetWorkspace({
     solvedMeta.result.convergence.isIdle,
   ]);
 
+  // Live sync: PLANT 04 CMS (Sidebar 운전조건 변경 -> R-101, C-201, FEED-LIQ-CL2/MC 동기화 후 활성 시트 재계산)
+  const lastCmsSyncRef = useRef<number>(0);
+  const cmsBaseK0Ref = useRef<Record<string, number>>({});
+  useEffect(() => {
+    if (!hydrated || !isCmsMode) return;
+    if (cmsPlantSyncSeq === lastCmsSyncRef.current) return;
+    lastCmsSyncRef.current = cmsPlantSyncSeq;
+
+    const cl2FeedKgH = Number(((Math.max(20, cmsPlantInputs.cl2FeedTonDay) * 1000) / 24).toFixed(2));
+    const freshMcKgH = Number(cmsPlantSummary.freshMcKgH.toFixed(2));
+    const totalMcKgH = Number((cmsPlantSummary.freshMcKgH + cmsPlantSummary.recycleMcKgH).toFixed(2));
+    const aibnScale = Math.sqrt(Math.max(50, cmsPlantInputs.aibnDosagePpm) / 350);
+
+    const patchCmsDefs = (defs: FlowNodeDef[]): FlowNodeDef[] =>
+      defs.map(d => {
+        if (d.id === 'cms_m_cl2' || d.id === 'cms1_cl2') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), Cl2: cl2FeedKgH },
+            },
+          };
+        }
+        if (d.id === 'cms_m_mc' || d.id === 'cms1_mc') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                CH3Cl: d.id === 'cms1_mc' ? totalMcKgH : freshMcKgH,
+              },
+            },
+          };
+        }
+        if (d.id === 'cms_m_r101' || d.id === 'cms1_r101') {
+          const prevRxCfg = d.params.reactorConfig;
+          const nextReactions = prevRxCfg?.reactions
+            ? prevRxCfg.reactions.map((rx, idx) => {
+                const k0Key = `${d.id}::${rx.id || idx}`;
+                if (cmsBaseK0Ref.current[k0Key] == null) {
+                  const initNode = Object.values(initialSheets)
+                    .flatMap(s => s.simDefs)
+                    .find(n => n.id === d.id);
+                  const initRx =
+                    initNode?.params.reactorConfig?.reactions?.find(r => r.id === rx.id) ??
+                    initNode?.params.reactorConfig?.reactions?.[idx];
+                  if (initRx?.k0Forward != null) {
+                    cmsBaseK0Ref.current[k0Key] = initRx.k0Forward;
+                  } else if (rx.k0Forward != null) {
+                    cmsBaseK0Ref.current[k0Key] = rx.k0Forward;
+                  }
+                }
+                const baseK0 = cmsBaseK0Ref.current[k0Key] ?? rx.k0Forward;
+                return baseK0 != null
+                  ? { ...rx, k0Forward: Number((baseK0 * aibnScale).toPrecision(6)) }
+                  : rx;
+              })
+            : undefined;
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operTempC: cmsPlantInputs.reactorTempC,
+              operPressKgcm2g: cmsPlantInputs.reactorPressKgcm2g,
+              ...(prevRxCfg
+                ? {
+                    reactorConfig: {
+                      ...prevRxCfg,
+                      operTempC: cmsPlantInputs.reactorTempC,
+                      operPressKgcm2g: cmsPlantInputs.reactorPressKgcm2g,
+                      ...(nextReactions ? { reactions: nextReactions } : {}),
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        if (d.id === 'cms_m_c201' || d.id === 'cms2_c201') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operPressKgcm2g: cmsPlantInputs.hclStripperPressKg,
+              ...(d.params.distillConfig
+                ? {
+                    distillConfig: {
+                      ...d.params.distillConfig,
+                      topPressKgcm2g: cmsPlantInputs.hclStripperPressKg,
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        return d;
+      });
+
+    const nextActiveDefs = patchCmsDefs(simDefs);
+    setSimDefs(nextActiveDefs);
+    setHierarchySheets(prev => {
+      const next: typeof prev = {};
+      for (const [sid, s] of Object.entries(prev)) {
+        next[sid] = {
+          ...s,
+          simDefs: sid === activeSheetId ? nextActiveDefs : patchCmsDefs(s.simDefs),
+          cachedSolvedMeta: undefined,
+        };
+      }
+      return next;
+    });
+    setIsSimDirty(true);
+    runSimulationNow(nextActiveDefs, flowEdges, propertyMethod, activeComponents);
+  }, [
+    activeComponents,
+    activeSheetId,
+    cmsPlantInputs,
+    cmsPlantSummary.freshMcKgH,
+    cmsPlantSummary.recycleMcKgH,
+    cmsPlantSyncSeq,
+    flowEdges,
+    hydrated,
+    initialSheets,
+    isCmsMode,
+    propertyMethod,
+    simDefs,
+  ]);
+
   const lastHandledReqSeqRef = useRef<number>(0);
   useEffect(() => {
     if (!hydrated || !isPlantSimMode || !simRequestedSheetId) return;
@@ -3164,6 +3339,7 @@ export function FlowsheetWorkspace({
     presetId === 'full_electrolyzer_plant' ||
     presetId === 'full_hcl_1a_plant' ||
     presetId === 'full_ech_gte_plant' ||
+    presetId === 'full_cms_plant' ||
     Object.keys(hierarchySheets).length > 1;
 
   // ── 2) 노드·배관·속성·계층시트 변경 시 450ms 디바운스 저장 + 탭 전환/언마운트 시 즉시 플러시 ──
@@ -3545,16 +3721,33 @@ export function FlowsheetWorkspace({
           ? getPlantDefaultComponents('hcl_1a_plant')
           : p.group === 'plant04'
             ? getPlantDefaultComponents('ech_gte_plant')
-            : activeComponents;
+            : p.group === 'plant05'
+              ? getPlantDefaultComponents('cms_plant')
+              : activeComponents;
     const nextComps = mergeSheetFeedComponents(nextDefs, presetPlantBase);
+    const nextMethod: SimPropertyMethod =
+      p.group === 'plant05'
+        ? 'PR'
+        : propertyMethod === 'PR' && (p.group === 'plant02' || p.group === 'plant03' || p.group === 'plant04')
+          ? 'AUTO'
+          : propertyMethod;
 
-    const bKey: 'electrolysis' | 'hcl1A' | 'ech' | null =
-      p.group === 'plant02' ? 'electrolysis' : p.group === 'plant03' ? 'hcl1A' : p.group === 'plant04' ? 'ech' : null;
-    const bSheetId = bKey ? p.id.replace(/^plant0[234]_/, '') : '';
+    const bKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | null =
+      p.group === 'plant02'
+        ? 'electrolysis'
+        : p.group === 'plant03'
+          ? 'hcl1A'
+          : p.group === 'plant04'
+            ? 'ech'
+            : p.group === 'plant05'
+              ? 'cms'
+              : null;
+    const bSheetId = bKey ? p.id.replace(/^plant0[2345]_/, '') : '';
     const cachedEntry = bKey ? convergedBaselinesRef.current?.plants[bKey]?.[bSheetId] : undefined;
 
     skipNextDirtyRef.current = true;
     setActiveComponents(nextComps);
+    if (nextMethod !== propertyMethod) setPropertyMethod(nextMethod);
     setPresetId(p.id);
     setActiveSheetId('master');
     setHierarchySheets({
@@ -3600,7 +3793,7 @@ export function FlowsheetWorkspace({
     } else {
       setSolvedMeta({
         result: createIdleFlowsheetResult(nextDefs, nextEdges, {
-          propertyMethod,
+          propertyMethod: nextMethod,
           activeComponents: nextComps,
         }),
         elapsedMs: 0,
@@ -3632,17 +3825,20 @@ export function FlowsheetWorkspace({
     setTimeout(() => rfInstance?.fitView({ padding: 0.16, duration: 240 }), 60);
   };
 
-  // 전 공장(02/03/04) 100% 수렴 기본 케이스 즉시 복원
-  const restoreConvergedPlantCase = async (targetPlant: 'electrolysis' | 'hcl1A' | 'ech') => {
+  // 전 공장(01/02/03/04) 100% 수렴 기본 케이스 즉시 복원
+  const restoreConvergedPlantCase = async (targetPlant: 'electrolysis' | 'hcl1A' | 'ech' | 'cms') => {
     const bundle = convergedBaselinesRef.current ?? (await loadConvergedBaselines());
     if (bundle) convergedBaselinesRef.current = bundle;
+    const pBaselines = bundle?.plants[targetPlant];
+    const needSync = !pBaselines;
     const rawSheets =
       targetPlant === 'hcl1A'
-        ? createInitialHcl1AHierarchySheets({ syncMasterOnInit: true })
+        ? createInitialHcl1AHierarchySheets({ syncMasterOnInit: needSync })
         : targetPlant === 'ech'
-          ? createInitialEchHierarchySheets({ syncMasterOnInit: true })
-          : createInitialHierarchySheets({ syncMasterOnInit: true });
-    const pBaselines = bundle?.plants[targetPlant];
+          ? createInitialEchHierarchySheets({ syncMasterOnInit: needSync })
+          : targetPlant === 'cms'
+            ? createInitialCmsHierarchySheets({ syncMasterOnInit: needSync })
+            : createInitialHierarchySheets({ syncMasterOnInit: needSync });
     const sheets: Record<string, SheetRuntimeData> = { ...rawSheets };
     if (pBaselines) {
       for (const [sid, sh] of Object.entries(sheets)) {
@@ -3667,20 +3863,25 @@ export function FlowsheetWorkspace({
         ? 'hcl_1a_plant'
         : targetPlant === 'ech'
           ? 'ech_gte_plant'
-          : 'electrolyzer_plant';
+          : targetPlant === 'cms'
+            ? 'cms_plant'
+            : 'electrolyzer_plant';
+    const nextMethod: SimPropertyMethod = targetPlant === 'cms' ? 'PR' : 'AUTO';
     const nextComps = mergeSheetFeedComponents(sheets.master.simDefs, getPlantDefaultComponents(modeForComps));
     const nextDefs = sheets.master.simDefs.map(d => ({ ...d, params: { ...d.params } }));
     const nextEdges = sheets.master.flowEdges.map(e => ({ ...e }));
 
     skipNextDirtyRef.current = true;
     setActiveComponents(nextComps);
-    setPropertyMethod('AUTO');
+    setPropertyMethod(nextMethod);
     setPresetId(
       targetPlant === 'hcl1A'
         ? 'full_hcl_1a_plant'
         : targetPlant === 'ech'
           ? 'full_ech_gte_plant'
-          : 'full_electrolyzer_plant'
+          : targetPlant === 'cms'
+            ? 'full_cms_plant'
+            : 'full_electrolyzer_plant'
     );
     setHierarchySheets(sheets);
     setActiveSheetId('master');
@@ -3705,7 +3906,7 @@ export function FlowsheetWorkspace({
       });
       setIsSimDirty(false);
     } else {
-      runSimulationNow(nextDefs, nextEdges, 'AUTO', nextComps);
+      runSimulationNow(nextDefs, nextEdges, nextMethod, nextComps);
     }
     setSelectedNodeId(nextDefs[0]?.id ?? null);
     setSelectedEdgeId(null);
@@ -4380,7 +4581,9 @@ export function FlowsheetWorkspace({
           ? `PLANT 02 초고순도·무수염산 & 폐염산회수 (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
           : isEchGteMode
             ? `PLANT 03 ECH (7만톤 GTE) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
-            : '공정 시뮬레이터';
+            : isCmsMode
+              ? `PLANT 04 클로로메탄(CMS) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+              : '공정 시뮬레이터';
       const payload = buildChemProHandoffPayload(
         targetDef,
         flowEdges,
@@ -4427,6 +4630,8 @@ export function FlowsheetWorkspace({
     unitResultMap,
     isElectrolyzerMode,
     isHcl1AMode,
+    isEchGteMode,
+    isCmsMode,
     activeSheetId,
     flowEdges,
     solved.streams,
@@ -4749,6 +4954,15 @@ export function FlowsheetWorkspace({
               <optgroup label="PLANT 03 바이오 ECH 단위공정">
                 {getAllPresets()
                   .filter(p => p.group === 'plant04')
+                  .map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.btnLabel}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="PLANT 04 클로로메탄(CMS) 단위공정">
+                {getAllPresets()
+                  .filter(p => p.group === 'plant05')
                   .map(p => (
                     <option key={p.id} value={p.id}>
                       {p.btnLabel}
@@ -5180,7 +5394,9 @@ export function FlowsheetWorkspace({
                   ? '1A 초고순도·무수 염산 및 폐염산 PSD 회수 전공정 도면을 초기 설계값으로 복원합니다.'
                   : isEchGteMode
                     ? '70,000 TPA (8.75 t/h) ECH (GTE 글리세린 공정) 전공정 도면을 초기 설계값으로 복원합니다.'
-                    : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
+                    : isCmsMode
+                      ? '66,000 TPA (MCL 120 + CFM 80 T/D) 클로로메탄(CMS) 전공정 도면을 초기 설계값으로 복원합니다.'
+                      : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
               }
               style={{
                 padding: '3px 8px',
@@ -5249,6 +5465,15 @@ export function FlowsheetWorkspace({
                 <optgroup label="PLANT 03 바이오 ECH — 단위공정 단독 프리셋">
                   {getAllPresets()
                     .filter(p => p.group === 'plant04')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant05')
                     .map(p => (
                       <option key={p.id} value={p.id}>
                         {p.btnLabel}
@@ -5534,6 +5759,7 @@ export function FlowsheetWorkspace({
                     { key: 'electrolysis', label: 'PLANT 01 전해' },
                     { key: 'hcl1A', label: 'PLANT 02 1A 염산' },
                     { key: 'ech', label: 'PLANT 03 ECH' },
+                    { key: 'cms', label: 'PLANT 04 CMS' },
                   ] as const
                 ).map(item => (
                   <button

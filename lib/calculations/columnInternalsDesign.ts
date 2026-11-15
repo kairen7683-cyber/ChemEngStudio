@@ -492,6 +492,10 @@ const PURE_LIQ_DB: Record<SimCompKey, PureLiqProps> = {
   MDEA: { rho20: 1040, dRhoDT: 0.75, sigma20: 39.0, visc20Cp: 101.0, viscActK: 4100 },
   FormicAcid: { rho20: 1220, dRhoDT: 1.24, sigma20: 37.6, visc20Cp: 1.78, viscActK: 1650 },
   HNO3: { rho20: 1513, dRhoDT: 1.8, sigma20: 41.2, visc20Cp: 0.88, viscActK: 1250 },
+  CH3Cl: { rho20: 920, dRhoDT: 2.10, sigma20: 16.2, visc20Cp: 0.24, viscActK: 650 },
+  CH2Cl2: { rho20: 1326, dRhoDT: 1.80, sigma20: 28.1, visc20Cp: 0.44, viscActK: 850 },
+  CCl4: { rho20: 1594, dRhoDT: 1.90, sigma20: 26.8, visc20Cp: 0.97, viscActK: 1250 },
+  C2Cl4: { rho20: 1623, dRhoDT: 1.70, sigma20: 31.7, visc20Cp: 0.89, viscActK: 1200 },
   CUSTOM_1: { rho20: 810, dRhoDT: 0.8, sigma20: 24.6, visc20Cp: 2.95, viscActK: 2250 },
   CUSTOM_2: { rho20: 1022, dRhoDT: 0.85, sigma20: 42.9, visc20Cp: 4.4, viscActK: 2400 },
 };

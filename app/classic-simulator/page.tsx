@@ -771,25 +771,34 @@ export default function ClassicSimulatorPage() {
   const handleLoadPlantPreset = useCallback(
     async (presetKey: string) => {
       const [groupRaw, sheetId] = presetKey.split(':');
-      const group = (groupRaw === 'hcl1A' || groupRaw === 'ech' ? groupRaw : 'electrolysis') as
-        | 'electrolysis'
-        | 'hcl1A'
-        | 'ech';
-      const sheets = getPlantSheetsByGroup(group);
-      const rawSheet = sheets[sheetId];
-      if (!rawSheet) return;
+      const group = (
+        groupRaw === 'hcl1A' || groupRaw === 'ech' || groupRaw === 'cms' ? groupRaw : 'electrolysis'
+      ) as 'electrolysis' | 'hcl1A' | 'ech' | 'cms';
       const bundle = await fetchConvergedBaselinesBundle();
       const bEntry = bundle?.plants?.[group]?.[sheetId];
+      const sheets = getPlantSheetsByGroup(group, { syncMasterOnInit: !bEntry && sheetId !== 'master' });
+      const rawSheet = sheets[sheetId];
+      if (!rawSheet) return;
       const nextDefs = (bEntry?.simDefs ?? rawSheet.simDefs).map(d => ({ ...d, params: { ...d.params } }));
       const nextEdges = (bEntry?.flowEdges ?? rawSheet.flowEdges).map(e => ({ ...e }));
       const plantContext =
-        group === 'hcl1A' ? 'hcl_1a_plant' : group === 'ech' ? 'ech_gte_plant' : 'electrolyzer_plant';
+        group === 'hcl1A'
+          ? 'hcl_1a_plant'
+          : group === 'ech'
+            ? 'ech_gte_plant'
+            : group === 'cms'
+              ? 'cms_plant'
+              : 'electrolyzer_plant';
       const nextComps = mergeFeedComponents(nextDefs, getPlantDefaultComponents(plantContext));
+      const nextMethod: SimPropertyMethod = group === 'cms' ? 'PR' : thermoMethod;
 
       skipDirtyRef.current = true;
       setSimDefs(nextDefs);
       setFlowEdges(nextEdges);
       setActiveComponents(nextComps);
+      if (group === 'cms' && thermoMethod !== 'PR') {
+        setThermoMethod('PR');
+      }
       setRfNodes(
         nextDefs.map((d, idx) => ({
           id: d.id,
@@ -806,7 +815,7 @@ export default function ClassicSimulatorPage() {
         });
         setIsDirty(false);
       } else {
-        runSimulation(nextDefs, nextEdges, thermoMethod, nextComps, tearMethod);
+        runSimulation(nextDefs, nextEdges, nextMethod, nextComps, tearMethod);
       }
       setActiveMdiKey('pfd');
       setBottomView('pfd');

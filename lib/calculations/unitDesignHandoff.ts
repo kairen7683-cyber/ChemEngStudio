@@ -182,11 +182,32 @@ export function mapSimFlowsToChemProFluid(
   const wMCH = flows.MCH / tot;
   const wGly = flows.Glycerol / tot;
   const wDCP = flows.DCP / tot;
+  const wCH3Cl = flows.CH3Cl / tot;
+  const wCH2Cl2 = flows.CH2Cl2 / tot;
+  const wCHCl3 = flows.CHCl3 / tot;
+  const wCCl4 = flows.CCl4 / tot;
+  const wC2Cl4 = flows.C2Cl4 / tot;
   const wFeCl3 = flows.FeCl3 / tot;
   const wFeCl2 = flows.FeCl2 / tot;
   const wPAC = flows.PAC / tot;
   const wNaClO3 = flows.NaClO3 / tot;
 
+  if (wCH3Cl >= 0.30) return 'methyl_chloride';
+  if (wCH2Cl2 >= 0.30) return 'dcm';
+  if (wCHCl3 >= 0.30) return 'chloroform';
+  if (wCCl4 >= 0.30) return 'ccl4';
+  if (wC2Cl4 >= 0.30) return 'pce';
+  if (wCH3Cl + wCH2Cl2 + wCHCl3 + wCCl4 + wC2Cl4 >= 0.45) {
+    const cmsPairs: Array<[number, string]> = [
+      [wCH3Cl, 'methyl_chloride'],
+      [wCH2Cl2, 'dcm'],
+      [wCHCl3, 'chloroform'],
+      [wCCl4, 'ccl4'],
+      [wC2Cl4, 'pce'],
+    ];
+    cmsPairs.sort((a, b) => b[0] - a[0]);
+    return cmsPairs[0][1];
+  }
   if (wECH >= 0.30) return 'ech_pure';
   if (wDCP >= 0.25) return 'dcp_12';
   if (wDCH >= 0.20) return 'dch_13';
@@ -632,6 +653,7 @@ export function buildChemProHandoffPayload(
       const corrosiveOrGasTube =
         procFluidId.includes('cl2') ||
         procFluidId.includes('h2') ||
+        procFluidId.startsWith('ahcl_') ||
         procFluidId.startsWith('naoh_') ||
         procFluidId === 'brine_25' ||
         procFluidId === 'anolyte_depleted' ||
@@ -732,6 +754,11 @@ export function buildChemProHandoffPayload(
 
     let lkKey: SimCompKey = 'ECH';
     let hkKey: SimCompKey = 'DCH';
+    const totInFlow = Math.max(1e-6, sumInMass);
+    const wInHCl = sumInFlows.HCl / totInFlow;
+    const wInCH3Cl = sumInFlows.CH3Cl / totInFlow;
+    const wInCH2Cl2 = sumInFlows.CH2Cl2 / totInFlow;
+    const wInCHCl3 = sumInFlows.CHCl3 / totInFlow;
     if (sumInFlows.HCl > 1 && sumInFlows.H2O > 1) {
       if (topP < -0.1) {
         lkFluidId = 'water';
@@ -743,6 +770,36 @@ export function buildChemProHandoffPayload(
         hkFluidId = 'hcl_20_azeo';
         lkKey = 'HCl';
         hkKey = 'H2O';
+      }
+    } else if (wInHCl >= 0.05 && sumInFlows.H2O <= 1 && (sumInFlows.CH3Cl > 10 || sumInFlows.CH2Cl2 > 10)) {
+      lkFluidId = 'ahcl_liq';
+      if (sumInFlows.CH3Cl >= sumInFlows.CH2Cl2) {
+        hkFluidId = 'methyl_chloride';
+        hkKey = 'CH3Cl';
+      } else {
+        hkFluidId = 'dcm';
+        hkKey = 'CH2Cl2';
+      }
+      lkKey = 'HCl';
+    } else if (wInCH3Cl >= 0.03 && sumInFlows.CH2Cl2 > 50) {
+      lkFluidId = 'methyl_chloride';
+      hkFluidId = 'dcm';
+      lkKey = 'CH3Cl';
+      hkKey = 'CH2Cl2';
+    } else if (wInCH2Cl2 >= 0.05 && sumInFlows.CHCl3 > 50) {
+      lkFluidId = 'dcm';
+      hkFluidId = 'chloroform';
+      lkKey = 'CH2Cl2';
+      hkKey = 'CHCl3';
+    } else if (wInCHCl3 >= 0.05 && (sumInFlows.CCl4 > 10 || sumInFlows.C2Cl4 > 10)) {
+      lkFluidId = 'chloroform';
+      lkKey = 'CHCl3';
+      if (sumInFlows.CCl4 >= sumInFlows.C2Cl4) {
+        hkFluidId = 'ccl4';
+        hkKey = 'CCl4';
+      } else {
+        hkFluidId = 'pce';
+        hkKey = 'C2Cl4';
       }
     } else if (sumInFlows.HCl > 1 && sumInFlows.H2O <= 1) {
       lkFluidId = 'hydrogen_gas';

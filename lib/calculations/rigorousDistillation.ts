@@ -269,7 +269,8 @@ const ALL_KEYS: SimCompKey[] = [
   'C2H4', 'C2H6', 'C3H6', 'C3H8', 'nC4H10', 'nC6H14', 'nC7H16',
   'Benzene', 'Toluene', 'pXylene',
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
-  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3', 'CUSTOM_1', 'CUSTOM_2',
+  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
 ];
 
 const NEW_DISTILL_KEYS: SimCompKey[] = [
@@ -280,7 +281,7 @@ const NEW_DISTILL_KEYS: SimCompKey[] = [
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18',
   'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol',
   'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA',
-  'FormicAcid', 'HNO3', 'CUSTOM_1', 'CUSTOM_2',
+  'FormicAcid', 'HNO3', 'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
 ];
 
 const COMP_MW: Record<SimCompKey, number> = {
@@ -348,6 +349,10 @@ const COMP_MW: Record<SimCompKey, number> = {
   MDEA: mwOf('MDEA', 119.163),
   FormicAcid: mwOf('FormicAcid', 46.025),
   HNO3: mwOf('HNO3', 63.012),
+  CH3Cl: mwOf('CH3Cl', 50.488),
+  CH2Cl2: mwOf('CH2Cl2', 84.933),
+  CCl4: mwOf('CCl4', 153.823),
+  C2Cl4: mwOf('C2Cl4', 165.834),
   CUSTOM_1: mwOf('CUSTOM_1', 74.122),
   CUSTOM_2: mwOf('CUSTOM_2', 93.128),
 };
@@ -366,7 +371,9 @@ function zeroCompRecord(): Record<SimCompKey, number> {
     C2H4: 0, C2H6: 0, C3H6: 0, C3H8: 0, nC4H10: 0, nC6H14: 0, nC7H16: 0,
     Benzene: 0, Toluene: 0, pXylene: 0,
     MeOH: 0, EtOH: 0, IPA: 0, Acetone: 0, AceticAcid: 0, EtOAc: 0, CHCl3: 0,
-    Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0, Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0, MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+    Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0,
+    Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0, MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
+    CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0, CUSTOM_1: 0, CUSTOM_2: 0,
   };
 }
 
@@ -459,6 +466,9 @@ const TRAY_LLE_ORG_SET = new Set<SimCompKey>([
   'nC6H14',
   'nC7H16',
   'CHCl3',
+  'CH2Cl2',
+  'CCl4',
+  'C2Cl4',
 ]);
 
 function safeHenryWaterBar(comp: SimCompKey, T_K: number): number | null {
@@ -3013,11 +3023,13 @@ export function solveRigorousDistillation(
   const cached = DISTILL_SOLVE_CACHE.get(cacheKey);
   if (cached) return cached;
   const result = solveRigorousDistillationUncached(feedsInput, colParams);
-  if (DISTILL_SOLVE_CACHE.size > 400) {
-    const firstKey = DISTILL_SOLVE_CACHE.keys().next().value;
-    if (firstKey !== undefined) DISTILL_SOLVE_CACHE.delete(firstKey);
+  if (result.converged) {
+    if (DISTILL_SOLVE_CACHE.size > 400) {
+      const firstKey = DISTILL_SOLVE_CACHE.keys().next().value;
+      if (firstKey !== undefined) DISTILL_SOLVE_CACHE.delete(firstKey);
+    }
+    DISTILL_SOLVE_CACHE.set(cacheKey, result);
   }
-  DISTILL_SOLVE_CACHE.set(cacheKey, result);
   return result;
 }
 
@@ -3619,31 +3631,39 @@ function solveRigorousDistillationUncached(
       evals: ev,
     });
 
-    if (isDfVary && spec.metric === 'purity_wt_pct') {
+    let seedBest: { x: number; sol: InnerMeshSolution; err: number; evals: number } | null = null;
+    if (isDfVary && (spec.metric === 'purity_wt_pct' || (spec.metric === 'recovery_pct' && spec.streamTarget === 'distillate'))) {
       const compMass = totalFeedKgH[spec.component] || 0;
       const wFeed = compMass / Math.max(1e-9, totalFeedMassKgH);
-      const wTgt = clamp(spec.targetValue / 100.0, 1e-5, 0.99999);
       const compMW = COMP_MW[spec.component] || avgFeedMW;
-      const otherMass = Math.max(0, totalFeedMassKgH - compMass);
-      const otherMol = Math.max(0, totalMolesIn - (totalFeedMol[spec.component] || 0));
-      const otherMW = otherMol > 1e-9 ? otherMass / otherMol : avgFeedMW;
       let dfGuess = fixedDF;
-      if (spec.streamTarget === 'bottoms') {
-        if (wFeed < wTgt) {
-          const dMassEst = Math.max(0, totalFeedMassKgH - compMass / Math.max(1e-6, wTgt));
-          dfGuess = (dMassEst / Math.max(2.0, otherMW)) / Math.max(1e-9, totalMolesIn);
+      if (spec.metric === 'recovery_pct') {
+        const recFrac = clamp(spec.targetValue / 100.0, 1e-4, 0.9999);
+        const dMassEst = compMass * recFrac;
+        dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
+      } else {
+        const wTgt = clamp(spec.targetValue / 100.0, 1e-5, 0.99999);
+        const otherMass = Math.max(0, totalFeedMassKgH - compMass);
+        const otherMol = Math.max(0, totalMolesIn - (totalFeedMol[spec.component] || 0));
+        const otherMW = otherMol > 1e-9 ? otherMass / otherMol : avgFeedMW;
+        if (spec.streamTarget === 'bottoms') {
+          if (wFeed < wTgt) {
+            const dMassEst = Math.max(0, totalFeedMassKgH - compMass / Math.max(1e-6, wTgt));
+            dfGuess = (dMassEst / Math.max(2.0, otherMW)) / Math.max(1e-9, totalMolesIn);
+          } else {
+            const dMassEst = Math.max(0, totalFeedMassKgH - otherMass / Math.max(1e-6, 1.0 - wTgt));
+            dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
+          }
         } else {
-          const dMassEst = Math.max(0, totalFeedMassKgH - otherMass / Math.max(1e-6, 1.0 - wTgt));
+          const dMassEst = compMass / Math.max(1e-6, wTgt);
           dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
         }
-      } else {
-        const dMassEst = compMass / Math.max(1e-6, wTgt);
-        dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
       }
+      const fastAcceptTol = spec.metric === 'recovery_pct' ? 0.04 : 2e-3;
       const xG = clamp(dfGuess, lo, hi);
       const solG = evalAt(xG);
       const fG = evalSpecMetric(spec, solG, totalFeedKgH) - spec.targetValue;
-      if (Math.abs(fG) <= 2e-3) {
+      if (Math.abs(fG) <= fastAcceptTol && solG.converged) {
         return finalizeVary(xG, solG, 1);
       }
       let xPrevS = xG;
@@ -3659,7 +3679,7 @@ function solveRigorousDistillationUncached(
       let usedEv = 1;
       let boundaryHitCount = 0;
       for (let st = 0; st < 8; st++) {
-        if (Date.now() - solveStartMs > 1200) break;
+        if (Date.now() - solveStartMs > 3500) break;
         if (Math.abs(xCurrS - xPrevS) < 1e-7) break;
         const solC = evalAt(xCurrS);
         usedEv++;
@@ -3669,7 +3689,7 @@ function solveRigorousDistillationUncached(
           bestXS = xCurrS;
           bestSolS = solC;
         }
-        if (Math.abs(fC) <= 2e-3) {
+        if (Math.abs(fC) <= fastAcceptTol && solC.converged) {
           return finalizeVary(xCurrS, solC, usedEv);
         }
         if (fC < 0 && (bLo === null || Math.abs(fC) < Math.abs(fBLo))) { bLo = xCurrS; fBLo = fC; }
@@ -3698,9 +3718,11 @@ function solveRigorousDistillationUncached(
         fPrevS = fC;
         xCurrS = nextClamped;
       }
-      if (bestErrS <= 5e-3) {
+      const seedAcceptTol = spec.metric === 'recovery_pct' ? 0.12 : 0.025;
+      if (bestErrS <= seedAcceptTol && bestSolS.converged) {
         return finalizeVary(bestXS, bestSolS, usedEv);
       }
+      seedBest = { x: bestXS, sol: bestSolS, err: bestErrS, evals: usedEv };
     }
 
     const x0 = lo;
@@ -3710,7 +3732,7 @@ function solveRigorousDistillationUncached(
     const x1 = hi;
     const sol1 = evalAt(x1);
     const f1 = evalSpecMetric(spec, sol1, totalFeedKgH) - spec.targetValue;
-    let evals = 2;
+    let evals = 2 + (seedBest?.evals ?? 0);
 
     if (spec.metric === 'impurity_wt_ppm' && spec.varyParam === 'reflux_ratio' && f0 <= 0) {
       return { bestParam: x0, sol: sol0, evals };
@@ -3719,11 +3741,16 @@ function solveRigorousDistillationUncached(
     let bestX = Math.abs(f0) <= Math.abs(f1) ? x0 : x1;
     let bestSol = Math.abs(f0) <= Math.abs(f1) ? sol0 : sol1;
     let bestErr = Math.min(Math.abs(f0), Math.abs(f1));
+    if (seedBest && seedBest.err < bestErr) {
+      bestX = seedBest.x;
+      bestSol = seedBest.sol;
+      bestErr = seedBest.err;
+    }
 
     if (f0 * f1 < 0) {
       let a = x0, fa = f0, b = x1, fb = f1;
       for (let k = 0; k < 14; k++) {
-        if (Date.now() - solveStartMs > 1200) break;
+        if (Date.now() - solveStartMs > 3500) break;
         const sec = a - (fa * (b - a)) / (fb - fa);
         const mid = 0.5 * (a + b);
         const c = k % 3 === 2 || sec <= Math.min(a, b) || sec >= Math.max(a, b) ? mid : 0.75 * sec + 0.25 * mid;
@@ -3767,7 +3794,7 @@ function solveRigorousDistillationUncached(
     const gridX: number[] = [];
     const gridErr: number[] = [];
     for (let g = 0; g < nGrid; g++) {
-      if (Date.now() - solveStartMs > 1200) break;
+      if (Date.now() - solveStartMs > 3500) break;
       const xg = lo + ((hi - lo) * g) / (nGrid - 1);
       const sg = g === 0 ? sol0 : g === nGrid - 1 ? sol1 : evalAt(xg);
       if (g > 0 && g < nGrid - 1) evals++;
@@ -3785,7 +3812,7 @@ function solveRigorousDistillationUncached(
     let subLo = gridX[Math.max(0, bestIdx - 1)];
     let subHi = gridX[Math.min(nGrid - 1, bestIdx + 1)];
     for (let k = 0; k < 5; k++) {
-      if (Date.now() - solveStartMs > 1200) break;
+      if (Date.now() - solveStartMs > 3500) break;
       const m1 = subLo + 0.382 * (subHi - subLo);
       const m2 = subLo + 0.618 * (subHi - subLo);
       const sM1 = evalAt(m1);

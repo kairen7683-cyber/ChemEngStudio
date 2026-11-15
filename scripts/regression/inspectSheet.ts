@@ -2,9 +2,15 @@ import { solveFlowsheet } from '../../lib/calculations/flowsheetSolver';
 import { createInitialHierarchySheets } from '../../lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '../../lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '../../lib/calculations/echPlantHierarchy';
+import { createInitialCmsHierarchySheets } from '../../lib/calculations/cmsPlantHierarchy';
 
 const all: Record<string, any> = {};
-for (const [p, s] of [['electrolysis', createInitialHierarchySheets()], ['hcl1A', createInitialHcl1AHierarchySheets()], ['ech', createInitialEchHierarchySheets()]] as const) {
+for (const [p, s] of [
+  ['electrolysis', createInitialHierarchySheets()],
+  ['hcl1A', createInitialHcl1AHierarchySheets()],
+  ['ech', createInitialEchHierarchySheets()],
+  ['cms', createInitialCmsHierarchySheets()],
+] as const) {
   for (const [k, v] of Object.entries(s)) all[`${p}/${k}`] = v;
 }
 const ids = process.argv.slice(2);

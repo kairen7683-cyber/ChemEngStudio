@@ -4,17 +4,21 @@ import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   useBalanceStore,
+  calculateCmsPlantSummary,
   type PlantId,
   type Plant03OperatingInputs,
+  type CmsPlantOperatingInputs,
 } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import type { ElectrolyzerInputs } from '@/lib/calculations/electrolyzer';
 import { emptySimFlows, type FlowNodeDef } from '@/lib/calculations/flowsheetSolver';
 import { createInitialHierarchySheets } from '@/lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
+import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
 
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
+const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v1';
 
 interface NavMenuItem {
   key: string;
@@ -73,10 +77,27 @@ const PLANT04_ECH_SUB_MENUS: NavMenuItem[] = [
 ];
 
 const PLANT04_ECH_SHEETS = [
-  { sheetId: 'master',          label: '통합 마스터 도면 (100~300)',      badge: 'ALL' },
-  { sheetId: 'sub_ech_100_hcl', label: '100 글리세린 염산반응 (DCH)',    badge: '100' },
-  { sheetId: 'sub_ech_200_sap', label: '200 가성소다 비누화 · 염수분리', badge: '200' },
-  { sheetId: 'sub_ech_300_dist',label: '300 진공 2탑 정제 (NRTL 99.9%)',badge: '300' },
+  { sheetId: 'master',            label: '통합 마스터 도면 (100~300)',      badge: 'ALL' },
+  { sheetId: 'sub_ech_100_hydro', label: '100 글리세린 염산반응 (DCH)',    badge: '100' },
+  { sheetId: 'sub_ech_200_sapon', label: '200 가성소다 비누화 · 염수분리', badge: '200' },
+  { sheetId: 'sub_ech_300_purif', label: '300 진공 2탑 정제 (NRTL 99.9%)',badge: '300' },
+];
+
+const CMS_SUB_MENUS: NavMenuItem[] = [
+  { key: 'pfd',        label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
+  { key: 'cms_hub',    label: 'CMS 핵심장치 내장설계',          badge: 'RXN/COL' },
+  { key: 'packing',    label: 'C-201~302 증류·탈거탑 설계',     badge: 'COL' },
+  { key: 'chempro',    label: '기화기·냉각기·펌프 상세설계',    badge: 'HX/PMP' },
+  { key: 'compressor', label: '공정가스 압축기 상세설계',       badge: 'COMP' },
+  { key: 'equip',      label: 'CMS 전공정 기기목록 & 시트',     badge: 'LIST' },
+  { key: 'econ',       label: 'CMS 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
+];
+
+const CMS_SHEETS = [
+  { sheetId: 'master',            label: '통합 마스터 도면 (100~300)',       badge: 'ALL' },
+  { sheetId: 'sub_cms_100_rxn',   label: '100 Cl₂ 기화 · R-101 AIBN 반응',   badge: '100' },
+  { sheetId: 'sub_cms_200_rec',   label: '200 무수 HCl 탈거 · MC 순환회수',  badge: '200' },
+  { sheetId: 'sub_cms_300_purif', label: '300 MCL 120 · CFM 80 정제 & CTC', badge: '300' },
 ];
 
 /** 비-PFD 화면(장치목록 등)에서 PLANT 01(전해) 사이드바 운전변수 조절 시 저장소 즉시 동기화 */
@@ -217,6 +238,114 @@ function patchStoredPlant03Flowsheet(p3: Plant03OperatingInputs) {
   }
 }
 
+/** 비-PFD 화면(장치목록 등)에서 PLANT 04(CMS) 사이드바 운전변수 조절 시 저장소 즉시 동기화 */
+function patchStoredCmsFlowsheet(cms: CmsPlantOperatingInputs) {
+  if (typeof window === 'undefined') return;
+  try {
+    const baseSheets = createInitialCmsHierarchySheets();
+    const raw = window.localStorage.getItem(PLANT05_SAVE_KEY);
+    const parsed = raw
+      ? JSON.parse(raw)
+      : { hierarchySheets: baseSheets, savedAt: 'CMS 운전변수 실시간 동기화' };
+
+    const cl2FeedKgH = Number(((Math.max(20, cms.cl2FeedTonDay) * 1000) / 24).toFixed(2));
+    const cmsSum = calculateCmsPlantSummary(cms);
+    const freshMcKgH = Number(cmsSum.freshMcKgH.toFixed(2));
+    const totalMcKgH = Number((cmsSum.freshMcKgH + cmsSum.recycleMcKgH).toFixed(2));
+    const aibnScale = Math.sqrt(Math.max(50, cms.aibnDosagePpm) / 350);
+
+    const baseK0Map = new Map<string, number>();
+    for (const sh of Object.values(baseSheets)) {
+      for (const node of sh.simDefs) {
+        if (node.params?.reactorConfig?.reactions) {
+          node.params.reactorConfig.reactions.forEach((rx, idx) => {
+            if (typeof rx.k0Forward === 'number') {
+              baseK0Map.set(`${node.id}:${rx.id || idx}`, rx.k0Forward);
+            }
+          });
+        }
+      }
+    }
+
+    const patchDefs = (defs: FlowNodeDef[]): FlowNodeDef[] =>
+      defs.map(d => {
+        if (d.id === 'cms_m_cl2' || d.id === 'cms1_cl2') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), Cl2: cl2FeedKgH },
+            },
+          };
+        }
+        if (d.id === 'cms_m_mc' || d.id === 'cms1_mc') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                CH3Cl: d.id === 'cms1_mc' ? totalMcKgH : freshMcKgH,
+              },
+            },
+          };
+        }
+        if (d.id === 'cms_m_r101' || d.id === 'cms1_r101') {
+          const prevRx = d.params.reactorConfig;
+          const nextReactions = prevRx?.reactions?.map((rx, idx) => {
+            if (typeof rx.k0Forward !== 'number') return rx;
+            const baseK0 = baseK0Map.get(`${d.id}:${rx.id || idx}`) ?? rx.k0Forward;
+            return { ...rx, k0Forward: Number((baseK0 * aibnScale).toPrecision(6)) };
+          });
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operTempC: cms.reactorTempC,
+              operPressKgcm2g: cms.reactorPressKgcm2g,
+              ...(prevRx
+                ? {
+                    reactorConfig: {
+                      ...prevRx,
+                      operTempC: cms.reactorTempC,
+                      operPressKgcm2g: cms.reactorPressKgcm2g,
+                      ...(nextReactions ? { reactions: nextReactions } : {}),
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        if (d.id === 'cms_m_c201' || d.id === 'cms2_c201') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operPressKgcm2g: cms.hclStripperPressKg,
+              distillConfig: {
+                ...(d.params.distillConfig ?? {}),
+                topPressKgcm2g: cms.hclStripperPressKg,
+              },
+            },
+          };
+        }
+        return d;
+      });
+
+    if (Array.isArray(parsed.simDefs)) parsed.simDefs = patchDefs(parsed.simDefs);
+    if (parsed.hierarchySheets && typeof parsed.hierarchySheets === 'object') {
+      for (const k of Object.keys(parsed.hierarchySheets)) {
+        if (Array.isArray(parsed.hierarchySheets[k]?.simDefs)) {
+          parsed.hierarchySheets[k].simDefs = patchDefs(parsed.hierarchySheets[k].simDefs);
+        }
+      }
+    }
+    window.localStorage.setItem(PLANT05_SAVE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Sidebar() {
   const pathname = usePathname() || '/';
   const router = useRouter();
@@ -239,6 +368,10 @@ export default function Sidebar() {
     plant03Summary,
     setPlant03Input,
     resetPlant03Inputs,
+    cmsPlantInputs,
+    cmsPlantSummary,
+    setCmsPlantInput,
+    resetCmsPlantInputs,
   } = useBalanceStore();
 
   const equipSubTab = usePFDStore(s => s.equipSubTab);
@@ -248,6 +381,7 @@ export default function Sidebar() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [p02SheetsExpanded, setP02SheetsExpanded] = useState(true);
   const [p03SheetsExpanded, setP03SheetsExpanded] = useState(true);
+  const [cmsSheetsExpanded, setCmsSheetsExpanded] = useState(true);
 
   useEffect(() => {
     const checkViewport = () => {
@@ -308,6 +442,13 @@ export default function Sidebar() {
     setPlant03Input(key, val);
     if (!isPfdLikeRoute) {
       patchStoredPlant03Flowsheet({ ...plant03Inputs, [key]: val });
+    }
+  };
+
+  const handleCmsChange = (key: keyof CmsPlantOperatingInputs, val: number) => {
+    setCmsPlantInput(key, val);
+    if (!isPfdLikeRoute) {
+      patchStoredCmsFlowsheet({ ...cmsPlantInputs, [key]: val });
     }
   };
 
@@ -669,6 +810,157 @@ export default function Sidebar() {
     </>
   );
 
+  // PLANT 04 (CMS) 전용 운전변수 + 실시간 생산량·열부하 대시보드
+  const renderCmsOperatingAndKpi = () => (
+    <>
+      <div style={{ padding: '6px 14px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: 800,
+              color: '#1A2F44',
+              textTransform: 'uppercase',
+              letterSpacing: '0.6px',
+            }}
+          >
+            CMS 공정 운전 · 반응 변수
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              resetCmsPlantInputs();
+            }}
+            style={{
+              padding: '1.5px 6px',
+              borderRadius: 4,
+              border: '1px solid #D5D2C8',
+              background: '#FAF9F5',
+              color: '#5A6570',
+              fontSize: 9,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            초기화
+          </button>
+        </div>
+
+        <ControlRow
+          label="액체 Cl₂ 투입량" unit="T/D"
+          value={cmsPlantInputs.cl2FeedTonDay}
+          min={50} max={500} step={5}
+          onChange={v => handleCmsChange('cl2FeedTonDay', v)}
+        />
+        <ControlRow
+          label="MC/Cl₂ 몰비" unit="mol"
+          value={cmsPlantInputs.mcCl2MolarRatio}
+          min={1.2} max={4.0} step={0.02}
+          onChange={v => handleCmsChange('mcCl2MolarRatio', v)}
+        />
+        <ControlRow
+          label="R-101 반응온도" unit="°C"
+          value={cmsPlantInputs.reactorTempC}
+          min={90} max={150} step={1}
+          onChange={v => handleCmsChange('reactorTempC', v)}
+        />
+        <ControlRow
+          label="R-101 압력" unit="kG"
+          value={cmsPlantInputs.reactorPressKgcm2g}
+          min={12} max={35} step={0.5}
+          onChange={v => handleCmsChange('reactorPressKgcm2g', v)}
+        />
+        <ControlRow
+          label="AIBN 농도" unit="wt ppm"
+          value={cmsPlantInputs.aibnDosagePpm}
+          min={100} max={1000} step={25}
+          onChange={v => handleCmsChange('aibnDosagePpm', v)}
+        />
+        <ControlRow
+          label="C-201 탈거압력" unit="kG"
+          value={cmsPlantInputs.hclStripperPressKg}
+          min={10} max={24} step={0.5}
+          onChange={v => handleCmsChange('hclStripperPressKg', v)}
+        />
+
+        <div
+          style={{
+            marginTop: 6,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: '#ECFEFF',
+            border: '1px solid #A5F3FC',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#155E75', fontWeight: 700 }}>
+              Cl₂ 전환율 / 동력
+            </span>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: '#0E7490', fontFamily: 'JetBrains Mono, monospace' }}>
+              {cmsPlantSummary.cl2ConversionPct.toFixed(2)}% · {cmsPlantSummary.elecPowerKW.toFixed(0)} kW
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #A5F3FC', paddingTop: 4 }}>
+            <span style={{ fontSize: 9, color: '#155E75', fontWeight: 700 }}>
+              E-101 기화 / R-101 제열 / 리보일러
+            </span>
+            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1A2F44', fontFamily: 'JetBrains Mono, monospace' }}>
+              {cmsPlantSummary.vaporizerDutyMW.toFixed(2)} / {cmsPlantSummary.reactorCoolingMW.toFixed(2)} / {cmsPlantSummary.reboilerDutyMW.toFixed(2)} MW
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: '#E5E2DC', margin: '10px 0' }} />
+
+      <div style={{ padding: '0 14px 14px' }}>
+        <div
+          style={{
+            fontSize: 9.5,
+            fontWeight: 800,
+            color: '#1A2F44',
+            textTransform: 'uppercase',
+            letterSpacing: '0.6px',
+            marginBottom: 8,
+          }}
+        >
+          실시간 물질수지 생산량 (CMS CAPA)
+        </div>
+
+        <SummaryCard
+          label="MCL (메틸렌클로라이드)"
+          main={`${cmsPlantSummary.mclProdTonDay.toFixed(1)} ton/일`}
+          sub={`${cmsPlantSummary.mclProdKgH.toFixed(0)} kg/h · C-301 정제 (99.9%)`}
+          highlight
+        />
+        <SummaryCard
+          label="CFM (클로로포름)"
+          main={`${cmsPlantSummary.cfmProdTonDay.toFixed(1)} ton/일`}
+          sub={`${cmsPlantSummary.cfmProdKgH.toFixed(0)} kg/h · C-302 정제 (99.9%)`}
+          highlight
+        />
+        <SummaryCard
+          label="무수 HCl (부생 가스)"
+          main={`${cmsPlantSummary.ahclByprodTonDay.toFixed(1)} ton/일`}
+          sub={`${cmsPlantSummary.ahclByprodKgH.toFixed(0)} kg/h · C-201 (${cmsPlantInputs.hclStripperPressKg.toFixed(1)} kG)`}
+        />
+        <SummaryCard
+          label="CTC·헤비 폐기 (C-302)"
+          main={`${cmsPlantSummary.ctcHeavyWasteTonDay.toFixed(1)} ton/일`}
+          sub={`${cmsPlantSummary.ctcHeavyWasteKgH.toFixed(0)} kg/h · 잔류 CCl₄·헤비`}
+        />
+        <SummaryCard
+          label="Fresh MC / 순환 MC"
+          main={`${cmsPlantSummary.freshMcTonDay.toFixed(1)} ton/일`}
+          sub={`순환 MC ${cmsPlantSummary.recycleMcTonDay.toFixed(1)} T/D (MCL 무순환)`}
+        />
+      </div>
+    </>
+  );
+
   if (isMobile) {
     const mobileMenus =
       activePlantId === 'clorsim' || activePlantId === 'clorsim_sim'
@@ -677,7 +969,9 @@ export default function Sidebar() {
           ? PLANT03_SUB_MENUS
           : activePlantId === 'ech_gte'
             ? PLANT04_ECH_SUB_MENUS
-            : [];
+            : activePlantId === 'cms_plant'
+              ? CMS_SUB_MENUS
+              : [];
 
     return (
       <>
@@ -696,7 +990,7 @@ export default function Sidebar() {
             zIndex: 40,
           }}
         >
-          {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth') && (
+          {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || activePlantId === 'cms_plant') && (
             <button
               type="button"
               onClick={() => setMobileDrawerOpen(v => !v)}
@@ -806,6 +1100,7 @@ export default function Sidebar() {
                 </>
               )}
               {activePlantId === 'hcl_synth' && renderPlant03OperatingAndKpi()}
+              {activePlantId === 'cms_plant' && renderCmsOperatingAndKpi()}
             </div>
           </div>
         )}
@@ -1268,6 +1563,127 @@ export default function Sidebar() {
         </>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════════
+          PLANT 04 (CMS · 클로로메탄 공정 MCL 120 · CFM 80 T/D) 좌측 사이드 패널
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {!collapsed && activePlantId === 'cms_plant' && (
+        <>
+          <div style={{ padding: '12px 12px 6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#1A2F44',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                PLANT 04 · 클로로메탄(CMS)
+              </span>
+              <span
+                style={{
+                  fontSize: 8.5,
+                  fontWeight: 800,
+                  padding: '1px 6px',
+                  borderRadius: 8,
+                  background: '#CFFAFE',
+                  color: '#155E75',
+                  border: '1px solid #67E8F9',
+                }}
+              >
+                LIVE
+              </span>
+            </div>
+            <div style={{ fontSize: 9, fontWeight: 600, color: '#7A7872', marginBottom: 8 }}>
+              Cl₂ 220 · MCL 120 · CFM 80 T/D
+            </div>
+
+            {CMS_SUB_MENUS.map(item => {
+              const active = item.isPfd ? isPfdLikeRoute : isOnEquipPage && equipSubTab === item.key;
+              return (
+                <React.Fragment key={item.key}>
+                  <MenuButton
+                    label={item.label}
+                    badge={item.badge}
+                    active={active}
+                    onClick={() => handleMenuNavigate(item, 'cms_plant')}
+                  />
+                  {item.isPfd && (
+                    <div
+                      style={{
+                        margin: '2px 0 6px',
+                        padding: '6px 7px',
+                        borderRadius: 10,
+                        background: '#FAF9F5',
+                        border: '1px solid #E5E2DC',
+                      }}
+                    >
+                      <div
+                        onClick={() => setCmsSheetsExpanded(v => !v)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          color: '#0891B2',
+                          cursor: 'pointer',
+                          marginBottom: cmsSheetsExpanded ? 5 : 0,
+                        }}
+                      >
+                        <span>세부공정 시트 이동 (100~300)</span>
+                        <span style={{ fontSize: 9, color: '#64748B' }}>{cmsSheetsExpanded ? '▲' : '▼'}</span>
+                      </div>
+                      {cmsSheetsExpanded && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {CMS_SHEETS.map(sh => {
+                            const shActive = isPfdLikeRoute && simActiveSheetId === sh.sheetId;
+                            return (
+                              <button
+                                key={sh.sheetId}
+                                type="button"
+                                onClick={() => {
+                                  requestSimSheet(sh.sheetId);
+                                  if (!isPfdLikeRoute) router.push('/material-balance');
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '4px 7px',
+                                  borderRadius: 6,
+                                  border: shActive ? '1px solid #0891B2' : '1px solid #E2E8F0',
+                                  background: shActive ? '#0891B2' : '#FFFFFF',
+                                  color: shActive ? '#FFFFFF' : '#334155',
+                                  fontSize: 10,
+                                  fontWeight: shActive ? 800 : 700,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sh.label}
+                                </span>
+                                <span style={{ fontSize: 8.5, fontWeight: 900, marginLeft: 4 }}>{sh.badge}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 1, background: '#E5E2DC', margin: '6px 0' }} />
+
+          {renderCmsOperatingAndKpi()}
+        </>
+      )}
+
       {/* ─── 접힘(Collapsed) 아이콘 스트립 ─── */}
       {collapsed && (
         <div style={{ paddingTop: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, paddingBottom: 12 }}>
@@ -1283,7 +1699,13 @@ export default function Sidebar() {
               marginBottom: 2,
             }}
           >
-            {activePlantId === 'clorsim_sim' ? 'P01' : activePlantId === 'hcl_synth' ? 'P02' : 'P03'}
+            {activePlantId === 'clorsim_sim'
+              ? 'P01'
+              : activePlantId === 'hcl_synth'
+                ? 'P02'
+                : activePlantId === 'ech_gte'
+                  ? 'P03'
+                  : 'P04'}
           </span>
 
           {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') &&
@@ -1349,6 +1771,34 @@ export default function Sidebar() {
                 <button
                   key={item.key}
                   onClick={() => handleMenuNavigate(item, 'ech_gte')}
+                  title={item.label}
+                  style={{
+                    width: 36,
+                    height: 26,
+                    borderRadius: 7,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: active ? '#FFFFFF' : '#1A2F44',
+                    background: active ? '#1A2F44' : '#F6F7F2',
+                    border: '1px solid #DFDCD4',
+                    fontSize: 8.5,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {item.badge.slice(0, 4)}
+                </button>
+              );
+            })}
+
+          {activePlantId === 'cms_plant' &&
+            CMS_SUB_MENUS.map(item => {
+              const active = item.isPfd ? isPfdLikeRoute : isOnEquipPage && equipSubTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleMenuNavigate(item, 'cms_plant')}
                   title={item.label}
                   style={{
                     width: 36,

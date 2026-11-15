@@ -94,6 +94,14 @@ export const PR_KIJ_DATABANK: KijEntry[] = [
   { i: 'Cl2', j: 'HCl', kij: 0.018, source: LEGACY },
   { i: 'Cl2', j: 'N2', kij: 0.06, source: EST },
   { i: 'Cl2', j: 'CO2', kij: 0.03, source: EST },
+  // --- chloromethanes (CMS plant) ---
+  { i: 'HCl', j: 'CH3Cl', kij: 0.025, source: EST },
+  { i: 'HCl', j: 'CH2Cl2', kij: 0.022, source: EST },
+  { i: 'Cl2', j: 'CH3Cl', kij: 0.015, source: EST },
+  { i: 'CH3Cl', j: 'CH2Cl2', kij: 0.005, source: EST },
+  { i: 'CH2Cl2', j: 'CHCl3', kij: 0.003, source: EST },
+  { i: 'CHCl3', j: 'CCl4', kij: 0.004, source: EST },
+  { i: 'CHCl3', j: 'C2Cl4', kij: 0.005, source: EST },
   // --- water (vdW mixing with water is qualitative only; use activity/Henry routes for aqueous VLE) ---
   { i: 'H2O', j: 'Cl2', kij: -0.055, source: LEGACY },
   { i: 'H2O', j: 'H2', kij: 0.12, source: LEGACY },

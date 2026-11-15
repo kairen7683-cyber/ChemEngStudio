@@ -35,6 +35,7 @@ const ALL_SIM_COMPS: SimCompKey[] = [
   'NaClO3', 'FeCl2', 'FeCl3', 'PAC', 'Glycerol', 'MCH', 'DCH', 'ECH', 'DCP',
   'CH4', 'CO', 'CO2', 'NH3', 'C2H4', 'C2H6', 'C3H6', 'C3H8', 'nC4H10', 'nC6H14', 'nC7H16',
   'Benzene', 'Toluene', 'pXylene', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4',
 ];
 
 function makeCompMap(entries: Partial<Record<SimCompKey, number>>): Record<SimCompKey, number> {

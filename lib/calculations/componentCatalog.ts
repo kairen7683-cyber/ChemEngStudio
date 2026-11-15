@@ -671,6 +671,42 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
     isElectrolyte: true,
     noteKo: '무기 강산 · 물과 68 wt% 최고비점 공비(120.5°C)',
   },
+  CH3Cl: {
+    cas: '74-87-3',
+    tbC: -24.2,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    isPolarOrganic: true,
+    noteKo: '메틸클로라이드/MC (CMS 염소화 핵심 원료·미반응 순환 가스/가압액)',
+  },
+  CH2Cl2: {
+    cas: '75-09-2',
+    tbC: 39.8,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: true,
+    noteKo: '염화메틸렌/MCL (CMS 주력 제품 · 비인화성 극성 유기용제)',
+  },
+  CCl4: {
+    cas: '56-23-5',
+    tbC: 76.7,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: false,
+    noteKo: '사염화탄소/CTC (CMS 과염소화 부산물 · 소각 폐기 대상)',
+  },
+  C2Cl4: {
+    cas: '127-18-4',
+    tbC: 121.1,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: false,
+    noteKo: '퍼클로로에틸렌/Heavies (C₂ 염소화 고비점 헤비 잔류 폐유분)',
+  },
   CUSTOM_1: {
     cas: '71-36-3',
     tbC: 117.7,
@@ -692,7 +728,7 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
 };
 
 export interface PlantComponentPreset {
-  plantId: 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'green_h2';
+  plantId: 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'green_h2';
   code: string;
   labelKo: string;
   descKo: string;
@@ -725,6 +761,14 @@ export const PLANT_COMPONENT_PRESETS: PlantComponentPreset[] = [
     components: ['H2O', 'Glycerol', 'HCl', 'MCH', 'DCH', 'ECH', 'DCP', 'NaOH', 'NaCl', 'N2'],
     defaultMethod: 'AUTO',
   },
+  {
+    plantId: 'cms_plant',
+    code: 'PLANT 04',
+    labelKo: '클로로메탄(CMS) 공정 (MCL 120 · CFM 80 T/D)',
+    descKo: '액체염소 기화, MC + Cl₂ 고압 AIBN 액상 라디칼 염소화(24kG·120°C), 무수 HCl 탈거, MC 순환 및 MCL/CFM/CTC 분리 10종',
+    components: ['Cl2', 'HCl', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'N2', 'NaOH', 'H2O'],
+    defaultMethod: 'PR',
+  },
 ];
 
 export function getPlantDefaultComponents(plantKey?: string): SimCompKey[] {
@@ -736,6 +780,9 @@ export function getPlantDefaultComponents(plantKey?: string): SimCompKey[] {
   }
   if (plantKey === 'ech_gte' || plantKey === 'ech_gte_plant') {
     return [...PLANT_COMPONENT_PRESETS[2].components];
+  }
+  if (plantKey === 'cms_plant' || plantKey === 'cms_plant_mode') {
+    return [...PLANT_COMPONENT_PRESETS[3].components];
   }
   // 범용 기본 시작 세트 (자주 쓰는 물·유기용제·기본가스·전해질 코어)
   return ['H2O', 'MeOH', 'EtOH', 'Acetone', 'EtOAc', 'Toluene', 'N2', 'H2', 'CO2', 'NaCl', 'NaOH', 'HCl'];
@@ -780,10 +827,10 @@ export const GENERAL_COMPONENT_PACKS: GeneralComponentPack[] = [
   },
   {
     id: 'chlorinated_org',
-    labelKo: '염소계 용제 · 클로로히드린 정제',
-    badge: 'NRTL / ENRTL',
-    descKo: '클로로포름, 아세톤, 메탄올, ECH, DCP, DCH 및 수층 액-액 분리',
-    components: ['H2O', 'CHCl3', 'Acetone', 'MeOH', 'ECH', 'DCP', 'DCH', 'HCl'],
+    labelKo: '염소계 용제 · 클로로메탄(CMS) · 클로로히드린 정제',
+    badge: 'NRTL / PR',
+    descKo: '메틸클로라이드(MC), MCL, 클로로포름(CFM), 사염화탄소(CTC), PCE, ECH 및 수층 분리',
+    components: ['CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'HCl', 'Cl2', 'ECH', 'DCH', 'H2O'],
   },
   {
     id: 'sm_cumene_aromatics',

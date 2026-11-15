@@ -15,6 +15,7 @@ import { solveFlowsheet, FlowNodeDef, FlowEdgeDef, SimCompKey } from '../../lib/
 import { createInitialHierarchySheets } from '../../lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '../../lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '../../lib/calculations/echPlantHierarchy';
+import { createInitialCmsHierarchySheets } from '../../lib/calculations/cmsPlantHierarchy';
 
 const KCALH_TO_KW = 1 / 859.845;
 
@@ -145,6 +146,7 @@ function main() {
     ['electrolysis', createInitialHierarchySheets({ syncMasterOnInit: true })],
     ['hcl1A', createInitialHcl1AHierarchySheets({ syncMasterOnInit: true })],
     ['ech', createInitialEchHierarchySheets({ syncMasterOnInit: true })],
+    ['cms', createInitialCmsHierarchySheets({ syncMasterOnInit: true })],
   ];
   const reports: SheetReport[] = [];
   for (const [plant, sheets] of plants) {

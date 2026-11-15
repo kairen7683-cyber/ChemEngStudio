@@ -160,6 +160,10 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   MDEA: { mw: MW.MDEA, kind: 'molecular', dHfIg: -372.0, cpIg: [18.2, 0.585, -0.000312, 6.4e-08], Tc: 677.8, TvapRef: 520.3, dHvapRef: 62.5, watsonN: 0.38 },
   FormicAcid: { mw: MW.FormicAcid, kind: 'molecular', dHfIg: -378.6, cpIg: [11.71, 0.1358, -8.411e-05, 2.017e-08], Tc: 588.0, TvapRef: 373.9, dHvapRef: 22.7, watsonN: 0.38 },
   HNO3:       { mw: MW.HNO3, kind: 'electrolyte', dHfIg: -134.30, cpIg: [19.63, 0.1539, -0.0001158, 3.288e-08], Tc: 520.0, TvapRef: 356.2, dHvapRef: 39.1, dHfAq: -207.36, cpAqKcalKgK: 0.42 },
+  CH3Cl:      { mw: MW.CH3Cl, kind: 'molecular', dHfIg: -81.9, cpIg: [13.88, 0.1014, -3.89e-5, 2.56e-9], Tc: 416.3, TvapRef: 248.95, dHvapRef: 21.50, cpLiq298: 81.2, watsonN: 0.38 },
+  CH2Cl2:     { mw: MW.CH2Cl2, kind: 'molecular', dHfIg: -95.4, cpIg: [12.95, 0.1623, -1.302e-4, 4.208e-8], Tc: 510.0, TvapRef: 312.95, dHvapRef: 28.06, cpLiq298: 100.0, watsonN: 0.38 },
+  CCl4:       { mw: MW.CCl4, kind: 'molecular', dHfIg: -95.9, cpIg: [40.72, 0.2049, -2.27e-4, 8.84e-8], Tc: 556.4, TvapRef: 349.85, dHvapRef: 29.82, cpLiq298: 131.0, watsonN: 0.38 },
+  C2Cl4:      { mw: MW.C2Cl4, kind: 'molecular', dHfIg: -12.1, cpIg: [45.97, 0.2256, -1.96e-4, 5.82e-8], Tc: 620.2, TvapRef: 394.25, dHvapRef: 34.68, cpLiq298: 145.0, watsonN: 0.38 },
   CUSTOM_1: { mw: MW.CUSTOM_1, kind: 'molecular', dHfIg: -274.6, cpIg: [3.266, 0.418, -0.0002242, 4.685e-08], Tc: 563.05, TvapRef: 390.9, dHvapRef: 43.29, watsonN: 0.38 },
   CUSTOM_2: { mw: MW.CUSTOM_2, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-07], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
 };

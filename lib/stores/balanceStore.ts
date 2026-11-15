@@ -5,12 +5,13 @@ import { ElectrolyzerInputs } from '@/lib/calculations/electrolyzer';
 import { PlantMassBalance, calculatePlantBalance } from '@/lib/calculations/streams';
 import { DEFAULT_CONDITIONS, MW } from '@/lib/calculations/constants';
 
-export type PlantId = 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'green_h2' | 'new_builder' | 'classic_sim';
+export type PlantId = 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'green_h2' | 'new_builder' | 'classic_sim';
 
 export const ACTIVE_PLANT_STORAGE_KEY = 'chemplant-active-plant-v1';
 export const LAST_COMMERCIAL_PLANT_STORAGE_KEY = 'chemplant-last-commercial-plant-v1';
 export const PLANT02_SIDEBAR_INPUTS_KEY = 'chemplant-plant02-sidebar-inputs-v1';
 export const PLANT03_SIDEBAR_INPUTS_KEY = 'chemplant-plant03-sidebar-inputs-v1';
+export const CMS_SIDEBAR_INPUTS_KEY = 'chemplant-cms-sidebar-inputs-v1';
 
 export interface SimNodeActionRequest {
   sheetId: string;
@@ -105,6 +106,99 @@ export function calculatePlant03Summary(p3: Plant03OperatingInputs): Plant03KpiS
   };
 }
 
+export interface CmsPlantOperatingInputs {
+  cl2FeedTonDay: number;       // 액체염소 투입량 (T/D, 기본 220.0)
+  mcCl2MolarRatio: number;     // 반응기 입구 MC/Cl2 몰비 (기본 2.08, MCL 순환 없음)
+  reactorTempC: number;        // R-101 반응온도 (°C, 기본 120.0)
+  reactorPressKgcm2g: number;  // R-101 반응압력 (kgf/cm²G, 기본 24.0)
+  aibnDosagePpm: number;       // AIBN 자유라디칼 개시제 주입량 (wt ppm, 기본 350)
+  hclStripperPressKg: number;  // C-201 고압 HCl 탈거탑 압력 (kgf/cm²G, 기본 17.5)
+}
+
+export interface CmsPlantKpiSummary {
+  cl2FeedKgH: number;
+  freshMcKgH: number;
+  freshMcTonDay: number;
+  recycleMcKgH: number;
+  recycleMcTonDay: number;
+  mclProdKgH: number;
+  mclProdTonDay: number;
+  cfmProdKgH: number;
+  cfmProdTonDay: number;
+  ahclByprodKgH: number;
+  ahclByprodTonDay: number;
+  ctcHeavyWasteKgH: number;
+  ctcHeavyWasteTonDay: number;
+  cl2ConversionPct: number;
+  vaporizerDutyMW: number;
+  reactorCoolingMW: number;
+  reboilerDutyMW: number;
+  elecPowerKW: number;
+}
+
+export function calculateCmsPlantSummary(cms: CmsPlantOperatingInputs): CmsPlantKpiSummary {
+  const cl2TonDay = Math.max(20, cms.cl2FeedTonDay);
+  const cl2FeedKgH = (cl2TonDay * 1000) / 24.0;
+  const nCl2In = cl2FeedKgH / MW.Cl2; // ~129.28 kmol/h at 220 T/D
+
+  // AIBN 라디칼 농도 √([AIBN]/350) 및 온도 아레니우스 보정으로 연쇄염소화 전환율 추적
+  const aibnFactor = Math.sqrt(Math.max(50, cms.aibnDosagePpm) / 350.0);
+  const tempFactor = Math.exp(0.018 * (cms.reactorTempC - 120.0));
+  const cl2Conv = Math.min(0.9995, Math.max(0.92, 1.0 - 0.0012 / Math.max(0.25, aibnFactor * tempFactor)));
+  const nCl2Consumed = nCl2In * cl2Conv;
+
+  // 연속 염소화 상대 속도 (k1:k2:k3 = 1 : 2.14 : 1.08), MC/Cl2 몰비가 높을수록 MCL 선택도 증가
+  const ratioRef = Math.max(1.2, Math.min(4.0, cms.mcCl2MolarRatio));
+  const mcBias = ratioRef / 2.08;
+  // Base selectivity at 2.08 mol/mol, 120C: MCL 58.88 kmol/h (120 T/D), CFM 27.94 kmol/h (80 T/D), CTC+Heavy 4.86 kmol/h (~18 T/D)
+  // Cl2 stoic needed = 1*nMCL + 2*nCFM + 3*nCTC = 58.88 + 55.88 + 14.58 = 129.34 kmol/h -> matches 220 T/D Cl2!
+  const wMclRaw = 1.0 * mcBias;
+  const wCfmRaw = 0.4745 / Math.pow(mcBias, 0.55) * Math.exp(0.0055 * (cms.reactorTempC - 120.0));
+  const wCtcRaw = 0.0825 / Math.pow(mcBias, 0.85) * Math.exp(0.011 * (cms.reactorTempC - 120.0));
+  const cl2PerNetMc = wMclRaw + 2.0 * wCfmRaw + 3.0 * wCtcRaw;
+
+  const nMcReacted = nCl2Consumed / cl2PerNetMc;
+  const nMclProd = nMcReacted * wMclRaw;
+  const nCfmProd = nMcReacted * wCfmRaw;
+  const nCtcHeavy = nMcReacted * wCtcRaw;
+
+  const freshMcKgH = nMcReacted * MW.CH3Cl / 0.996; // 0.4% HCl/vent loss accounted
+  const totalMcReactorIn = nCl2In * ratioRef * MW.CH3Cl;
+  const recycleMcKgH = Math.max(0, totalMcReactorIn - freshMcKgH);
+
+  const mclProdKgH = nMclProd * MW.CH2Cl2;
+  const cfmProdKgH = nCfmProd * MW.CHCl3;
+  const ahclByprodKgH = nCl2Consumed * MW.HCl * 0.998;
+  // ~14% of heavy stream is C2Cl4/TMSN heavies from radical coupling + AIBN carrier
+  const ctcHeavyWasteKgH = nCtcHeavy * MW.CCl4 * 1.005;
+
+  const vaporizerDutyMW = (cl2FeedKgH * 72.5) / 859845.0; // subcooled Liq Cl2 25C -> 95C Gas
+  const reactorCoolingMW = (nCl2Consumed * 24500.0) / 859845.0; // exothermic ~24.5 Mcal/kmol Cl2
+  const reboilerDutyMW = ((freshMcKgH + recycleMcKgH + mclProdKgH + cfmProdKgH) * 142.0) / 859845.0;
+  const elecPowerKW = 420.0 + (cl2FeedKgH / 9166.7) * 510.0;
+
+  return {
+    cl2FeedKgH,
+    freshMcKgH,
+    freshMcTonDay: (freshMcKgH * 24) / 1000,
+    recycleMcKgH,
+    recycleMcTonDay: (recycleMcKgH * 24) / 1000,
+    mclProdKgH,
+    mclProdTonDay: (mclProdKgH * 24) / 1000,
+    cfmProdKgH,
+    cfmProdTonDay: (cfmProdKgH * 24) / 1000,
+    ahclByprodKgH,
+    ahclByprodTonDay: (ahclByprodKgH * 24) / 1000,
+    ctcHeavyWasteKgH,
+    ctcHeavyWasteTonDay: (ctcHeavyWasteKgH * 24) / 1000,
+    cl2ConversionPct: cl2Conv * 100,
+    vaporizerDutyMW,
+    reactorCoolingMW,
+    reboilerDutyMW,
+    elecPowerKW,
+  };
+}
+
 interface BalanceStore {
   activePlantId: PlantId;
   lastCommercialPlantId: PlantId;
@@ -130,6 +224,11 @@ interface BalanceStore {
   plant03Summary: Plant03KpiSummary;
   plant03SyncSeq: number;
 
+  // PLANT 04 (클로로메탄 CMS 공정 — Cl2 220 T/D, MCL 120 T/D, CFM 80 T/D)
+  cmsPlantInputs: CmsPlantOperatingInputs;
+  cmsPlantSummary: CmsPlantKpiSummary;
+  cmsPlantSyncSeq: number;
+
   setActivePlantId: (id: PlantId) => void;
   hydrateActivePlant: () => void;
   setLastPlantReturnHref: (href: string) => void;
@@ -147,6 +246,9 @@ interface BalanceStore {
 
   setPlant03Input: (key: keyof Plant03OperatingInputs, value: number) => void;
   resetPlant03Inputs: () => void;
+
+  setCmsPlantInput: (key: keyof CmsPlantOperatingInputs, value: number) => void;
+  resetCmsPlantInputs: () => void;
 
   setActiveSection: (section: '100' | '200' | '300' | '400' | 'all') => void;
   recalculate: () => void;
@@ -186,10 +288,20 @@ export const defaultPlant03Inputs: Plant03OperatingInputs = {
   vacColPressKg: -0.88,
 };
 
+export const defaultCmsPlantInputs: CmsPlantOperatingInputs = {
+  cl2FeedTonDay: 220.0,
+  mcCl2MolarRatio: 2.08,
+  reactorTempC: 120.0,
+  reactorPressKgcm2g: 24.0,
+  aibnDosagePpm: 350.0,
+  hclStripperPressKg: 17.5,
+};
+
 export const useBalanceStore = create<BalanceStore>((set, get) => {
   const initBal = calculatePlantBalance(defaultElectrolyzerInputs);
   const initP2Bal = calculatePlantBalance(defaultElectrolyzerInputs);
   const initP3Sum = calculatePlant03Summary(defaultPlant03Inputs);
+  const initCmsSum = calculateCmsPlantSummary(defaultCmsPlantInputs);
 
   return {
     activePlantId: 'clorsim_sim',
@@ -212,6 +324,10 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
     plant03Inputs: { ...defaultPlant03Inputs },
     plant03Summary: initP3Sum,
     plant03SyncSeq: 0,
+
+    cmsPlantInputs: { ...defaultCmsPlantInputs },
+    cmsPlantSummary: initCmsSum,
+    cmsPlantSyncSeq: 0,
 
     setActivePlantId: (id) => {
       const isCommercial = id !== 'new_builder' && id !== 'classic_sim';
@@ -248,6 +364,7 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
           saved === 'clorsim_sim' ||
           saved === 'hcl_synth' ||
           saved === 'ech_gte' ||
+          saved === 'cms_plant' ||
           saved === 'new_builder' ||
           saved === 'classic_sim'
         ) {
@@ -264,7 +381,8 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
         } else if (
           savedCommercial === 'clorsim_sim' ||
           savedCommercial === 'hcl_synth' ||
-          savedCommercial === 'ech_gte'
+          savedCommercial === 'ech_gte' ||
+          savedCommercial === 'cms_plant'
         ) {
           patch.lastCommercialPlantId = savedCommercial;
         }
@@ -279,6 +397,12 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
           const parsedP3 = { ...defaultPlant03Inputs, ...JSON.parse(rawP3) };
           patch.plant03Inputs = parsedP3;
           patch.plant03Summary = calculatePlant03Summary(parsedP3);
+        }
+        const rawCms = window.localStorage.getItem(CMS_SIDEBAR_INPUTS_KEY);
+        if (rawCms) {
+          const parsedCms = { ...defaultCmsPlantInputs, ...JSON.parse(rawCms) };
+          patch.cmsPlantInputs = parsedCms;
+          patch.cmsPlantSummary = calculateCmsPlantSummary(parsedCms);
         }
         if (Object.keys(patch).length > 0) {
           set(patch);
@@ -390,6 +514,40 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
         plant03Inputs: nextP3,
         plant03Summary: nextSum,
         plant03SyncSeq: state.plant03SyncSeq + 1,
+      }));
+    },
+
+    setCmsPlantInput: (key, value) => {
+      const nextCms = { ...get().cmsPlantInputs, [key]: value };
+      const nextSum = calculateCmsPlantSummary(nextCms);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(CMS_SIDEBAR_INPUTS_KEY, JSON.stringify(nextCms));
+        } catch {
+          // ignore
+        }
+      }
+      set((state) => ({
+        cmsPlantInputs: nextCms,
+        cmsPlantSummary: nextSum,
+        cmsPlantSyncSeq: state.cmsPlantSyncSeq + 1,
+      }));
+    },
+
+    resetCmsPlantInputs: () => {
+      const nextCms = { ...defaultCmsPlantInputs };
+      const nextSum = calculateCmsPlantSummary(nextCms);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(CMS_SIDEBAR_INPUTS_KEY, JSON.stringify(nextCms));
+        } catch {
+          // ignore
+        }
+      }
+      set((state) => ({
+        cmsPlantInputs: nextCms,
+        cmsPlantSummary: nextSum,
+        cmsPlantSyncSeq: state.cmsPlantSyncSeq + 1,
       }));
     },
 

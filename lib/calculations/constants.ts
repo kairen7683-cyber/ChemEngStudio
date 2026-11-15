@@ -73,6 +73,10 @@ export const MW = {
   MDEA: 119.163,
   FormicAcid: 46.025,
   HNO3: 63.012,
+  CH3Cl: 50.488,
+  CH2Cl2: 84.933,
+  CCl4: 153.823,
+  C2Cl4: 165.834,
   CUSTOM_1: 74.122,
   CUSTOM_2: 93.128,
 };

@@ -62,7 +62,8 @@ export default function ComponentPropertySetupModal({
   const isPlantCtx =
     currentPlantContext === 'electrolyzer_plant' ||
     currentPlantContext === 'hcl_1a_plant' ||
-    currentPlantContext === 'ech_gte_plant';
+    currentPlantContext === 'ech_gte_plant' ||
+    currentPlantContext === 'cms_plant';
 
   const [sourceTab, setSourceTab] = useState<'general' | 'plant' | 'custom'>(isPlantCtx ? 'plant' : 'general');
   const [draftComps, setDraftComps] = useState<SimCompKey[]>(activeComponents);

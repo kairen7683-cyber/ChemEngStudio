@@ -21,11 +21,13 @@ import {
 } from '@/lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
+import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
+const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v1';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
 
 interface PlantBridgeCandidate {
@@ -241,7 +243,9 @@ function UnitEquipmentInner() {
           ? PLANT03_SAVE_KEY
           : activePlantId === 'ech_gte'
             ? PLANT04_SAVE_KEY
-            : BUILDER_SAVE_KEY;
+            : activePlantId === 'cms_plant'
+              ? PLANT05_SAVE_KEY
+              : BUILDER_SAVE_KEY;
 
     let sheets: Record<string, SheetRuntimeData> | null = null;
     if (typeof window !== 'undefined') {
@@ -303,7 +307,9 @@ function UnitEquipmentInner() {
             ? createInitialHcl1AHierarchySheets()
             : activePlantId === 'ech_gte'
               ? createInitialEchHierarchySheets()
-              : {};
+              : activePlantId === 'cms_plant'
+                ? createInitialCmsHierarchySheets()
+                : {};
     }
 
     const sheetValues = Object.values(sheets);

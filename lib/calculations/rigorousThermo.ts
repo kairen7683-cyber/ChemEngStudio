@@ -102,6 +102,10 @@ export const RIGOROUS_CRIT: Record<SimCompKey, CritProps> = {
   MDEA: { Tc_K: 677.8, Pc_bar: 38.8, omega: 1.242, mw: mwOf('MDEA', 119.163) },
   FormicAcid: { Tc_K: 588.0, Pc_bar: 58.1, omega: 0.316, mw: mwOf('FormicAcid', 46.025) },
   HNO3: { Tc_K: 520.0, Pc_bar: 68.9, omega: 0.714, mw: mwOf('HNO3', 63.012) },
+  CH3Cl: { Tc_K: 416.30, Pc_bar: 66.80, omega: 0.153, mw: mwOf('CH3Cl', 50.488) },
+  CH2Cl2: { Tc_K: 510.00, Pc_bar: 60.80, omega: 0.199, mw: mwOf('CH2Cl2', 84.933) },
+  CCl4: { Tc_K: 556.40, Pc_bar: 45.60, omega: 0.193, mw: mwOf('CCl4', 153.823) },
+  C2Cl4: { Tc_K: 620.20, Pc_bar: 47.60, omega: 0.254, mw: mwOf('C2Cl4', 165.834) },
   CUSTOM_1: { Tc_K: 563.05, Pc_bar: 44.23, omega: 0.59, mw: mwOf('CUSTOM_1', 74.122) },
   CUSTOM_2: { Tc_K: 699.0, Pc_bar: 53.09, omega: 0.384, mw: mwOf('CUSTOM_2', 93.128) },
 };
@@ -144,6 +148,16 @@ const BINARY_KIJ: Partial<Record<string, number>> = {
   'O2:N2': -0.012,
   'Benzene:nC6H14': 0.009,
   'nC6H14:Benzene': 0.009,
+  'HCl:CH3Cl': 0.025,
+  'CH3Cl:HCl': 0.025,
+  'Cl2:CH3Cl': 0.015,
+  'CH3Cl:Cl2': 0.015,
+  'CH3Cl:CH2Cl2': 0.005,
+  'CH2Cl2:CH3Cl': 0.005,
+  'CH2Cl2:CHCl3': 0.003,
+  'CHCl3:CH2Cl2': 0.003,
+  'CHCl3:CCl4': 0.004,
+  'CCl4:CHCl3': 0.004,
 };
 
 function getKij(a: SimCompKey, b: SimCompKey, method: 'PR' | 'SRK' = 'PR'): number {
@@ -384,7 +398,8 @@ const VOLATILE_KEYS: SimCompKey[] = [
   'C2H4', 'C2H6', 'C3H6', 'C3H8', 'nC4H10', 'nC6H14', 'nC7H16',
   'Benzene', 'Toluene', 'pXylene',
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
-  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3', 'CUSTOM_1', 'CUSTOM_2',
+  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
 ];
 const PERMANENT_SUPERCRIT_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const AQUEOUS_HENRY_CONDENSABLE_SET = new Set<SimCompKey>(['Cl2', 'CO2', 'H2S', 'SO2', 'C2H4', 'C2H6', 'C3H6', 'C3H8']);
@@ -398,7 +413,8 @@ const ALL_RIG_KEYS: SimCompKey[] = [
   'C2H4', 'C2H6', 'C3H6', 'C3H8', 'nC4H10', 'nC6H14', 'nC7H16',
   'Benzene', 'Toluene', 'pXylene',
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
-  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3', 'CUSTOM_1', 'CUSTOM_2',
+  'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
 ];
 const N_RIG = ALL_RIG_KEYS.length;
 const RIG_COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -448,7 +464,8 @@ const ZERO_RIG_TEMPLATE: Record<SimCompKey, number> = {
   MeOH: 0, EtOH: 0, IPA: 0, Acetone: 0, AceticAcid: 0, EtOAc: 0, CHCl3: 0,
   Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0,
   Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0,
-  MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+  MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
+  CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0, CUSTOM_1: 0, CUSTOM_2: 0,
 };
 
 const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
@@ -460,7 +477,8 @@ const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
   MeOH: 1, EtOH: 1, IPA: 1, Acetone: 1, AceticAcid: 1, EtOAc: 1, CHCl3: 1,
   Ar: 1, H2S: 1, SO2: 1, SO3: 1, iC4H10: 1, C4H8_1: 1, nC5H12: 1, nC8H18: 1,
   Cyclohexane: 1, Ethylbenzene: 1, Styrene: 1, Cumene: 1, Phenol: 1, THF: 1, DMF: 1, DMSO: 1,
-  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
+  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
 const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
@@ -472,7 +490,8 @@ const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
   MeOH: 1, EtOH: 1, IPA: 1, Acetone: 1, AceticAcid: 1, EtOAc: 1, CHCl3: 1,
   Ar: 1, H2S: 1, SO2: 1, SO3: 1, iC4H10: 1, C4H8_1: 1, nC5H12: 1, nC8H18: 1,
   Cyclohexane: 1, Ethylbenzene: 1, Styrene: 1, Cumene: 1, Phenol: 1, THF: 1, DMF: 1, DMSO: 1,
-  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
+  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
 const _eosActKeys: SimCompKey[] = new Array<SimCompKey>(N_RIG);
@@ -547,6 +566,14 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
       return Math.pow(10, 4.2281 - 1245.70 / Math.max(50, T + 217.88));
     case 'CHCl3':
       return Math.pow(10, 4.2077 - 1233.13 / Math.max(50, T + 232.30));
+    case 'CH3Cl':
+      return Math.pow(10, 4.2185 - 948.50 / Math.max(50, T + 249.30));
+    case 'CH2Cl2':
+      return Math.pow(10, 4.2078 - 1138.90 / Math.max(50, T + 231.45));
+    case 'CCl4':
+      return Math.pow(10, 4.0229 - 1221.78 / Math.max(50, T + 227.50));
+    case 'C2Cl4':
+      return Math.pow(10, 4.1616 - 1442.50 / Math.max(50, T + 226.00));
     case 'Ar':
       return 420.0 * Math.exp(0.0052 * T);
     case 'H2S':
@@ -1853,7 +1880,28 @@ export function solveRigorousFlashVLE(
     iterUsed = outer + 1;
 
     const gamma = calcExtendedNrtlGamma(activeVolComps, xMol, T_C);
-    const eosVap = evalCubicEosBar(eosMethodForVap, yMol, T_C, P_bar);
+    let eosVap = evalCubicEosBar(eosMethodForVap, yMol, T_C, P_bar);
+    if (eosVap.rootCount === 1 && eosVap.Z_vap < 0.28) {
+      let pSatMix = 0;
+      let yCondSum = 0;
+      for (let i = 0; i < activeVolComps.length; i++) {
+        const k = activeVolComps[i];
+        if (!PERMANENT_SUPERCRIT_SET.has(k) && T_K < 0.99 * RIGOROUS_CRIT[k].Tc_K) {
+          const yk = Math.max(0, yMol[k] || 0);
+          pSatMix += yk * pSatMap[k];
+          yCondSum += yk;
+        }
+      }
+      if (yCondSum > 0.5) {
+        const pVapRef = Math.max(0.05, pSatMix / yCondSum);
+        if (P_bar > pVapRef * 1.05) {
+          const eosAtSat = evalCubicEosBar(eosMethodForVap, yMol, T_C, pVapRef);
+          if (eosAtSat.Z_vap >= 0.28) {
+            eosVap = eosAtSat;
+          }
+        }
+      }
+    }
     const eosLiqNonAq = evalCubicEosBar(eosMethodForVap, xMol, T_C, P_bar);
     lastZvap = eosVap.Z_vap;
     for (let i = 0; i < activeVolComps.length; i++) {

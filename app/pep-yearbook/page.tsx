@@ -163,6 +163,33 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
       { item: '진공시스템 · 공정펌프 전력', type: 'UTIL', unit: 'kWh / t-ECH', qty: 165.0, unitCost_krw: 135 },
     ],
   },
+  cms_plant: {
+    key: 'cms_plant',
+    code: 'PEP-CMS-04',
+    name: '메틸클로라이드 AIBN 액상 염소화 클로로메탄 공정 (MCL 120 + CFM 80 T/D)',
+    product: '고순도 메틸렌클로라이드(MCL 99.9%) 120 T/D + 클로로포름(CFM 99.9%) 80 T/D (합계 200 T/D) + 부생 무수 HCl 0.566 t/t-CMS',
+    licensor: 'Solvay / Shin-Etsu / Tokuyama Liquid-Phase AIBN Chlorination',
+    baseCap_tpy: 66000,
+    baseCapex_musd: 68.5,
+    scaleExponent: 0.64,
+    productPrice_krw: 1180000,
+    byproductCredit_krw: 158500, // 부생 무수염산(Anhydrous HCl 0.566 t/t-CMS @ ₩280,000/t) 크레딧
+    blocks: [
+      { code: '100 SEC', title: 'Cl₂ 기화 & AIBN 액상 염소화', desc: 'E-101 액체염소(220 T/D) 기화 및 R-101(24kG·120°C) MC+Cl₂ AIBN 라디칼 연속 염소화' },
+      { code: '200 SEC', title: '고압 무수 HCl 탈거 & MC 순환', desc: 'C-201(17.5 kG) 무수 HCl 탈거(113 T/D) 및 C-202 미반응 MC 전량 회수 순환(MCL 무순환)' },
+      { code: '300 SEC', title: 'MCL·CFM 정밀증류 & CTC 폐기', desc: 'C-301 MCL 정제탑(120 T/D) · C-302 CFM 정제탑(80 T/D) 및 잔류 CTC·헤비(18 T/D) 분리' },
+    ],
+    unitConsumptions: [
+      { item: '액체 염소 원료 (Liquid Cl₂ 99.9%)', type: 'RAW', unit: 'ton / t-CMS', qty: 1.10, unitCost_krw: 295000 },
+      { item: '메틸클로라이드 원료 (Methyl Chloride, Fresh MC)', type: 'RAW', unit: 'ton / t-CMS', qty: 0.555, unitCost_krw: 690000 },
+      { item: 'AIBN 개시제 & 촉매약품', type: 'RAW', unit: 'kg / t-CMS', qty: 1.25, unitCost_krw: 14500 },
+      { item: '잔류 CTC·헤비 위탁소각 폐기비', type: 'RAW', unit: 'ton / t-CMS', qty: 0.090, unitCost_krw: 240000 },
+      { item: '기화기·리보일러 가열 스팀 (LP/MP Steam)', type: 'UTIL', unit: 'ton / t-CMS', qty: 1.65, unitCost_krw: 62000 },
+      { item: '증류탑 응축기·반응기 순환 냉각수 (CW)', type: 'UTIL', unit: 'm³ / t-CMS', qty: 58.0, unitCost_krw: 350 },
+      { item: 'C-201 심냉 응축기 칠드 브라인 (Chilled Brine -20°C)', type: 'UTIL', unit: 'Gcal / t-CMS', qty: 0.145, unitCost_krw: 85000 },
+      { item: '고압 순환펌프·냉동기·계장 전력 (Electricity)', type: 'UTIL', unit: 'kWh / t-CMS', qty: 112.0, unitCost_krw: 135 },
+    ],
+  },
   amine_ccus: {
     key: 'amine_ccus',
     code: 'PEP-CC-01',
@@ -221,9 +248,11 @@ function getPlantPepKeys(plantId: PlantId): string[] {
       return ['hcl_1a'];
     case 'ech_gte':
       return ['ech_gte'];
+    case 'cms_plant':
+      return ['cms_plant'];
     case 'new_builder':
     default:
-      return ['ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
+      return ['cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
   }
 }
 

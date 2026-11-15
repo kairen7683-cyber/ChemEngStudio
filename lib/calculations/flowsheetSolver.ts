@@ -120,6 +120,10 @@ export type SimCompKey =
   | 'MDEA'
   | 'FormicAcid'
   | 'HNO3'
+  | 'CH3Cl'
+  | 'CH2Cl2'
+  | 'CCl4'
+  | 'C2Cl4'
   | 'CUSTOM_1'
   | 'CUSTOM_2';
 
@@ -188,6 +192,10 @@ export const SIM_COMPS: SimCompKey[] = [
   'MDEA',
   'FormicAcid',
   'HNO3',
+  'CH3Cl',
+  'CH2Cl2',
+  'CCl4',
+  'C2Cl4',
   'CUSTOM_1',
   'CUSTOM_2',
 ];
@@ -238,6 +246,10 @@ const GENERAL_21_KEYS: SimCompKey[] = [
   'MDEA',
   'FormicAcid',
   'HNO3',
+  'CH3Cl',
+  'CH2Cl2',
+  'CCl4',
+  'C2Cl4',
   'CUSTOM_1',
   'CUSTOM_2',
 ];
@@ -321,6 +333,10 @@ export const COMP_META: Record<
   MDEA: { formula: 'C₅H₁₃NO₂', label: 'MDEA (메틸디에탄올아민)', mw: mwOf('MDEA', 119.163), isGasAtStd: false, cpLiq: 0.54, cpGas: 0.35, group: 'polar_solvent' },
   FormicAcid: { formula: 'HCOOH', label: 'FormicAcid (개미산)', mw: mwOf('FormicAcid', 46.025), isGasAtStd: false, cpLiq: 0.514, cpGas: 0.235, group: 'polar_solvent' },
   HNO3: { formula: 'HNO₃', label: 'HNO₃ (질산)', mw: mwOf('HNO3', 63.012), isGasAtStd: false, cpLiq: 0.42, cpGas: 0.202, group: '1B_inorg' },
+  CH3Cl: { formula: 'CH₃Cl', label: 'CH₃Cl (메틸클로라이드/MC)', mw: mwOf('CH3Cl', 50.488), isGasAtStd: true, cpLiq: 0.38, cpGas: 0.19, group: 'polar_solvent' },
+  CH2Cl2: { formula: 'CH₂Cl₂', label: 'CH₂Cl₂ (염화메틸렌/MCL)', mw: mwOf('CH2Cl2', 84.933), isGasAtStd: false, cpLiq: 0.28, cpGas: 0.15, group: 'polar_solvent' },
+  CCl4: { formula: 'CCl₄', label: 'CCl₄ (사염화탄소/CTC)', mw: mwOf('CCl4', 153.823), isGasAtStd: false, cpLiq: 0.20, cpGas: 0.13, group: 'polar_solvent' },
+  C2Cl4: { formula: 'C₂Cl₄', label: 'C₂Cl₄ (퍼클로로에틸렌/Heavies)', mw: mwOf('C2Cl4', 165.834), isGasAtStd: false, cpLiq: 0.21, cpGas: 0.14, group: 'polar_solvent' },
   CUSTOM_1: { formula: 'CUSTOM-1', label: 'CUSTOM_1 (사용자정의/UNIFAC 물질 1)', mw: mwOf('CUSTOM_1', 74.122), isGasAtStd: false, cpLiq: 0.56, cpGas: 0.355, group: 'polar_solvent' },
   CUSTOM_2: { formula: 'CUSTOM-2', label: 'CUSTOM_2 (사용자정의/UNIFAC 물질 2)', mw: mwOf('CUSTOM_2', 93.128), isGasAtStd: false, cpLiq: 0.495, cpGas: 0.285, group: 'aromatic' },
 };
@@ -499,7 +515,8 @@ export interface FlowUnitParams {
     | 'brine_electrolysis'
     | 'fecl3_chlorination'
     | 'gte_hydrochlorination'
-    | 'ech_saponification';
+    | 'ech_saponification'
+    | 'cms_aibn_chlorination';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -547,6 +564,11 @@ export interface FlowEdgeDef {
   target: string;
   sourcePort?: SourcePortId;
   targetPort?: TargetPortId;
+  tearGuess?: {
+    flowsKgH?: Partial<Record<SimCompKey, number>>;
+    tempC?: number;
+    pressKgcm2g?: number;
+  };
 }
 
 export interface SolvedStream {
@@ -810,6 +832,10 @@ export function emptySimFlows(
     MDEA: 0,
     FormicAcid: 0,
     HNO3: 0,
+    CH3Cl: 0,
+    CH2Cl2: 0,
+    CCl4: 0,
+    C2Cl4: 0,
     CUSTOM_1: 0,
     CUSTOM_2: 0,
     ...(overrides ?? {}),
@@ -870,6 +896,10 @@ export function identifyFluidName(flows: Record<SimCompKey, number>, tempC: numb
   if ((flows.Acetone || 0) / tot > 0.25) return `아세톤 용제 (Acetone ${(((flows.Acetone || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.AceticAcid || 0) / tot > 0.25) return `초산 용액 (AceticAcid ${(((flows.AceticAcid || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.EtOAc || 0) / tot > 0.25) return `초산에틸 용제 (EtOAc ${(((flows.EtOAc || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CH2Cl2 || 0) / tot > 0.40) return `정제 MCL · 디클로로메탄 (CH₂Cl₂ ${(((flows.CH2Cl2 || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if ((flows.CH3Cl || 0) / tot > 0.35) return `메틸클로라이드 유분 (CH₃Cl ${(((flows.CH3Cl || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CHCl3 || 0) / tot > 0.35) return `정제 CFM · 클로로포름 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if (((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot > 0.35) return `잔류 CTC · 헤비 폐유기물 (${((((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.CHCl3 || 0) / tot > 0.25) return `클로로포름 용제 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} wt%)`;
 
   const wBTX = ((flows.Benzene || 0) + (flows.Toluene || 0) + (flows.pXylene || 0)) / tot;
@@ -1681,7 +1711,15 @@ export function solveFlowsheet(
 
   const edgeState = new Map<string, EdgeRuntimeState>();
   edges.forEach(e => {
-    edgeState.set(e.id, { flows: emptyFlows(), tempC: 25.0, pressKgcm2g: 0.0 });
+    if (tearSet.has(e.id) && e.tearGuess) {
+      edgeState.set(e.id, {
+        flows: emptySimFlows(e.tearGuess.flowsKgH),
+        tempC: e.tearGuess.tempC ?? 25.0,
+        pressKgcm2g: e.tearGuess.pressKgcm2g ?? 0.0,
+      });
+    } else {
+      edgeState.set(e.id, { flows: emptyFlows(), tempC: 25.0, pressKgcm2g: 0.0 });
+    }
   });
 
   // Wegstein 이전 반복 기록용 (x_prev, g_prev)
@@ -3135,6 +3173,23 @@ export function solveFlowsheet(
             outF.NaCl += extHyd * (MW.ECH + MW.NaOH + MW.H2O - MW.Glycerol);
           }
           note = `[${rxModel.toUpperCase()}] 비누화 고리화: ECH ${(outF.ECH).toFixed(1)} kg/h (가수분해 부반응 ${(hydFrac * 100).toFixed(2)}%)`;
+        } else if (preset === 'cms_aibn_chlorination') {
+          // AIBN 개시 액상 자유라디칼 연속 염소화 (24 kgf/cm²G, 120°C): MC -> MCL -> CFM -> CTC + C2Cl4
+          const nMc0 = outF.CH3Cl / MW.CH3Cl;
+          const nCl2Avail = outF.Cl2 / MW.Cl2;
+          const xMc = rxModel === 'conversion' ? Math.min(0.60, Math.max(0.15, conv * 0.35)) : evalKineticConv(8.5, 393.15, 58.0);
+          const convCl2 = rxModel === 'conversion' ? Math.min(0.999, Math.max(0.85, conv)) : 0.9985;
+          const targetCl2Use = nCl2Avail * convCl2;
+          const ext1 = Math.min(nMc0 * xMc, targetCl2Use * 0.62);
+          const ext2 = Math.min((outF.CH2Cl2 / MW.CH2Cl2 + ext1) * 0.41, Math.max(0, targetCl2Use - ext1));
+          const ext3 = Math.min((outF.CHCl3 / MW.CHCl3 + ext2) * 0.145, Math.max(0, targetCl2Use - ext1 - ext2));
+          outF.CH3Cl -= ext1 * MW.CH3Cl;
+          outF.Cl2 -= (ext1 + ext2 + ext3) * MW.Cl2;
+          outF.CH2Cl2 += (ext1 - ext2) * MW.CH2Cl2;
+          outF.CHCl3 += (ext2 - ext3) * MW.CHCl3;
+          outF.CCl4 += ext3 * MW.CCl4;
+          outF.HCl += (ext1 + ext2 + ext3) * MW.HCl;
+          note = `AIBN 라디칼 염소화 (${T_out.toFixed(1)}°C): MCL ${outF.CH2Cl2.toFixed(0)} / CFM ${outF.CHCl3.toFixed(0)} kg/h`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;

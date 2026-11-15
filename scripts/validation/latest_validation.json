@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-14T07:09:36.407Z",
+  "generatedAt": "2026-11-15T23:08:09.085Z",
   "engineExportsDetected": {
     "bubblePressureBarA": true,
     "bubbleTemperatureC": true,
@@ -7,8 +7,8 @@
     "mode": "rigorousThermo-W1"
   },
   "databankCounts": {
-    "nrtlBinaryPairs": 204,
-    "prKijPairs": 71
+    "nrtlBinaryPairs": 212,
+    "prKijPairs": 78
   },
   "overallMetrics": {
     "meanBubblePressureAAD_pct": 0.86,

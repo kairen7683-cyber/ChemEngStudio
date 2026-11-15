@@ -74,6 +74,10 @@ const COMP_MW: Record<SimCompKey, number> = {
   MDEA: 119.163,
   FormicAcid: 46.025,
   HNO3: 63.012,
+  CH3Cl: 50.488,
+  CH2Cl2: 84.933,
+  CCl4: 153.823,
+  C2Cl4: 165.834,
   CUSTOM_1: 74.122,
   CUSTOM_2: 93.128,
 };
@@ -85,7 +89,8 @@ const ALL_KEYS: SimCompKey[] = [
   'Benzene', 'Toluene', 'pXylene', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane',
   'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK',
-  'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3', 'CUSTOM_1', 'CUSTOM_2',
+  'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
 ];
 const N_ALL = ALL_KEYS.length;
 const COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -98,6 +103,7 @@ const PERMANENT_GAS_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'A
 const HYDROPHOBIC_ORGS = new Set<SimCompKey>([
   'ECH', 'DCP', 'DCH',
   'EtOAc', 'Benzene', 'Toluene', 'pXylene', 'nC6H14', 'nC7H16', 'CHCl3',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4',
   'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene',
   'MTBE', 'MEK', 'DMC', 'CUSTOM_1', 'CUSTOM_2',
 ]);
@@ -573,6 +579,10 @@ const COMP_UNIFAC_GROUPS: Partial<Record<SimCompKey, Partial<Record<UnifacSubGro
   MEA: { CH2: 1, OH: 1, CH2NH2: 1 },
   MDEA: { CH2: 4, OH: 2, CH3N: 1 },
   FormicAcid: { HCOOH: 1 },
+  CH3Cl: { CH2Cl: 1 },
+  CH2Cl2: { CH2Cl2: 1 },
+  CCl4: { CCl4_g: 1 },
+  C2Cl4: { 'CH=CH': 1, CCl4_g: 1 },
   // 기본 CUSTOM_1 = 1-Butanol, CUSTOM_2 = Aniline (런타임 동적 교체 가능)
   CUSTOM_1: { CH3: 1, CH2: 3, OH: 1 },
   CUSTOM_2: { ACH: 5, ACNH2: 1 },
@@ -947,7 +957,8 @@ const ZERO_ACT_TEMPLATE: Record<SimCompKey, number> = {
   MeOH: 0, EtOH: 0, IPA: 0, Acetone: 0, AceticAcid: 0, EtOAc: 0, CHCl3: 0,
   Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0,
   Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0,
-  MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+  MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
+  CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0, CUSTOM_1: 0, CUSTOM_2: 0,
 };
 
 const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
@@ -959,7 +970,8 @@ const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
   MeOH: 1, EtOH: 1, IPA: 1, Acetone: 1, AceticAcid: 1, EtOAc: 1, CHCl3: 1,
   Ar: 1, H2S: 1, SO2: 1, SO3: 1, iC4H10: 1, C4H8_1: 1, nC5H12: 1, nC8H18: 1,
   Cyclohexane: 1, Ethylbenzene: 1, Styrene: 1, Cumene: 1, Phenol: 1, THF: 1, DMF: 1, DMSO: 1,
-  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
+  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
 export function calcExtendedNrtlGamma(

@@ -95,6 +95,23 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
     ],
   },
   {
+    id: 'cms_plant',
+    code: 'PLANT 04',
+    shortLabel: '클로로메탄 (CMS)',
+    title: '메틸클로라이드 AIBN 액상 염소화 클로로메탄 (MCL 120 · CFM 80 T/D)',
+    capacityBadge: 'Cl₂ 220 · MCL 120 · CFM 80 T/D',
+    accent: '#0891B2',
+    accentSoftBg: '#ECFEFF',
+    accentBorder: '#67E8F9',
+    defaultHref: '/material-balance',
+    tabs: [
+      { key: 'pfd', label: '① 계층 공정도 & 시뮬레이션', shortLabel: '① 시뮬레이션', href: '/material-balance' },
+      { key: 'design', label: '② CMS 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=cms_hub', equipTab: 'cms_hub' },
+      { key: 'equip', label: '③ CMS 공장 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
+      { key: 'econ', label: '④ 원단위 · 경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+    ],
+  },
+  {
     id: 'new_builder',
     code: 'SIM',
     shortLabel: '공정 시뮬레이터',

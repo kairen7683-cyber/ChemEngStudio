@@ -83,6 +83,10 @@ export const PSAT_DIPPR101: Partial<Record<SimCompKey, Dippr101Entry>> = {
   MDEA: { A: 231.3776, B: -20795.73, C: -29.23979, D: 1.10681e-5, E: 2, TminK: 252.15, TmaxK: 677.8, source: LK_ANCHORED },
   FormicAcid: { A: 86.75392, B: -7313.843, C: -9.54004, D: 6.05611e-6, E: 2, TminK: 281.55, TmaxK: 588.0, source: LK_ANCHORED },
   HNO3: { A: 144.0722, B: -10350.33, C: -17.88894, D: 1.27671e-5, E: 2, TminK: 231.55, TmaxK: 520.0, source: LK_ANCHORED },
+  CH3Cl: { A: 62.39084, B: -4026.325, C: -6.38466, D: 8.644423e-6, E: 2, TminK: 175.4, TmaxK: 416.3, source: LK_ANCHORED },
+  CH2Cl2: { A: 69.59102, B: -5348.626, C: -7.23770, D: 6.280074e-6, E: 2, TminK: 176.0, TmaxK: 510.0, source: LK_ANCHORED },
+  CCl4: { A: 69.12897, B: -5775.806, C: -7.12461, D: 5.221251e-6, E: 2, TminK: 250.0, TmaxK: 556.4, source: LK_ANCHORED },
+  C2Cl4: { A: 78.87788, B: -7124.475, C: -8.36413, D: 4.575644e-6, E: 2, TminK: 250.8, TmaxK: 620.2, source: LK_ANCHORED },
   CUSTOM_1: { A: 130.3499, B: -10136.14, C: -15.8164, D: 9.85969e-6, E: 2, TminK: 183.85, TmaxK: 563.05, source: LK_ANCHORED },
   CUSTOM_2: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
 };

@@ -49,6 +49,11 @@ export default function MaterialBalancePage() {
         <div style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <ElectrolyzerPlantSimulator key="plant04_ech" workspaceMode="ech_gte_plant" embeddedInPlant={true} />
         </div>
+      ) : plantId === 'cms_plant' ? (
+        /* ── PLANT 04: 클로로메탄(CMS) 공정 시뮬레이터 (MCL 120 + CFM 80 T/D) ── */
+        <div style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <ElectrolyzerPlantSimulator key="plant05_cms" workspaceMode="cms_plant" embeddedInPlant={true} />
+        </div>
       ) : plantId === 'new_builder' ? (
         /* ── 공정 시뮬레이터 ── */
         <div style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

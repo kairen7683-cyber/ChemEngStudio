@@ -20,6 +20,7 @@ import {
 } from '@/lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
+import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
 import {
   HX_MATERIAL_CATALOG,
   solveHeatExchangerDesign,
@@ -35,6 +36,7 @@ import {
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
+const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v1';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
 
 type RatingHealth = 'ok' | 'warning' | 'critical' | 'passive';
@@ -630,6 +632,7 @@ export default function PlantScopedEquipmentList() {
     expansionScaleFactor,
     plant02SyncSeq,
     plant03SyncSeq,
+    cmsPlantSyncSeq,
     requestSimNodeAction,
     setLastPlantReturnHref,
   } = useBalanceStore();
@@ -661,7 +664,9 @@ export default function PlantScopedEquipmentList() {
           ? PLANT03_SAVE_KEY
           : activePlantId === 'ech_gte'
             ? PLANT04_SAVE_KEY
-            : BUILDER_SAVE_KEY;
+            : activePlantId === 'cms_plant'
+              ? PLANT05_SAVE_KEY
+              : BUILDER_SAVE_KEY;
 
     let sheets: Record<string, SheetRuntimeData> | null = null;
     let savedStamp = '';
@@ -728,6 +733,9 @@ export default function PlantScopedEquipmentList() {
       } else if (activePlantId === 'ech_gte') {
         sheets = createInitialEchHierarchySheets();
         savedStamp = 'ECH 70,000 TPA (GTE) 표준 초기 시뮬레이션 패키지 기준';
+      } else if (activePlantId === 'cms_plant') {
+        sheets = createInitialCmsHierarchySheets();
+        savedStamp = '클로로메탄(CMS · MCL 120 + CFM 80 T/D) 표준 초기 시뮬레이션 패키지 기준';
       } else {
         sheets = {};
         savedStamp = '신규 빌더 캔버스 (배치된 장치 실시간 반영)';
@@ -743,7 +751,7 @@ export default function PlantScopedEquipmentList() {
     );
     setRows(extracted);
     setSourceNote(savedStamp);
-  }, [activePlantId, expansionScaleFactor, plant02SyncSeq, plant03SyncSeq, plantMeta.code, plantMeta.shortLabel]);
+  }, [activePlantId, expansionScaleFactor, plant02SyncSeq, plant03SyncSeq, cmsPlantSyncSeq, plantMeta.code, plantMeta.shortLabel]);
 
   const handleRunManualRefresh = () => {
     if (activePlantId === 'green_h2') return;

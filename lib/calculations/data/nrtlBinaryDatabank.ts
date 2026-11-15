@@ -232,6 +232,15 @@ export const NRTL_BIP_DATABANK: NrtlBipEntry[] = [
   { i: 'Cumene', j: 'H2O', aij: -5.95, aji: 4.65, bij: 3290.0, bji: 1410.0, alpha: 0.2, source: "Stephenson (1992) / IUPAC SDS LLE (cumene + water)", tMinC: 15, tMaxC: 140 },
   { i: 'MTBE', j: 'H2O', aij: -2.15, aji: 4.25, bij: 1120.0, bji: -180.0, alpha: 0.22, source: "Stephenson (1992) LLE (MTBE + water mutual solubility)", tMinC: 15, tMaxC: 100 },
   { i: 'DMC', j: 'H2O', aij: -1.85, aji: 3.92, bij: 980.0, bji: -110.0, alpha: 0.22, source: "Stephenson (1992) LLE (dimethyl carbonate + water)", tMinC: 15, tMaxC: 110 },
+  // Chloromethanes VLE & LLE pairs (PLANT 04 CMS)
+  { i: 'CH3Cl', j: 'CH2Cl2', aij: 0, aji: 0, bij: -28.0, bji: 34.0, alpha: 0.3, source: "DECHEMA / Gmehling chloromethanes near-ideal VLE", tMinC: -30, tMaxC: 160 },
+  { i: 'CH2Cl2', j: 'CHCl3', aij: 0, aji: 0, bij: -18.5, bji: 22.0, alpha: 0.3, source: "DECHEMA / Gmehling Vol. I (dichloromethane + chloroform VLE)", tMinC: 0, tMaxC: 140 },
+  { i: 'CHCl3', j: 'CCl4', aij: 0, aji: 0, bij: 48.0, bji: -36.0, alpha: 0.3, source: "DECHEMA Vol. I/7 (chloroform + carbon tetrachloride VLE)", tMinC: 15, tMaxC: 140 },
+  { i: 'CHCl3', j: 'C2Cl4', aij: 0, aji: 0, bij: 22.0, bji: -14.0, alpha: 0.3, source: "DECHEMA Vol. I/7 (chloroform + tetrachloroethylene VLE)", tMinC: 20, tMaxC: 160 },
+  { i: 'CCl4', j: 'C2Cl4', aij: 0, aji: 0, bij: 14.0, bji: -9.0, alpha: 0.3, source: "DECHEMA Vol. I/7 (carbon tetrachloride + PCE near-ideal VLE)", tMinC: 20, tMaxC: 160 },
+  { i: 'CH2Cl2', j: 'H2O', aij: -3.85, aji: 7.15, bij: 1980.0, bji: -620.0, alpha: 0.2, source: "Stephenson (1992) LLE (dichloromethane + water)", tMinC: 15, tMaxC: 100 },
+  { i: 'CCl4', j: 'H2O', aij: -4.20, aji: 8.10, bij: 2500.0, bji: -800.0, alpha: 0.2, source: "Stephenson (1992) LLE (carbon tetrachloride + water)", tMinC: 15, tMaxC: 100 },
+  { i: 'C2Cl4', j: 'H2O', aij: -4.50, aji: 8.50, bij: 2800.0, bji: -950.0, alpha: 0.2, source: "Stephenson (1992) LLE (tetrachloroethylene + water)", tMinC: 15, tMaxC: 100 },
 ];
 
 /** Directional lookup helper; swaps (aij, bij) <-> (aji, bji) when (a, b) matches (j, i). */

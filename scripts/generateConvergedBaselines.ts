@@ -22,6 +22,10 @@ import {
 } from '../lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '../lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '../lib/calculations/echPlantHierarchy';
+import {
+  createInitialCmsHierarchySheets,
+  syncCmsSubDefsFromMaster,
+} from '../lib/calculations/cmsPlantHierarchy';
 
 function mergeSheetFeedComponents(defs: FlowNodeDef[], base: SimCompKey[]): SimCompKey[] {
   const set = new Set<SimCompKey>(base);
@@ -50,8 +54,8 @@ interface BaselineSheetEntry {
 }
 
 function solvePlantSheets(
-  plantKey: 'electrolysis' | 'hcl1A' | 'ech',
-  workspaceMode: 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant',
+  plantKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms',
+  workspaceMode: 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant',
   sheets: Record<string, SheetRuntimeData>
 ): Record<string, BaselineSheetEntry> {
   const baseComps = getPlantDefaultComponents(workspaceMode);
@@ -86,11 +90,10 @@ function solvePlantSheets(
 
     for (const [sid, sh] of Object.entries(sheets)) {
       if (sid === 'master') continue;
-      const { syncedDefs } = applyMasterBoundaryToSubDefs(
-        sh.simDefs,
-        masterSheet.flowEdges,
-        res.streams
-      );
+      const { syncedDefs } =
+        plantKey === 'cms'
+          ? syncCmsSubDefsFromMaster(sid, sh.simDefs, masterSheet.flowEdges, res.streams)
+          : applyMasterBoundaryToSubDefs(sh.simDefs, masterSheet.flowEdges, res.streams);
       sheets[sid] = { ...sh, simDefs: syncedDefs };
     }
   }
@@ -142,6 +145,11 @@ function main() {
       'ech_gte_plant',
       createInitialEchHierarchySheets({ syncMasterOnInit: true })
     ),
+    cms: solvePlantSheets(
+      'cms',
+      'cms_plant',
+      createInitialCmsHierarchySheets({ syncMasterOnInit: true })
+    ),
   };
 
   const payload = {
@@ -160,7 +168,8 @@ function main() {
   const totalSheets =
     Object.keys(plants.electrolysis).length +
     Object.keys(plants.hcl1A).length +
-    Object.keys(plants.ech).length;
+    Object.keys(plants.ech).length +
+    Object.keys(plants.cms).length;
   console.log(`\nDONE: ${totalSheets} converged sheets written to ${outFile} (${sizeKB} KB)`);
 }
 

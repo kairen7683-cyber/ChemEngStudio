@@ -97,6 +97,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
     { group: 'electrolysis', label: 'PLANT 01 · 전해공장 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'electrolysis') },
     { group: 'hcl1A', label: 'PLANT 02 · 염산합성/정제 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'hcl1A') },
     { group: 'ech', label: 'PLANT 03 · ECH 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'ech') },
+    { group: 'cms', label: 'PLANT 04 · 클로로메탄(CMS) 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'cms') },
   ];
 
   return (
