@@ -6,6 +6,21 @@
 
 import type { StreamData } from '@/lib/calculations/streams';
 import type { TowerMode } from '@/lib/packingCalc';
+import {
+  type FluidState,
+  type LayoutDeg,
+  type ShellTubeGeometry,
+  type TwoPhaseFluid,
+  bellDelawareShellSide,
+  gungorWintertonBoilingH,
+  shahCondensationH,
+  shellBoilingH,
+  shellCondensationH,
+  shellSideTwoPhaseDP,
+  temaVibrationCheck,
+  tubeSideSinglePhase,
+  tubeSideTwoPhaseDP,
+} from '@/lib/calculations/shellTubeRating';
 
 // ─── 1. 열교환기 유체 물성 DB (전해공장 특화) ─────────────────────────
 export interface HXFluidSpec {
@@ -159,6 +174,55 @@ function calcTemaFt(Th_in: number, Th_out: number, Tc_in: number, Tc_out: number
   return isNaN(ft) ? 0.85 : Math.max(0.55, Math.min(1.0, ft));
 }
 
+function hxFluidToState(fl: HXFluidSpec, massFlowKgH: number): FluidState {
+  return {
+    massFlowKgS: Math.max(1e-4, massFlowKgH / 3600),
+    rho: Math.max(0.15, fl.rho_kgm3),
+    mu: Math.max(5e-6, fl.mu_mPas * 1e-3),
+    cp: Math.max(300, fl.cp_kJkgK * 1000),
+    k: Math.max(0.008, fl.k_WmK),
+  };
+}
+
+function hxFluidToTwoPhase(
+  fl: HXFluidSpec,
+  massFlowKgH: number,
+  tempC: number,
+  pressKgcm2g: number,
+): TwoPhaseFluid {
+  const isSteam = fl.key.startsWith('steam');
+  const isCl2 = fl.key.startsWith('cl2');
+  const pAbsBar = Math.max(0.08, (pressKgcm2g + 1.03323) * 0.980665);
+  const T_K = Math.max(180, tempC + 273.15);
+
+  const liquidLike = fl.rho_kgm3 > 250;
+  const rhoL = liquidLike ? fl.rho_kgm3 : isSteam ? 915 : isCl2 ? 1450 : 1000;
+  const mwEst = isSteam ? 18.015 : isCl2 ? 70.9 : fl.key === 'r717' ? 17.03 : 95;
+  const rhoG = !liquidLike
+    ? Math.max(0.1, fl.rho_kgm3)
+    : Math.min(rhoL * 0.45, Math.max(0.4, (pAbsBar * 1e5 * mwEst) / (8314.46 * T_K)));
+
+  const muL = liquidLike ? Math.max(1e-4, fl.mu_mPas * 1e-3) : isSteam ? 1.8e-4 : 3.5e-4;
+  const muG = !liquidLike ? Math.max(6e-6, fl.mu_mPas * 1e-3) : isSteam ? 1.4e-5 : 1.1e-5;
+  const cpL = liquidLike ? Math.max(800, fl.cp_kJkgK * 1000) : isSteam ? 4280 : 3800;
+  const kL = liquidLike ? Math.max(0.06, fl.k_WmK) : isSteam ? 0.67 : 0.45;
+  const pCritBar = isSteam ? 220.6 : isCl2 ? 79.9 : fl.key === 'r717' ? 113.3 : 42;
+
+  return {
+    massFlowKgS: Math.max(1e-4, massFlowKgH / 3600),
+    rhoL,
+    rhoG: Math.min(rhoG, rhoL * 0.48),
+    muL,
+    muG,
+    cpL,
+    kL,
+    sigma: isSteam ? 0.048 : isCl2 ? 0.022 : 0.025,
+    hfg: Math.max(5e4, (fl.latent_kJkg ?? 350) * 1000),
+    pCritBar,
+    pReduced: Math.min(0.88, pAbsBar / pCritBar),
+  };
+}
+
 export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
   const hotFluid = HX_FLUIDS.find(f => f.key === inp.hotFluidKey) ?? HX_FLUIDS[0];
   const coldFluid = HX_FLUIDS.find(f => f.key === inp.coldFluidKey) ?? HX_FLUIDS[11];
@@ -166,15 +230,16 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
 
   let mh = Math.max(10, inp.mh_kgh);
   let mc = Math.max(10, inp.mc_kgh);
-  let Th_in = inp.Th_in_C;
+  const Th_in = inp.Th_in_C;
   let Th_out = inp.Th_out_C;
-  let Tc_in = inp.Tc_in_C;
+  const Tc_in = inp.Tc_in_C;
   let Tc_out = inp.Tc_out_C;
 
   // 고온측 단위질량당 엔탈피 변화 (kJ/kg): 현열 + 잠열(응축 분율)
+  const hotCondFrac = Math.max(0, Math.min(1, inp.hotCondensingFrac ?? 0));
   const dH_hot_kJkg = Math.max(1.0,
     hotFluid.cp_kJkgK * Math.abs(Th_in - Th_out) +
-    (hotFluid.latent_kJkg ?? 0) * Math.max(0, Math.min(1, inp.hotCondensingFrac ?? 0))
+    (hotFluid.latent_kJkg ?? 0) * hotCondFrac
   );
   const coldBoilFrac = coldFluid.phase === 'boiling' ? 1.0 : 0.0;
   const dH_cold_kJkg = Math.max(1.0,
@@ -193,7 +258,7 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
     Tc_out = Tc_in + (Q_kW * 3600) / Math.max(1, mc * coldFluid.cp_kJkgK);
   } else if (inp.dofMode === 'calc_Th_out') {
     Q_kW = (mc * dH_cold_kJkg) / 3600;
-    const sensKJ = Math.max(0, Q_kW * 3600 - mh * (hotFluid.latent_kJkg ?? 0) * (inp.hotCondensingFrac ?? 0));
+    const sensKJ = Math.max(0, Q_kW * 3600 - mh * (hotFluid.latent_kJkg ?? 0) * hotCondFrac);
     Th_out = Th_in - sensKJ / Math.max(1, mh * hotFluid.cp_kJkgK);
   } else {
     Q_kW = (mh * dH_hot_kJkg) / 3600;
@@ -209,7 +274,8 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
     ? (dT1 + dT2) / 2
     : (dT1 - dT2) / Math.log(dT1 / dT2);
 
-  const Ft = calcTemaFt(Th_in, Th_out, Tc_in, Tc_out, Math.max(1, inp.n_shell));
+  const nShell = Math.max(1, inp.n_shell);
+  const Ft = calcTemaFt(Th_in, Th_out, Tc_in, Tc_out, nShell);
   const CMTD_C = Math.max(1.5, lmtd_C * Ft);
 
   // 기하구조 기본값
@@ -221,6 +287,8 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
   const pitchRatio = 1.25;
   const pt_m = do_m * pitchRatio;
   const kw = matObj.kw_WmK;
+  const layoutDeg: LayoutDeg = inp.layoutAngle === 45 ? 45 : inp.layoutAngle === 90 ? 90 : 30;
+  const baffleCutFrac = Math.min(0.45, Math.max(0.15, inp.baffleCutPct / 100));
 
   // 부식성/고압 유체를 튜브측에 배치 (전해공장 표준)
   const tubeFluid = coldFluid;
@@ -228,7 +296,12 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
   const m_tube_kgh = mc;
   const m_shell_kgh = mh;
 
-  // 초기 U 추정치로 시작하여 Bell-Delaware 10회 수렴
+  const flTube = hxFluidToState(tubeFluid, m_tube_kgh);
+  const flShell = hxFluidToState(shellFluid, m_shell_kgh);
+  const tpTube = hxFluidToTwoPhase(tubeFluid, m_tube_kgh, 0.5 * (Tc_in + Tc_out), inp.Pc_kgcm2g);
+  const tpShell = hxFluidToTwoPhase(shellFluid, m_shell_kgh, 0.5 * (Th_in + Th_out), inp.Ph_kgcm2g);
+
+  // Rigorous Bell-Delaware (5-factor Taborek) + Gnielinski/Shah/Gungor-Winterton Loop
   let U_calc = 650;
   let N_tubes = 60;
   let D_bundle_m = 0.4;
@@ -238,15 +311,32 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
   let hi = 1500, ho = 1200;
   let vt = 1.2, vs = 0.8;
   let Ret = 15000, Res = 12000;
-  let dPt_bar = 0.15, dPs_bar = 0.12;
+  let dPt_Pa_perShell = 15000;
+  let dPs_Pa_perShell = 12000;
 
   const overFrac = 1 + Math.max(0, inp.overdesignPct) / 100;
+  const R_wall = (do_m * Math.log(do_m / di_m)) / (2 * kw);
+
+  let finalGeom: ShellTubeGeometry = {
+    shellIdM: D_shell_m,
+    tubeOdM: do_m,
+    tubeIdM: di_m,
+    tubePitchM: pt_m,
+    layoutDeg,
+    tubeCount: N_tubes,
+    tubePasses: nPasses,
+    tubeLengthM: L_m,
+    baffleSpacingM: B_spacing_m,
+    baffleCutFrac,
+    sealingStripPairs: 1,
+    baffleCount: N_baffles,
+  };
 
   for (let iter = 0; iter < 10; iter++) {
     const A_req = (Q_kW * 1000) / Math.max(10, U_calc * CMTD_C);
-    const A_target = A_req * overFrac;
+    const A_target_per_shell = (A_req * overFrac) / nShell;
     const areaPerTube = Math.PI * do_m * L_m;
-    N_tubes = Math.max(16, Math.ceil(A_target / areaPerTube / nPasses) * nPasses);
+    N_tubes = Math.max(16, Math.ceil(A_target_per_shell / areaPerTube / nPasses) * nPasses);
 
     // 튜브 번들 및 쉘 내경 (Kern-TEMA bundle empirical)
     const K1 = nPasses === 1 ? 0.319 : nPasses === 2 ? 0.249 : nPasses === 4 ? 0.175 : 0.0743;
@@ -255,67 +345,104 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
     const clearance_m = 0.018 + 0.04 * D_bundle_m;
     D_shell_m = Math.max(0.15, D_bundle_m + clearance_m);
 
-    // 배플 간격 (0.35 * D_shell 권장)
-    B_spacing_m = Math.max(0.12, Math.min(D_shell_m * 0.8, D_shell_m * 0.40));
+    // 배플 간격 (0.40 * D_shell)
+    B_spacing_m = Math.max(0.12, Math.min(D_shell_m * 0.85, D_shell_m * 0.40));
     N_baffles = Math.max(2, Math.floor(L_m / B_spacing_m) - 1);
 
-    // 튜브측 유속 및 열전달계수 hi (Dittus-Boelter)
-    const N_per_pass = N_tubes / nPasses;
-    const At_flow = N_per_pass * (Math.PI * di_m * di_m / 4);
-    const Vol_tube_m3s = (m_tube_kgh / 3600) / Math.max(0.1, tubeFluid.rho_kgm3);
-    vt = Math.max(0.15, Vol_tube_m3s / Math.max(1e-5, At_flow));
-    const mu_t_Pas = Math.max(1e-6, tubeFluid.mu_mPas * 1e-3);
-    Ret = (tubeFluid.rho_kgm3 * vt * di_m) / mu_t_Pas;
-    const Prt = Math.max(0.6, (tubeFluid.cp_kJkgK * 1000 * mu_t_Pas) / Math.max(0.005, tubeFluid.k_WmK));
-    const Nut = Ret > 2300
-      ? 0.023 * Math.pow(Ret, 0.8) * Math.pow(Prt, 0.4)
-      : 3.66 + (0.0668 * (di_m / L_m) * Ret * Prt) / (1 + 0.04 * Math.pow((di_m / L_m) * Ret * Prt, 2 / 3));
-    hi = Math.max(80, (Nut * tubeFluid.k_WmK) / di_m);
+    finalGeom = {
+      shellIdM: D_shell_m,
+      tubeOdM: do_m,
+      tubeIdM: di_m,
+      tubePitchM: pt_m,
+      layoutDeg,
+      tubeCount: N_tubes,
+      tubePasses: nPasses,
+      tubeLengthM: L_m,
+      baffleSpacingM: B_spacing_m,
+      baffleCutFrac,
+      sealingStripPairs: 1,
+      baffleCount: N_baffles,
+    };
 
-    // 쉘측 유속 및 열전달계수 ho (Bell-Delaware 보정 포함)
-    const As_cross = D_shell_m * B_spacing_m * ((pt_m - do_m) / pt_m);
-    const Vol_shell_m3s = (m_shell_kgh / 3600) / Math.max(0.1, shellFluid.rho_kgm3);
-    vs = Math.max(0.15, Vol_shell_m3s / Math.max(1e-4, As_cross));
-    const De_m = inp.layoutAngle === 30
-      ? (4 * (0.433 * pt_m * pt_m - 0.125 * Math.PI * do_m * do_m)) / (0.5 * Math.PI * do_m)
-      : (4 * (pt_m * pt_m - 0.25 * Math.PI * do_m * do_m)) / (Math.PI * do_m);
-    const mu_s_Pas = Math.max(1e-6, shellFluid.mu_mPas * 1e-3);
-    Res = (shellFluid.rho_kgm3 * vs * De_m) / mu_s_Pas;
-    const Prs = Math.max(0.6, (shellFluid.cp_kJkgK * 1000 * mu_s_Pas) / Math.max(0.005, shellFluid.k_WmK));
+    const currentAreaM2 = Math.max(0.5, N_tubes * areaPerTube * nShell);
+    const qFluxWm2 = (Q_kW * 1000) / currentAreaM2;
 
-    // Bell-Delaware 보정 인자 (Jc * Jl * Jb * Js ≈ 0.62)
-    const J_bell = Math.max(0.50, Math.min(0.78, 0.65 - Math.abs(inp.baffleCutPct - 25) * 0.004));
-    const ho_sensible = (0.36 * Math.pow(Math.max(10, Res), 0.55) * Math.pow(Prs, 1 / 3) * shellFluid.k_WmK / De_m) * J_bell;
+    // 튜브측 열전달 & 차압 (Gnielinski/Churchill 또는 Gungor-Winterton/Friedel)
+    if (tubeFluid.phase === 'boiling') {
+      const nPerPass = N_tubes / nPasses;
+      const G_t = tpTube.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * di_m * di_m);
+      hi = Math.max(150, gungorWintertonBoilingH(tpTube, G_t, di_m, 0.45, qFluxWm2));
+      const tdp = tubeSideTwoPhaseDP(finalGeom, tpTube, 0.0, 0.85);
+      dPt_Pa_perShell = tdp.totalPa;
+      vt = G_t / tpTube.rhoL;
+      Ret = (G_t * di_m) / tpTube.muL;
+    } else if (tubeFluid.phase === 'condensing') {
+      const nPerPass = N_tubes / nPasses;
+      const G_t = tpTube.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * di_m * di_m);
+      hi = Math.max(150, shahCondensationH(tpTube, G_t, di_m, 0.5));
+      const tdp = tubeSideTwoPhaseDP(finalGeom, tpTube, 1.0, 0.0);
+      dPt_Pa_perShell = tdp.totalPa;
+      vt = G_t / tpTube.rhoL;
+      Ret = (G_t * di_m) / tpTube.muL;
+    } else {
+      const tRes = tubeSideSinglePhase(finalGeom, flTube);
+      hi = Math.max(80, tRes.h);
+      vt = tRes.velMs;
+      Ret = tRes.Re;
+      dPt_Pa_perShell = tRes.dpTotalPa;
+    }
 
-    // 상변화(스팀 응축 / 습염소·습수소 수분응축) 가중 반영
-    const condFrac = Math.max(0, Math.min(1, inp.hotCondensingFrac ?? 0));
-    const ho_cond = shellFluid.key.startsWith('steam') ? 6500 : 1800;
-    ho = Math.max(60, ho_sensible * (1 - condFrac) + ho_cond * condFrac);
+    // 쉘측 열전달 & 차압 (Taborek 5-factor Bell-Delaware + Shah/Nusselt 응축 / Mostinski 비등)
+    const bd = bellDelawareShellSide(finalGeom, flShell);
+    vs = bd.crossVelMs;
+    Res = bd.Re;
 
-    // 총괄전열계수 U_calc
-    const R_wall = (do_m * Math.log(do_m / di_m)) / (2 * kw);
+    if (hotCondFrac > 0.01) {
+      const ho_cond = shellCondensationH(tpShell, finalGeom);
+      if (shellFluid.phase === 'condensing' && hotCondFrac >= 0.85) {
+        ho = Math.max(150, ho_cond);
+        const sdp = shellSideTwoPhaseDP(finalGeom, tpShell, 1.0, Math.max(0, 1 - hotCondFrac));
+        dPs_Pa_perShell = sdp.dpPa;
+      } else {
+        // 습가스 부분 응축 (Silver-Bell-Ghaly 가중)
+        ho = Math.max(60, bd.h * (1 - hotCondFrac) + ho_cond * hotCondFrac);
+        const sdp = shellSideTwoPhaseDP(finalGeom, tpShell, 1.0, Math.max(0.1, 1 - hotCondFrac));
+        dPs_Pa_perShell = bd.dpTotalPa * (1 - hotCondFrac) + sdp.dpPa * hotCondFrac;
+      }
+    } else if (shellFluid.phase === 'boiling') {
+      ho = Math.max(150, shellBoilingH(tpShell, qFluxWm2));
+      const sdp = shellSideTwoPhaseDP(finalGeom, tpShell, 0.0, 0.85);
+      dPs_Pa_perShell = sdp.dpPa;
+    } else {
+      ho = Math.max(60, bd.h);
+      dPs_Pa_perShell = bd.dpTotalPa;
+    }
+
     const invU = (1 / ho) + inp.rfs + R_wall + inp.rft * (do_m / di_m) + (do_m / (di_m * hi));
-    U_calc = 1 / Math.max(1e-5, invU);
+    const U_new = 1 / Math.max(1e-5, invU);
+    U_calc = iter === 0 ? U_new : 0.35 * U_calc + 0.65 * U_new;
   }
 
   const A_req_m2 = (Q_kW * 1000) / Math.max(10, U_calc * CMTD_C);
-  const A_prov_m2 = N_tubes * Math.PI * do_m * L_m * Math.max(1, inp.n_shell);
+  const A_prov_m2 = N_tubes * Math.PI * do_m * L_m * nShell;
   const U_req_Wm2K = (Q_kW * 1000) / Math.max(0.1, A_prov_m2 * CMTD_C);
   const overdesign_pct = ((A_prov_m2 - A_req_m2) / Math.max(0.01, A_req_m2)) * 100;
 
-  // 차압 계산 (관측 / 쉘측)
-  const ft_darcy = Ret > 2300 ? Math.pow(0.79 * Math.log(Ret) - 1.64, -2) : 64 / Math.max(1, Ret);
-  const dPt_Pa = nPasses * (ft_darcy * (L_m / di_m) + 4) * 0.5 * tubeFluid.rho_kgm3 * vt * vt * inp.n_shell;
-  dPt_bar = Math.min(2.5, dPt_Pa / 1e5);
+  const dPt_bar = Math.min(2.5, (dPt_Pa_perShell * nShell) / 1e5);
+  const dPs_bar = Math.min(2.5, (dPs_Pa_perShell * nShell) / 1e5);
 
-  const fs_kern = Math.exp(0.576 - 0.19 * Math.log(Math.max(10, Res)));
-  const dPs_Pa = fs_kern * (D_shell_m / Math.max(0.008, do_m * 0.25)) * (N_baffles + 1) * 0.5 * shellFluid.rho_kgm3 * vs * vs * inp.n_shell;
-  dPs_bar = Math.min(2.5, dPs_Pa / 1e5);
-
-  // 유체유발진동(FIV) 검토
-  const f_vs_Hz = (0.20 * vs) / do_m;
-  const f_nat_Hz = 45.0 / Math.pow(Math.max(0.3, B_spacing_m), 1.6);
-  const vibRatio = f_vs_Hz / Math.max(1, f_nat_Hz);
+  // 유체유발진동(FIV) 검토 (TEMA RCB-4.6 + Connors Fluidelastic Instability)
+  const vibRes = temaVibrationCheck({
+    g: finalGeom,
+    crossVelMs: vs,
+    shellRho: Math.max(0.25, shellFluid.rho_kgm3),
+    tubeRhoInside: Math.max(0.25, tubeFluid.rho_kgm3),
+    shellPhase: shellFluid.phase === 'G' ? 'gas' : shellFluid.phase === 'L' ? 'liquid' : 'twophase',
+    soundSpeedMs: shellFluid.phase === 'G' ? 320 : undefined,
+  });
+  const f_vs_Hz = vibRes.vortexFreqHz;
+  const f_nat_Hz = vibRes.naturalFreqHz;
+  const vibRatio = Math.max(vibRes.vortexRatio, vibRes.fluidelasticRatio);
 
   const warnings: string[] = [];
   if (Th_in <= Tc_out || Th_out <= Tc_in) {
@@ -331,7 +458,9 @@ export function calcHeatExchanger(inp: HXDesignInputs): HXDesignResults {
     warnings.push(`쉘측 차압(${dPs_bar.toFixed(2)} bar)이 높습니다. 배플 간격을 넓히세요.`);
   }
   if (vibRatio > 0.80) {
-    warnings.push(`와류 진동비(f_vs/f_nat = ${vibRatio.toFixed(2)})가 0.80을 초과하여 배플 보강이 필요합니다.`);
+    warnings.push(
+      `유체유발진동(FIV) 비율(${vibRatio.toFixed(2)}, 와류=${vibRes.vortexRatio.toFixed(2)}, 유체탄성=${vibRes.fluidelasticRatio.toFixed(2)})이 0.80을 초과하여 배플 보강이 필요합니다.`,
+    );
   }
 
   return {
