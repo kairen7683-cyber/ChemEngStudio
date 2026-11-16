@@ -303,7 +303,7 @@ export default function DistillationWorkbenchModal({
   const N =
     calcMode === 'design_stages' && result?.totalStagesUsed
       ? result.totalStagesUsed
-      : Math.max(4, Math.min(115, Math.round(config.totalStages ?? 24)));
+      : Math.max(4, Math.min(200, Math.round(config.totalStages ?? 24)));
   const primaryFeedStage =
     calcMode === 'design_stages' && result?.feedStageUsed
       ? result.feedStageUsed
@@ -2065,11 +2065,11 @@ export default function DistillationWorkbenchModal({
                       <BufferedNumberInput
                         syncKey={`${unitTag}-nstages`}
                         min={4}
-                        max={115}
+                        max={200}
                         step={1}
                         value={N}
                         onValueChange={(rawN) => {
-                          const nextN = Math.max(4, Math.min(115, Math.round(rawN || 24)));
+                          const nextN = Math.max(4, Math.min(200, Math.round(rawN || 24)));
                           onChangeConfig({
                             totalStages: nextN,
                             feedStage: Math.min(nextN - 1, Math.max(2, primaryFeedStage)),

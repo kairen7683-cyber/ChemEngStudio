@@ -36,7 +36,7 @@ import {
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
-const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v1';
+const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
 
 type RatingHealth = 'ok' | 'warning' | 'critical' | 'passive';

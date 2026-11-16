@@ -1244,7 +1244,7 @@ function solveInnerMeshColumn(params: {
   let iterUsed = 0;
   let prevMaxDeltaT = 999;
   let dampFactor = 1.0;
-  const maxMeshIter = params.maxIterations ?? (condenserType === 'decanter_ech' ? 300 : 245);
+  const maxMeshIter = params.maxIterations ?? Math.max(condenserType === 'decanter_ech' ? 300 : 245, Math.min(480, Math.round(180 + N * 2.2)));
 
   // 반복 루프 무할당(Zero-Allocation) 작업 버퍼
   const prevRawDt = new Float64Array(N);
@@ -1488,8 +1488,9 @@ function solveInnerMeshColumn(params: {
     let maxDeltaT = 0;
     let maxDeltaX = 0;
 
-    const baseWX = iter > 90 ? 0.12 : iter > 45 ? 0.2 : iter > 25 ? 0.35 : 0.6;
-    const baseWT = iter > 90 ? 0.1 : iter > 45 ? 0.18 : iter > 25 ? 0.3 : 0.5;
+    const annScale = N > 45 ? Math.min(2.0, N / 40) : 1.0;
+    const baseWX = iter > 90 * annScale ? 0.12 : iter > 45 * annScale ? 0.2 : iter > 25 * annScale ? 0.35 : 0.6;
+    const baseWT = iter > 90 * annScale ? 0.1 : iter > 45 * annScale ? 0.18 : iter > 25 * annScale ? 0.3 : 0.5;
     const wX = Math.max(0.04, baseWX * dampFactor);
     const wT = Math.max(0.03, baseWT * dampFactor);
     const maxStageStepC = iter > 30 ? 5.0 : 10.0;
@@ -1602,7 +1603,7 @@ function solveInnerMeshColumn(params: {
       }
 
       const qTopFlux = V[1] * hVapTilde[1] - L[0] * hLiqTilde[0];
-      const baseWV = iter > 90 ? 0.05 : iter >= 45 ? 0.09 : 0.34;
+      const baseWV = iter > 90 * annScale ? 0.05 : iter >= 45 * annScale ? 0.09 : 0.34;
       const wV = Math.max(0.02, baseWV * dampFactor);
       const vUpperCap = 5.0 * Math.max(V[1], totalMolesIn);
 
@@ -3048,7 +3049,7 @@ function solveRigorousDistillationUncached(
     ? [...feedsInput, ...colParams.secondaryFeeds]
     : feedsInput;
 
-  let N = clamp(Math.round(colParams.totalStages ?? 24), isOpenOrSemiOpen ? 1 : 4, 120);
+  let N = clamp(Math.round(colParams.totalStages ?? 24), isOpenOrSemiOpen ? 1 : 4, 200);
   let defaultFeedStage = isOpenOrSemiOpen
     ? clamp(Math.round(colParams.feedStage ?? 1), 1, N)
     : clamp(Math.round(colParams.feedStage ?? Math.round(N / 2)), 2, N - 1);
@@ -3631,6 +3632,7 @@ function solveRigorousDistillationUncached(
       evals: ev,
     });
 
+    const effErr = (absF: number, s: InnerMeshSolution): number => (s.converged ? absF : absF + 50.0);
     let seedBest: { x: number; sol: InnerMeshSolution; err: number; evals: number } | null = null;
     if (isDfVary && (spec.metric === 'purity_wt_pct' || (spec.metric === 'recovery_pct' && spec.streamTarget === 'distillate'))) {
       const compMass = totalFeedKgH[spec.component] || 0;
@@ -3639,8 +3641,15 @@ function solveRigorousDistillationUncached(
       let dfGuess = fixedDF;
       if (spec.metric === 'recovery_pct') {
         const recFrac = clamp(spec.targetValue / 100.0, 1e-4, 0.9999);
+        const kTarget = K_quick[spec.component] || 1.0;
+        let lighterMol = 0;
+        for (const c of activeComps) {
+          if (c !== spec.component && (K_quick[c] || 0) > kTarget * 1.15) {
+            lighterMol += totalFeedMol[c] || 0;
+          }
+        }
         const dMassEst = compMass * recFrac;
-        dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
+        dfGuess = (lighterMol + dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
       } else {
         const wTgt = clamp(spec.targetValue / 100.0, 1e-5, 0.99999);
         const otherMass = Math.max(0, totalFeedMassKgH - compMass);
@@ -3659,18 +3668,25 @@ function solveRigorousDistillationUncached(
           dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
         }
       }
-      const fastAcceptTol = spec.metric === 'recovery_pct' ? 0.04 : 2e-3;
+      const remImp = Math.max(1e-4, 100 - spec.targetValue);
+      const fastAcceptTol = spec.metric === 'recovery_pct' ? 0.04 : Math.min(2e-3, remImp * 0.15);
       const xG = clamp(dfGuess, lo, hi);
       const solG = evalAt(xG);
       const fG = evalSpecMetric(spec, solG, totalFeedKgH) - spec.targetValue;
-      if (Math.abs(fG) <= fastAcceptTol && solG.converged) {
+      const stoichRecOk =
+        spec.streamTarget === 'distillate' &&
+        ((spec.metric === 'purity_wt_pct' &&
+          compMass > 1e-6 &&
+          (solG.distillateKgH[spec.component] || 0) / compMass >= 0.9985) ||
+          spec.metric === 'recovery_pct');
+      if (solG.converged && (Math.abs(fG) <= fastAcceptTol || (stoichRecOk && fG >= -fastAcceptTol))) {
         return finalizeVary(xG, solG, 1);
       }
       let xPrevS = xG;
       let fPrevS = fG;
       let bestXS = xG;
       let bestSolS = solG;
-      let bestErrS = Math.abs(fG);
+      let bestErrS = effErr(Math.abs(fG), solG);
       let bLo: number | null = null, fBLo = 0;
       let bHi: number | null = null, fBHi = 0;
       if (fG < 0) { bLo = xG; fBLo = fG; } else { bHi = xG; fBHi = fG; }
@@ -3684,8 +3700,9 @@ function solveRigorousDistillationUncached(
         const solC = evalAt(xCurrS);
         usedEv++;
         const fC = evalSpecMetric(spec, solC, totalFeedKgH) - spec.targetValue;
-        if (Math.abs(fC) < bestErrS) {
-          bestErrS = Math.abs(fC);
+        const errC = effErr(Math.abs(fC), solC);
+        if (errC < bestErrS) {
+          bestErrS = errC;
           bestXS = xCurrS;
           bestSolS = solC;
         }
@@ -3718,7 +3735,7 @@ function solveRigorousDistillationUncached(
         fPrevS = fC;
         xCurrS = nextClamped;
       }
-      const seedAcceptTol = spec.metric === 'recovery_pct' ? 0.12 : 0.025;
+      const seedAcceptTol = spec.metric === 'recovery_pct' ? 0.12 : Math.min(0.025, remImp * 0.35);
       if (bestErrS <= seedAcceptTol && bestSolS.converged) {
         return finalizeVary(bestXS, bestSolS, usedEv);
       }
@@ -3738,9 +3755,11 @@ function solveRigorousDistillationUncached(
       return { bestParam: x0, sol: sol0, evals };
     }
 
-    let bestX = Math.abs(f0) <= Math.abs(f1) ? x0 : x1;
-    let bestSol = Math.abs(f0) <= Math.abs(f1) ? sol0 : sol1;
-    let bestErr = Math.min(Math.abs(f0), Math.abs(f1));
+    const err0 = effErr(Math.abs(f0), sol0);
+    const err1 = effErr(Math.abs(f1), sol1);
+    let bestX = err0 <= err1 ? x0 : x1;
+    let bestSol = err0 <= err1 ? sol0 : sol1;
+    let bestErr = Math.min(err0, err1);
     if (seedBest && seedBest.err < bestErr) {
       bestX = seedBest.x;
       bestSol = seedBest.sol;
@@ -3757,12 +3776,19 @@ function solveRigorousDistillationUncached(
         const solC = evalAt(c);
         evals++;
         const fc = evalSpecMetric(spec, solC, totalFeedKgH) - spec.targetValue;
-        if (Math.abs(fc) < bestErr) {
-          bestErr = Math.abs(fc);
+        const errBis = effErr(Math.abs(fc), solC);
+        if (errBis < bestErr) {
+          bestErr = errBis;
           bestX = c;
           bestSol = solC;
         }
-        const tol = spec.metric === 'impurity_wt_ppm' ? Math.max(0.05, spec.targetValue * 1e-4) : 2e-3;
+        const remImpBis = Math.max(1e-4, 100 - spec.targetValue);
+        const tol =
+          spec.metric === 'impurity_wt_ppm'
+            ? Math.max(0.05, spec.targetValue * 1e-4)
+            : spec.metric === 'recovery_pct'
+              ? Math.min(0.04, remImpBis * 0.4)
+              : Math.min(2e-3, remImpBis * 0.15);
         if (Math.abs(fc) <= tol || Math.abs(b - a) < 5e-6) break;
         if (fa * fc <= 0) {
           b = c;
@@ -4647,13 +4673,17 @@ function solveRigorousDistillationUncached(
   const makeSpecStatus = (spec: DistillDesignSpec | undefined): DistillSpecStatus | undefined => {
     if (!spec) return undefined;
     const actual = evalSpecMetric(spec, finalSol, totalFeedKgH);
-    const tol = spec.metric === 'impurity_wt_ppm' ? Math.max(2.0, spec.targetValue * 0.03) : 0.15;
+    const tol =
+      spec.metric === 'impurity_wt_ppm'
+        ? Math.max(2.0, spec.targetValue * 0.03)
+        : Math.min(0.15, Math.max(0.0025, (100 - spec.targetValue) * 0.5));
     const met =
       spec.metric === 'impurity_wt_ppm'
         ? actual <= spec.targetValue + tol
-        : Math.abs(actual - spec.targetValue) <= tol;
+        : actual >= spec.targetValue - tol;
     const pSolved = spec.varyParam === 'd_over_f' ? finalSol.actualDOverFMass : finalSol.actualRefluxRatio;
     const unitStr = spec.metric === 'impurity_wt_ppm' ? 'wt ppm' : '%';
+    const decDigits = spec.metric === 'impurity_wt_ppm' ? 1 : spec.targetValue >= 99.95 ? 3 : 2;
     return {
       enabled: true,
       target: spec.targetValue,
@@ -4661,7 +4691,7 @@ function solveRigorousDistillationUncached(
       met,
       variedParam: spec.varyParam,
       solvedParamValue: pSolved,
-      summary: `${met ? '달성' : '근접'}: ${actual.toFixed(spec.metric === 'impurity_wt_ppm' ? 1 : 2)} ${unitStr} (${spec.varyParam === 'd_over_f' ? `D/F=${pSolved.toFixed(3)}` : `RR=${pSolved.toFixed(2)}`})`,
+      summary: `${met ? '달성' : '근접'}: ${actual.toFixed(decDigits)} ${unitStr} (${spec.varyParam === 'd_over_f' ? `D/F=${pSolved.toFixed(3)}` : `RR=${pSolved.toFixed(2)}`})`,
     };
   };
 
@@ -5017,7 +5047,7 @@ export interface RigorousAbsorberInput {
  * - 액상 흡수제(liquidSolvent)는 최상단 Stage 1에, 기상 원료/탈기가스(gasFeed)는 최하단 Stage N에 자동 배정
  */
 export function solveRigorousAbsorberStripper(input: RigorousAbsorberInput): DistillSolveResult {
-  const stages = clamp(Math.round(input.stages || 8), 1, 120);
+  const stages = clamp(Math.round(input.stages || 8), 1, 200);
   const stageDeltaP = Math.max(0, input.stageDeltaPKgcm2 ?? 0.003);
   const hasReboilerDuty =
     typeof input.reboilerDutyKcalH === 'number' &&

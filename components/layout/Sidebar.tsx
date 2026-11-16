@@ -18,7 +18,7 @@ import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHier
 
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
-const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v1';
+const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
 
 interface NavMenuItem {
   key: string;
@@ -86,7 +86,7 @@ const PLANT04_ECH_SHEETS = [
 const CMS_SUB_MENUS: NavMenuItem[] = [
   { key: 'pfd',        label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
   { key: 'cms_hub',    label: 'CMS 핵심장치 내장설계',          badge: 'RXN/COL' },
-  { key: 'packing',    label: 'C-201~302 증류·탈거탑 설계',     badge: 'COL' },
+  { key: 'packing',    label: 'C-201~302 5탑 증류·탈거 설계',    badge: 'COL' },
   { key: 'chempro',    label: '기화기·냉각기·펌프 상세설계',    badge: 'HX/PMP' },
   { key: 'compressor', label: '공정가스 압축기 상세설계',       badge: 'COMP' },
   { key: 'equip',      label: 'CMS 전공정 기기목록 & 시트',     badge: 'LIST' },
@@ -94,10 +94,10 @@ const CMS_SUB_MENUS: NavMenuItem[] = [
 ];
 
 const CMS_SHEETS = [
-  { sheetId: 'master',            label: '통합 마스터 도면 (100~300)',       badge: 'ALL' },
-  { sheetId: 'sub_cms_100_rxn',   label: '100 Cl₂ 기화 · R-101 AIBN 반응',   badge: '100' },
-  { sheetId: 'sub_cms_200_rec',   label: '200 무수 HCl 탈거 · MC 순환회수',  badge: '200' },
-  { sheetId: 'sub_cms_300_purif', label: '300 MCL 120 · CFM 80 정제 & CTC', badge: '300' },
+  { sheetId: 'master',            label: '통합 마스터 도면 (100~300)',            badge: 'ALL' },
+  { sheetId: 'sub_cms_100_rxn',   label: '100 Cl₂ 기화 · R-101 AIBN 반응',        badge: '100' },
+  { sheetId: 'sub_cms_200_rec',   label: '200 HCl(60단)·MC(50단)·Azeo(30단)',     badge: '200' },
+  { sheetId: 'sub_cms_300_purif', label: '300 MCL(80단)·CFM(120단) 정제',         badge: '300' },
 ];
 
 /** 비-PFD 화면(장치목록 등)에서 PLANT 01(전해) 사이드바 운전변수 조절 시 저장소 즉시 동기화 */
@@ -933,13 +933,13 @@ export default function Sidebar() {
         <SummaryCard
           label="MCL (메틸렌클로라이드)"
           main={`${cmsPlantSummary.mclProdTonDay.toFixed(1)} ton/일`}
-          sub={`${cmsPlantSummary.mclProdKgH.toFixed(0)} kg/h · C-301 정제 (99.9%)`}
+          sub={`${cmsPlantSummary.mclProdKgH.toFixed(0)} kg/h · C-301 80단 정제 (99.99%)`}
           highlight
         />
         <SummaryCard
           label="CFM (클로로포름)"
           main={`${cmsPlantSummary.cfmProdTonDay.toFixed(1)} ton/일`}
-          sub={`${cmsPlantSummary.cfmProdKgH.toFixed(0)} kg/h · C-302 정제 (99.9%)`}
+          sub={`${cmsPlantSummary.cfmProdKgH.toFixed(0)} kg/h · C-302 120단 정제 (99.99%)`}
           highlight
         />
         <SummaryCard

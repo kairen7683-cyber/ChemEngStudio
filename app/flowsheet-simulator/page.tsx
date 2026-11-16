@@ -98,8 +98,8 @@ const PLANT03_AUTO_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT03_SLOTS_SAVE_KEY = 'chemplant-plant03-hcl1a-slots-v1';
 const PLANT04_AUTO_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT04_SLOTS_SAVE_KEY = 'chemplant-plant04-ech-slots-v1';
-const PLANT05_AUTO_SAVE_KEY = 'chemplant-plant05-cms-v1';
-const PLANT05_SLOTS_KEY = 'chemplant-plant05-cms-slots-v1';
+const PLANT05_AUTO_SAVE_KEY = 'chemplant-plant05-cms-v2';
+const PLANT05_SLOTS_KEY = 'chemplant-plant05-cms-slots-v2';
 const BUILDER_AUTO_SAVE_KEY = 'chemplant-newplant-builder-v1';
 const BUILDER_SLOTS_SAVE_KEY = 'chemplant-newplant-builder-slots-v1';
 
@@ -9020,7 +9020,7 @@ export function FlowsheetWorkspace({
         if (!modalDef || modalDef.unitType !== 'distillation') return null;
         const modalRes = unitResultMap.get(modalDef.id)?.distillResult;
         const modalCfg: DistillColumnParams = modalDef.params.distillConfig ?? {};
-        const nSt = Math.max(4, Math.min(120, Math.round(modalCfg.totalStages ?? 24)));
+        const nSt = Math.max(4, Math.min(200, Math.round(modalCfg.totalStages ?? 24)));
         const defFeedSt = Math.max(2, Math.min(nSt - 1, Math.round(modalCfg.feedStage ?? Math.round(nSt * 0.5))));
         const modalFeeds: DistillFeedInput[] = flowEdges
           .filter(e => e.target === modalDef.id)

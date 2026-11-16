@@ -1044,7 +1044,7 @@ export function solveDistillationColumn(
   let Qr_kW = (V_strip * hv_kJmol * 1000.0) / 3600.0;
 
   // 2. Rigorous Mode: Stage-by-Stage Binary NRTL MESH Solver
-  const N_eq_mesh = Math.max(4, Math.min(120, Math.round(N_theo)));
+  const N_eq_mesh = Math.max(4, Math.min(200, Math.round(N_theo)));
   const feedIdx_mesh = clampNum(Math.round(N_rect_theo), 1, N_eq_mesh - 1);
   const dP_est_bar = internals === 'packed' ? 0.025 : Math.min(0.45, N_actual * 0.006);
 

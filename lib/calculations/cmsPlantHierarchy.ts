@@ -1,12 +1,13 @@
 // ============================================================================
-// PLANT 04 — 클로로메탄 (CMS: MC → MCL · CFM · CTC) 4-Sheet 계층형 공정 시트
+// PLANT 04 — 클로로메탄 (CMS: MC → MCL · CFM · CTC) 4-Sheet 5탑 상용 계층 공정
 // ============================================================================
 // Master : 액화염소 기화(E-101) → MC 액상 자유라디칼 염소화(R-101) → 냉각(E-102)
-//          → 고압 무수염산 스트리퍼(C-201) → 미반응 MC 순환탑(C-202, NO MCL 재순환)
-//          → 순환 펌프(P-202) → MCL 정제탑(C-301) → CFM/CTC 분리탑(C-302)
+//          → HCl 탈기탑(C-201, 60단) → MC 순환탑(C-202, 50단, NO MCL 재순환)
+//          → 순환 펌프(P-202) → Azeo 공비·경질 분리탑(C-203, 30단)
+//          → MCL 정제탑(C-301, 80단, 99.99%) → CFM/CTC 분리탑(C-302, 120단, 99.99%)
 // Sub 100: 염소 기화 · 자유라디칼 반응 섹션 (sub_cms_100_rxn)
-// Sub 200: 고압 무수염산 · 미반응 MC 순환 회수 섹션 (sub_cms_200_rec)
-// Sub 300: MCL · CFM 고순도 정제 및 헤비 폐기 섹션 (sub_cms_300_purif)
+// Sub 200: HCl(60단) · MC(50단) 순환 · Azeo(30단) 분리 섹션 (sub_cms_200_rec)
+// Sub 300: MCL(80단) · CFM(120단) 고순도 정제 및 헤비 폐기 섹션 (sub_cms_300_purif)
 // ============================================================================
 
 import {
@@ -71,18 +72,19 @@ export const CMS_REACTOR_CONFIG: ReactorConfig = {
   ],
 };
 
-// ── 증류탑 공통 엄밀 설계 사양 (C-201 / C-202 / C-301 / C-302) ──
+// ── 증류탑 공통 엄밀 설계 사양 (C-201 60단 · C-202 50단 · C-203 30단 · C-301 80단 · C-302 120단 실제 트레이 기준) ──
 const C201_DISTILL_CONFIG = {
   thermoModel: 'PENG_ROB' as const,
+  stageInputBasis: 'actual_murphree' as const,
   condenserType: 'partial' as const,
   reboilerType: 'thermosyphon' as const,
-  totalStages: 24,
-  feedStage: 10,
+  totalStages: 62,
+  feedStage: 26,
   topPressKgcm2g: 17.5,
-  stageDeltaPKgcm2: 0.022,
-  murphreeEffPct: 80,
+  stageDeltaPKgcm2: 0.008,
+  murphreeEffPct: 68,
   topSpecType: 'reflux_ratio' as const,
-  topSpecValue: 2.8,
+  topSpecValue: 3.2,
   splitSpecType: 'd_over_f_mole' as const,
   splitSpecValue: 0.323,
   spec1: {
@@ -90,24 +92,25 @@ const C201_DISTILL_CONFIG = {
     streamTarget: 'distillate' as const,
     component: 'HCl' as const,
     metric: 'recovery_pct' as const,
-    targetValue: 99.85,
+    targetValue: 99.99,
     varyParam: 'd_over_f' as const,
-    varyMin: 0.15,
-    varyMax: 0.62,
+    varyMin: 0.25,
+    varyMax: 0.42,
   },
 };
 
 const C202_DISTILL_CONFIG = {
   thermoModel: 'PENG_ROB' as const,
+  stageInputBasis: 'actual_murphree' as const,
   condenserType: 'total' as const,
   reboilerType: 'thermosyphon' as const,
-  totalStages: 28,
-  feedStage: 13,
+  totalStages: 52,
+  feedStage: 22,
   topPressKgcm2g: 6.5,
-  stageDeltaPKgcm2: 0.019,
-  murphreeEffPct: 80,
+  stageDeltaPKgcm2: 0.010,
+  murphreeEffPct: 68,
   topSpecType: 'reflux_ratio' as const,
-  topSpecValue: 2.8,
+  topSpecValue: 3.0,
   splitSpecType: 'd_over_f_mole' as const,
   splitSpecValue: 0.65,
   spec1: {
@@ -115,49 +118,67 @@ const C202_DISTILL_CONFIG = {
     streamTarget: 'distillate' as const,
     component: 'CH3Cl' as const,
     metric: 'recovery_pct' as const,
-    targetValue: 99.90,
+    targetValue: 99.98,
     varyParam: 'd_over_f' as const,
-    varyMin: 0.02,
-    varyMax: 0.78,
+    varyMin: 0.55,
+    varyMax: 0.72,
   },
+};
+
+const C203_DISTILL_CONFIG = {
+  thermoModel: 'NRTL' as const,
+  stageInputBasis: 'actual_murphree' as const,
+  condenserType: 'total' as const,
+  reboilerType: 'thermosyphon' as const,
+  totalStages: 32,
+  feedStage: 6,
+  topPressKgcm2g: 0.6,
+  stageDeltaPKgcm2: 0.006,
+  murphreeEffPct: 68,
+  topSpecType: 'reflux_ratio' as const,
+  topSpecValue: 20.0,
+  splitSpecType: 'd_over_f_mole' as const,
+  splitSpecValue: 0.008,
 };
 
 const C301_DISTILL_CONFIG = {
   thermoModel: 'NRTL' as const,
+  stageInputBasis: 'actual_murphree' as const,
   condenserType: 'total' as const,
   reboilerType: 'thermosyphon' as const,
-  totalStages: 34,
-  feedStage: 17,
+  totalStages: 82,
+  feedStage: 40,
   topPressKgcm2g: 0.8,
-  stageDeltaPKgcm2: 0.006,
-  murphreeEffPct: 80,
+  stageDeltaPKgcm2: 0.005,
+  murphreeEffPct: 68,
   topSpecType: 'reflux_ratio' as const,
-  topSpecValue: 3.2,
+  topSpecValue: 3.8,
   splitSpecType: 'd_over_f_mole' as const,
-  splitSpecValue: 0.640,
+  splitSpecValue: 0.638,
   spec1: {
     enabled: true,
     streamTarget: 'distillate' as const,
     component: 'CH2Cl2' as const,
     metric: 'purity_wt_pct' as const,
-    targetValue: 99.85,
+    targetValue: 99.99,
     varyParam: 'd_over_f' as const,
-    varyMin: 0.61,
-    varyMax: 0.68,
+    varyMin: 0.620,
+    varyMax: 0.652,
   },
 };
 
 const C302_DISTILL_CONFIG = {
   thermoModel: 'NRTL' as const,
+  stageInputBasis: 'actual_murphree' as const,
   condenserType: 'total' as const,
   reboilerType: 'thermosyphon' as const,
-  totalStages: 38,
-  feedStage: 18,
+  totalStages: 122,
+  feedStage: 55,
   topPressKgcm2g: 0.3,
-  stageDeltaPKgcm2: 0.010,
-  murphreeEffPct: 80,
+  stageDeltaPKgcm2: 0.0045,
+  murphreeEffPct: 68,
   topSpecType: 'reflux_ratio' as const,
-  topSpecValue: 4.8,
+  topSpecValue: 4.0,
   splitSpecType: 'd_over_f_mole' as const,
   splitSpecValue: 0.854,
   spec1: {
@@ -165,10 +186,10 @@ const C302_DISTILL_CONFIG = {
     streamTarget: 'distillate' as const,
     component: 'CHCl3' as const,
     metric: 'purity_wt_pct' as const,
-    targetValue: 99.85,
+    targetValue: 99.99,
     varyParam: 'd_over_f' as const,
-    varyMin: 0.835,
-    varyMax: 0.885,
+    varyMin: 0.840,
+    varyMax: 0.856,
   },
 };
 
@@ -179,9 +200,9 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
   id: 'master',
   sectionCode: 'MASTER',
   shortTabLabel: 'CMS 전공정 마스터',
-  title: 'PLANT 04 · 클로로메탄(CMS) 통합 공정 마스터 (Cl₂ 220 · MCL 120 · CFM 80 T/D)',
+  title: 'PLANT 04 · 클로로메탄(CMS) 상용 5탑 공정 마스터 (Cl₂ 220 · MCL 120 · CFM 80 T/D)',
   subtitle:
-    '액화염소 기화(E-101) → AIBN 개시 액상 염소화(R-101) → 고압 HCl 탈기(C-201) → MC 전용 순환(C-202/P-202) → MCL·CFM 정제(C-301/C-302)',
+    '액화염소 기화(E-101) → AIBN 염소화(R-101) → HCl 탈기(C-201 60단) → MC 순환(C-202 50단) → Azeo 분리(C-203 30단) → MCL(C-301 80단)·CFM(C-302 120단) 99.99%',
   parentMasterNodeIds: [],
   nodes: [
     {
@@ -220,7 +241,7 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
       params: {
         feedTempC: 35.0,
         feedPressKgcm2g: 25.0,
-        feedFlowsKgH: emptySimFlows({ CH3Cl: 4620.0 }),
+        feedFlowsKgH: emptySimFlows({ CH3Cl: 4620.0, H2O: 0.25 }),
       },
     },
     {
@@ -232,7 +253,7 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
       params: {
         feedTempC: 25.0,
         feedPressKgcm2g: 25.0,
-        feedFlowsKgH: emptySimFlows({ CH2Cl2: 48.0, N2: 0.6, C2Cl4: 3.4 }),
+        feedFlowsKgH: emptySimFlows({ CH2Cl2: 105.0, N2: 0.6, C2Cl4: 3.4 }),
       },
     },
     {
@@ -277,7 +298,7 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms_m_c201',
       tag: 'C-201',
-      name: '고압 무수염산(HCl) 스트리퍼',
+      name: '고압 무수염산(HCl) 스트리퍼 (60단)',
       unitType: 'distillation',
       subSheetId: 'sub_cms_200_rec',
       subSheetBadge: '200 SEC',
@@ -298,7 +319,7 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms_m_c202',
       tag: 'C-202',
-      name: '미반응 MC 순환 분리탑',
+      name: '미반응 MC 순환 분리탑 (50단)',
       unitType: 'distillation',
       subSheetId: 'sub_cms_200_rec',
       subSheetBadge: '200 SEC',
@@ -322,13 +343,34 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
       },
     },
     {
+      id: 'cms_m_c203',
+      tag: 'C-203',
+      name: 'Azeo 공비·경질 분리탑 (30단)',
+      unitType: 'distillation',
+      subSheetId: 'sub_cms_200_rec',
+      subSheetBadge: '200 SEC',
+      position: { x: 1560, y: 290 },
+      params: {
+        calcMode: 'rigorous',
+        distillConfig: structuredClone(C203_DISTILL_CONFIG),
+      },
+    },
+    {
+      id: 'cms_m_azeo',
+      tag: 'OUT-AZEO-PURGE',
+      name: '공비·경질 불순물 퍼지',
+      unitType: 'product',
+      position: { x: 1790, y: 110 },
+      params: {},
+    },
+    {
       id: 'cms_m_c301',
       tag: 'C-301',
-      name: '메틸렌클로라이드(MCL) 고순도 정제탑',
+      name: '메틸렌클로라이드(MCL) 고순도 정제탑 (80단 · 99.99%)',
       unitType: 'distillation',
       subSheetId: 'sub_cms_300_purif',
       subSheetBadge: '300 SEC',
-      position: { x: 1560, y: 300 },
+      position: { x: 1800, y: 310 },
       params: {
         calcMode: 'rigorous',
         distillConfig: structuredClone(C301_DISTILL_CONFIG),
@@ -337,19 +379,19 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms_m_mcl',
       tag: 'PROD-MCL',
-      name: '고순도 디클로로메탄 제품 (CH₂Cl₂ ≥99.8% · 120 T/D)',
+      name: '고순도 디클로로메탄 제품 (CH₂Cl₂ ≥99.99% · 120 T/D)',
       unitType: 'product',
-      position: { x: 1800, y: 170 },
+      position: { x: 2040, y: 170 },
       params: {},
     },
     {
       id: 'cms_m_c302',
       tag: 'C-302',
-      name: '클로로포름(CFM) 정제 및 CTC 분리탑',
+      name: '클로로포름(CFM) 정제 및 CTC 분리탑 (120단 · 99.99%)',
       unitType: 'distillation',
       subSheetId: 'sub_cms_300_purif',
       subSheetBadge: '300 SEC',
-      position: { x: 1800, y: 380 },
+      position: { x: 2040, y: 390 },
       params: {
         calcMode: 'rigorous',
         distillConfig: structuredClone(C302_DISTILL_CONFIG),
@@ -358,9 +400,9 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms_m_cfm',
       tag: 'PROD-CFM',
-      name: '고순도 클로로포름 제품 (CHCl₃ ≥99.8% · 80 T/D)',
+      name: '고순도 클로로포름 제품 (CHCl₃ ≥99.99% · 80 T/D)',
       unitType: 'product',
-      position: { x: 2040, y: 270 },
+      position: { x: 2280, y: 270 },
       params: {},
     },
     {
@@ -368,7 +410,7 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
       tag: 'OUT-CTC-WASTE',
       name: '잔류 CTC·헤비물질 폐기',
       unitType: 'product',
-      position: { x: 2040, y: 460 },
+      position: { x: 2280, y: 460 },
       params: {},
     },
   ],
@@ -397,7 +439,9 @@ export const MASTER_CMS_TEMPLATE: SubSheetTemplate = {
     { id: 'cms_e9', streamNo: '202', name: '부생 무수염산 (AHCl)', source: 'cms_m_c201', target: 'cms_m_ahcl', sourcePort: 'vapor', targetPort: 'in' },
     { id: 'cms_e10', streamNo: '203', name: '탈염산 클로로메탄액', source: 'cms_m_c201', target: 'cms_m_c202', sourcePort: 'liquid', targetPort: 'in' },
     { id: 'cms_e11', streamNo: '211', name: '회수 미반응 MC', source: 'cms_m_c202', target: 'cms_m_p202', sourcePort: 'vapor', targetPort: 'in' },
-    { id: 'cms_e12', streamNo: '301', name: '조 MCL/CFM/CTC', source: 'cms_m_c202', target: 'cms_m_c301', sourcePort: 'liquid', targetPort: 'in' },
+    { id: 'cms_e11b', streamNo: '204', name: '조 MCL/CFM/CTC·공비액', source: 'cms_m_c202', target: 'cms_m_c203', sourcePort: 'liquid', targetPort: 'in' },
+    { id: 'cms_e11c', streamNo: '205', name: '공비·경질 퍼지', source: 'cms_m_c203', target: 'cms_m_azeo', sourcePort: 'vapor', targetPort: 'in' },
+    { id: 'cms_e12', streamNo: '301', name: '탈수 조 MCL/CFM/CTC', source: 'cms_m_c203', target: 'cms_m_c301', sourcePort: 'liquid', targetPort: 'in' },
     { id: 'cms_e13', streamNo: '302', name: '정제 MCL 제품', source: 'cms_m_c301', target: 'cms_m_mcl', sourcePort: 'vapor', targetPort: 'in' },
     { id: 'cms_e14', streamNo: '303', name: '조 CFM/CTC액', source: 'cms_m_c301', target: 'cms_m_c302', sourcePort: 'liquid', targetPort: 'in' },
     { id: 'cms_e15', streamNo: '304', name: '정제 CFM 제품', source: 'cms_m_c302', target: 'cms_m_cfm', sourcePort: 'vapor', targetPort: 'in' },
@@ -464,7 +508,7 @@ export const SUB_CMS_100_TEMPLATE: SubSheetTemplate = {
       params: {
         feedTempC: 25.0,
         feedPressKgcm2g: 25.0,
-        feedFlowsKgH: emptySimFlows({ CH2Cl2: 48.0, N2: 0.6, C2Cl4: 3.4 }),
+        feedFlowsKgH: emptySimFlows({ CH2Cl2: 105.0, N2: 0.6, C2Cl4: 3.4 }),
       },
     },
     {
@@ -526,11 +570,11 @@ export const SUB_CMS_100_TEMPLATE: SubSheetTemplate = {
 export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
   id: 'sub_cms_200_rec',
   sectionCode: '200',
-  shortTabLabel: '❄️ 200 HCl·MC 순환회수',
-  title: '200 SEC 세부공정 — 고압 무수염산 스트리퍼(C-201) · 미반응 MC 순환탑(C-202) · 순환펌프(P-202)',
+  shortTabLabel: '❄️ 200 HCl·MC·Azeo 분리',
+  title: '200 SEC 세부공정 — HCl 탈거(C-201 60단) · MC 순환(C-202 50단 · P-202) · Azeo 분리(C-203 30단)',
   subtitle:
-    '17.5kG 무수 HCl 회수(C-201) → 6.5kG 미반응 CH₃Cl 전용 회수(C-202, NO MCL 재순환) → P-202(25kG 가압 순환)',
-  parentMasterNodeIds: ['cms_m_c201', 'cms_m_c202', 'cms_m_p202'],
+    '17.5kG 무수 HCl 회수(C-201 60단) → 6.5kG CH₃Cl 전용 회수(C-202 50단, NO MCL 재순환) → C-203(30단) 공비·수분/경질 퍼지',
+  parentMasterNodeIds: ['cms_m_c201', 'cms_m_c202', 'cms_m_p202', 'cms_m_c203'],
   nodes: [
     {
       id: 'cms2_feed',
@@ -545,19 +589,20 @@ export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
         feedFlowsKgH: emptySimFlows({
           HCl: 4736.2,
           CH3Cl: 9088.6,
-          CH2Cl2: 4990.8,
+          CH2Cl2: 5047.8,
           CHCl3: 3371.1,
           CCl4: 685.9,
           C2Cl4: 53.6,
           Cl2: 6.7,
           N2: 0.6,
+          H2O: 0.25,
         }),
       },
     },
     {
       id: 'cms2_c201',
       tag: 'C-201',
-      name: '고압 무수염산(HCl) 스트리퍼',
+      name: '고압 무수염산(HCl) 스트리퍼 (60단)',
       unitType: 'distillation',
       position: { x: 310, y: 240 },
       params: {
@@ -576,7 +621,7 @@ export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms2_c202',
       tag: 'C-202',
-      name: '미반응 MC 순환 분리탑',
+      name: '미반응 MC 순환 분리탑 (50단)',
       unitType: 'distillation',
       position: { x: 560, y: 290 },
       params: {
@@ -589,7 +634,7 @@ export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
       tag: 'P-202',
       name: '미반응 MC 고압 순환 펌프 (25 kG)',
       unitType: 'pump',
-      position: { x: 810, y: 170 },
+      position: { x: 810, y: 140 },
       params: {
         outletPressKgcm2g: 25.0,
         efficiency: 0.72,
@@ -600,15 +645,34 @@ export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
       tag: 'TO-100-MIX101',
       name: '순환 미반응 MC (→ 100 SEC MIX-101)',
       unitType: 'product',
-      position: { x: 1050, y: 170 },
+      position: { x: 1080, y: 140 },
+      params: {},
+    },
+    {
+      id: 'cms2_c203',
+      tag: 'C-203',
+      name: 'Azeo 공비·경질 분리탑 (30단)',
+      unitType: 'distillation',
+      position: { x: 810, y: 340 },
+      params: {
+        calcMode: 'rigorous',
+        distillConfig: structuredClone(C203_DISTILL_CONFIG),
+      },
+    },
+    {
+      id: 'cms2_azeo_purge',
+      tag: 'OUT-AZEO-PURGE',
+      name: '공비·경질 불순물 퍼지',
+      unitType: 'product',
+      position: { x: 1080, y: 260 },
       params: {},
     },
     {
       id: 'cms2_crude_mcl',
       tag: 'TO-300-SEC',
-      name: '조 MCL/CFM/CTC 혼합액 (→ 300 SEC)',
+      name: '탈수 조 MCL/CFM/CTC 혼합액 (→ 300 SEC)',
       unitType: 'product',
-      position: { x: 1050, y: 360 },
+      position: { x: 1080, y: 400 },
       params: {},
     },
   ],
@@ -618,7 +682,9 @@ export const SUB_CMS_200_TEMPLATE: SubSheetTemplate = {
     { id: 'cms2_e3', streamNo: '203', name: '탈염산액', source: 'cms2_c201', target: 'cms2_c202', sourcePort: 'liquid', targetPort: 'in' },
     { id: 'cms2_e4', streamNo: '211', name: '미반응 MC 회수액', source: 'cms2_c202', target: 'cms2_p202', sourcePort: 'vapor', targetPort: 'in' },
     { id: 'cms2_e5', streamNo: '214', name: '승압 순환 MC', source: 'cms2_p202', target: 'cms2_rec_mc', sourcePort: 'out', targetPort: 'in' },
-    { id: 'cms2_e6', streamNo: '301', name: '300 SEC 공급', source: 'cms2_c202', target: 'cms2_crude_mcl', sourcePort: 'liquid', targetPort: 'in' },
+    { id: 'cms2_e5b', streamNo: '204', name: '조 MCL/CFM/CTC·공비액', source: 'cms2_c202', target: 'cms2_c203', sourcePort: 'liquid', targetPort: 'in' },
+    { id: 'cms2_e5c', streamNo: '205', name: '공비·경질 퍼지', source: 'cms2_c203', target: 'cms2_azeo_purge', sourcePort: 'vapor', targetPort: 'in' },
+    { id: 'cms2_e6', streamNo: '301', name: '300 SEC 공급', source: 'cms2_c203', target: 'cms2_crude_mcl', sourcePort: 'liquid', targetPort: 'in' },
   ],
 };
 
@@ -629,26 +695,25 @@ export const SUB_CMS_300_TEMPLATE: SubSheetTemplate = {
   id: 'sub_cms_300_purif',
   sectionCode: '300',
   shortTabLabel: '🧪 300 MCL·CFM 정제',
-  title: '300 SEC 세부공정 — MCL 정제탑(C-301) · 제품 냉각기(E-301) · CFM 정제 및 CTC 분리탑(C-302)',
+  title: '300 SEC 세부공정 — MCL 정제탑(C-301 80단) · 제품 냉각기(E-301) · CFM/CTC 분리탑(C-302 120단)',
   subtitle:
-    'NRTL 정밀 분별증류: C-301(0.8kG, CH₂Cl₂ ≥99.8% · 120 T/D) + E-301(35°C) / C-302(0.3kG, CHCl₃ ≥99.8% · 80 T/D) · CTC 폐기',
+    'NRTL 정밀 분별증류: C-301(80단 · 0.8kG, CH₂Cl₂ ≥99.99% · 120 T/D) + E-301(35°C) / C-302(120단 · 0.3kG, CHCl₃ ≥99.99% · 80 T/D) · CTC 폐기',
   parentMasterNodeIds: ['cms_m_c301', 'cms_m_c302'],
   nodes: [
     {
       id: 'cms3_feed',
-      tag: 'FROM-200-C202',
-      name: '탈경질 조 MCL/CFM/CTC 혼합액',
+      tag: 'FROM-200-C203',
+      name: '탈수 조 MCL/CFM/CTC 혼합액',
       unitType: 'feed',
       position: { x: 60, y: 260 },
       params: {
         boundaryFromMasterNodeId: 'cms_m_c301',
-        feedTempC: 120.5,
-        feedPressKgcm2g: 7.0,
+        feedTempC: 55.0,
+        feedPressKgcm2g: 0.8,
         feedFlowsKgH: emptySimFlows({
-          CH3Cl: 1.9,
-          CH2Cl2: 4990.8,
-          CHCl3: 3371.1,
-          CCl4: 685.9,
+          CH2Cl2: 4988.0,
+          CHCl3: 3371.0,
+          CCl4: 686.0,
           C2Cl4: 53.6,
         }),
       },
@@ -656,7 +721,7 @@ export const SUB_CMS_300_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms3_c301',
       tag: 'C-301',
-      name: '메틸렌클로라이드(MCL) 고순도 정제탑',
+      name: '메틸렌클로라이드(MCL) 고순도 정제탑 (80단 · 99.99%)',
       unitType: 'distillation',
       position: { x: 320, y: 260 },
       params: {
@@ -679,7 +744,7 @@ export const SUB_CMS_300_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms3_mcl',
       tag: 'PROD-MCL',
-      name: '고순도 디클로로메탄 제품 (CH₂Cl₂ ≥99.8% · 120 T/D)',
+      name: '고순도 디클로로메탄 제품 (CH₂Cl₂ ≥99.99% · 120 T/D)',
       unitType: 'product',
       position: { x: 840, y: 120 },
       params: {},
@@ -687,7 +752,7 @@ export const SUB_CMS_300_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms3_c302',
       tag: 'C-302',
-      name: '클로로포름(CFM) 정제 및 CTC 분리탑',
+      name: '클로로포름(CFM) 정제 및 CTC 분리탑 (120단 · 99.99%)',
       unitType: 'distillation',
       position: { x: 580, y: 340 },
       params: {
@@ -698,7 +763,7 @@ export const SUB_CMS_300_TEMPLATE: SubSheetTemplate = {
     {
       id: 'cms3_cfm',
       tag: 'PROD-CFM',
-      name: '고순도 클로로포름 제품 (CHCl₃ ≥99.8% · 80 T/D)',
+      name: '고순도 클로로포름 제품 (CHCl₃ ≥99.99% · 80 T/D)',
       unitType: 'product',
       position: { x: 840, y: 260 },
       params: {},

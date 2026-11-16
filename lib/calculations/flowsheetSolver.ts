@@ -3426,7 +3426,7 @@ export function solveFlowsheet(
           (!cfg.thermoModel || cfg.thermoModel === 'AUTO') && isExplicitPropertyMethod
             ? { ...cfg, thermoModel: propertyMethodUsed }
             : cfg;
-        const nStages = Math.max(4, Math.min(80, Math.round(effCfg.totalStages ?? 24)));
+        const nStages = Math.max(4, Math.min(200, Math.round(effCfg.totalStages ?? 24)));
         const defaultFeedStage = Math.max(2, Math.min(nStages - 1, Math.round(effCfg.feedStage ?? Math.round(nStages * 0.5))));
 
         const feedsInput: DistillFeedInput[] = inEdges.map((ie, idx) => {

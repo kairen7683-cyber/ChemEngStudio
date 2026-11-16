@@ -43,8 +43,8 @@ const ECH_DESIGN_TABS = [
 ];
 
 const CMS_DESIGN_TABS = [
-  { key: 'cms_hub',    label: 'CMS 핵심장치 (E-101·R-101·C-201~302)' },
-  { key: 'packing',    label: 'C-201~302 증류·탈거탑 패킹/트레이 설계' },
+  { key: 'cms_hub',    label: 'CMS 핵심장치 (E-101·R-101·C-201~203·C-301~302)' },
+  { key: 'packing',    label: 'C-201~203 · C-301~302 5탑 패킹/트레이 설계' },
   { key: 'chempro',    label: '기화기(E-101)·냉각기(E-301)·펌프(P-202) 상세설계' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
 ];
@@ -391,13 +391,14 @@ export default function EquipmentDesignPage() {
           },
           {
             key: 'cms_200_rec',
-            sec: '200 SEC · 고압 무수 HCl 탈거 & MC 순환회수',
-            title: 'C-201 무수 HCl 탈거탑 · C-202 MC 순환탑 (MCL 무순환)',
-            units: 'C-201 (17.5 kG · 칠드 브라인 응축 · 113 T/D AHCl) · C-202 (9.2 kG · 미반응 MC 회수) · P-202',
-            desc: '부생 무수 HCl 고압 탈거 MESH 프로파일 및 미반응 메틸클로라이드 전량 순환(MCL 미순환) 공정 연동',
+            sec: '200 SEC · 고압 무수 HCl 탈거 · MC 순환 · Azeo 분리',
+            title: 'C-201(60단) 무수 HCl 탈거탑 · C-202(50단) MC 순환탑 · C-203(30단) Azeo 분리탑',
+            units: 'C-201 (60단 · 17.5 kG · 113 T/D AHCl) · C-202 (50단 · 6.5 kG · MC 회수) · C-203 (30단 · 공비/수분 퍼지) · P-202',
+            desc: '부생 무수 HCl 고압 탈거, 미반응 메틸클로라이드 전량 순환(MCL 무순환) 및 C-203 공비·경질 불순물 제거 연동',
             actions: [
-              { label: '🔧 [C-201] 무수 HCl 탈거탑 인터널·단별 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-201', 'internals', 'cms_plant') },
-              { label: '🔧 [C-202] MC 순환탑 (MCL 무순환) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-202', 'internals', 'cms_plant') },
+              { label: '🔧 [C-201] 무수 HCl 탈거탑(60단) 인터널·단별 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-201', 'internals', 'cms_plant') },
+              { label: '🔧 [C-202] MC 순환탑(50단 · MCL 무순환) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-202', 'internals', 'cms_plant') },
+              { label: '🔧 [C-203] Azeo 공비·경질 분리탑(30단) 인터널 설계', onClick: () => openSimNode('sub_cms_200_rec', 'C-203', 'internals', 'cms_plant') },
               { label: '📐 [P-202] MC Recycle Pump 상세설계 열기', onClick: openCmsChemProPump },
             ],
             sheetButtons: [
@@ -407,12 +408,12 @@ export default function EquipmentDesignPage() {
           {
             key: 'cms_300_purif',
             sec: '300 SEC · MCL 120 · CFM 80 T/D 정제 & CTC 폐기',
-            title: 'C-301 MCL 정제탑 · C-302 CFM 정제탑 & CTC 폐기',
-            units: 'C-301 (MCL 120 T/D · 99.9%) · C-302 (CFM 80 T/D · 99.9% & 잔류 CTC·헤비 18 T/D)',
-            desc: 'PR EOS 정밀증류 2탑 단별 조성·리보일러·응축기 전열 및 고순도 MCL 제품 냉각기 상세설계',
+            title: 'C-301(80단) MCL 정제탑 · C-302(120단) CFM 정제탑 & CTC 폐기',
+            units: 'C-301 (80단 · MCL 120 T/D · 99.99%) · C-302 (120단 · CFM 80 T/D · 99.99% & 잔류 CTC·헤비 18 T/D)',
+            desc: 'NRTL 다단 정밀증류 단별 조성·리보일러·응축기 전열 및 고순도 MCL 제품 냉각기 상세설계',
             actions: [
-              { label: '🔧 [C-301] MCL 정제탑(120 T/D) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-301', 'internals', 'cms_plant') },
-              { label: '🔧 [C-302] CFM 정제탑(80 T/D) & CTC 폐기 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-302', 'internals', 'cms_plant') },
+              { label: '🔧 [C-301] MCL 정제탑(80단 · 120 T/D) 인터널·탑경 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-301', 'internals', 'cms_plant') },
+              { label: '🔧 [C-302] CFM 정제탑(120단 · 80 T/D) & CTC 폐기 설계', onClick: () => openSimNode('sub_cms_300_purif', 'C-302', 'internals', 'cms_plant') },
               {
                 label: '📐 [E-301] MCL Cooler 상세설계 열기',
                 onClick: () =>
@@ -710,7 +711,7 @@ export default function EquipmentDesignPage() {
               </div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
                 {effectiveDesignTab === 'cms_hub'
-                  ? 'Cl₂ 220 · MCL 120 · CFM 80 T/D · 기화기(E-101) · 반응기(R-101) · 증류탑(C-201~C-302) · 제품냉각·순환펌프(E-301/P-202)'
+                  ? 'Cl₂ 220 · MCL 120 · CFM 80 T/D · 기화기(E-101) · 반응기(R-101) · 5탑(C-201~203 · C-301~302) · 제품냉각·순환펌프(E-301/P-202)'
                   : effectiveDesignTab === 'distill'
                     ? '70,000 TPA GTE-ECH 공정 연동 · 증류탑(C-101/C-102) · 반응기(R-101/R-201) · 열교환기(E-102/E-301)'
                     : '실시간 PFD 유량·조성·압력 연동 내장 워크벤치 (증류탑 · 열교환기 · 급랭·심냉액화기)'}

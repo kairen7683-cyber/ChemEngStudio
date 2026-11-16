@@ -2963,7 +2963,7 @@ export default function ClassicSimulatorPage() {
         if (!modalDef || modalDef.unitType !== 'distillation') return null;
         const modalRes = unitResultMap.get(modalDef.id)?.distillResult;
         const modalCfg: DistillColumnParams = modalDef.params.distillConfig ?? {};
-        const nSt = Math.max(4, Math.min(120, Math.round(modalCfg.totalStages ?? 24)));
+        const nSt = Math.max(4, Math.min(200, Math.round(modalCfg.totalStages ?? 24)));
         const defFeedSt = Math.max(2, Math.min(nSt - 1, Math.round(modalCfg.feedStage ?? Math.round(nSt * 0.5))));
         const modalFeeds: DistillFeedInput[] = flowEdges
           .filter(e => e.target === modalDef.id)
