@@ -131,11 +131,40 @@ export interface DistillColumnParams {
   designBotPurityWtPct?: number;      // 탑저 HK 목표 농도 (wt%, 기본 99.0)
   designBotImpurityPpm?: number;      // 탑저 LK 불순물 상한 농도 (wt ppm, 기본 500)
   designBotRecoveryPct?: number;      // 탑저 HK 회수율 (%, 기본 99.2)
-  designRefluxMode?: 'r_mult' | 'fixed_rr'; // R/R_min 배수 지정 vs 운전 RR 직접 지정
+  designRefluxMode?: DistillRefluxDesignMode; // 'auto_opt'(다중후보 TAC 최적) | 'r_mult'(R/R_min 배수) | 'fixed_rr'(직접 RR)
   designRefluxMult?: number;          // R / R_min 배수 (기본 1.25)
   designFixedRR?: number;             // 운전 RR 직접 지정 값 (기본 2.8)
+  /** 정밀모사(rigorous_mesh)에서 탑정+탑저 2개 품질스펙 동시 지정 시 단수(N)·공급단(Nf) 자동 동시최적화 허용 여부 (기본 true) */
+  autoOptimizeStagesOnDualSpec?: boolean;
   // 내장 컬럼 사이징 & 인터널(트레이/충진물·섬프·노즐) 개념디자인 파라미터
   internalsConfig?: ColumnInternalsParams;
+}
+
+export type DistillRefluxDesignMode = 'auto_opt' | 'r_mult' | 'fixed_rr';
+
+export interface DistillDesignCandidate {
+  id: string;
+  label: string;
+  rOverRmin: number;
+  stagesN: number;
+  feedStage: number;
+  actualTrays: number;
+  refluxRatio: number;
+  dOverFMass: number;
+  distillateKgH: number;
+  bottomsKgH: number;
+  topMetricActual: number;
+  botMetricActual: number;
+  reboilerDutyKW: number;
+  condenserDutyKW: number;
+  estimatedDiameterM: number;
+  annualCapexKUsd: number;
+  annualOpexKUsd: number;
+  tacKUsdYr: number;
+  tacIndex: number;
+  converged: boolean;
+  specsMet: boolean;
+  recommended: boolean;
 }
 
 /** 기존 프리셋(spec1/spec2)과 신규 4중 택2(activeDofSlots) 간 완전 하위호환 슬롯 해석기 */
@@ -183,6 +212,9 @@ export interface DistillShortcutDesignSummary {
   topTargetSummary?: string;
   botTargetSummary?: string;
   designMet: boolean;
+  refluxModeUsed?: DistillRefluxDesignMode;
+  candidates?: DistillDesignCandidate[];
+  selectedCandidateId?: string;
 }
 
 export interface DistillDiagnosticRemedy {
@@ -253,6 +285,8 @@ export interface DistillSolveResult {
   recommendedFeedStage: number;
   estimatedDiameterM: number;
   shortcutDesign?: DistillShortcutDesignSummary;
+  dualSpecCandidates?: DistillDesignCandidate[];
+  autoStageOptimized?: boolean;
   spec1Status?: DistillSpecStatus;
   spec2Status?: DistillSpecStatus;
   diagnostics: DistillDiagnosticReport;
@@ -3415,7 +3449,7 @@ function solveRigorousDistillationUncached(
   };
 
   const runMeshAt = (rrVal: number, dfParam: number, dfIsMass: boolean, maxIterOverride?: number): InnerMeshSolution => {
-    let dMolTarget = clamp(dfParam, 0.001, 0.999) * totalMolesIn;
+    let dMolTarget = clamp(dfParam, dfIsMass ? 0.001 : 0.0004, 0.9995) * totalMolesIn;
     if (dfIsMass) {
       const targetMass = clamp(dfParam, 0.001, 0.999) * totalFeedMassKgH;
       const dMol0 = clamp(estInitDistMolesForMass(targetMass), 1e-5, totalMolesIn * 0.999);
@@ -3856,6 +3890,843 @@ function solveRigorousDistillationUncached(
 
   let finalSol: InnerMeshSolution;
   let shortcutDesign: DistillShortcutDesignSummary | undefined;
+  let dualSpecCandidates: DistillDesignCandidate[] | undefined;
+  let autoStageOptimized = false;
+
+  const findBestFeedStageFromProfile = (
+    sol: InnerMeshSolution,
+    stageCount: number,
+    fallbackNf: number
+  ): number => {
+    let bestNf = fallbackNf;
+    let minCompD = Infinity;
+    const feedTotM = Math.max(1e-9, totalMolesIn);
+    for (const st of sol.stages) {
+      if (st.stage <= 1 || st.stage >= stageCount) continue;
+      let d = 0;
+      for (const c of activeComps) {
+        const zc = totalFeedMol[c] / feedTotM;
+        d += Math.abs(st.xMol[c] - zc);
+      }
+      if (d < minCompD) {
+        minCompD = d;
+        bestNf = st.stage;
+      }
+    }
+    return clamp(bestNf, 2, Math.max(2, stageCount - 1));
+  };
+
+  const estimateDiamAndTac = (sol: InnerMeshSolution, stageCount: number) => {
+    let diamM = 0.45;
+    for (const st of sol.stages) {
+      const tK = st.tempC + 273.15;
+      const avgMWSt = st.vapMassKgH / Math.max(1e-6, st.vapFlowKmolH);
+      const rhoG = Math.max(0.08, (st.pressBarA * 100 * avgMWSt) / (8.31446 * tK));
+      const rhoL = 1080;
+      const uFlood = 0.075 * Math.sqrt(Math.max(1, (rhoL - rhoG) / rhoG));
+      const uDesign = Math.max(0.25, 0.75 * uFlood);
+      const qVapM3S = st.vapMassKgH / (rhoG * 3600);
+      const dEst = Math.sqrt((4 * qVapM3S) / (Math.PI * uDesign));
+      if (dEst > diamM) diamM = dEst;
+    }
+    const actualTrays = calcActualTrayCount(stageCount);
+    const shellHeightM = 0.61 * actualTrays + 4.2;
+    const pAvgBarA = Math.max(1.0, (topPressKgcm2g + 1.03323) * 0.980665);
+    const fPress = 1.0 + 0.03 * Math.max(0, pAvgBarA - 2.0);
+    const reboilerKW = Math.max(0, sol.reboilerDutyKcalH) / 859.845;
+    const condenserKW = Math.abs(sol.condenserDutyKcalH) / 859.845;
+    const cShell = 17.64 * Math.pow(diamM, 1.066) * Math.pow(shellHeightM, 0.802) * fPress;
+    const cTrays = 0.45 * actualTrays * Math.pow(diamM, 1.55);
+    const aReb = Math.max(2.0, reboilerKW / (0.85 * 25.0));
+    const aCond = Math.max(2.0, condenserKW / (0.75 * 18.0));
+    const cHx = 7.3 * (Math.pow(aReb, 0.65) + Math.pow(aCond, 0.65));
+    const annualCapexKUsd = 0.333 * (cShell + cTrays + cHx);
+    const tBot = sol.stages[sol.stages.length - 1]?.tempC ?? 100;
+    const tTop = sol.stages[0]?.tempC ?? 40;
+    const steamPrice = tBot <= 125 ? 18.0 : tBot <= 175 ? 24.0 : 31.0;
+    const coolPrice = tTop >= 35 ? 1.2 : tTop >= 5 ? 6.5 : 12.0;
+    const annualOpexKUsd =
+      8000 * 0.0036 * ((reboilerKW * steamPrice) / 1000.0 + (condenserKW * coolPrice) / 1000.0);
+    const tacKUsdYr = annualCapexKUsd + annualOpexKUsd;
+    return { diamM, actualTrays, reboilerKW, condenserKW, annualCapexKUsd, annualOpexKUsd, tacKUsdYr };
+  };
+
+  interface JointOptInput {
+    lkCompIn: SimCompKey;
+    hkCompIn: SimCompKey;
+    topBasis: DistillSpecMetric;
+    userTopVal: number;
+    botBasis: DistillSpecMetric;
+    userBotVal: number;
+    refluxMode: DistillRefluxDesignMode;
+    userRMult: number;
+    fixedRR?: number;
+    explicitTopSpec?: DistillDesignSpec;
+    explicitBotSpec?: DistillDesignSpec;
+    accountForMurphreeInStages: boolean;
+  }
+
+  const runJointMultiCandidateOptimization = (opts: JointOptInput) => {
+    const optStartMs = Date.now();
+    const xFeedAll = zeroCompRecord();
+    for (const c of activeComps) xFeedAll[c] = totalFeedMol[c] / Math.max(1e-12, totalMolesIn);
+    const pTopBarA = Math.max(0.03, (topPressKgcm2g + 1.03323) * 0.980665);
+    const tFeedBp = solveStageBubbleTempC(chosenModel, activeComps, xFeedAll, pTopBarA, feedsInput[0]?.tempC ?? 45);
+    const K_mid = calcStageKValues(chosenModel, activeComps, xFeedAll, tFeedBp, pTopBarA);
+
+    const sepCandidates = activeComps.filter(c => !NON_VOLATILE_SET.has(c));
+    const pool = sepCandidates.length >= 2 ? sepCandidates : activeComps;
+    const byVolDesc = [...pool].sort((a, b) => (K_mid[b] || 0) - (K_mid[a] || 0));
+
+    let lkComp: SimCompKey =
+      opts.lkCompIn && totalFeedMol[opts.lkCompIn] > 1e-10
+        ? opts.lkCompIn
+        : defaultTopComp ?? byVolDesc[0] ?? pool[0];
+    let hkComp: SimCompKey =
+      opts.hkCompIn && opts.hkCompIn !== lkComp && totalFeedMol[opts.hkCompIn] > 1e-10
+        ? opts.hkCompIn
+        : byVolDesc.find(c => c !== lkComp) ?? pool.find(c => c !== lkComp) ?? lkComp;
+
+    if (lkComp !== hkComp && (K_mid[lkComp] || 0) < (K_mid[hkComp] || 0)) {
+      const tmp = lkComp;
+      lkComp = hkComp;
+      hkComp = tmp;
+    }
+
+    const xPureLk = zeroCompRecord();
+    xPureLk[lkComp] = 0.98;
+    xPureLk[hkComp] = 0.02;
+    const tTopEst = solveStageBubbleTempC(chosenModel, activeComps, xPureLk, pTopBarA, tFeedBp - 15);
+    const K_top = calcStageKValues(chosenModel, activeComps, xPureLk, tTopEst, pTopBarA);
+
+    const xPureHk = zeroCompRecord();
+    xPureHk[hkComp] = 0.98;
+    xPureHk[lkComp] = 0.02;
+    const estStagesForDp = clamp(colParams.totalStages ?? 24, 6, 120);
+    const pBotEstBarA = pTopBarA + estStagesForDp * stageDeltaP * 0.980665;
+    const tBotEst = solveStageBubbleTempC(chosenModel, activeComps, xPureHk, pBotEstBarA, tFeedBp + 15);
+    const K_bot = calcStageKValues(chosenModel, activeComps, xPureHk, tBotEst, pBotEstBarA);
+
+    const alphaTop = clamp((K_top[lkComp] || 1) / Math.max(1e-6, K_top[hkComp] || 0.5), 1.04, 150);
+    const alphaBot = clamp((K_bot[lkComp] || 1) / Math.max(1e-6, K_bot[hkComp] || 0.5), 1.04, 150);
+    const alphaMid = clamp((K_mid[lkComp] || 1) / Math.max(1e-6, K_mid[hkComp] || 0.5), 1.04, 150);
+    const alphaAvg = Math.max(1.05, Math.pow(alphaTop * alphaMid * alphaBot, 1 / 3));
+
+    const { topBasis, userTopVal, botBasis, userBotVal, explicitTopSpec, explicitBotSpec } = opts;
+    const feedLkKg = Math.max(1e-6, totalFeedKgH[lkComp] || 0);
+    const feedHkKg = Math.max(1e-6, totalFeedKgH[hkComp] || 0);
+
+    let lighterMassBeforeDecant = 0;
+    let lighterMassInProduct = 0;
+    let lighterMolBeforeDecant = 0;
+    let heavierMass = 0;
+    for (const c of activeComps) {
+      if (c === lkComp || c === hkComp) continue;
+      const mComp = totalFeedKgH[c] || 0;
+      if (mComp <= 0) continue;
+      const isHydroOrgAzeoWater =
+        c === 'H2O' &&
+        (COMP_CATALOG_META[hkComp]?.tbC ?? 100) >= 105 &&
+        ((totalFeedKgH.ECH || 0) + (totalFeedKgH.DCP || 0) + (totalFeedKgH.DCH || 0) + (totalFeedKgH.CHCl3 || 0)) > 1e-3 &&
+        (K_mid[c] || 0) >= 1.05 * (K_mid[hkComp] || 0);
+      if (NON_VOLATILE_SET.has(c)) {
+        heavierMass += mComp;
+      } else if ((K_mid[c] || 0) >= (K_mid[lkComp] || 0) || isHydroOrgAzeoWater) {
+        lighterMassBeforeDecant += mComp;
+        lighterMolBeforeDecant += totalFeedMol[c] || 0;
+        if (c === 'H2O' && condenserType === 'decanter_ech') {
+          lighterMassInProduct += Math.min(mComp, feedLkKg * 0.0012);
+        } else {
+          lighterMassInProduct += mComp;
+        }
+      } else {
+        heavierMass += mComp;
+      }
+    }
+
+    const maxPossibleTopLkWtPct = (feedLkKg / Math.max(1e-6, feedLkKg + lighterMassInProduct)) * 100.0;
+    const maxPossibleBotHkWtPct = (feedHkKg / Math.max(1e-6, feedHkKg + heavierMass)) * 100.0;
+
+    let wDLk = 0.995;
+    if (topBasis === 'purity_mol_pct') {
+      const effMolFrac = clamp(userTopVal / 100.0, 0.0005, 0.999995);
+      const mwLk = COMP_MW[lkComp] || 50;
+      const mwHk = COMP_MW[hkComp] || 80;
+      wDLk = clamp((effMolFrac * mwLk) / (effMolFrac * mwLk + (1 - effMolFrac) * mwHk), 0.0005, 0.999998);
+    } else if (topBasis === 'purity_wt_pct') {
+      const capMargin = Math.min(0.02, Math.max(1e-5, (100 - userTopVal) * 0.1));
+      const effTopPct = Math.min(userTopVal, Math.max(0.01, maxPossibleTopLkWtPct - capMargin));
+      const totDNeeded = (0.998 * feedLkKg) / Math.max(0.0001, effTopPct / 100.0);
+      const allowedHkInD = Math.max(1e-7 * feedLkKg, totDNeeded - 0.998 * feedLkKg - lighterMassInProduct);
+      wDLk = clamp((0.998 * feedLkKg) / Math.max(1e-9, 0.998 * feedLkKg + allowedHkInD), 0.0005, 0.999998);
+    } else if (topBasis === 'impurity_wt_ppm') {
+      const allowedHkInD = (userTopVal / 1e6) * (feedLkKg + lighterMassInProduct);
+      wDLk = clamp(feedLkKg / Math.max(1e-9, feedLkKg + allowedHkInD), 0.52, 0.999998);
+    } else {
+      const recFrac = clamp(userTopVal / 100.0, 0.5, 0.999999);
+      const isLightGasTop = PERMANENT_GAS_SET.has(lkComp) && feedLkKg < feedHkKg * 0.1;
+      if (isLightGasTop) {
+        const estDistHkKg = Math.max(0.01 * feedHkKg, feedLkKg * 6.0);
+        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.01, 0.998);
+      } else if (botBasis === 'recovery_pct') {
+        const botRecFrac = clamp(userBotVal / 100.0, 0.5, 0.999999);
+        const estDistHkKg = Math.max(0.001 * feedHkKg, (1.0 - botRecFrac) * feedHkKg);
+        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.15, 0.9995);
+      } else if (feedLkKg < 0.15 * feedHkKg) {
+        const estDistHkKg = Math.max(0.003 * feedHkKg, 0.12 * feedLkKg);
+        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.25, 0.99);
+      } else {
+        wDLk = clamp(recFrac, 0.85, 0.998);
+      }
+    }
+
+    let wBLk = 0.002;
+    if (botBasis === 'purity_mol_pct') {
+      const effMolFracHk = clamp(userBotVal / 100.0, 0.5, 0.999995);
+      const mwLk = COMP_MW[lkComp] || 50;
+      const mwHk = COMP_MW[hkComp] || 80;
+      wBLk = clamp(((1 - effMolFracHk) * mwLk) / ((1 - effMolFracHk) * mwLk + effMolFracHk * mwHk), 0.000002, 0.48);
+    } else if (botBasis === 'purity_wt_pct') {
+      const capMargin = Math.min(0.02, Math.max(1e-5, (100 - userBotVal) * 0.1));
+      const effBotPct = Math.min(userBotVal, Math.max(50.0, maxPossibleBotHkWtPct - capMargin));
+      const totBNeeded = (0.998 * feedHkKg) / Math.max(0.05, effBotPct / 100.0);
+      const allowedLkInB = Math.max(1e-7 * feedLkKg, totBNeeded - 0.998 * feedHkKg - heavierMass);
+      wBLk = clamp(allowedLkInB / Math.max(1e-9, 0.998 * feedHkKg + allowedLkInB), 0.000002, 0.48);
+    } else if (botBasis === 'impurity_wt_ppm') {
+      const allowedLkInB = (userBotVal / 1e6) * (feedHkKg + heavierMass);
+      wBLk = clamp(allowedLkInB / Math.max(1e-9, feedHkKg + allowedLkInB), 0.000002, 0.48);
+    } else {
+      const targetLkSlipKg = Math.max(0.012 * feedLkKg, (1.0 - userBotVal / 100.0) * 0.15 * feedLkKg);
+      wBLk = clamp(targetLkSlipKg / Math.max(1e-6, feedHkKg + targetLkSlipKg), 0.00002, 0.05);
+    }
+
+    const tgtTopWt =
+      topBasis === 'purity_wt_pct'
+        ? userTopVal
+        : topBasis === 'impurity_wt_ppm'
+          ? 100.0 - userTopVal / 10000.0
+          : Number((wDLk * 100.0).toFixed(2));
+    const tgtBotWt =
+      botBasis === 'purity_wt_pct'
+        ? userBotVal
+        : botBasis === 'impurity_wt_ppm'
+          ? 100.0 - userBotVal / 10000.0
+          : Number(((feedHkKg / Math.max(1e-6, feedHkKg + heavierMass)) * 100.0).toFixed(2));
+
+    const xDLk = clamp(
+      (wDLk / COMP_MW[lkComp]) / (wDLk / COMP_MW[lkComp] + (1 - wDLk) / COMP_MW[hkComp]),
+      0.0005,
+      0.999998
+    );
+    const xBLk = clamp(
+      (wBLk / COMP_MW[lkComp]) / (wBLk / COMP_MW[lkComp] + (1 - wBLk) / COMP_MW[hkComp]),
+      0.000001,
+      0.499
+    );
+    const zFLk = clamp(
+      totalFeedMol[lkComp] / Math.max(1e-9, totalFeedMol[lkComp] + totalFeedMol[hkComp]),
+      0.002,
+      0.998
+    );
+
+    const sepFactor = (xDLk * (1 - xBLk)) / Math.max(1e-12, (1 - xDLk) * xBLk);
+    const alphaUw = Math.max(1.05, Math.min(alphaAvg, Math.sqrt(alphaTop * alphaMid), Math.sqrt(alphaBot * alphaMid)));
+    const alphaFenske = Math.max(1.05, 0.5 * (alphaAvg + alphaUw));
+    const nMin = clamp(Math.log(Math.max(1.1, sepFactor)) / Math.log(alphaFenske), 2.0, 150.0);
+
+    const avgQf = clamp(
+      preparedFeeds.reduce((s, pf) => {
+        const mSum = activeComps.reduce((a, c) => a + pf.mol[c], 0);
+        return s + pf.qThermal * mSum;
+      }, 0) / Math.max(1e-9, totalMolesIn),
+      0.0,
+      1.25
+    );
+    let thLo = 1.0001;
+    let thHi = Math.max(1.0005, alphaUw - 0.0001);
+    for (let it = 0; it < 28; it++) {
+      const thMid = 0.5 * (thLo + thHi);
+      const lhs = (alphaUw * zFLk) / (alphaUw - thMid) + (1 - zFLk) / (1 - thMid);
+      if (lhs > 1.0 - avgQf) thHi = thMid;
+      else thLo = thMid;
+    }
+    const thetaUw = 0.5 * (thLo + thHi);
+    const rMinPlus1 = (alphaUw * xDLk) / Math.max(1e-5, alphaUw - thetaUw) + (1 - xDLk) / (1 - thetaUw);
+    const rMin = clamp(rMinPlus1 - 1.0, 0.1, 42.0);
+
+    const keySubMass = Math.max(1e-6, feedLkKg + feedHkKg);
+    const wFeedKeyLk = clamp(feedLkKg / keySubMass, 0.002, 0.998);
+    const dKeyMassBal = keySubMass * clamp((wFeedKeyLk - wBLk) / Math.max(0.02, wDLk - wBLk), 0.003, 0.997);
+    const estDistMassBeforeDecant = clamp(
+      lighterMassBeforeDecant + dKeyMassBal,
+      totalFeedMassKgH * 0.0008,
+      totalFeedMassKgH * 0.996
+    );
+    const initDfMass = clamp(estDistMassBeforeDecant / totalFeedMassKgH, 0.0008, 0.996);
+    const minDfMolFloor =
+      lighterMolBeforeDecant > 0
+        ? clamp((lighterMolBeforeDecant * 0.85) / Math.max(1e-9, totalMolesIn), 0.0005, 0.95)
+        : 0.0005;
+    const initDfMole = clamp(
+      estInitDistMolesForMass(initDfMass * totalFeedMassKgH) / Math.max(1e-9, totalMolesIn),
+      minDfMolFloor,
+      0.995
+    );
+
+    const kirkRatio = Math.pow(
+      Math.max(
+        1e-4,
+        ((1 - initDfMass) / Math.max(0.005, initDfMass)) *
+          ((1 - zFLk) / Math.max(0.002, zFLk)) *
+          Math.pow(xBLk / Math.max(1e-6, 1 - xDLk), 2)
+      ),
+      0.206
+    );
+    const feedFrac = clamp(kirkRatio / (1.0 + kirkRatio), 0.16, 0.84);
+    const isLightGasStripper = PERMANENT_GAS_SET.has(lkComp) && (botBasis === 'impurity_wt_ppm' || userBotVal >= 99.9);
+    const minDesignStages = isLightGasStripper ? 14 : 6;
+
+    const topPurityTol =
+      topBasis === 'impurity_wt_ppm'
+        ? Math.max(2.0, userTopVal * 0.03)
+        : explicitTopSpec
+          ? Math.min(0.15, Math.max(0.0025, (100 - userTopVal) * 0.5))
+          : userTopVal >= 99.5
+            ? Math.min(0.25, Math.max(0.0005, (100 - userTopVal) * 0.25))
+            : 0.25;
+    const botPurityTol =
+      botBasis === 'impurity_wt_ppm'
+        ? Math.max(2.0, userBotVal * 0.03)
+        : explicitBotSpec
+          ? Math.min(0.15, Math.max(0.0025, (100 - userBotVal) * 0.5))
+          : userBotVal >= 99.5
+            ? Math.min(0.25, Math.max(0.0005, (100 - userBotVal) * 0.25))
+            : 0.25;
+
+    const stopTopTol =
+      topBasis === 'impurity_wt_ppm'
+        ? ((topPurityTol * 0.35) / Math.max(25.0, userTopVal)) * 2.0
+        : topBasis === 'recovery_pct'
+          ? 0.12
+          : Math.min(0.06, Math.max(0.0003, (100 - userTopVal) * 0.15));
+    const stopBotTol =
+      botBasis === 'impurity_wt_ppm'
+        ? ((botPurityTol * 0.35) / Math.max(25.0, userBotVal)) * 2.0
+        : botBasis === 'recovery_pct'
+          ? 0.12
+          : Math.min(0.06, Math.max(0.0003, (100 - userBotVal) * 0.15));
+    const keyBinStopPct = botBasis === 'purity_wt_pct' && userBotVal > 99.85 ? Math.min(99.9999, userBotVal) : 99.85;
+
+    const topScale =
+      topBasis === 'impurity_wt_ppm'
+        ? ((Math.max(2.0, userTopVal * 0.03)) / Math.max(25.0, userTopVal)) * 2.0
+        : Math.max(1e-4, topPurityTol);
+    const botScale =
+      botBasis === 'impurity_wt_ppm'
+        ? ((Math.max(2.0, userBotVal * 0.03)) / Math.max(25.0, userBotVal)) * 2.0
+        : Math.max(1e-4, botPurityTol);
+
+    const evalDesignMetrics = (s: InnerMeshSolution) => {
+      const dTot = Math.max(1e-9, ALL_KEYS.reduce((a, k) => a + s.distillateKgH[k], 0));
+      const bTot = Math.max(1e-9, ALL_KEYS.reduce((a, k) => a + s.bottomsKgH[k], 0));
+      const topLkWt = (s.distillateKgH[lkComp] / dTot) * 100.0;
+      const botHkWt = (s.bottomsKgH[hkComp] / bTot) * 100.0;
+      const topHkPpm = (s.distillateKgH[hkComp] / dTot) * 1e6;
+      const botLkPpm = (s.bottomsKgH[lkComp] / bTot) * 1e6;
+      const topLkRec = (s.distillateKgH[lkComp] / feedLkKg) * 100.0;
+      const botHkRec = (s.bottomsKgH[hkComp] / feedHkKg) * 100.0;
+      const keyBinTopPct =
+        (s.distillateKgH[lkComp] / Math.max(1e-9, s.distillateKgH[lkComp] + s.distillateKgH[hkComp])) * 100.0;
+      const keyBinBotPct =
+        (s.bottomsKgH[hkComp] / Math.max(1e-9, s.bottomsKgH[lkComp] + s.bottomsKgH[hkComp])) * 100.0;
+
+      const topActual = explicitTopSpec
+        ? evalSpecMetric(explicitTopSpec, s, totalFeedKgH)
+        : topBasis === 'impurity_wt_ppm'
+          ? topHkPpm
+          : topBasis === 'recovery_pct'
+            ? topLkRec
+            : topLkWt;
+      const botActual = explicitBotSpec
+        ? evalSpecMetric(explicitBotSpec, s, totalFeedKgH)
+        : botBasis === 'impurity_wt_ppm'
+          ? botLkPpm
+          : botBasis === 'recovery_pct'
+            ? botHkRec
+            : botHkWt;
+
+      const topCapMargin = maxPossibleTopLkWtPct >= 99.9 ? Math.max(0.0001, (100 - maxPossibleTopLkWtPct) * 0.08) : 0.05;
+      const botCapMargin = maxPossibleBotHkWtPct >= 99.9 ? Math.max(0.0001, (100 - maxPossibleBotHkWtPct) * 0.08) : 0.05;
+      const effTopPurityCap = explicitTopSpec
+        ? userTopVal
+        : Math.min(userTopVal, Math.max(0, maxPossibleTopLkWtPct - topCapMargin));
+      const effBotPurityCap = explicitBotSpec
+        ? userBotVal
+        : Math.min(userBotVal, Math.max(0, maxPossibleBotHkWtPct - botCapMargin));
+
+      const topDef =
+        topBasis === 'impurity_wt_ppm'
+          ? ((topActual - userTopVal) / Math.max(25.0, userTopVal)) * 2.0
+          : topBasis === 'recovery_pct'
+            ? userTopVal - topActual
+            : effTopPurityCap - topActual;
+
+      const botDef =
+        botBasis === 'impurity_wt_ppm'
+          ? ((botActual - userBotVal) / Math.max(25.0, userBotVal)) * 2.0
+          : botBasis === 'recovery_pct'
+            ? userBotVal - botActual
+            : effBotPurityCap - botActual;
+
+      const normT = topDef / topScale;
+      const normB = botDef / botScale;
+      const penalty =
+        (s.converged ? 0 : 1e5) +
+        Math.max(0, normT) +
+        Math.max(0, normB) +
+        0.04 * Math.max(0, 98.5 - topLkRec) +
+        0.04 * Math.max(0, 98.5 - botHkRec);
+
+      const topMetRaw =
+        topBasis === 'impurity_wt_ppm'
+          ? topActual <= userTopVal + (explicitTopSpec ? topPurityTol : userTopVal * 0.05 + 5)
+          : topActual >= userTopVal - topPurityTol;
+      const botMetRaw =
+        botBasis === 'impurity_wt_ppm'
+          ? botActual <= userBotVal + (explicitBotSpec ? botPurityTol : userBotVal * 0.05 + 5)
+          : botActual >= userBotVal - botPurityTol;
+
+      return {
+        dTot,
+        bTot,
+        topLkWt,
+        botHkWt,
+        topHkPpm,
+        botLkPpm,
+        topLkRec,
+        botHkRec,
+        topActual,
+        botActual,
+        keyBinTopPct,
+        keyBinBotPct,
+        topDef,
+        botDef,
+        normT,
+        normB,
+        penalty,
+        topMetRaw,
+        botMetRaw,
+      };
+    };
+
+    const topSign = topBasis === 'recovery_pct' ? -1 : 1;
+    const botSign = botBasis === 'recovery_pct' ? 1 : -1;
+    const isOppositeMonotonic = topSign * botSign < 0;
+
+    const evaluateBalancedDf = (
+      rrNow: number,
+      dfMoleCenter: number,
+      stageCountNow: number,
+      tightSpan: boolean
+    ): { bestDfMole: number; sol: InnerMeshSolution; metrics: ReturnType<typeof evalDesignMetrics>; evals: number } => {
+      const meshIterLim = clamp(Math.round(68 + stageCountNow * 0.72), 95, 150);
+      const safeCenter = clamp(dfMoleCenter, minDfMolFloor, 0.996);
+      let ev = 0;
+
+      const scoreEval = (xDf: number) => {
+        const sol = runMeshAt(rrNow, xDf, false, meshIterLim);
+        ev++;
+        const m = evalDesignMetrics(sol);
+        const worstNorm = Math.max(m.normT, m.normB);
+        const obj =
+          (sol.converged ? 0 : 1e5) +
+          (worstNorm > 0
+            ? Math.max(0, m.normT) + Math.max(0, m.normB) + worstNorm
+            : 0.01 * worstNorm + 0.002 * Math.abs(xDf - safeCenter));
+        const g = topSign * (m.normT - m.normB);
+        return { xDf, sol, m, obj, g };
+      };
+
+      let best = scoreEval(safeCenter);
+      if (best.sol.converged && best.m.normT <= 0 && best.m.normB <= 0 && best.m.topLkRec >= 97.5 && best.m.botHkRec >= 97.5) {
+        return { bestDfMole: best.xDf, sol: best.sol, metrics: best.m, evals: ev };
+      }
+
+      const consider = (pt: ReturnType<typeof scoreEval>) => {
+        if (pt.obj < best.obj) best = pt;
+      };
+
+      if (isOppositeMonotonic && best.sol.converged) {
+        const step0 =
+          tightSpan && stageCountNow > 65
+            ? clamp(Math.min(safeCenter, 1.0 - safeCenter) * 0.005, 0.0004, 0.0012)
+            : tightSpan
+              ? clamp(Math.min(safeCenter, 1.0 - safeCenter) * 0.015, 0.0008, 0.0025)
+              : clamp(Math.min(safeCenter, 1.0 - safeCenter) * 0.03, 0.0012, 0.005);
+        const mults = tightSpan && stageCountNow > 65 ? [1, 3.0, 10.0] : [1, 3.5, 12.0, 35.0];
+        let aPt: ReturnType<typeof scoreEval> | null = best.g <= 0 ? best : null;
+        let bPt: ReturnType<typeof scoreEval> | null = best.g > 0 ? best : null;
+        const dir = best.g > 0 ? -1 : 1;
+        for (const mult of mults) {
+          const xTry = clamp(safeCenter + dir * step0 * mult, minDfMolFloor, 0.996);
+          if (Math.abs(xTry - safeCenter) < 1e-6) continue;
+          const pt = scoreEval(xTry);
+          consider(pt);
+          if (!pt.sol.converged) continue;
+          if (dir < 0) {
+            if (pt.g <= 0) { aPt = pt; break; }
+            else bPt = pt;
+          } else {
+            if (pt.g >= 0) { bPt = pt; break; }
+            else aPt = pt;
+          }
+          if ((dir < 0 && xTry <= minDfMolFloor + 1e-6) || (dir > 0 && xTry >= 0.996 - 1e-6)) break;
+        }
+
+        if (aPt && bPt && aPt.xDf < bPt.xDf - 1e-6) {
+          let ax = aPt.xDf, ag = aPt.g;
+          let bx = bPt.xDf, bg = bPt.g;
+          let lastSide = 0;
+          const maxSecIt = tightSpan && stageCountNow > 65 ? 4 : 8;
+          for (let it = 0; it < maxSecIt; it++) {
+            const margin = 0.002 * (bx - ax);
+            const sec = Math.abs(bg - ag) > 1e-9 ? ax - (ag * (bx - ax)) / (bg - ag) : 0.5 * (ax + bx);
+            const cx = it === 4 || sec <= ax + margin || sec >= bx - margin ? 0.5 * (ax + bx) : sec;
+            const rc = scoreEval(cx);
+            consider(rc);
+            if (!rc.sol.converged) break;
+            if (rc.m.normT <= -0.05 && rc.m.normB <= -0.05) break;
+            if (rc.g <= 0) {
+              ax = cx;
+              ag = rc.g;
+              if (lastSide === -1) bg *= 0.5;
+              lastSide = -1;
+            } else {
+              bx = cx;
+              bg = rc.g;
+              if (lastSide === 1) ag *= 0.5;
+              lastSide = 1;
+            }
+            if (bx - ax < 5e-6) break;
+          }
+        }
+      }
+
+      if (!isOppositeMonotonic || !best.sol.converged) {
+        const span = tightSpan ? 0.025 : clamp(Math.min(safeCenter, 1.0 - safeCenter) * 0.65, 0.012, 0.065);
+        const loDf = safeCenter < 0.03 ? minDfMolFloor : clamp(safeCenter - span, minDfMolFloor, 0.992);
+        const hiDf = clamp(Math.max(loDf + 0.01, safeCenter + span), 0.006, 0.996);
+        let bestPenalty = best.m.penalty;
+        const pts: number[] = [];
+        let bestIdx = 2;
+        for (let g = 0; g < 5; g++) {
+          const xg = loDf + ((hiDf - loDf) * g) / 4;
+          pts.push(xg);
+          if (Math.abs(xg - safeCenter) < 1e-4) continue;
+          const pt = scoreEval(xg);
+          if (pt.m.penalty < bestPenalty) {
+            bestPenalty = pt.m.penalty;
+            best = pt;
+            bestIdx = g;
+          }
+        }
+        let sLo = pts[Math.max(0, bestIdx - 1)] ?? loDf;
+        let sHi = pts[Math.min(pts.length - 1, bestIdx + 1)] ?? hiDf;
+        for (let k = 0; k < 5; k++) {
+          const m1 = sLo + 0.382 * (sHi - sLo);
+          const m2 = sLo + 0.618 * (sHi - sLo);
+          const p1 = scoreEval(m1);
+          const p2 = scoreEval(m2);
+          if (p1.m.penalty < bestPenalty) { bestPenalty = p1.m.penalty; best = p1; }
+          if (p2.m.penalty < bestPenalty) { bestPenalty = p2.m.penalty; best = p2; }
+          if (p1.m.penalty <= p2.m.penalty) sHi = m2;
+          else sLo = m1;
+          if (sHi - sLo < 8e-5) break;
+        }
+      }
+
+      return { bestDfMole: best.xDf, sol: best.sol, metrics: best.m, evals: ev };
+    };
+
+    const candSpecs: { mult: number; fixedRrVal?: number; tag: string; isUserTarget?: boolean }[] = [];
+    if (opts.refluxMode === 'fixed_rr') {
+      const fRR = clamp(opts.fixedRR ?? colParams.topSpecValue ?? 2.8, 0.15, 65.0);
+      candSpecs.push({ mult: Number((fRR / Math.max(0.05, rMin)).toFixed(3)), fixedRrVal: fRR, tag: 'fixed', isUserTarget: true });
+      candSpecs.push({ mult: 1.25, tag: 'ref125' });
+      candSpecs.push({ mult: 1.55, tag: 'ref155' });
+    } else {
+      const baseMults = nMin > 25 ? [1.15, 1.35, 1.65] : [1.15, 1.28, 1.48, 1.80];
+      if (opts.refluxMode === 'r_mult') {
+        const uM = Number(clamp(opts.userRMult, 1.05, 5.0).toFixed(2));
+        let closestIdx = 0;
+        let minDist = Infinity;
+        for (let i = 0; i < baseMults.length; i++) {
+          const d = Math.abs(baseMults[i] - uM);
+          if (d < minDist) { minDist = d; closestIdx = i; }
+        }
+        const finalMults = minDist <= 0.18
+          ? baseMults.map((m, idx) => (idx === closestIdx ? uM : m))
+          : [uM, 1.20, 1.45, 1.80];
+        finalMults.forEach((m, i) => {
+          candSpecs.push({ mult: m, tag: `r${i}`, isUserTarget: Math.abs(m - uM) < 1e-4 });
+        });
+      } else {
+        baseMults.forEach((m, i) => candSpecs.push({ mult: m, tag: `a${i}` }));
+      }
+    }
+
+    interface EvalCandidatePack {
+      spec: { mult: number; fixedRrVal?: number; tag: string; isUserTarget?: boolean };
+      stagesN: number;
+      feedStage: number;
+      opRR: number;
+      dfMole: number;
+      sol: InnerMeshSolution;
+      metrics: ReturnType<typeof evalDesignMetrics>;
+      hyd: ReturnType<typeof estimateDiamAndTac>;
+      specsMet: boolean;
+    }
+
+    const solvedPacks: EvalCandidatePack[] = [];
+    let totalEvals = 0;
+    let rollingDfMole = initDfMole;
+    let learnedStageFactor = alphaUw < 2.0 ? 1.12 : 1.0;
+    let learnedFeedFrac = feedFrac;
+    const optBudgetMs = nMin > 25 ? 8000 : 4500;
+
+    const evalOneCandidate = (
+      spec: { mult: number; fixedRrVal?: number; tag: string; isUserTarget?: boolean },
+      candIdx: number
+    ): EvalCandidatePack => {
+      const opRR =
+        spec.fixedRrVal !== undefined
+          ? clamp(spec.fixedRrVal, 0.15, 65.0)
+          : clamp(rMin * spec.mult, 0.2, 50.0);
+      const safeDenom = Math.max(0.02, opRR - rMin);
+      const effRRForGill = opRR <= rMin * 1.01 && spec.fixedRrVal !== undefined ? rMin * 1.02 : opRR;
+      const gillX = clamp((effRRForGill - rMin) / Math.max(0.05, effRRForGill + 1.0 + safeDenom * 0), 0.02, 0.985);
+      const gillY = 1.0 - Math.exp(((1.0 + 54.4 * gillX) / (11.0 + 117.2 * gillX)) * ((gillX - 1.0) / Math.sqrt(gillX)));
+      const nTheoBase = clamp(
+        Math.ceil(((gillY + nMin) / Math.max(0.03, 1.0 - gillY)) * learnedStageFactor),
+        minDesignStages,
+        175
+      );
+      const maxAllowedN = opts.accountForMurphreeInStages ? 195 : 180;
+      let nCand = opts.accountForMurphreeInStages
+        ? clamp(nonTrayStageCount + Math.ceil((nTheoBase - nonTrayStageCount) / Math.max(0.25, meshMurphreeEff)), minDesignStages, maxAllowedN)
+        : nTheoBase;
+      const nCandInit = nCand;
+      let nfCand = clamp(Math.round(1 + (nCand - 2) * learnedFeedFrac), 2, nCand - 1);
+
+      N = nCand;
+      defaultFeedStage = nfCand;
+      ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
+
+      let rDesign = evaluateBalancedDf(opRR, rollingDfMole, nCand, candIdx > 0);
+      totalEvals += rDesign.evals;
+      let bestStageN = nCand;
+      let bestNf = nfCand;
+      let bestR = rDesign;
+
+      for (let step = 0; step < 3; step++) {
+        if (candIdx > 0 && Date.now() - optStartMs > optBudgetMs - 300) break;
+        const mNow = bestR.metrics;
+        if (bestR.sol.converged && mNow.topDef <= stopTopTol && mNow.botDef <= stopBotTol) break;
+        if (!explicitTopSpec && !explicitBotSpec && bestR.sol.converged && mNow.keyBinTopPct >= keyBinStopPct && mNow.keyBinBotPct >= keyBinStopPct) {
+          break;
+        }
+        if (!rDesign.sol.converged && nCand >= 150) break;
+        if (nCand >= maxAllowedN) break;
+
+        const prevN = nCand;
+        const prevNf = nfCand;
+        const refSol = rDesign.sol.converged ? rDesign.sol : bestR.sol;
+        const dLk = Math.max(1e-9, refSol.distillateKmolH[lkComp] || 0);
+        const dHk = Math.max(1e-9, refSol.distillateKmolH[hkComp] || 0);
+        const bLk = Math.max(1e-9, refSol.bottomsKmolH[lkComp] || 0);
+        const bHk = Math.max(1e-9, refSol.bottomsKmolH[hkComp] || 0);
+        const sAct = (dLk / dHk) * (bHk / bLk);
+
+        let scaleN = 1.25;
+        if (refSol.converged && sAct > 1.2 && sepFactor > sAct * 1.04) {
+          scaleN = clamp((Math.log(Math.max(2.0, sepFactor)) / Math.max(0.35, Math.log(sAct))) * 1.12, 1.18, 2.15);
+        }
+        nCand = clamp(
+          Math.ceil(nonTrayStageCount + (nCand - nonTrayStageCount) * scaleN),
+          nCand + 3,
+          maxAllowedN
+        );
+        if (refSol.converged) {
+          const profNf = findBestFeedStageFromProfile(refSol, prevN, prevNf);
+          const profFrac = clamp((profNf - 1) / Math.max(1, prevN - 2), 0.16, 0.84);
+          nfCand = clamp(Math.round(1 + (nCand - 2) * (0.5 * learnedFeedFrac + 0.5 * profFrac)), 2, nCand - 1);
+        } else {
+          nfCand = clamp(Math.round(1 + (nCand - 2) * learnedFeedFrac), 2, nCand - 1);
+        }
+        N = nCand;
+        defaultFeedStage = nfCand;
+        ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
+        const escSeed = 0.5 * ((bestR.sol.converged ? bestR.bestDfMole : rDesign.bestDfMole) + initDfMole);
+        const rNext = evaluateBalancedDf(opRR, escSeed, nCand, true);
+        totalEvals += rNext.evals;
+        rDesign = rNext;
+        if (rNext.sol.converged && (!bestR.sol.converged || rNext.metrics.penalty <= bestR.metrics.penalty + 1e-4)) {
+          bestR = rNext;
+          bestStageN = nCand;
+          bestNf = nfCand;
+        }
+      }
+
+      if (
+        bestR.sol.converged &&
+        !(bestR.metrics.topDef <= stopTopTol && bestR.metrics.botDef <= stopBotTol) &&
+        Date.now() - optStartMs < optBudgetMs - 200
+      ) {
+        const profNf = findBestFeedStageFromProfile(bestR.sol, bestStageN, bestNf);
+        if (Math.abs(profNf - bestNf) >= Math.max(2, Math.round(0.06 * bestStageN))) {
+          N = bestStageN;
+          defaultFeedStage = profNf;
+          ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
+          const pol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true);
+          totalEvals += pol.evals;
+          if (pol.sol.converged && pol.metrics.penalty < bestR.metrics.penalty - 1e-4) {
+            bestR = pol;
+            bestNf = profNf;
+          }
+        }
+      }
+
+      if (bestR.sol.converged) {
+        rollingDfMole = bestR.bestDfMole;
+        const profBest = findBestFeedStageFromProfile(bestR.sol, bestStageN, bestNf);
+        learnedFeedFrac = clamp(
+          0.4 * learnedFeedFrac + 0.6 * ((profBest - 1) / Math.max(1, bestStageN - 2)),
+          0.16,
+          0.84
+        );
+        if (candIdx === 0 && bestStageN > nCandInit) {
+          learnedStageFactor = clamp(learnedStageFactor * (bestStageN / Math.max(4, nCandInit)), 1.0, 1.45);
+        }
+      }
+      const specsMet = bestR.sol.converged && bestR.metrics.topMetRaw && bestR.metrics.botMetRaw;
+      const hyd = estimateDiamAndTac(bestR.sol, bestStageN);
+      return {
+        spec,
+        stagesN: bestStageN,
+        feedStage: bestNf,
+        opRR: bestR.sol.actualRefluxRatio,
+        dfMole: bestR.bestDfMole,
+        sol: bestR.sol,
+        metrics: bestR.metrics,
+        hyd,
+        specsMet,
+      };
+    };
+
+    for (let i = 0; i < candSpecs.length; i++) {
+      if (i >= 2 && Date.now() - optStartMs > optBudgetMs) break;
+      solvedPacks.push(evalOneCandidate(candSpecs[i], i));
+    }
+
+    if (opts.refluxMode !== 'fixed_rr' && !solvedPacks.some(p => p.specsMet) && Date.now() - optStartMs < optBudgetMs - 400) {
+      solvedPacks.push(evalOneCandidate({ mult: 2.45, tag: 'rescue' }, solvedPacks.length));
+    }
+
+    const metPool = solvedPacks.filter(p => p.specsMet);
+    const convPool = metPool.length > 0 ? metPool : solvedPacks.filter(p => p.sol.converged);
+    const rankPool = convPool.length > 0 ? convPool : solvedPacks;
+
+    let bestRecPack = rankPool[0];
+    for (const p of rankPool) {
+      if (metPool.length > 0) {
+        if (p.hyd.tacKUsdYr < bestRecPack.hyd.tacKUsdYr) bestRecPack = p;
+      } else {
+        if (p.metrics.penalty < bestRecPack.metrics.penalty - 0.01) bestRecPack = p;
+        else if (Math.abs(p.metrics.penalty - bestRecPack.metrics.penalty) <= 0.01 && p.hyd.tacKUsdYr < bestRecPack.hyd.tacKUsdYr) {
+          bestRecPack = p;
+        }
+      }
+    }
+
+    let chosenPack = bestRecPack;
+    if (opts.refluxMode === 'fixed_rr') {
+      const fixedP = solvedPacks.find(p => p.spec.tag === 'fixed');
+      if (fixedP) chosenPack = fixedP;
+    } else if (opts.refluxMode === 'r_mult') {
+      const userP = solvedPacks.find(p => p.spec.isUserTarget);
+      if (userP && (userP.specsMet || metPool.length === 0)) chosenPack = userP;
+    }
+
+    const refMinTac = Math.max(
+      1e-3,
+      (metPool.length > 0 ? Math.min(...metPool.map(p => p.hyd.tacKUsdYr)) : bestRecPack.hyd.tacKUsdYr)
+    );
+
+    const sortedPacks = [...solvedPacks].sort((a, b) => a.opRR - b.opRR);
+    const candidateList: DistillDesignCandidate[] = sortedPacks.map((p, idx) => {
+      const isRec = p === bestRecPack;
+      let label = '균형 절감형';
+      if (p.spec.tag === 'fixed') label = '직접 지정 운전점';
+      else if (isRec) label = '★ AI 최적 경제성 (TAC 최소)';
+      else if (p.spec.tag === 'rescue') label = '고환류 핀치 돌파형';
+      else if (idx === 0) label = '최소 에너지형 (고단수·저환류)';
+      else if (idx === sortedPacks.length - 1) label = '최소 단수·콤팩트형 (저단수·고환류)';
+      else if (p.spec.isUserTarget) label = '사용자 배수 지정점';
+
+      return {
+        id: p.spec.tag,
+        label,
+        rOverRmin: Number((p.opRR / Math.max(0.05, rMin)).toFixed(2)),
+        stagesN: p.stagesN,
+        feedStage: p.feedStage,
+        actualTrays: p.hyd.actualTrays,
+        refluxRatio: Number(p.opRR.toFixed(3)),
+        dOverFMass: Number(p.sol.actualDOverFMass.toFixed(4)),
+        distillateKgH: Number(p.metrics.dTot.toFixed(1)),
+        bottomsKgH: Number(p.metrics.bTot.toFixed(1)),
+        topMetricActual: Number(p.metrics.topActual.toFixed(topBasis === 'impurity_wt_ppm' ? 1 : 3)),
+        botMetricActual: Number(p.metrics.botActual.toFixed(botBasis === 'impurity_wt_ppm' ? 1 : 3)),
+        reboilerDutyKW: Number(p.hyd.reboilerKW.toFixed(1)),
+        condenserDutyKW: Number(p.hyd.condenserKW.toFixed(1)),
+        estimatedDiameterM: Number(p.hyd.diamM.toFixed(2)),
+        annualCapexKUsd: Number(p.hyd.annualCapexKUsd.toFixed(1)),
+        annualOpexKUsd: Number(p.hyd.annualOpexKUsd.toFixed(1)),
+        tacKUsdYr: Number(p.hyd.tacKUsdYr.toFixed(1)),
+        tacIndex: Number(((p.hyd.tacKUsdYr / refMinTac) * 100.0).toFixed(1)),
+        converged: p.sol.converged,
+        specsMet: p.specsMet,
+        recommended: isRec,
+      };
+    });
+
+    N = chosenPack.stagesN;
+    defaultFeedStage = chosenPack.feedStage;
+    solvedRR = chosenPack.opRR;
+    solvedDF = chosenPack.sol.actualDOverFMass;
+    ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
+    if (!chosenPack.sol.converged) {
+      const fullSol = runMeshAt(chosenPack.opRR, chosenPack.dfMole, false);
+      if (fullSol.converged) {
+        chosenPack.sol = fullSol;
+        solvedRR = fullSol.actualRefluxRatio;
+        solvedDF = fullSol.actualDOverFMass;
+      }
+    }
+
+    return {
+      chosenPack,
+      candidateList,
+      selectedCandidateId: chosenPack.spec.tag,
+      lkComp,
+      hkComp,
+      alphaAvg,
+      nMin,
+      rMin,
+      tgtTopWt,
+      tgtBotWt,
+      totalEvals,
+    };
+  };
 
   const solveOpen1DSecant = (
     lo: number,
@@ -4065,96 +4936,15 @@ function solveRigorousDistillationUncached(
       }
     }
   } else if (isDesignStagesMode && activeComps.length >= 2) {
-    // ── 목표순도 기반 단수(N)·최적공급단(Nf)·탑정/탑저유량(D/B) 자동역산 + 엄밀 MESH 검증 모드 ──
-    const xFeedAll = zeroCompRecord();
-    for (const c of activeComps) xFeedAll[c] = totalFeedMol[c] / Math.max(1e-12, totalMolesIn);
-    const pTopBarA = Math.max(0.03, (topPressKgcm2g + 1.03323) * 0.980665);
-    const tFeedBp = solveStageBubbleTempC(chosenModel, activeComps, xFeedAll, pTopBarA, feedsInput[0]?.tempC ?? 45);
-    const K_mid = calcStageKValues(chosenModel, activeComps, xFeedAll, tFeedBp, pTopBarA);
-
-    // 비휘발성 염을 제외한 분리 대상 성분 후보 추출
-    const sepCandidates = activeComps.filter(c => !NON_VOLATILE_SET.has(c));
-    const pool = sepCandidates.length >= 2 ? sepCandidates : activeComps;
-    const byMass = [...pool].sort((a, b) => (totalFeedKgH[b] || 0) - (totalFeedKgH[a] || 0));
-    const top2Major = byMass.slice(0, Math.min(2, byMass.length)).sort((a, b) => (K_mid[b] || 0) - (K_mid[a] || 0));
-
-    let lkComp: SimCompKey =
-      colParams.designLkComp && totalFeedMol[colParams.designLkComp] > 1e-10
-        ? colParams.designLkComp
-        : top2Major[0] ?? pool[0];
-    let hkComp: SimCompKey =
-      colParams.designHkComp && colParams.designHkComp !== lkComp && totalFeedMol[colParams.designHkComp] > 1e-10
-        ? colParams.designHkComp
-        : top2Major.find(c => c !== lkComp) ?? pool.find(c => c !== lkComp) ?? lkComp;
-
-    // 사용자가 LK/HK를 반대로 선택했더라도 휘발도 순서 보정
-    if (lkComp !== hkComp && (K_mid[lkComp] || 0) < (K_mid[hkComp] || 0)) {
-      const tmp = lkComp;
-      lkComp = hkComp;
-      hkComp = tmp;
-    }
-
-    const xPureLk = zeroCompRecord();
-    xPureLk[lkComp] = 0.98;
-    xPureLk[hkComp] = 0.02;
-    const tTopEst = solveStageBubbleTempC(chosenModel, activeComps, xPureLk, pTopBarA, tFeedBp - 15);
-    const K_top = calcStageKValues(chosenModel, activeComps, xPureLk, tTopEst, pTopBarA);
-
-    const xPureHk = zeroCompRecord();
-    xPureHk[hkComp] = 0.98;
-    xPureHk[lkComp] = 0.02;
-    const estStagesForDp = clamp(colParams.totalStages ?? 20, 6, 85);
-    const pBotEstBarA = pTopBarA + estStagesForDp * stageDeltaP * 0.980665;
-    const tBotEst = solveStageBubbleTempC(chosenModel, activeComps, xPureHk, pBotEstBarA, tFeedBp + 15);
-    const K_bot = calcStageKValues(chosenModel, activeComps, xPureHk, tBotEst, pBotEstBarA);
-
-    const alphaTop = clamp((K_top[lkComp] || 1) / Math.max(1e-6, K_top[hkComp] || 0.5), 1.04, 150);
-    const alphaBot = clamp((K_bot[lkComp] || 1) / Math.max(1e-6, K_bot[hkComp] || 0.5), 1.04, 150);
-    const alphaMid = clamp((K_mid[lkComp] || 1) / Math.max(1e-6, K_mid[hkComp] || 0.5), 1.04, 150);
-    const alphaAvg = Math.max(1.05, Math.pow(alphaTop * alphaMid * alphaBot, 1 / 3));
-
+    // ── 목표순도 기반 다중후보 (단수 N · 공급단 Nf · 환류비 RR · 유출비 D/F) 자동최적화 + TAC 선정 ──
     const topBasis: DistillEndpointBasis = colParams.designTopBasis ?? 'purity_wt_pct';
     const botBasis: DistillEndpointBasis = colParams.designBotBasis ?? 'purity_wt_pct';
-    const feedLkKg = Math.max(1e-6, totalFeedKgH[lkComp] || 0);
-    const feedHkKg = Math.max(1e-6, totalFeedKgH[hkComp] || 0);
-
-    // 비주성분(Non-Key) 상부 동반 유출량 및 하부 잔류량 계산 (물리적 최대 도달 순도 산출용)
-    let lighterMassBeforeDecant = 0;
-    let lighterMassInProduct = 0;
-    let heavierMass = 0;
-    for (const c of activeComps) {
-      if (c === lkComp || c === hkComp) continue;
-      const mComp = totalFeedKgH[c] || 0;
-      if (mComp <= 0) continue;
-      const isHydroOrgAzeoWater =
-        c === 'H2O' &&
-        (COMP_CATALOG_META[hkComp]?.tbC ?? 100) >= 105 &&
-        ((totalFeedKgH.ECH || 0) + (totalFeedKgH.DCP || 0) + (totalFeedKgH.DCH || 0) + (totalFeedKgH.CHCl3 || 0)) > 1e-3 &&
-        (K_mid[c] || 0) >= 1.05 * (K_mid[hkComp] || 0);
-      if (NON_VOLATILE_SET.has(c)) {
-        heavierMass += mComp;
-      } else if ((K_mid[c] || 0) >= (K_mid[lkComp] || 0) || isHydroOrgAzeoWater) {
-        lighterMassBeforeDecant += mComp;
-        if (c === 'H2O' && condenserType === 'decanter_ech') {
-          lighterMassInProduct += Math.min(mComp, feedLkKg * 0.0012);
-        } else {
-          lighterMassInProduct += mComp;
-        }
-      } else {
-        heavierMass += mComp;
-      }
-    }
-
-    const maxPossibleTopLkWtPct = (feedLkKg / Math.max(1e-6, feedLkKg + lighterMassInProduct)) * 100.0;
-    const maxPossibleBotHkWtPct = (feedHkKg / Math.max(1e-6, feedHkKg + heavierMass)) * 100.0;
-
     const userTopVal =
       topBasis === 'impurity_wt_ppm'
         ? clamp(colParams.designTopImpurityPpm ?? 500, 1, 400000)
         : topBasis === 'recovery_pct'
           ? clamp(colParams.designTopRecoveryPct ?? 99.2, 50, 99.9999)
           : clamp(colParams.designTopPurityWtPct ?? 99.0, 0.01, 99.9999);
-
     const userBotVal =
       botBasis === 'impurity_wt_ppm'
         ? clamp(colParams.designBotImpurityPpm ?? 500, 1, 400000)
@@ -4162,355 +4952,46 @@ function solveRigorousDistillationUncached(
           ? clamp(colParams.designBotRecoveryPct ?? 99.2, 50, 99.9999)
           : clamp(colParams.designBotPurityWtPct ?? 99.0, 0.01, 99.9999);
 
-    // Fenske-Underwood 단수 추정을 위한 이성분(LK vs HK) 목표 분율 역산
-    let wDLk = 0.995;
-    if (topBasis === 'purity_wt_pct') {
-      const effTopPct = Math.min(userTopVal, Math.max(0.01, maxPossibleTopLkWtPct - 0.05));
-      const totDNeeded = (0.99 * feedLkKg) / Math.max(0.0001, effTopPct / 100.0);
-      const allowedHkInD = Math.max(0.0015 * feedLkKg, totDNeeded - 0.99 * feedLkKg - lighterMassInProduct);
-      wDLk = clamp((0.99 * feedLkKg) / Math.max(1e-6, 0.99 * feedLkKg + allowedHkInD), 0.0005, 0.9995);
-    } else if (topBasis === 'impurity_wt_ppm') {
-      const allowedHkInD = (userTopVal / 1e6) * (feedLkKg + lighterMassInProduct);
-      wDLk = clamp(feedLkKg / Math.max(1e-6, feedLkKg + allowedHkInD), 0.52, 0.9999);
-    } else {
-      const recFrac = clamp(userTopVal / 100.0, 0.5, 0.999999);
-      const isLightGasTop = PERMANENT_GAS_SET.has(lkComp) && feedLkKg < feedHkKg * 0.1;
-      if (isLightGasTop) {
-        const estDistHkKg = Math.max(0.01 * feedHkKg, feedLkKg * 6.0);
-        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.01, 0.996);
-      } else if (botBasis === 'recovery_pct') {
-        const botRecFrac = clamp(userBotVal / 100.0, 0.5, 0.999999);
-        const estDistHkKg = Math.max(0.001 * feedHkKg, (1.0 - botRecFrac) * feedHkKg);
-        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.15, 0.996);
-      } else if (feedLkKg < 0.15 * feedHkKg) {
-        const estDistHkKg = Math.max(0.003 * feedHkKg, 0.12 * feedLkKg);
-        wDLk = clamp((recFrac * feedLkKg) / Math.max(1e-6, recFrac * feedLkKg + estDistHkKg), 0.25, 0.985);
-      } else {
-        wDLk = clamp(recFrac, 0.85, 0.996);
-      }
-    }
+    const effectiveRefluxMode: DistillRefluxDesignMode =
+      colParams.designRefluxMode ?? (typeof colParams.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
 
-    let wBLk = 0.002;
-    if (botBasis === 'purity_wt_pct') {
-      const effBotPct = Math.min(userBotVal, Math.max(55.0, maxPossibleBotHkWtPct - 0.1));
-      const totBNeeded = (0.995 * feedHkKg) / Math.max(0.05, effBotPct / 100.0);
-      const allowedLkInB = Math.max(0.002 * feedLkKg, totBNeeded - 0.995 * feedHkKg - heavierMass);
-      wBLk = clamp(allowedLkInB / Math.max(1e-6, 0.995 * feedHkKg + allowedLkInB), 0.00005, 0.48);
-    } else if (botBasis === 'impurity_wt_ppm') {
-      const allowedLkInB = (userBotVal / 1e6) * (feedHkKg + heavierMass);
-      wBLk = clamp(allowedLkInB / Math.max(1e-6, feedHkKg + allowedLkInB), 0.00003, 0.48);
-    } else {
-      // 회수율 기준 지정 시: 원료 내 경질분(LK)의 약 98.8%를 상부로 제거하는 합리적인 하부 LK 잔류 분율 설정
-      const targetLkSlipKg = Math.max(0.012 * feedLkKg, (1.0 - userBotVal / 100.0) * 0.15 * feedLkKg);
-      wBLk = clamp(targetLkSlipKg / Math.max(1e-6, feedHkKg + targetLkSlipKg), 0.00015, 0.05);
-    }
-
-    const tgtTopWt =
-      topBasis === 'purity_wt_pct'
-        ? userTopVal
-        : topBasis === 'impurity_wt_ppm'
-          ? 100.0 - userTopVal / 10000.0
-          : Number((wDLk * 100.0).toFixed(2));
-    const tgtBotWt =
-      botBasis === 'purity_wt_pct'
-        ? userBotVal
-        : botBasis === 'impurity_wt_ppm'
-          ? 100.0 - userBotVal / 10000.0
-          : Number(((feedHkKg / Math.max(1e-6, feedHkKg + heavierMass)) * 100.0).toFixed(2));
-
-    const xDLk = clamp(
-      (wDLk / COMP_MW[lkComp]) / (wDLk / COMP_MW[lkComp] + (1 - wDLk) / COMP_MW[hkComp]),
-      0.0005,
-      0.9999
-    );
-    const xBLk = clamp(
-      (wBLk / COMP_MW[lkComp]) / (wBLk / COMP_MW[lkComp] + (1 - wBLk) / COMP_MW[hkComp]),
-      0.00005,
-      0.499
-    );
-    const zFLk = clamp(
-      totalFeedMol[lkComp] / Math.max(1e-9, totalFeedMol[lkComp] + totalFeedMol[hkComp]),
-      0.002,
-      0.998
-    );
-
-    // 1) Fenske 최소 이론단수 N_min
-    const sepFactor = (xDLk * (1 - xBLk)) / Math.max(1e-12, (1 - xDLk) * xBLk);
-    const nMin = clamp(Math.log(Math.max(1.1, sepFactor)) / Math.log(alphaAvg), 2.0, 85.0);
-
-    // 2) Underwood 최소 환류비 R_min (유입 피드 열상태 q_F 반영)
-    const avgQf = clamp(
-      preparedFeeds.reduce((s, pf) => {
-        const mSum = activeComps.reduce((a, c) => a + pf.mol[c], 0);
-        return s + pf.qThermal * mSum;
-      }, 0) / Math.max(1e-9, totalMolesIn),
-      0.0,
-      1.25
-    );
-    let thLo = 1.0001;
-    let thHi = Math.max(1.0005, alphaAvg - 0.0001);
-    for (let it = 0; it < 28; it++) {
-      const thMid = 0.5 * (thLo + thHi);
-      const lhs = (alphaAvg * zFLk) / (alphaAvg - thMid) + (1 - zFLk) / (1 - thMid);
-      if (lhs > 1.0 - avgQf) {
-        thHi = thMid;
-      } else {
-        thLo = thMid;
-      }
-    }
-    const thetaUw = 0.5 * (thLo + thHi);
-    const rMinPlus1 = (alphaAvg * xDLk) / Math.max(1e-5, alphaAvg - thetaUw) + (1 - xDLk) / (1 - thetaUw);
-    const refluxMode = colParams.designRefluxMode ?? 'r_mult';
-    const rMult = clamp(colParams.designRefluxMult ?? 1.25, 1.05, 5.0);
-    const rMinRaw = clamp(rMinPlus1 - 1.0, 0.12, 45.0);
-    const rMin = refluxMode === 'r_mult' ? Math.min(9.5, rMinRaw) : rMinRaw;
-
-    // 3) 운전 환류비 RR 결정 (R/R_min 배수 모드 vs 직접 지정 모드)
-    const opRR =
-      refluxMode === 'fixed_rr'
-        ? clamp(Math.max(Math.min(rMin, 12.0) * 1.03, colParams.designFixedRR ?? colParams.topSpecValue ?? 2.8), 0.15, 65.0)
-        : clamp(rMin * rMult, 0.25, 12.0);
-
-    // 4) Eduljee-Gilliland 이론단수 N 산출 (초임계 경질가스 스트리핑 시 물질전달 보정 하한 적용)
-    const gillX = clamp((opRR - rMin) / (opRR + 1.0), 0.02, 0.98);
-    const gillY = 1.0 - Math.exp(((1.0 + 54.4 * gillX) / (11.0 + 117.2 * gillX)) * ((gillX - 1.0) / Math.sqrt(gillX)));
-    const isLightGasStripper = PERMANENT_GAS_SET.has(lkComp) && (botBasis === 'impurity_wt_ppm' || userBotVal >= 99.9);
-    const minDesignStages = isLightGasStripper ? 14 : 6;
-    let nSolved = clamp(Math.ceil((gillY + nMin) / Math.max(0.05, 1.0 - gillY)), minDesignStages, 85);
-
-    // 5) 다성분 전체 질량수지 기반 초기 D/F(디캔팅 전 총 탑정 인출분율) 및 Kirkbride 최적 공급단 산출
-    const keySubMass = Math.max(1e-6, feedLkKg + feedHkKg);
-    const wFeedKeyLk = clamp(feedLkKg / keySubMass, 0.002, 0.998);
-    const dKeyMassBal = keySubMass * clamp((wFeedKeyLk - wBLk) / Math.max(0.02, wDLk - wBLk), 0.005, 0.995);
-    const estDistMassBeforeDecant = clamp(
-      lighterMassBeforeDecant + dKeyMassBal,
-      totalFeedMassKgH * 0.004,
-      totalFeedMassKgH * 0.994
-    );
-    const initDfMass = clamp(estDistMassBeforeDecant / totalFeedMassKgH, 0.004, 0.994);
-    const kirkRatio = Math.pow(
-      Math.max(
-        1e-4,
-        ((1 - initDfMass) / Math.max(0.01, initDfMass)) *
-          ((1 - zFLk) / Math.max(0.002, zFLk)) *
-          Math.pow(xBLk / Math.max(1e-5, 1 - xDLk), 2)
-      ),
-      0.206
-    );
-    const feedFrac = clamp(kirkRatio / (1.0 + kirkRatio), 0.18, 0.82);
-    let nfSolved = clamp(Math.round(1 + (nSolved - 2) * feedFrac), 2, nSolved - 1);
-
-    // 6) 사용자가 선택한 실제 기준(농도 wt% / 불순물 ppm / 회수율 %)으로 D/F 최적점 탐색
     dfIsMassMode = true;
-    solvedRR = opRR;
-    solvedDF = initDfMass;
-    let totalDesignEvals = 0;
+    const optOut = runJointMultiCandidateOptimization({
+      lkCompIn: colParams.designLkComp ?? defaultTopComp,
+      hkCompIn: colParams.designHkComp ?? defaultBotComp,
+      topBasis,
+      userTopVal,
+      botBasis,
+      userBotVal,
+      refluxMode: effectiveRefluxMode,
+      userRMult: colParams.designRefluxMult ?? 1.25,
+      fixedRR: colParams.designFixedRR ?? colParams.topSpecValue ?? 2.8,
+      accountForMurphreeInStages: false,
+    });
 
-    const evalDesignMetrics = (s: InnerMeshSolution) => {
-      const dTot = Math.max(1e-9, ALL_KEYS.reduce((a, k) => a + s.distillateKgH[k], 0));
-      const bTot = Math.max(1e-9, ALL_KEYS.reduce((a, k) => a + s.bottomsKgH[k], 0));
-      const topLkWt = (s.distillateKgH[lkComp] / dTot) * 100.0;
-      const botHkWt = (s.bottomsKgH[hkComp] / bTot) * 100.0;
-      const topHkPpm = (s.distillateKgH[hkComp] / dTot) * 1e6;
-      const botLkPpm = (s.bottomsKgH[lkComp] / bTot) * 1e6;
-      const topLkRec = (s.distillateKgH[lkComp] / feedLkKg) * 100.0;
-      const botHkRec = (s.bottomsKgH[hkComp] / feedHkKg) * 100.0;
-      const keyBinTopPct =
-        (s.distillateKgH[lkComp] / Math.max(1e-9, s.distillateKgH[lkComp] + s.distillateKgH[hkComp])) * 100.0;
-      const keyBinBotPct =
-        (s.bottomsKgH[hkComp] / Math.max(1e-9, s.bottomsKgH[lkComp] + s.bottomsKgH[hkComp])) * 100.0;
-
-      const topCapMargin = maxPossibleTopLkWtPct >= 99.9 ? Math.max(0.0002, (100 - maxPossibleTopLkWtPct) * 0.1) : 0.08;
-      const botCapMargin = maxPossibleBotHkWtPct >= 99.9 ? Math.max(0.0002, (100 - maxPossibleBotHkWtPct) * 0.1) : 0.08;
-      const effTopPurityCap = Math.min(userTopVal, Math.max(0, maxPossibleTopLkWtPct - topCapMargin));
-      const effBotPurityCap = Math.min(userBotVal, Math.max(0, maxPossibleBotHkWtPct - botCapMargin));
-
-      const topDef =
-        topBasis === 'purity_wt_pct'
-          ? effTopPurityCap - topLkWt
-          : topBasis === 'impurity_wt_ppm'
-            ? ((topHkPpm - userTopVal) / Math.max(25.0, userTopVal)) * 2.0
-            : userTopVal - topLkRec;
-
-      const botDef =
-        botBasis === 'purity_wt_pct'
-          ? effBotPurityCap - botHkWt
-          : botBasis === 'impurity_wt_ppm'
-            ? ((botLkPpm - userBotVal) / Math.max(25.0, userBotVal)) * 2.0
-            : userBotVal - botHkRec;
-
-      // 두 목표가 모두 충족된 구간에서는 주성분 회수율 손실이 최소인 화학양론 컷(initDfMass 근방)을 선호하며 미수렴 해는 배제
-      const penalty =
-        (s.converged ? 0 : 50.0) +
-        Math.max(0, topDef) +
-        Math.max(0, botDef) +
-        0.04 * Math.max(0, 98.5 - topLkRec) +
-        0.04 * Math.max(0, 98.5 - botHkRec);
-
-      return {
-        topLkWt,
-        botHkWt,
-        topHkPpm,
-        botLkPpm,
-        topLkRec,
-        botHkRec,
-        keyBinTopPct,
-        keyBinBotPct,
-        topDef,
-        botDef,
-        penalty,
-      };
-    };
-
-    const evaluateBalancedDf = (
-      rrNow: number,
-      dfCenter: number
-    ): { bestDf: number; sol: InnerMeshSolution; metrics: ReturnType<typeof evalDesignMetrics>; evals: number } => {
-      const span = clamp(Math.min(dfCenter, 1.0 - dfCenter) * 0.65, 0.012, 0.065);
-      const minDfFloorForLights =
-        lighterMassBeforeDecant > 0
-          ? clamp((lighterMassBeforeDecant * 0.92) / totalFeedMassKgH, 0.003, 0.95)
-          : 0.003;
-      const safeCenter = Math.max(dfCenter, minDfFloorForLights);
-      const loDf = clamp(safeCenter - span, minDfFloorForLights, 0.992);
-      const hiDf = clamp(Math.max(loDf + 0.01, safeCenter + span), 0.006, 0.996);
-
-      let bestDf = safeCenter;
-      let bestSol = runMeshAt(rrNow, safeCenter, true, 55);
-      let bestM = evalDesignMetrics(bestSol);
-      let ev = 1;
-
-      if (bestSol.converged && bestM.topDef <= 0.04 && bestM.botDef <= 0.04 && bestM.topLkRec >= 97.5 && bestM.botHkRec >= 97.5) {
-        return { bestDf, sol: bestSol, metrics: bestM, evals: ev };
-      }
-
-      const nGrid = 5;
-      let bestIdx = 2;
-      const gX: number[] = [];
-      for (let g = 0; g < nGrid; g++) {
-        const xg = loDf + ((hiDf - loDf) * g) / (nGrid - 1);
-        gX.push(xg);
-        if (Math.abs(xg - safeCenter) < 1e-4) continue;
-        if (Date.now() - solveStartMs > 750) break;
-        const sg = runMeshAt(rrNow, xg, true, 55);
-        ev++;
-        const mg = evalDesignMetrics(sg);
-        if (mg.penalty < bestM.penalty) {
-          bestM = mg;
-          bestDf = xg;
-          bestSol = sg;
-          bestIdx = g;
-        }
-      }
-
-      let subLo = gX[Math.max(0, bestIdx - 1)] ?? loDf;
-      let subHi = gX[Math.min(gX.length - 1, bestIdx + 1)] ?? hiDf;
-      for (let k = 0; k < 4; k++) {
-        if (Date.now() - solveStartMs > 750) break;
-        const m1 = subLo + 0.382 * (subHi - subLo);
-        const m2 = subLo + 0.618 * (subHi - subLo);
-        const s1P = runMeshAt(rrNow, m1, true, 55);
-        const s2P = runMeshAt(rrNow, m2, true, 55);
-        ev += 2;
-        const met1 = evalDesignMetrics(s1P);
-        const met2 = evalDesignMetrics(s2P);
-        if (met1.penalty < bestM.penalty) {
-          bestM = met1;
-          bestDf = m1;
-          bestSol = s1P;
-        }
-        if (met2.penalty < bestM.penalty) {
-          bestM = met2;
-          bestDf = m2;
-          bestSol = s2P;
-        }
-        if (met1.penalty <= met2.penalty) subHi = m2;
-        else subLo = m1;
-        if (subHi - subLo < 4e-4) break;
-      }
-
-      return { bestDf, sol: bestSol, metrics: bestM, evals: ev };
-    };
-
-    N = nSolved;
-    defaultFeedStage = nfSolved;
-    ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
-
-    let rDesign = evaluateBalancedDf(solvedRR, initDfMass);
-    totalDesignEvals += rDesign.evals;
-    solvedDF = rDesign.bestDf;
-    finalSol = rDesign.sol;
-
-    const designTopTol = userTopVal >= 99.5 ? Math.min(0.08, Math.max(0.0005, (100 - userTopVal) * 0.25)) : 0.08;
-    const designBotTol = userBotVal >= 99.5 ? Math.min(0.08, Math.max(0.0005, (100 - userBotVal) * 0.25)) : 0.08;
-    const keyBinStopPct = botBasis === 'purity_wt_pct' && userBotVal > 99.85 ? Math.min(99.9999, userBotVal) : 99.85;
-
-    for (let step = 0; step < 4; step++) {
-      if (Date.now() - solveStartMs > 750) break;
-      const mNow = rDesign.metrics;
-      if (rDesign.sol.converged && mNow.topDef <= designTopTol && mNow.botDef <= designBotTol) {
-        break;
-      }
-      // 이성분(LK vs HK) 분리가 목표치 이상 완료되었다면 비주성분 희석/공비 한계이므로 과도한 단수 팽창 중단
-      if (rDesign.sol.converged && mNow.keyBinTopPct >= keyBinStopPct && mNow.keyBinBotPct >= keyBinStopPct) {
-        break;
-      }
-      if (!rDesign.sol.converged && (N >= 48 || solvedRR >= 12.0)) break;
-      if (N >= 56 && refluxMode === 'fixed_rr') break;
-      if (N >= 56) break;
-
-      N = clamp(Math.ceil(N * 1.2 + 2), N + 2, 56);
-      defaultFeedStage = clamp(Math.round(1 + (N - 2) * feedFrac), 2, N - 1);
-      if (step >= 1 && refluxMode === 'r_mult') {
-        solvedRR = Math.min(15.0, clamp(solvedRR * 1.15, 0.2, 15.0));
-      }
-      ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
-      rDesign = evaluateBalancedDf(solvedRR, solvedDF);
-      totalDesignEvals += rDesign.evals;
-      solvedDF = rDesign.bestDf;
-      finalSol = rDesign.sol;
-    }
-
-    if (!finalSol.converged) {
-      finalSol = runMeshAt(solvedRR, solvedDF, true);
-      totalDesignEvals++;
-    }
-    outerIters = totalDesignEvals;
-    const finalM = evalDesignMetrics(finalSol);
+    finalSol = optOut.chosenPack.sol;
+    outerIters = optOut.totalEvals;
+    const finalM = optOut.chosenPack.metrics;
     const achievedTopLkWt = finalM.topLkWt;
     const achievedBotHkWt = finalM.botHkWt;
     const achievedTopLkRec = finalM.topLkRec;
     const achievedBotHkRec = finalM.botHkRec;
-
-    const topPurityTol = userTopVal >= 99.5 ? Math.min(0.25, Math.max(0.0005, (100 - userTopVal) * 0.25)) : 0.25;
-    const botPurityTol = userBotVal >= 99.5 ? Math.min(0.25, Math.max(0.0005, (100 - userBotVal) * 0.25)) : 0.25;
-
-    const topSpecMet =
-      topBasis === 'purity_wt_pct'
-        ? achievedTopLkWt >= userTopVal - topPurityTol
-        : topBasis === 'impurity_wt_ppm'
-          ? finalM.topHkPpm <= userTopVal * 1.05 + 5
-          : achievedTopLkRec >= userTopVal - 0.25;
-
-    const botSpecMet =
-      botBasis === 'purity_wt_pct'
-        ? achievedBotHkWt >= userBotVal - botPurityTol
-        : botBasis === 'impurity_wt_ppm'
-          ? finalM.botLkPpm <= userBotVal * 1.05 + 5
-          : achievedBotHkRec >= userBotVal - 0.25;
-
+    const topSpecMet = finalM.topMetRaw;
+    const botSpecMet = finalM.botMetRaw;
     const designMet = finalSol.converged && topSpecMet && botSpecMet;
+    const lkComp = optOut.lkComp;
+    const hkComp = optOut.hkComp;
 
     const topTargetSummary =
       topBasis === 'purity_wt_pct'
-        ? `탑정 ${lkComp} 농도 목표 ${userTopVal}% → 계산값 ${achievedTopLkWt.toFixed(2)} wt% (${topSpecMet ? '달성' : '미달'})`
+        ? `탑정 ${lkComp} 농도 목표 ${userTopVal}% → 계산값 ${achievedTopLkWt.toFixed(userTopVal >= 99.9 ? 3 : 2)} wt% (${topSpecMet ? '달성' : '미달'})`
         : topBasis === 'impurity_wt_ppm'
           ? `탑정 ${hkComp} 불순물 목표 ≤${userTopVal} ppm → 계산값 ${finalM.topHkPpm.toFixed(1)} ppm (${topSpecMet ? '달성' : '미달'})`
           : `탑정 ${lkComp} 회수율 목표 ${userTopVal}% → 계산값 ${achievedTopLkRec.toFixed(2)}% (${topSpecMet ? '달성' : '미달'})`;
 
     const botTargetSummary =
       botBasis === 'purity_wt_pct'
-        ? `탑저 ${hkComp} 농도 목표 ${userBotVal}% → 계산값 ${achievedBotHkWt.toFixed(2)} wt% (${botSpecMet ? '달성' : '미달'})`
+        ? `탑저 ${hkComp} 농도 목표 ${userBotVal}% → 계산값 ${achievedBotHkWt.toFixed(userBotVal >= 99.9 ? 3 : 2)} wt% (${botSpecMet ? '달성' : '미달'})`
         : botBasis === 'impurity_wt_ppm'
           ? `탑저 ${lkComp} 불순물 목표 ≤${userBotVal} ppm → 계산값 ${finalM.botLkPpm.toFixed(1)} ppm (${botSpecMet ? '달성' : '미달'})`
           : `탑저 ${hkComp} 회수율 목표 ${userBotVal}% → 계산값 ${achievedBotHkRec.toFixed(2)}% (${botSpecMet ? '달성' : '미달'})`;
@@ -4518,9 +4999,9 @@ function solveRigorousDistillationUncached(
     shortcutDesign = {
       lkComp,
       hkComp,
-      alphaAvg: Number(alphaAvg.toFixed(3)),
-      minStagesNmin: Number(nMin.toFixed(2)),
-      minRefluxRmin: Number(rMin.toFixed(3)),
+      alphaAvg: Number(optOut.alphaAvg.toFixed(3)),
+      minStagesNmin: Number(optOut.nMin.toFixed(2)),
+      minRefluxRmin: Number(optOut.rMin.toFixed(3)),
       operatingRR: Number(finalSol.actualRefluxRatio.toFixed(3)),
       solvedStagesN: N,
       solvedFeedStage: defaultFeedStage,
@@ -4531,16 +5012,20 @@ function solveRigorousDistillationUncached(
       botHkRecoveryPct: Number(clamp(achievedBotHkRec, 0, 100).toFixed(2)),
       topHkImpurityPpm: Number(finalM.topHkPpm.toFixed(1)),
       botLkImpurityPpm: Number(finalM.botLkPpm.toFixed(1)),
-      targetTopPurityWtPct: Number(tgtTopWt.toFixed(3)),
-      targetBotPurityWtPct: Number(tgtBotWt.toFixed(3)),
+      targetTopPurityWtPct: Number(optOut.tgtTopWt.toFixed(3)),
+      targetBotPurityWtPct: Number(optOut.tgtBotWt.toFixed(3)),
       topSpecMet,
       botSpecMet,
       topTargetSummary,
       botTargetSummary,
       designMet,
+      refluxModeUsed: effectiveRefluxMode,
+      candidates: optOut.candidateList,
+      selectedCandidateId: optOut.selectedCandidateId,
     };
+    const metCount = optOut.candidateList.filter(c => c.specsMet).length;
     dofMessage = designMet
-      ? `✓ 목표조건 자동설계 수렴 완료 (N=${N}단 · 피드 ${defaultFeedStage}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`
+      ? `✓ AI 다중후보(${metCount}/${optOut.candidateList.length} 수렴 · TAC 최소) 설계 완료 (N=${N}단 · 피드 ${defaultFeedStage}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`
       : `⚠ 목표 스펙 일부 미달 — 진단 가이드를 확인하세요 (N=${N}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`;
   } else if (s1 && (!s2 || !dofValid)) {
     const r1 = solveSingleVary(s1, solvedRR, solvedDF);
@@ -4555,95 +5040,186 @@ function solveRigorousDistillationUncached(
     if (s2.varyParam === 'd_over_f') solvedDF = r2.bestParam;
     else solvedRR = r2.bestParam;
   } else if (s1 && s2 && dofValid && isCoupledDualEndpoint) {
-    // ── ③ 탑정 품질조건 + ④ 탑저 품질조건 동시 지정 시 (RR, D/F) 2차원 결합 Minimax 수렴 ──
-    const normDeficit = (spec: DistillDesignSpec, sol: InnerMeshSolution): number => {
-      const val = evalSpecMetric(spec, sol, totalFeedKgH);
-      if (spec.metric === 'impurity_wt_ppm') {
-        return ((val - spec.targetValue) / Math.max(25.0, spec.targetValue)) * 1.5;
+    // ── ③ 탑정 품질조건 + ④ 탑저 품질조건 동시 지정 시: AI (N, Nf, RR, D/F) 다중후보 최적수렴 또는 고정단 (RR, D/F) 역산 ──
+    if (colParams.autoOptimizeStagesOnDualSpec !== false && activeComps.length >= 2) {
+      const topIsImp = s1.metric === 'impurity_wt_ppm';
+      const botIsImp = s2.metric === 'impurity_wt_ppm';
+      let candLk: SimCompKey = topIsImp ? (!botIsImp ? defaultTopComp : s2.component) : s1.component;
+      let candHk: SimCompKey = botIsImp ? (!topIsImp ? defaultBotComp : s1.component) : s2.component;
+      if (candLk === candHk || (totalFeedMol[candLk] || 0) <= 1e-10 || (totalFeedMol[candHk] || 0) <= 1e-10) {
+        const sepPool = activeComps.filter(c => !NON_VOLATILE_SET.has(c) && (totalFeedMol[c] || 0) > 1e-10);
+        const volSorted = [...(sepPool.length >= 2 ? sepPool : activeComps)].sort(
+          (a, b) => (K_quick[b] || 0) - (K_quick[a] || 0)
+        );
+        candLk = (totalFeedMol[candLk] || 0) > 1e-10 ? candLk : (volSorted[0] ?? defaultTopComp);
+        candHk =
+          (totalFeedMol[candHk] || 0) > 1e-10 && candHk !== candLk
+            ? candHk
+            : (volSorted.find(c => c !== candLk) ?? defaultBotComp);
       }
-      return spec.targetValue - val;
-    };
 
-    // 초기 물질수지 D/F 중심점 추정
-    const lkFeedEst = totalFeedKgH[s1.component] || totalFeedKgH[defaultTopComp] || totalFeedMassKgH * 0.5;
-    let dfSeed = clamp(lkFeedEst / Math.max(1e-6, totalFeedMassKgH), 0.03, 0.97);
-    let totalEv = 0;
+      const optOut = runJointMultiCandidateOptimization({
+        lkCompIn: candLk,
+        hkCompIn: candHk,
+        topBasis: s1.metric,
+        userTopVal: s1.targetValue,
+        botBasis: s2.metric,
+        userBotVal: s2.targetValue,
+        refluxMode: 'auto_opt',
+        userRMult: 1.25,
+        explicitTopSpec: s1,
+        explicitBotSpec: s2,
+        accountForMurphreeInStages: stageInputBasisUsed === 'actual_murphree',
+      });
 
-    // 주어진 RR에서 max(def1, def2)를 최소화하는 최적 D/F 탐색 (황금분할 + 이분 7회)
-    const evalBestDfForRR = (rrTry: number, centerDf: number) => {
-      let loD = clamp(centerDf - 0.22, 0.008, 0.985);
-      let hiD = clamp(centerDf + 0.22, 0.015, 0.992);
-      let bestD = centerDf;
-      let bestSolD = runMeshAt(rrTry, centerDf, true, 35);
-      totalEv++;
-      let d1 = normDeficit(s1!, bestSolD);
-      let d2 = normDeficit(s2!, bestSolD);
-      let bestWorst = Math.max(d1, d2);
-
-      for (let it = 0; it < 6; it++) {
-        if (Date.now() - solveStartMs > 1200) break;
-        const mA = loD + 0.382 * (hiD - loD);
-        const mB = loD + 0.618 * (hiD - loD);
-        const sA = runMeshAt(rrTry, mA, true, 35);
-        const sB = runMeshAt(rrTry, mB, true, 35);
-        totalEv += 2;
-        const wA = Math.max(normDeficit(s1!, sA), normDeficit(s2!, sA));
-        const wB = Math.max(normDeficit(s1!, sB), normDeficit(s2!, sB));
-        if (wA < bestWorst) {
-          bestWorst = wA;
-          bestD = mA;
-          bestSolD = sA;
-        }
-        if (wB < bestWorst) {
-          bestWorst = wB;
-          bestD = mB;
-          bestSolD = sB;
-        }
-        if (wA <= wB) hiD = mB;
-        else loD = mA;
-        if (hiD - loD < 1.2e-3) break;
-      }
-      return { bestD, bestSolD, bestWorst };
-    };
-
-    // RR 하한/상한 평가 후 최소 필요 환류비 이분 탐색
-    let rrLo = 0.22;
-    let rrHi = 28.0;
-    const lowCheck = evalBestDfForRR(rrLo, dfSeed);
-    dfSeed = lowCheck.bestD;
-    if (lowCheck.bestWorst <= 0.01) {
-      solvedRR = rrLo;
-      solvedDF = lowCheck.bestD;
-      finalSol = lowCheck.bestSolD;
+      finalSol = optOut.chosenPack.sol;
+      outerIters = optOut.totalEvals;
+      dualSpecCandidates = optOut.candidateList;
+      autoStageOptimized = true;
+      const metCount = optOut.candidateList.filter(c => c.specsMet).length;
+      const dualMet = optOut.chosenPack.specsMet;
+      dofMessage = dualMet
+        ? `✓ AI 다중후보(${metCount}/${optOut.candidateList.length} 수렴 · TAC 최소) 최적수렴 완료 (N=${N}단 · 피드 ${defaultFeedStage}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)} · D/F=${finalSol.actualDOverFMass.toFixed(3)})`
+        : `⚠ AI 다중후보 탐색 완료 (${N}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)}) — 일부 스펙 물리적 한계 점검`;
     } else {
-      const hiCheck = evalBestDfForRR(rrHi, dfSeed);
-      if (hiCheck.bestWorst > 0.02) {
-        // 주어진 단수 N에서 최대 환류비로 가능한 최선 수렴점 채택
-        solvedRR = rrHi;
-        solvedDF = hiCheck.bestD;
-        finalSol = hiCheck.bestSolD;
-      } else {
-        let bestPack = hiCheck;
-        let bestRR = rrHi;
-        for (let step = 0; step < 6; step++) {
-          if (Date.now() - solveStartMs > 1200) break;
-          const rrMid = Math.sqrt(rrLo * rrHi);
-          const midPack = evalBestDfForRR(rrMid, bestPack.bestD);
-          if (midPack.bestWorst <= 0.02) {
-            rrHi = rrMid;
-            bestRR = rrMid;
-            bestPack = midPack;
-          } else {
-            rrLo = rrMid;
+      // 고정 단수(N, Nf) 모드: 향상된 연속 몰 D/F 탐색 + 전범위 반복 MESH 기반 (RR, D/F) 2D 수렴
+      const meshIterLim = Math.max(150, Math.min(380, Math.round(125 + N * 2.0)));
+      const tol1 =
+        s1.metric === 'impurity_wt_ppm'
+          ? Math.max(2.0, s1.targetValue * 0.03)
+          : Math.min(0.15, Math.max(0.0025, (100 - s1.targetValue) * 0.5));
+      const tol2 =
+        s2.metric === 'impurity_wt_ppm'
+          ? Math.max(2.0, s2.targetValue * 0.03)
+          : Math.min(0.15, Math.max(0.0025, (100 - s2.targetValue) * 0.5));
+
+      const normDeficit = (spec: DistillDesignSpec, sol: InnerMeshSolution, tolVal: number): number => {
+        const val = evalSpecMetric(spec, sol, totalFeedKgH);
+        const raw = spec.metric === 'impurity_wt_ppm' ? val - spec.targetValue : spec.targetValue - val;
+        return raw / Math.max(1e-4, tolVal);
+      };
+
+      const lkEstComp =
+        s1.metric === 'impurity_wt_ppm'
+          ? (s2.metric === 'impurity_wt_ppm' ? s2.component : defaultTopComp)
+          : s1.component;
+      const lkFeedKg = totalFeedKgH[lkEstComp] || totalFeedKgH[defaultTopComp] || totalFeedMassKgH * 0.5;
+      const dfMolSeed0 = clamp(
+        estInitDistMolesForMass(lkFeedKg) / Math.max(1e-9, totalMolesIn),
+        0.001,
+        0.994
+      );
+      let dfSeed = dfMolSeed0;
+      let totalEv = 0;
+
+      const evalBestDfForRR = (rrTry: number, centerDfMol: number) => {
+        const evalPt = (xDf: number) => {
+          const sol = runMeshAt(rrTry, xDf, false, meshIterLim);
+          totalEv++;
+          const d1 = normDeficit(s1!, sol, tol1);
+          const d2 = normDeficit(s2!, sol, tol2);
+          const w = (sol.converged ? 0 : 500) + Math.max(d1, d2);
+          return { xDf, sol, d1, d2, w, g: d1 - d2 };
+        };
+
+        let best = evalPt(clamp(centerDfMol, 0.001, 0.995));
+        const sign1 = s1!.metric === 'recovery_pct' ? -1 : 1;
+        const sign2 = s2!.metric === 'recovery_pct' ? 1 : -1;
+        if (sign1 * sign2 < 0 && best.sol.converged) {
+          const step0 = clamp(Math.min(centerDfMol, 1 - centerDfMol) * 0.03, 0.0012, 0.005);
+          const dir = sign1 * best.g > 0 ? -1 : 1;
+          let aPt = best.g * sign1 <= 0 ? best : null;
+          let bPt = best.g * sign1 > 0 ? best : null;
+          for (const mult of [1, 3.5, 12.0, 35.0]) {
+            const xt = clamp(centerDfMol + dir * step0 * mult, 0.001, 0.995);
+            const pt = evalPt(xt);
+            if (pt.w < best.w) best = pt;
+            if (!pt.sol.converged) continue;
+            const sg = pt.g * sign1;
+            if (dir < 0) {
+              if (sg <= 0) { aPt = pt; break; } else bPt = pt;
+            } else {
+              if (sg >= 0) { bPt = pt; break; } else aPt = pt;
+            }
           }
-          if (rrHi - rrLo < 0.04) break;
+          if (aPt && bPt && aPt.xDf < bPt.xDf - 1e-6) {
+            let ax = aPt.xDf, ag = aPt.g * sign1;
+            let bx = bPt.xDf, bg = bPt.g * sign1;
+            let lastSide = 0;
+            for (let it = 0; it < 8; it++) {
+              if (Date.now() - solveStartMs > 4200) break;
+              const sec = Math.abs(bg - ag) > 1e-9 ? ax - (ag * (bx - ax)) / (bg - ag) : 0.5 * (ax + bx);
+              const m = 0.002 * (bx - ax);
+              const cx = it === 4 || sec <= ax + m || sec >= bx - m ? 0.5 * (ax + bx) : sec;
+              const rc = evalPt(cx);
+              if (rc.w < best.w) best = rc;
+              if (!rc.sol.converged || (rc.d1 <= -0.05 && rc.d2 <= -0.05) || bx - ax < 5e-6) break;
+              const sg = rc.g * sign1;
+              if (sg <= 0) {
+                ax = cx; ag = sg;
+                if (lastSide === -1) bg *= 0.5;
+                lastSide = -1;
+              } else {
+                bx = cx; bg = sg;
+                if (lastSide === 1) ag *= 0.5;
+                lastSide = 1;
+              }
+            }
+          }
+        } else {
+          let loD = clamp(centerDfMol - 0.22, 0.001, 0.985);
+          let hiD = clamp(centerDfMol + 0.22, 0.005, 0.995);
+          for (let it = 0; it < 7; it++) {
+            if (Date.now() - solveStartMs > 4200) break;
+            const pA = evalPt(loD + 0.382 * (hiD - loD));
+            const pB = evalPt(loD + 0.618 * (hiD - loD));
+            if (pA.w < best.w) best = pA;
+            if (pB.w < best.w) best = pB;
+            if (pA.w <= pB.w) hiD = pB.xDf;
+            else loD = pA.xDf;
+            if (hiD - loD < 1e-4) break;
+          }
         }
-        solvedRR = bestRR;
-        solvedDF = bestPack.bestD;
-        finalSol = bestPack.bestSolD;
+        return { bestD: best.xDf, bestSolD: best.sol, bestWorst: best.w };
+      };
+
+      let rrLo = 0.22;
+      let rrHi = 45.0;
+      const lowCheck = evalBestDfForRR(rrLo, dfSeed);
+      dfSeed = lowCheck.bestD;
+      if (lowCheck.bestWorst <= 0.1) {
+        solvedRR = rrLo;
+        solvedDF = lowCheck.bestSolD.actualDOverFMass;
+        finalSol = lowCheck.bestSolD;
+      } else {
+        const hiCheck = evalBestDfForRR(rrHi, dfSeed);
+        if (hiCheck.bestWorst > 1.0) {
+          solvedRR = rrHi;
+          solvedDF = hiCheck.bestSolD.actualDOverFMass;
+          finalSol = hiCheck.bestSolD;
+        } else {
+          let bestPack = hiCheck;
+          let bestRR = rrHi;
+          for (let step = 0; step < 7; step++) {
+            if (Date.now() - solveStartMs > 4200) break;
+            const rrMid = Math.sqrt(rrLo * rrHi);
+            const midPack = evalBestDfForRR(rrMid, bestPack.bestD);
+            if (midPack.bestWorst <= 1.0) {
+              rrHi = rrMid;
+              bestRR = rrMid;
+              bestPack = midPack;
+            } else {
+              rrLo = rrMid;
+            }
+            if (rrHi - rrLo < 0.04) break;
+          }
+          solvedRR = bestRR;
+          solvedDF = bestPack.bestSolD.actualDOverFMass;
+          finalSol = bestPack.bestSolD;
+        }
       }
+      outerIters = totalEv;
     }
-    outerIters = totalEv;
   } else if (s1 && s2 && dofValid) {
     let curRR = solvedRR;
     let curDF = solvedDF;
@@ -4882,13 +5458,14 @@ function solveRigorousDistillationUncached(
       }
 
       // 원인 D: 환류비 직접 지정값이 최소환류비 R_min 근처로 부족한 경우
-      if ((colParams.designRefluxMode ?? 'r_mult') === 'fixed_rr') {
+      const effRMode = colParams.designRefluxMode ?? (typeof colParams.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
+      if (effRMode === 'fixed_rr') {
         causes.push(
           `직접 입력된 환류비(${finalSol.actualRefluxRatio.toFixed(2)})가 최소환류비(R_min=${shortcutDesign.minRefluxRmin}) 대비 여유가 부족할 수 있습니다.`
         );
         remedies.push({
-          label: '환류비를 [1.25 × R_min 자동 배수]로 전환',
-          patch: { designRefluxMode: 'r_mult', designRefluxMult: 1.25 },
+          label: '✨ AI 다중후보 자동최적화(TAC 최적 선정)로 전환',
+          patch: { designRefluxMode: 'auto_opt' },
         });
       }
 
@@ -4910,26 +5487,34 @@ function solveRigorousDistillationUncached(
     const s2Unmet = spec2Status && spec2Status.enabled && !spec2Status.met;
     if (!isDesignStagesMode && (s1Unmet || s2Unmet)) {
       if (s1Unmet && s1) {
+        const dec1 = s1.metric === 'impurity_wt_ppm' ? 1 : s1.targetValue >= 99.95 ? 3 : 2;
         causes.push(
-          `탑정 품질 조건 미달: [${s1.component}] 목표 ${s1.targetValue} ${s1.metric === 'impurity_wt_ppm' ? 'ppm' : '%'} 대비 현재 ${spec1Status!.actual.toFixed(2)} 달성.`
+          `탑정 품질 조건 미달: [${s1.component}] 목표 ${s1.targetValue} ${s1.metric === 'impurity_wt_ppm' ? 'ppm' : '%'} 대비 현재 ${spec1Status!.actual.toFixed(dec1)} 달성.`
         );
       }
       if (s2Unmet && s2) {
+        const dec2 = s2.metric === 'impurity_wt_ppm' ? 1 : s2.targetValue >= 99.95 ? 3 : 2;
         causes.push(
-          `탑저 품질 조건 미달: [${s2.component}] 목표 ${s2.targetValue} ${s2.metric === 'impurity_wt_ppm' ? 'ppm' : '%'} 대비 현재 ${spec2Status!.actual.toFixed(2)} 달성.`
+          `탑저 품질 조건 미달: [${s2.component}] 목표 ${s2.targetValue} ${s2.metric === 'impurity_wt_ppm' ? 'ppm' : '%'} 대비 현재 ${spec2Status!.actual.toFixed(dec2)} 달성.`
         );
       }
       causes.push(
-        `현재 고정된 이론단수(N=${N}단, 피드 ${defaultFeedStage}단) 또는 응축기 형식으로는 두 품질 목표를 동시에 만족하기 어렵습니다.`
+        `현재 고정된 단수(N=${N}단, 피드 ${defaultFeedStage}단) 또는 응축기 형식으로는 두 품질 목표를 동시에 만족하기 어렵습니다.`
       );
-      const nextStages = Math.min(80, Math.round(N * 1.4 + 4));
+      if (isCoupledDualEndpoint && colParams.autoOptimizeStagesOnDualSpec === false) {
+        remedies.push({
+          label: '✨ AI 최적 단수·공급단·환류비 다중후보 자동탐색 활성화',
+          patch: { autoOptimizeStagesOnDualSpec: true },
+        });
+      }
+      const nextStages = Math.min(180, Math.round(N * 1.45 + 6));
       remedies.push({
         label: `이론단수를 ${N}단 → ${nextStages}단으로 증설`,
         patch: { totalStages: nextStages, feedStage: Math.round(nextStages * 0.5) },
       });
       remedies.push({
         label: '[목표순도 → 단수·유량 자동설계] 모드로 전환하여 필요 단수 산출',
-        patch: { columnCalcMode: 'design_stages' },
+        patch: { columnCalcMode: 'design_stages', designRefluxMode: 'auto_opt' },
       });
       return {
         level: 'warning',
@@ -4945,12 +5530,24 @@ function solveRigorousDistillationUncached(
     if (isDesignStagesMode && shortcutDesign) {
       if (shortcutDesign.topTargetSummary) okDetails.push(shortcutDesign.topTargetSummary);
       if (shortcutDesign.botTargetSummary) okDetails.push(shortcutDesign.botTargetSummary);
+      if (shortcutDesign.candidates && shortcutDesign.candidates.length > 1) {
+        const metCnt = shortcutDesign.candidates.filter(c => c.specsMet).length;
+        okDetails.push(
+          `AI 다중후보 ${shortcutDesign.candidates.length}안(${metCnt}안 스펙 달성) 비교 후 TAC 최적안 선정 (N=${N}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`
+        );
+      }
       if (finalSol.decanterWaterDrawKgH > 0.01) {
         okDetails.push(`유수분리 디캔터 수상 분리 배출: ${finalSol.decanterWaterDrawKgH.toFixed(2)} kg/h (유기상만 정제·환류)`);
       }
     } else {
       if (spec1Status?.enabled) okDetails.push(`스펙 ① ${spec1Status.summary}`);
       if (spec2Status?.enabled) okDetails.push(`스펙 ② ${spec2Status.summary}`);
+      if (autoStageOptimized && dualSpecCandidates && dualSpecCandidates.length > 1) {
+        const metCnt = dualSpecCandidates.filter(c => c.specsMet).length;
+        okDetails.push(
+          `AI 다중후보 ${dualSpecCandidates.length}안(${metCnt}안 스펙 달성) 동시 최적화 후 TAC 최소 조건 적용 (N=${N}단 · 피드 ${defaultFeedStage}단)`
+        );
+      }
       if (okDetails.length === 0) {
         const totDistMass = ALL_KEYS.reduce((s, k) => s + finalSol.distillateKgH[k], 0);
         if (isOpenOrSemiOpen) {
@@ -4985,9 +5582,11 @@ function solveRigorousDistillationUncached(
         ? `향류 흡수/스트리핑 ${N}단(${stageInputBasisUsed === 'actual_murphree' ? `η_M=${Math.round(murphreeEff * 100)}% · ` : ''}MESH ${finalSol.iterations}회) 정상 수렴 완료되었습니다.`
         : isDesignStagesMode
           ? `필수 조건(2/2) 만족 · 산출 이론단 ${N}단(피드 ${defaultFeedStage}단), 운전환류비 RR=${finalSol.actualRefluxRatio.toFixed(2)}로 정상 수렴했습니다.`
-          : stageInputBasisUsed === 'actual_murphree'
-            ? `필수 조건(2/2) 만족 · 실제단 ${N}단(트레이 ${Math.max(2, N - 2)}단 · 행렬 내 η_M=${Math.round(murphreeEff * 100)}% · MESH ${finalSol.iterations}회) 정상 수렴 완료되었습니다.`
-            : `필수 조건(2/2) 만족 · 이론단 ${N}단(내부 MESH ${finalSol.iterations}회) 정상 수렴 완료되었습니다.`,
+          : autoStageOptimized
+            ? `필수 조건(2/2) 만족 · AI 다중후보 최적 단수 ${N}단(피드 ${defaultFeedStage}단) · RR=${finalSol.actualRefluxRatio.toFixed(2)}로 수렴 완료되었습니다.`
+            : stageInputBasisUsed === 'actual_murphree'
+              ? `필수 조건(2/2) 만족 · 실제단 ${N}단(트레이 ${Math.max(2, N - 2)}단 · 행렬 내 η_M=${Math.round(murphreeEff * 100)}% · MESH ${finalSol.iterations}회) 정상 수렴 완료되었습니다.`
+              : `필수 조건(2/2) 만족 · 이론단 ${N}단(내부 MESH ${finalSol.iterations}회) 정상 수렴 완료되었습니다.`,
       causes: okDetails,
       remedies: [],
     };
@@ -5023,6 +5622,8 @@ function solveRigorousDistillationUncached(
     recommendedFeedStage: bestStage,
     estimatedDiameterM: Number(maxDiamM.toFixed(2)),
     shortcutDesign,
+    dualSpecCandidates,
+    autoStageOptimized,
     spec1Status,
     spec2Status,
     diagnostics: buildDiagnostics(),

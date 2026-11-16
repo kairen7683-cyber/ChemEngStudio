@@ -12,6 +12,7 @@ import {
   type HxDesignSolveResult,
 } from './heatExchangerDesign';
 import {
+  resolveEffectiveDofSlots,
   solveRigorousDistillation,
   type DistillColumnParams,
   type DistillFeedInput,
@@ -363,13 +364,13 @@ function scoreDistillResult(r: DistillSolveResult): number {
   };
   addSpecPen(r.spec1Status);
   addSpecPen(r.spec2Status);
-  if (r.actualRefluxRatio > 15) {
-    pen += Math.min(400, (r.actualRefluxRatio - 15) * 10);
+  if (r.actualRefluxRatio > 25) {
+    pen += Math.min(400, (r.actualRefluxRatio - 25) * 10);
   }
-  if (r.totalStagesUsed > 60) {
-    pen += (r.totalStagesUsed - 60) * 6;
+  if (r.totalStagesUsed > 140) {
+    pen += (r.totalStagesUsed - 140) * 3;
   }
-  if (r.actualDOverFMass < 0.002) {
+  if (r.actualDOverFMass < 0.0005) {
     pen += 450;
   }
   pen += countProfileSawtoothReversals(r) * 60;
@@ -435,28 +436,48 @@ function prepareDistillFixContext(
   if (revCount > 0) {
     rootCauses.push(`단별 조성·온도 프로파일에 교번 톱니 진동(${revCount}개소) 감지: 고환류·수분 트랩 또는 미수렴 MESH 상태.`);
   }
+  const initSlots = resolveEffectiveDofSlots(initialParams);
+  const isDualQualitySpec =
+    (initialParams.columnCalcMode ?? 'rigorous_mesh') !== 'design_stages' &&
+    initSlots.includes('top_spec') &&
+    initSlots.includes('bot_spec');
   const steps: DistillCandidateStep[] = [];
+
+  // 0) 2개 품질 스펙(탑정+탑저) 동시 지정 시 단수(N)·공급단(Nf)·환류비·유량 AI 다중후보 자동최적화 최우선 활성화
+  if (isDualQualitySpec) {
+    steps.push({
+      label: 'AI 다중후보 (단수·공급단·환류비·탑정유량) 동시 자동최적화 및 TAC 최소점 선정',
+      progressText: '목표 순도 달성 가능한 다중후보(N·Nf·RR·D/F) 동시 최적화 중...',
+      buildPatch: (curP) => ({
+        ...(hasWater && hasHydroOrg ? { condenserType: 'decanter_ech', thermoModel: 'NRTL' } : {}),
+        activeDofSlots: ['top_spec', 'bot_spec'] as DistillColumnParams['activeDofSlots'],
+        autoOptimizeStagesOnDualSpec: true,
+        columnCalcMode: curP.columnCalcMode ?? 'rigorous_mesh',
+      }),
+    });
+  }
 
   // 1) 수분-유기물 불균일 공비계 최우선 처방: 디캔터(decanter_ech) + NRTL + 폭주 단수/환류 초기화
   if (hasWater && hasHydroOrg) {
     steps.push({
-      label: '수분-유기물 불균일 공비 분리용 디캔터(decanter_ech) · NRTL 및 안정 단수·유출비 적용',
+      label: '수분-유기물 불균일 공비 분리용 디캔터(decanter_ech) · NRTL 및 안정 조건 적용',
       progressText: '공비 유수분리 디캔터(decanter_ech) · NRTL 수렴 탐색 중...',
       buildPatch: (curP, curS) => {
         const modeNow = curP.columnCalcMode ?? 'rigorous_mesh';
         const needsDesignReset =
           modeNow === 'design_stages' &&
-          (curS.actualRefluxRatio > 10 || (curP.totalStages ?? 24) > 56 || curS.totalStagesUsed > 56);
+          (curS.actualRefluxRatio > 20 || (curP.totalStages ?? 24) > 120 || curS.totalStagesUsed > 120);
         const needsMeshReset =
+          !isDualQualitySpec &&
           modeNow === 'rigorous_mesh' &&
-          ((curP.totalStages ?? 24) > 52 ||
-            curS.totalStagesUsed > 52 ||
-            curS.actualRefluxRatio > 14 ||
+          ((curP.totalStages ?? 24) > 65 ||
+            curS.totalStagesUsed > 65 ||
+            curS.actualRefluxRatio > 20 ||
             curS.actualDOverFMass < estDfMass * 0.75);
         return {
           condenserType: 'decanter_ech',
           thermoModel: 'NRTL',
-          ...(needsDesignReset ? { designRefluxMode: 'r_mult', designRefluxMult: 1.35 } : {}),
+          ...(needsDesignReset ? { designRefluxMode: 'auto_opt' } : {}),
           ...(needsMeshReset
             ? {
                 totalStages: 24,
@@ -473,7 +494,7 @@ function prepareDistillFixContext(
     });
   }
 
-  // 2) 진단 자체의 처방 평가 (최대 2건, 단순 design_stages 전환은 하단 전용 후보에서 처리)
+  // 2) 진단 자체의 처방 평가 (최대 2건)
   for (const rem of solvedBefore.diagnostics.remedies.slice(0, 2)) {
     if (rem.patch.columnCalcMode === 'design_stages') continue;
     steps.push({
@@ -483,16 +504,15 @@ function prepareDistillFixContext(
     });
   }
 
-  // 3) Candidate B: design_stages 모드 환류비 배수 초기화 및 과잉 회수율(≥99.2%) 현실화
+  // 3) design_stages 모드: AI 다중후보 자동최적화('auto_opt') 전환 및 과잉 회수율(≥99.2%) 현실화
   if ((initialParams.columnCalcMode ?? 'rigorous_mesh') === 'design_stages') {
     steps.push({
-      label: '자동설계 환류비(1.35·R_min) 초기화로 과잉 단수/환류 팽창 해소',
-      progressText: '자동설계 환류배수(1.35×R_min) 재산정 중...',
+      label: 'AI 다중후보(1.15~1.80×R_min) 자동최적화로 최소 TAC 단수·환류비 산출',
+      progressText: 'AI 다중후보 (N·Nf·RR·D/F) TAC 최적 설계 탐색 중...',
       buildPatch: (curP) => ({
         condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
         thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
-        designRefluxMode: 'r_mult',
-        designRefluxMult: 1.35,
+        designRefluxMode: 'auto_opt',
       }),
     });
 
@@ -503,8 +523,7 @@ function prepareDistillFixContext(
         buildPatch: (curP) => ({
           condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
           thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
-          designRefluxMode: 'r_mult',
-          designRefluxMult: 1.35,
+          designRefluxMode: 'auto_opt',
           designTopRecoveryPct: Math.min(99.0, curP.designTopRecoveryPct ?? 99.0),
           designBotRecoveryPct: Math.min(99.0, curP.designBotRecoveryPct ?? 99.0),
         }),
@@ -512,43 +531,64 @@ function prepareDistillFixContext(
     }
   }
 
-  // 4) Candidate C: 깨진 74단·RR=48.45 승계 없이 안정화된 단수(24/32단) · 정밀모사 전환 탐색
-  for (const [nCand, rrCand] of [
-    [24, 2.5],
-    [32, 4.0],
-  ] as const) {
-    const fOpt = Math.round(nCand * 0.5);
-    steps.push({
-      label: `안정화 정밀모사 적용 (${nCand}단 · 공급단 ${fOpt}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})`,
-      progressText: `정밀모사 안정화 탐색 (${nCand}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})...`,
-      buildPatch: (curP) => ({
-        columnCalcMode: 'rigorous_mesh',
-        condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
-        thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
-        totalStages: nCand,
-        feedStage: fOpt,
-        activeDofSlots: ['rr', 'split'],
-        topSpecType: 'reflux_ratio',
-        topSpecValue: rrCand,
-        splitSpecType: 'd_over_f_mass',
-        splitSpecValue: Number(estDfMass.toFixed(4)),
-      }),
-    });
+  // 4) 단일/고정 유출 정밀모사 미수렴 시에만 안정화 (RR, D/F) 운전점 탐색 (이중 품질스펙은 목표 보존)
+  if (!isDualQualitySpec) {
+    for (const [nCand, rrCand] of [
+      [24, 2.5],
+      [32, 4.0],
+    ] as const) {
+      const fOpt = Math.round(nCand * 0.5);
+      steps.push({
+        label: `안정화 정밀모사 적용 (${nCand}단 · 공급단 ${fOpt}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})`,
+        progressText: `정밀모사 안정화 탐색 (${nCand}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})...`,
+        buildPatch: (curP) => ({
+          columnCalcMode: 'rigorous_mesh',
+          condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
+          thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
+          totalStages: nCand,
+          feedStage: fOpt,
+          activeDofSlots: ['rr', 'split'],
+          topSpecType: 'reflux_ratio',
+          topSpecValue: rrCand,
+          splitSpecType: 'd_over_f_mass',
+          splitSpecValue: Number(estDfMass.toFixed(4)),
+        }),
+      });
+    }
   }
 
-  // 5) Candidate D: 원래 rigorous_mesh였으나 미수렴 시 design_stages 전환 및 고비점 비핵심 성분 보완
+  // 5) 원래 rigorous_mesh였으나 미수렴/미달 시 design_stages('auto_opt') 전환 (기존 품질 타겟 이관)
   if ((initialParams.columnCalcMode ?? 'rigorous_mesh') !== 'design_stages' && topKey && botKey) {
+    const topMet = initialParams.topQualityMetric;
+    const topVal = initialParams.topQualityTarget;
+    const botMet = initialParams.botQualityMetric;
+    const botVal = initialParams.botQualityTarget;
+    const mappedLk = topMet === 'impurity_wt_ppm' ? (activeComps[0] ?? topKey) : topKey;
+    const mappedHk = botMet === 'impurity_wt_ppm' ? (activeComps[activeComps.length - 1] ?? botKey) : botKey;
     steps.push({
-      label: '목표순도 기반 Fenske-Underwood 자동단수 설계 모드로 전환',
-      progressText: 'Fenske-Underwood 자동단수 설계 전환 검증 중...',
+      label: '목표순도 기반 AI 다중후보(단수·공급단·환류비·유량) 자동설계 모드로 전환',
+      progressText: 'AI 다중후보 자동단수·TAC 최적설계 전환 검증 중...',
       buildPatch: () => ({
         columnCalcMode: 'design_stages',
         condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : initialParams.condenserType ?? 'total',
         thermoModel: hasWater && hasHydroOrg ? 'NRTL' : initialParams.thermoModel ?? 'NRTL',
-        designLkComp: topKey,
-        designHkComp: botKey,
-        designRefluxMode: 'r_mult',
-        designRefluxMult: 1.35,
+        designLkComp: mappedLk,
+        designHkComp: mappedHk !== mappedLk ? mappedHk : (activeComps.find((c) => c !== mappedLk) ?? botKey),
+        ...(topMet === 'impurity_wt_ppm' && typeof topVal === 'number'
+          ? { designTopBasis: 'impurity_wt_ppm' as const, designTopImpurityPpm: topVal }
+          : topMet === 'recovery_pct' && typeof topVal === 'number'
+            ? { designTopBasis: 'recovery_pct' as const, designTopRecoveryPct: topVal }
+            : typeof topVal === 'number'
+              ? { designTopBasis: 'purity_wt_pct' as const, designTopPurityWtPct: topVal }
+              : {}),
+        ...(botMet === 'impurity_wt_ppm' && typeof botVal === 'number'
+          ? { designBotBasis: 'impurity_wt_ppm' as const, designBotImpurityPpm: botVal }
+          : botMet === 'recovery_pct' && typeof botVal === 'number'
+            ? { designBotBasis: 'recovery_pct' as const, designBotRecoveryPct: botVal }
+            : typeof botVal === 'number'
+              ? { designBotBasis: 'purity_wt_pct' as const, designBotPurityWtPct: botVal }
+              : {}),
+        designRefluxMode: 'auto_opt',
       }),
     });
   }
@@ -595,14 +635,22 @@ function finalizeDistillFixResult(
       (patch as Record<string, unknown>)[k] = bestParams[k];
     }
   });
+  if (bestSol.autoStageOptimized || bestParams.columnCalcMode === 'design_stages') {
+    if (bestSol.totalStagesUsed > 0 && bestSol.totalStagesUsed !== initialParams.totalStages) {
+      patch.totalStages = bestSol.totalStagesUsed;
+    }
+    if (bestSol.feedStageUsed > 0 && bestSol.feedStageUsed !== initialParams.feedStage) {
+      patch.feedStage = bestSol.feedStageUsed;
+    }
+  }
 
   const improved = bestScore < scoreDistillResult(solvedBefore) - 1e-3;
   const resolved =
     bestSol.converged &&
     bestSol.diagnostics.level === 'ok' &&
     countProfileSawtoothReversals(bestSol) === 0 &&
-    bestSol.actualRefluxRatio <= 20 &&
-    bestSol.totalStagesUsed <= 60;
+    bestSol.actualRefluxRatio <= 45 &&
+    bestSol.totalStagesUsed <= 195;
   const headline = resolved
     ? `AI 자동 해결 완료: ${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} 조건에서 수렴 및 스펙 달성.`
     : improved
@@ -644,11 +692,11 @@ export function autoFixDistillationSimulation(
       bestScore <= 1 ||
       (bestSol.converged &&
         bestSol.diagnostics.level === 'ok' &&
-        bestSol.totalStagesUsed <= 48 &&
-        bestSol.actualRefluxRatio <= 12 &&
+        bestSol.totalStagesUsed <= 165 &&
+        bestSol.actualRefluxRatio <= 35 &&
         countProfileSawtoothReversals(bestSol) === 0) ||
       evals >= 8 ||
-      (evals >= 2 && (Date.now() - fixStartMs > 2200 || Date.now() - loopStartMs > 1800))
+      (evals >= 2 && (Date.now() - fixStartMs > 4200 || Date.now() - loopStartMs > 3600))
     ) {
       break;
     }
@@ -699,11 +747,11 @@ export async function autoFixDistillationSimulationAsync(
       bestScore <= 1 ||
       (bestSol.converged &&
         bestSol.diagnostics.level === 'ok' &&
-        bestSol.totalStagesUsed <= 48 &&
-        bestSol.actualRefluxRatio <= 12 &&
+        bestSol.totalStagesUsed <= 165 &&
+        bestSol.actualRefluxRatio <= 35 &&
         countProfileSawtoothReversals(bestSol) === 0) ||
       evals >= 8 ||
-      (evals >= 2 && (Date.now() - fixStartMs > 2200 || Date.now() - loopStartMs > 1800))
+      (evals >= 2 && (Date.now() - fixStartMs > 4200 || Date.now() - loopStartMs > 3600))
     ) {
       break;
     }

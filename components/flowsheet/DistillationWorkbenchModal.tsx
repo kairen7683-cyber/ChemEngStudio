@@ -8,11 +8,13 @@ import {
   type DistillCalcMode,
   type DistillColumnParams,
   type DistillCondenserType,
+  type DistillDesignCandidate,
   type DistillDesignSpec,
   type DistillDofSlotId,
   type DistillEndpointBasis,
   type DistillFeedInput,
   type DistillReboilerType,
+  type DistillRefluxDesignMode,
   type DistillSolveResult,
   type DistillSpecMetric,
   type DistillSplitSpecType,
@@ -208,10 +210,13 @@ export default function DistillationWorkbenchModal({
     };
   }, [open, onClose]);
 
+  const onRunSimRef = useRef(onRunSimulation);
+  onRunSimRef.current = onRunSimulation;
+
   const triggerRunSimulation = () => {
-    if (!onRunSimulation) return;
+    if (!onRunSimRef.current) return;
     setIsRunningFeedback(true);
-    onRunSimulation();
+    onRunSimRef.current();
     window.setTimeout(() => {
       const now = new Date();
       const hh = String(now.getHours()).padStart(2, '0');
@@ -251,7 +256,7 @@ export default function DistillationWorkbenchModal({
       const prompt = `[증류탑 ${unitTag}] N=${fix.solvedAfter.totalStagesUsed}단, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, 상태=${fix.solvedAfter.diagnostics.badgeText}. 조치: ${fix.actionsTaken.join(', ')}`;
       const geminiNote = await fetchOptionalGeminiAdvice(prompt);
       setAiReport({ result: fix, geminiNote });
-      if (Object.keys(fix.patch).length > 0 && onRunSimulation) {
+      if (Object.keys(fix.patch).length > 0 && onRunSimRef.current) {
         window.setTimeout(() => triggerRunSimulation(), 50);
       }
     } catch (err) {
@@ -300,12 +305,19 @@ export default function DistillationWorkbenchModal({
   };
 
   const calcMode: DistillCalcMode = config.columnCalcMode ?? 'rigorous_mesh';
+  const isDualQualityMode =
+    calcMode === 'rigorous_mesh' &&
+    selectedSlots.includes('top_spec') &&
+    selectedSlots.includes('bot_spec');
+  const isAutoStageActive =
+    calcMode === 'design_stages' ||
+    (isDualQualityMode && config.autoOptimizeStagesOnDualSpec !== false);
   const N =
-    calcMode === 'design_stages' && result?.totalStagesUsed
+    isAutoStageActive && result?.totalStagesUsed
       ? result.totalStagesUsed
       : Math.max(4, Math.min(200, Math.round(config.totalStages ?? 24)));
   const primaryFeedStage =
-    calcMode === 'design_stages' && result?.feedStageUsed
+    isAutoStageActive && result?.feedStageUsed
       ? result.feedStageUsed
       : Math.max(
           2,
@@ -711,6 +723,174 @@ export default function DistillationWorkbenchModal({
               </span>
             );
           })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCandidateComparisonTable = (
+    candidates: DistillDesignCandidate[],
+    contextMode: 'design_stages' | 'dual_spec'
+  ) => {
+    if (!candidates || candidates.length === 0) return null;
+    return (
+      <div
+        style={{
+          marginTop: 10,
+          padding: '9px 10px',
+          borderRadius: 8,
+          background: '#F8FAFC',
+          border: '1px solid #CBD5E1',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 6,
+            flexWrap: 'wrap',
+            marginBottom: 6,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
+            ✨ 다중후보 (단수 · 공급단 · 환류비 · 탑정유량) 수렴 & 총연간비용(TAC) 비교표
+          </span>
+          <span style={{ fontSize: 9.8, color: '#475569', fontWeight: 700 }}>
+            TAC 지수 100.0 = 연간 투자비+에너지비 최저 최적안
+          </span>
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: 10.2,
+              fontFamily: MONO,
+              background: '#FFFFFF',
+              borderRadius: 6,
+              overflow: 'hidden',
+            }}
+          >
+            <thead>
+              <tr style={{ background: '#E2E8F0', color: '#1E293B', textAlign: 'right' }}>
+                <th style={{ padding: '5px 7px', textAlign: 'left', fontWeight: 900 }}>설계 후보</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>단수 N (실단)</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>피드 Nf</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>환류비 RR</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑정 D (kg/h)</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>Q_reb (kW)</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑경 (m)</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>상대 TAC</th>
+                <th style={{ padding: '5px 6px', textAlign: 'center', fontWeight: 900 }}>적용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((c) => {
+                const isRec = c.recommended;
+                return (
+                  <tr
+                    key={c.id}
+                    style={{
+                      background: isRec ? '#ECFDF5' : '#FFFFFF',
+                      borderTop: '1px solid #E2E8F0',
+                      color: '#0F172A',
+                      textAlign: 'right',
+                    }}
+                  >
+                    <td style={{ padding: '5px 7px', textAlign: 'left', fontFamily: 'sans-serif' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: 10.3,
+                            fontWeight: isRec ? 900 : 700,
+                            color: isRec ? '#065F46' : '#1E293B',
+                          }}
+                        >
+                          {c.label}
+                        </span>
+                        <span
+                          style={{
+                            padding: '1px 5px',
+                            borderRadius: 999,
+                            fontSize: 9.2,
+                            fontWeight: 800,
+                            background: c.specsMet ? '#DCFCE7' : '#FEF3C7',
+                            color: c.specsMet ? '#166534' : '#92400E',
+                          }}
+                        >
+                          {c.specsMet ? '✓ 달성' : '⚠ 근접'}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ padding: '5px 6px', fontWeight: isRec ? 900 : 700 }}>
+                      {c.stagesN} ({c.actualTrays})
+                    </td>
+                    <td style={{ padding: '5px 6px' }}>{c.feedStage}</td>
+                    <td style={{ padding: '5px 6px', fontWeight: 800 }}>
+                      {c.refluxRatio.toFixed(2)}{' '}
+                      <span style={{ fontSize: 9.2, color: '#64748B' }}>({c.rOverRmin}×)</span>
+                    </td>
+                    <td style={{ padding: '5px 6px' }}>{c.distillateKgH.toFixed(1)}</td>
+                    <td style={{ padding: '5px 6px' }}>{c.reboilerDutyKW.toFixed(0)}</td>
+                    <td style={{ padding: '5px 6px' }}>{c.estimatedDiameterM.toFixed(2)}</td>
+                    <td
+                      style={{
+                        padding: '5px 6px',
+                        fontWeight: 900,
+                        color: isRec ? '#059669' : '#334155',
+                      }}
+                    >
+                      {c.tacIndex.toFixed(1)}
+                    </td>
+                    <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (contextMode === 'design_stages') {
+                            onChangeConfig({
+                              columnCalcMode: 'rigorous_mesh',
+                              activeDofSlots: ['rr', 'split'],
+                              totalStages: c.stagesN,
+                              feedStage: c.feedStage,
+                              topSpecType: 'reflux_ratio',
+                              topSpecValue: Number(c.refluxRatio.toFixed(3)),
+                              splitSpecType: 'd_over_f_mass',
+                              splitSpecValue: Number(c.dOverFMass.toFixed(4)),
+                            });
+                          } else {
+                            onChangeConfig({
+                              totalStages: c.stagesN,
+                              feedStage: c.feedStage,
+                              topSpecType: 'reflux_ratio',
+                              topSpecValue: Number(c.refluxRatio.toFixed(3)),
+                              splitSpecType: 'd_over_f_mass',
+                              splitSpecValue: Number(c.dOverFMass.toFixed(4)),
+                              autoOptimizeStagesOnDualSpec: false,
+                            });
+                          }
+                          window.setTimeout(() => triggerRunSimulation(), 30);
+                        }}
+                        style={{
+                          padding: '3px 7px',
+                          borderRadius: 5,
+                          border: isRec ? '1px solid #059669' : '1px solid #94A3B8',
+                          background: isRec ? '#059669' : '#FFFFFF',
+                          color: isRec ? '#FFFFFF' : '#1E293B',
+                          fontSize: 9.8,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {contextMode === 'design_stages' ? '정밀모사 확정' : '이 후보 고정'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     );
@@ -1170,8 +1350,8 @@ export default function DistillationWorkbenchModal({
                 stageDeltaPKgcm2: avgDpKgcm2,
                 murphreeEffPct: Math.round(predEffPct),
               });
-              if (onRunSimulation) {
-                setTimeout(() => onRunSimulation(), 25);
+              if (onRunSimRef.current) {
+                setTimeout(() => onRunSimRef.current?.(), 25);
               }
             }}
           />
@@ -1261,7 +1441,12 @@ export default function DistillationWorkbenchModal({
             >
               <button
                 type="button"
-                onClick={() => onChangeConfig({ columnCalcMode: 'design_stages' })}
+                onClick={() =>
+                  onChangeConfig({
+                    columnCalcMode: 'design_stages',
+                    designRefluxMode: config.designRefluxMode ?? 'auto_opt',
+                  })
+                }
                 style={{
                   padding: '7px 10px',
                   borderRadius: 7,
@@ -1856,63 +2041,95 @@ export default function DistillationWorkbenchModal({
                       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.15fr 0.85fr', gap: 9 }}>
                         <div style={{ ...cardStyle, padding: '9px 11px' }}>
                           <label style={labelStyle}>환류비(Reflux) 기준</label>
-                          <select
-                            value={config.designRefluxMode ?? 'r_mult'}
-                            onChange={(e) =>
-                              onChangeConfig({ designRefluxMode: e.target.value as 'r_mult' | 'fixed_rr' })
-                            }
-                            style={selectBaseStyle}
-                          >
-                            <option value="r_mult">최소환류비 배수 (R = 배수 × R_min, 기본 1.25)</option>
-                            <option value="fixed_rr">운전 환류비 (RR = L₀/D) 직접 입력</option>
-                          </select>
-                          <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.2fr', gap: 6, marginTop: 8 }}>
-                            <div>
-                              {(config.designRefluxMode ?? 'r_mult') === 'r_mult' ? (
-                                <>
-                                  <label style={labelStyle}>R / R_min 배수</label>
-                                  <BufferedNumberInput
-                                    syncKey={`${unitTag}-rmult`}
-                                    min={1.05}
-                                    max={5.0}
-                                    step={0.05}
-                                    value={config.designRefluxMult ?? 1.25}
-                                    onValueChange={(v) => onChangeConfig({ designRefluxMult: v })}
-                                    onEnterRun={triggerRunSimulation}
-                                    style={inputBaseStyle}
-                                  />
-                                </>
-                              ) : (
-                                <>
-                                  <label style={labelStyle}>직접 지정 RR</label>
-                                  <BufferedNumberInput
-                                    syncKey={`${unitTag}-drr`}
-                                    min={0.15}
-                                    max={75}
-                                    step={0.1}
-                                    value={config.designFixedRR ?? config.topSpecValue ?? 2.8}
-                                    onValueChange={(v) => onChangeConfig({ designFixedRR: v, topSpecValue: v })}
-                                    onEnterRun={triggerRunSimulation}
-                                    style={inputBaseStyle}
-                                  />
-                                </>
-                              )}
-                            </div>
-                            <div>
-                              <label style={labelStyle}>탑정 응축기 형식</label>
-                              <select
-                                value={condenserType}
-                                onChange={(e) =>
-                                  onChangeConfig({ condenserType: e.target.value as DistillCondenserType })
-                                }
-                                style={selectBaseStyle}
-                              >
-                                <option value="total">전응축기 (액상 유출)</option>
-                                <option value="decanter_ech">공비 유수분리 디캔터</option>
-                                <option value="partial">부분응축기 (기상 유출)</option>
-                              </select>
-                            </div>
-                          </div>
+                          {(() => {
+                            const effRMode: DistillRefluxDesignMode =
+                              config.designRefluxMode ??
+                              (typeof config.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
+                            return (
+                              <>
+                                <select
+                                  value={effRMode}
+                                  onChange={(e) =>
+                                    onChangeConfig({
+                                      designRefluxMode: e.target.value as DistillRefluxDesignMode,
+                                    })
+                                  }
+                                  style={selectBaseStyle}
+                                >
+                                  <option value="auto_opt">
+                                    ✨ AI 다중후보 자동최적화 (단수·피드단·환류비·유량 TAC 최소 선정)
+                                  </option>
+                                  <option value="r_mult">최소환류비 배수 지정 (R = 배수 × R_min)</option>
+                                  <option value="fixed_rr">운전 환류비 (RR = L₀/D) 직접 입력</option>
+                                </select>
+                                <div style={{ display: 'grid', gridTemplateColumns: '0.85fr 1.15fr', gap: 6, marginTop: 8 }}>
+                                  <div>
+                                    {effRMode === 'auto_opt' ? (
+                                      <>
+                                        <label style={labelStyle}>AI 탐색 범위</label>
+                                        <div
+                                          style={{
+                                            ...inputBaseStyle,
+                                            background: '#ECFDF5',
+                                            borderColor: '#6EE7B7',
+                                            color: '#065F46',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            fontSize: 10.5,
+                                            fontFamily: 'sans-serif',
+                                          }}
+                                        >
+                                          1.15~1.80×R_min TAC 최소
+                                        </div>
+                                      </>
+                                    ) : effRMode === 'r_mult' ? (
+                                      <>
+                                        <label style={labelStyle}>R / R_min 배수</label>
+                                        <BufferedNumberInput
+                                          syncKey={`${unitTag}-rmult`}
+                                          min={1.05}
+                                          max={5.0}
+                                          step={0.05}
+                                          value={config.designRefluxMult ?? 1.25}
+                                          onValueChange={(v) => onChangeConfig({ designRefluxMult: v })}
+                                          onEnterRun={triggerRunSimulation}
+                                          style={inputBaseStyle}
+                                        />
+                                      </>
+                                    ) : (
+                                      <>
+                                        <label style={labelStyle}>직접 지정 RR</label>
+                                        <BufferedNumberInput
+                                          syncKey={`${unitTag}-drr`}
+                                          min={0.15}
+                                          max={75}
+                                          step={0.1}
+                                          value={config.designFixedRR ?? config.topSpecValue ?? 2.8}
+                                          onValueChange={(v) => onChangeConfig({ designFixedRR: v, topSpecValue: v })}
+                                          onEnterRun={triggerRunSimulation}
+                                          style={inputBaseStyle}
+                                        />
+                                      </>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label style={labelStyle}>탑정 응축기 형식</label>
+                                    <select
+                                      value={condenserType}
+                                      onChange={(e) =>
+                                        onChangeConfig({ condenserType: e.target.value as DistillCondenserType })
+                                      }
+                                      style={selectBaseStyle}
+                                    >
+                                      <option value="total">전응축기 (액상 유출)</option>
+                                      <option value="decanter_ech">공비 유수분리 디캔터</option>
+                                      <option value="partial">부분응축기 (기상 유출)</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
 
                         <div style={{ ...cardStyle, padding: '9px 11px' }}>
@@ -2046,6 +2263,9 @@ export default function DistillationWorkbenchModal({
                             </div>
                           </div>
                         </div>
+
+                        {result.shortcutDesign.candidates && result.shortcutDesign.candidates.length > 0 &&
+                          renderCandidateComparisonTable(result.shortcutDesign.candidates, 'design_stages')}
                       </div>
                     )}
                   </div>
@@ -2731,6 +2951,95 @@ export default function DistillationWorkbenchModal({
                           </div>
                         )}
                       </div>
+
+                      {/* ③ 탑정 + ④ 탑저 2개 품질 스펙 동시 지정 시: AI 단수·공급단·환류비·유량 자동 동시최적화 및 후보 비교표 */}
+                      {isTopSel && isBotSel && (() => {
+                        const autoOptStages = config.autoOptimizeStagesOnDualSpec !== false;
+                        return (
+                          <div
+                            style={{
+                              padding: '10px 12px',
+                              borderRadius: 9,
+                              background: autoOptStages ? '#F0FDF4' : '#F8FAFC',
+                              border: autoOptStages ? '1.5px solid #34D399' : '1px solid #CBD5E1',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 8,
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                flexWrap: 'wrap',
+                                gap: 6,
+                              }}
+                            >
+                              <span style={{ fontSize: 11.5, fontWeight: 900, color: '#065F46' }}>
+                                ✨ AI 이중 목표품질(③+④) → 단수·공급단·환류비·탑정유량 자동 최적화
+                              </span>
+                              {result && (
+                                <span
+                                  style={{
+                                    fontSize: 10.2,
+                                    fontFamily: MONO,
+                                    fontWeight: 800,
+                                    color: '#0F172A',
+                                  }}
+                                >
+                                  현재 해: N={result.totalStagesUsed}단 · Nf={result.feedStageUsed}단 · RR={result.actualRefluxRatio.toFixed(2)} · D={distTotalKgH.toFixed(1)} kg/h
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onChangeConfig({ autoOptimizeStagesOnDualSpec: true });
+                                  window.setTimeout(() => triggerRunSimulation(), 30);
+                                }}
+                                style={{
+                                  padding: '6px 9px',
+                                  borderRadius: 6,
+                                  border: autoOptStages ? '1.5px solid #059669' : '1px solid #CBD5E1',
+                                  background: autoOptStages ? '#059669' : '#FFFFFF',
+                                  color: autoOptStages ? '#FFFFFF' : '#334155',
+                                  fontSize: 10.5,
+                                  fontWeight: 900,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                ✨ AI 단수·공급단·환류비·유량 자동탐색 (TAC 최적 · 권장)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onChangeConfig({ autoOptimizeStagesOnDualSpec: false });
+                                  window.setTimeout(() => triggerRunSimulation(), 30);
+                                }}
+                                style={{
+                                  padding: '6px 9px',
+                                  borderRadius: 6,
+                                  border: !autoOptStages ? '1.5px solid #1E293B' : '1px solid #CBD5E1',
+                                  background: !autoOptStages ? '#1E293B' : '#FFFFFF',
+                                  color: !autoOptStages ? '#FFFFFF' : '#334155',
+                                  fontSize: 10.5,
+                                  fontWeight: 800,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                🔒 단수 수동 고정 (N={config.totalStages ?? 24}단 유지 · RR/유량만 역산)
+                              </button>
+                            </div>
+                            {result?.dualSpecCandidates &&
+                              result.dualSpecCandidates.length > 0 &&
+                              renderCandidateComparisonTable(result.dualSpecCandidates, 'dual_spec')}
+                          </div>
+                        );
+                      })()}
 
                       {/* 응축기 / 리보일러 열수지 카드 (무채색 슬레이트 카드 — 오류로 오인되는 붉은 배경 제거) */}
                       {result && (
