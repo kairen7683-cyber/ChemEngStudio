@@ -10,6 +10,12 @@
 // ExcelJS는 브라우저에서도 동작하며, 셀 스타일을 완벽히 지원합니다.
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import type { ColumnInternalsSolveResult } from '@/lib/calculations/columnInternalsDesign';
+import type {
+  DistillColumnParams,
+  DistillFeedInput,
+  DistillSolveResult,
+} from '@/lib/calculations/rigorousDistillation';
 
 // ─── 색상 팔레트 ───────────────────────────────────────────────────────────────
 const C = {
@@ -1042,4 +1048,504 @@ export async function exportHXDatasheet(inp: HXDsInputs): Promise<void> {
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   saveAs(blob, `PDS_HX_${inp.tag || 'HX'}_${today()}.xlsx`);
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 실무 EPC 증류/분리 컬럼 통합 데이터시트 (본체 vs 트레이 vs 패킹 엄격 분리)
+// ═════════════════════════════════════════════════════════════════════════════
+export interface ColumnEpcDsParams {
+  unitTag: string;
+  unitLabel: string;
+  colConfig: DistillColumnParams;
+  feeds: DistillFeedInput[];
+  simResult: DistillSolveResult;
+  design: ColumnInternalsSolveResult;
+}
+
+export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promise<Uint8Array> {
+  const { unitTag, unitLabel, colConfig, feeds, simResult, design } = params;
+  const isTray = design.internalsKind === 'tray';
+  const mech = design.mechanical;
+  const el = design.elevations;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'ChemEng Studio Process Engineering';
+  wb.created = new Date();
+
+  const totalFeedKgH = feeds.reduce(
+    (s, f) => s + Object.values(f.flowsKgH).reduce((a, b) => a + (b || 0), 0),
+    0
+  );
+  const distKgH = Object.values(simResult.distillateFlowsKgH).reduce((a, b) => a + (b || 0), 0);
+  const botKgH = Object.values(simResult.bottomsFlowsKgH).reduce((a, b) => a + (b || 0), 0);
+  const qCondKw = Math.abs(simResult.condenserDutyKcalH) / 860.0;
+  const qRebKw = Math.abs(simResult.reboilerDutyKcalH) / 860.0;
+
+  const styleBanner = (ws: ExcelJS.Worksheet, rowIdx: number, colEnd: string, title: string, fi = fill.navy()) => {
+    ws.getRow(rowIdx).height = 17;
+    merge(ws, `A${rowIdx}`, `${colEnd}${rowIdx}`, {
+      value: title,
+      f: { name: 'Arial', bold: true, size: 10, color: { argb: 'FFFFFFFF' } },
+      fi,
+      al: align.lc,
+      bo: border.topMed,
+    });
+  };
+
+  // =========================================================================
+  // SHEET 1: 1_VESSEL_SHELL_DS (본체 데이터시트 — Column Vessel & Shell)
+  // =========================================================================
+  const ws1 = wb.addWorksheet('1_VESSEL_SHELL_DS', {
+    pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  [5, 34, 14, 24, 24, 28].forEach((w, i) => {
+    ws1.getColumn(i + 1).width = w;
+  });
+
+  let r1 = 1;
+  ws1.getRow(r1).height = 24;
+  merge(ws1, `A${r1}`, `F${r1}`, {
+    value: `COLUMN VESSEL & SHELL SPECIFICATION DATASHEET (본체 데이터시트) — [${unitTag}]`,
+    f: { name: 'Arial', bold: true, size: 12, color: { argb: 'FFFFFFFF' } },
+    fi: fill.darkNav(),
+    al: align.cc,
+    bo: border.outer,
+  });
+  r1++;
+
+  const metaPairs: Array<[string, string, string, string]> = [
+    ['EQUIPMENT TAG / 장치번호', unitTag, 'DOC. NO.', `COL-VSL-${unitTag}-001`],
+    ['SERVICE / 공정 명칭', unitLabel, 'REV. / DATE', `Rev.0 / ${today()}`],
+    [
+      'COLUMN INTERNALS TYPE',
+      isTray ? 'TRAYED FRACTIONATION COLUMN (트레이 컬럼)' : 'PACKED FRACTIONATION COLUMN (패킹 컬럼)',
+      'SHELL MODE',
+      design.shellSectionMode === 'swaged' ? 'SWAGED (이단 직경)' : 'UNIFORM (단일 직경)',
+    ],
+  ];
+  for (const [k1, v1, k2, v2] of metaPairs) {
+    ws1.getRow(r1).height = 15;
+    sc(ws1, `A${r1}`, { value: 'META', f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+    sc(ws1, `B${r1}`, { value: k1, f: font.header(), fi: fill.gray(), al: align.lc, bo: border.inner });
+    merge(ws1, `C${r1}`, `D${r1}`, { value: v1, f: font.value(), fi: fill.ltBlue(), al: align.lc, bo: border.inner });
+    sc(ws1, `E${r1}`, { value: k2, f: font.header(), fi: fill.gray(), al: align.cc, bo: border.inner });
+    sc(ws1, `F${r1}`, { value: v2, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+    r1++;
+  }
+
+  styleBanner(ws1, r1++, 'F', 'SECTION 1. PROCESS & HEAT/MATERIAL BALANCE SUMMARY (공정 운전 사양)');
+  ws1.getRow(r1).height = 14;
+  ['No.', 'ITEM / 설계 항목', 'UNIT', 'DESIGN VALUE', 'OPERATING / REF', 'REMARKS'].forEach((h, i) => {
+    sc(ws1, `${String.fromCharCode(65 + i)}${r1}`, {
+      value: h,
+      f: font.header(8.5),
+      fi: fill.gray(),
+      al: align.cc,
+      bo: border.inner,
+    });
+  });
+  r1++;
+
+  const procRows: Array<[string, string, string, string, string]> = [
+    ['Total Feed Rate (원료 총 유량)', 'kg/h', nf(totalFeedKgH, 1), `Feed Stage #${simResult.feedStageUsed}`, `${feeds.length} Feed Stream(s)`],
+    ['Overhead Distillate / Bottoms Draw', 'kg/h', `${nf(distKgH, 1)} / ${nf(botKgH, 1)}`, `D/F = ${(simResult.actualDOverFMass * 100).toFixed(1)}%`, 'Mass Balance Converged'],
+    ['Operating Temperature (Top / Feed / Bot)', '°C', `${simResult.topTempC.toFixed(1)} / ${(simResult.stages[Math.max(0, simResult.feedStageUsed - 1)]?.tempC ?? simResult.topTempC).toFixed(1)} / ${simResult.bottomTempC.toFixed(1)}`, `ΔT = ${(simResult.bottomTempC - simResult.topTempC).toFixed(1)} °C`, simResult.thermoModelUsed],
+    ['Operating Pressure (Top / Bottom)', 'kg/cm²G', `${(colConfig.topPressKgcm2g ?? 0.05).toFixed(3)} / ${simResult.bottomPressKgcm2g.toFixed(3)}`, `Int. ΔP = ${design.totalInternalsDpMbar} mbar`, design.vacuumStiffenerRequired ? 'Vacuum Service' : 'Atmospheric/Pressurized'],
+    ['Reflux Ratio (R_op) & Reboiler Type', '-', `RR = ${simResult.actualRefluxRatio.toFixed(2)}`, `Boilup = ${simResult.actualBoilupRatio.toFixed(2)}`, `Reboiler: ${colConfig.reboilerType ?? 'kettle'}`],
+    ['Condenser Duty / Reboiler Duty', 'kW', `Qc=${nf(qCondKw, 1)} / Qr=${nf(qRebKw, 1)}`, `Ac≈${design.auxiliaries.condenserEstAreaM2}m² / Ar≈${design.auxiliaries.reboilerEstAreaM2}m²`, `Drum Ø${design.auxiliaries.refluxDrumDiamM}×${design.auxiliaries.refluxDrumLengthM}m`],
+  ];
+  let ln1 = 1;
+  for (const [item, unit, v1, v2, rem] of procRows) {
+    ws1.getRow(r1).height = 14.5;
+    sc(ws1, `A${r1}`, { value: ln1++, f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+    sc(ws1, `B${r1}`, { value: item, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+    sc(ws1, `C${r1}`, { value: unit, f: font.unit(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+    sc(ws1, `D${r1}`, { value: v1, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+    sc(ws1, `E${r1}`, { value: v2, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `F${r1}`, { value: rem, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+    r1++;
+  }
+
+  styleBanner(ws1, r1++, 'F', 'SECTION 2. COLUMN VESSEL & ASME SEC. VIII DIV.1 MECHANICAL DESIGN (본체 기계·치수 사양)');
+  const mechRows: Array<[string, string, string, string, string]> = [
+    ['Nominal Inside Diameter (Rect / Strip ID)', 'mm', `Ø${Math.round(design.rectifying.selectedNominalDiamM * 1000)} / Ø${Math.round(design.stripping.selectedNominalDiamM * 1000)}`, `Gov Ø${Math.round(design.governingDiamM * 1000)} mm`, design.shellSectionMode.toUpperCase()],
+    ['Internal Design P / Vacuum External P', 'barG / MPa', `${design.designPressBarG.toFixed(1)} barG / ${mech.externalPressMpa.toFixed(3)} MPa`, `MAWP = ${(mech.mawpMpaG * 10).toFixed(1)} barG`, `Hydrotest ${(mech.hydrotestPressMpaG * 10).toFixed(1)} barG`],
+    ['Design Temperature / Corrosion Allowance', '°C / mm', `${design.designTempC.toFixed(0)} °C / ${mech.corrosionAllowanceMm.toFixed(1)} mm`, `Weld Joint E = ${mech.jointEfficiency.toFixed(2)}`, 'Spot RT / ASME VIII-1'],
+    ['Shell / Head Material Spec', 'ASME', design.recommendedMaterialLabel, `Allow S = ${mech.allowStressMpa.toFixed(0)} MPa`, design.materialReason],
+    ['Selected Wall Thickness (Shell / 2:1 Head)', 'mm', `${mech.selectedShellMm}t / ${mech.selectedHeadMm}t`, `Skirt = ${mech.skirtThicknessMm}t`, `Governing: ${mech.governingCase.toUpperCase()}`],
+    ['Vacuum Stiffener Rings (UG-28/29)', 'EA / Spec', mech.stiffenerCount > 0 ? `${mech.stiffenerCount} EA (${mech.stiffenerSection})` : 'None Required', `Spacing = ${mech.stiffenerSpacingM} m`, `Pa = ${mech.ug28AllowableMpa.toFixed(3)} MPa`],
+    ['Tangent-to-Tangent / Skirt / O.A.L. Height', 'mm', `${el.ttlElMm - el.btlElMm} / ${el.btlElMm} / ${el.oalElMm}`, `L/D = ${design.lengthToDiamRatio}`, `T.T.L. EL +${el.ttlElMm} / B.T.L. EL +${el.btlElMm}`],
+    ['Bottom Sump Residence & Levels (LLL/NLL/HLL)', 'min / EL mm', `${design.sumpResidenceMin} min (${design.sumpLiquidHeightM}m liq)`, `LLL +${el.lllElMm} / NLL +${el.nllElMm}`, `HLL +${el.hllElMm} (Sump Tot ${(design.sumpTotalHeightM * 1000).toFixed(0)}mm)`],
+    ['Wind / Seismic Base Shear & Moment', 'kN / kNm', `Vw=${mech.windBaseShearKN.toFixed(0)}kN / Mw=${mech.windBaseMomentKNm.toFixed(0)}kNm`, `Vs=${mech.seismicBaseShearKN.toFixed(0)}kN / Ms=${mech.seismicBaseMomentKNm.toFixed(0)}kNm`, `Governing: ${mech.governingLateral.toUpperCase()}`],
+    ['Anchor Bolts & Concrete Bearing', 'Spec', `${mech.anchorBoltCount} × ${mech.anchorBoltSize} (BCD Ø${mech.anchorBoltCircleMm}mm)`, `Bearing ${mech.concreteBearingMpa.toFixed(2)} MPa`, `Tension ${mech.anchorTensionPerBoltKN.toFixed(1)} kN/bolt`],
+    ['Vessel Weights (Empty / Oper / Hydrotest)', 'ton', `${design.estimatedDryWeightTon} / ${(mech.operatingWeightKN / 9.80665).toFixed(1)} / ${(mech.hydrotestWeightKN / 9.80665).toFixed(1)}`, `Shell+Heads ${((mech.shellWeightKN + mech.headsWeightKN) / 9.80665).toFixed(1)} t`, `Est. C_BM $${design.costEstimate.bareModuleUsd.toLocaleString()}`],
+  ];
+  for (const [item, unit, v1, v2, rem] of mechRows) {
+    ws1.getRow(r1).height = 14.5;
+    sc(ws1, `A${r1}`, { value: ln1++, f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+    sc(ws1, `B${r1}`, { value: item, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+    sc(ws1, `C${r1}`, { value: unit, f: font.unit(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+    sc(ws1, `D${r1}`, { value: v1, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+    sc(ws1, `E${r1}`, { value: v2, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `F${r1}`, { value: rem, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+    r1++;
+  }
+
+  styleBanner(ws1, r1++, 'F', 'SECTION 3. NOZZLE & MANHOLE ELEVATION SCHEDULE (노즐·맨홀 규격 및 EL 위치)');
+  ws1.getRow(r1).height = 14;
+  ['TAG', 'SERVICE (서비스)', 'SIZE (DN)', 'RATING / ORIENT', 'ELEVATION (Base / BTL)', 'FLOW / VEL / ρv²'].forEach((h, i) => {
+    sc(ws1, `${String.fromCharCode(65 + i)}${r1}`, {
+      value: h,
+      f: font.header(8.5),
+      fi: fill.gray(),
+      al: align.cc,
+      bo: border.inner,
+    });
+  });
+  r1++;
+  for (const nz of design.nozzles) {
+    ws1.getRow(r1).height = 14.5;
+    sc(ws1, `A${r1}`, { value: nz.nozzleTag, f: font.header(), fi: fill.ltBlue(), al: align.cc, bo: border.inner });
+    sc(ws1, `B${r1}`, { value: nz.service, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+    sc(ws1, `C${r1}`, { value: nz.selectedDn, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `D${r1}`, { value: `${nz.flangeRating} / ${nz.orientationDeg}°`, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `E${r1}`, { value: `EL +${nz.elevationMm} mm (BTL ${nz.elevationFromBtlMm >= 0 ? '+' : ''}${nz.elevationFromBtlMm})`, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `F${r1}`, { value: `${nz.massFlowKgH} kg/h · ${nz.designVelMS} m/s · ${nz.rhoV2Pa} Pa`, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+    r1++;
+  }
+  for (const mh of design.manholes) {
+    ws1.getRow(r1).height = 14.5;
+    sc(ws1, `A${r1}`, { value: mh.tag, f: font.header(), fi: fill.gold(), al: align.cc, bo: border.inner });
+    sc(ws1, `B${r1}`, { value: mh.service, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+    sc(ws1, `C${r1}`, { value: mh.sizeDn, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `D${r1}`, { value: `${mh.flangeRating} / ${mh.orientationDeg}°`, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `E${r1}`, { value: `EL +${mh.elevationMm} mm (BTL +${mh.elevationFromBtlMm})`, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+    sc(ws1, `F${r1}`, { value: 'Hinged Swing-Bolt Manway', f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+    r1++;
+  }
+  ws1.pageSetup.printArea = `A1:F${r1 - 1}`;
+
+  // =========================================================================
+  // SHEET 2: 2_TRAY_INTERNALS_DS vs 2_PACKING_INTERNALS_DS (엄격 분리!)
+  // =========================================================================
+  if (isTray) {
+    const ws2 = wb.addWorksheet('2_TRAY_INTERNALS_DS', {
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
+    });
+    [5, 36, 14, 24, 24, 24].forEach((w, i) => {
+      ws2.getColumn(i + 1).width = w;
+    });
+    let r2 = 1;
+    ws2.getRow(r2).height = 24;
+    merge(ws2, `A${r2}`, `F${r2}`, {
+      value: `FRACTIONATION TRAY SPECIFICATION DATASHEET (트레이 컬럼 내부장치 데이터시트) — [${unitTag}]`,
+      f: { name: 'Arial', bold: true, size: 12, color: { argb: 'FFFFFFFF' } },
+      fi: fill.darkNav(),
+      al: align.cc,
+      bo: border.outer,
+    });
+    r2++;
+
+    const hdrCols = ['No.', 'TRAY DESIGN SPECIFICATION ITEM', 'UNIT', 'RECTIFYING (정류부)', 'STRIPPING (스트리핑부)', 'DESIGN STANDARD / NOTES'];
+    ws2.getRow(r2).height = 15;
+    hdrCols.forEach((h, i) => {
+      sc(ws2, `${String.fromCharCode(65 + i)}${r2}`, {
+        value: h,
+        f: font.header(8.5),
+        fi: fill.gray(),
+        al: align.cc,
+        bo: border.inner,
+      });
+    });
+    r2++;
+
+    const rSec = design.rectifying;
+    const sSec = design.stripping;
+    const addTrayBanner = (title: string) => styleBanner(ws2, r2++, 'F', title);
+    const addTrayRows = (rows: Array<[string, string, string, string, string]>, lnStart: number) => {
+      let ln = lnStart;
+      for (const [item, unit, vR, vS, note] of rows) {
+        ws2.getRow(r2).height = 14.5;
+        sc(ws2, `A${r2}`, { value: ln++, f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+        sc(ws2, `B${r2}`, { value: item, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+        sc(ws2, `C${r2}`, { value: unit, f: font.unit(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+        sc(ws2, `D${r2}`, { value: vR, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+        sc(ws2, `E${r2}`, { value: vS, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+        sc(ws2, `F${r2}`, { value: note, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+        r2++;
+      }
+      return ln;
+    };
+
+    let lnT = 1;
+    addTrayBanner('A. GENERAL TRAY SPECIFICATION, PASSES & SPACING (트레이 형식 · 패스 · 단간격)');
+    lnT = addTrayRows([
+      ['Tray Type (트레이 형식)', '-', design.trayTypeLabel, design.trayTypeLabel, 'Uniform across tower'],
+      ['Section Inside Diameter (탑 내경)', 'mm', `Ø${Math.round(rSec.selectedNominalDiamM * 1000)}`, `Ø${Math.round(sSec.selectedNominalDiamM * 1000)}`, `Min Req: ${rSec.requiredMinDiamM} / ${sSec.requiredMinDiamM} m`],
+      ['Stage Range & Theoretical Stages', 'Stages', `#${rSec.stageStart}~#${rSec.stageEnd} (${rSec.theoreticalStages} th)`, `#${sSec.stageStart}~#${sSec.stageEnd} (${sSec.theoreticalStages} th)`, `Feed Stage #${simResult.feedStageUsed}`],
+      ['Actual Tray Count (실제 단수)', 'Trays', `${rSec.actualTraysOrBeds}`, `${sSec.actualTraysOrBeds}`, `Total ${design.actualTotalTrays} Trays`],
+      ['Flow Passes (유로 패스 수)', 'Passes', `${rSec.flowPasses}-Pass`, `${sSec.flowPasses}-Pass`, `Flow Path Length: ${rSec.flowPathLengthM} / ${sSec.flowPathLengthM} m`],
+      ['Tray Spacing (단간격)', 'mm', `${design.traySpacingMm}`, `${design.traySpacingMm}`, `Section Height: ${rSec.sectionHeightM} / ${sSec.sectionHeightM} m`],
+      ['Tray Deck Thickness & Material', 'mm / Spec', `${rSec.deckThicknessMm} mm`, `${sSec.deckThicknessMm} mm`, design.recommendedMaterialLabel],
+    ], lnT);
+
+    addTrayBanner('B. ACTIVE DECK, PERFORATION / HOLE & OPEN AREA (홀지름 · 피치 · 개공비)');
+    lnT = addTrayRows([
+      ['Tower Cross-Section Area (A_T)', 'm²', nf(rSec.crossSectionAreaM2, 3), nf(sSec.crossSectionAreaM2, 3), 'Total Inside Area'],
+      ['Active Bubbling Area (A_a / % A_T)', 'm² (%)', `${nf(rSec.activeAreaM2, 3)} (${((rSec.activeAreaM2 / rSec.crossSectionAreaM2) * 100).toFixed(1)}%)`, `${nf(sSec.activeAreaM2, 3)} (${((sSec.activeAreaM2 / sSec.crossSectionAreaM2) * 100).toFixed(1)}%)`, 'AT - 2·Ad'],
+      ['Hole / Valve Orifice Diameter (홀지름 d_h)', 'mm', nf(rSec.holeDiameterMm, 1), nf(sSec.holeDiameterMm, 1), design.trayType === 'sieve' ? 'Punched Sieve Hole' : 'Standard Valve/Riser'],
+      ['Hole Pitch / Triangular Layout (피치 P_t)', 'mm', `${rSec.holePitchMm} (60° Δ)`, `${sSec.holePitchMm} (60° Δ)`, 'Equilateral Triangular Pitch'],
+      ['Open Area Ratio (개공비 % of Active A_a)', '%', `${rSec.openAreaPctOfActive}%`, `${sSec.openAreaPctOfActive}%`, 'Ah / Aa'],
+      ['Open Area Ratio (% of Tower Area A_T)', '% (m²)', `${rSec.openAreaPctOfTower}% (${nf(rSec.holeAreaM2, 4)})`, `${sSec.openAreaPctOfTower}% (${nf(sSec.holeAreaM2, 4)})`, 'Total Free Hole Area'],
+    ], lnT);
+
+    addTrayBanner('C. WEIR & DOWNCOMER GEOMETRY (위어 · 다운커머 치수 사양)');
+    lnT = addTrayRows([
+      ['Outlet Weir Type (출구 위어 형식)', '-', rSec.weirType, sSec.weirType, 'Bolt-on Adjustable +12/-6mm'],
+      ['Outlet Weir Height (위어 높이 h_w)', 'mm', `${rSec.weirHeightMm}`, `${sSec.weirHeightMm}`, 'Fixed Operating Crest Basis'],
+      ['Outlet Weir Length (위어 길이 L_w)', 'mm', `${rSec.weirLengthMm}`, `${sSec.weirLengthMm}`, `${rSec.weirLengthM} / ${sSec.weirLengthM} m`],
+      ['Operating Weir Crest (월류 수두 h_ow)', 'mm', `${rSec.avgWeirCrestMm}`, `${sSec.avgWeirCrestMm}`, 'Francis Weir Formula'],
+      ['Downcomer Type (다운커머 형식)', '-', rSec.dcType, sSec.dcType, 'Bolt/Seal Welded'],
+      ['Downcomer Width (Top / Bottom W_dc)', 'mm', `${rSec.dcWidthTopMm} / ${rSec.dcWidthBotMm}`, `${sSec.dcWidthTopMm} / ${sSec.dcWidthBotMm}`, rSec.dcWidthTopMm > rSec.dcWidthBotMm ? 'Sloped Apron' : 'Straight Apron'],
+      ['Downcomer Area (A_d / % A_T)', 'm² (%)', `${nf(rSec.downcomerAreaM2, 3)} (${rSec.dcAreaPctOfTower}%)`, `${nf(sSec.downcomerAreaM2, 3)} (${sSec.dcAreaPctOfTower}%)`, 'Glitsch Choke Criterion'],
+      ['Under-DC Apron Clearance (h_ap)', 'mm', `${rSec.dcClearanceMm}`, `${sSec.dcClearanceMm}`, `Positive Seal = ${rSec.weirHeightMm - rSec.dcClearanceMm} mm`],
+      ['Seal Pan / Inlet Weir Spec', '-', rSec.sealPanSpec, sSec.sealPanSpec, 'Anti-Vapor Blowthrough'],
+    ], lnT);
+
+    addTrayBanner('D. HYDRAULIC OPERATING RANGE & PERFORMANCE (운전범위 · 수력학 검토)');
+    addTrayRows([
+      ['Design Operating Window (운전범위 % Load)', '% Design', `${rSec.operatingLoadMinPct}% ~ ${rSec.operatingLoadMaxPct}%`, `${sSec.operatingLoadMinPct}% ~ ${sSec.operatingLoadMaxPct}%`, `Overall: ${design.operatingLoadMinPct}% ~ ${design.operatingLoadMaxPct}%`],
+      ['Turndown Ratio (턴다운 비)', 'Ratio', `${rSec.sectionTurndownRatio.toFixed(2)} : 1`, `${sSec.sectionTurndownRatio.toFixed(2)} : 1`, `Controlling: ${design.minTurndownRatio.toFixed(2)} : 1`],
+      ['Jet Flood / DC Choke Flood (범람율)', '%', `${rSec.maxJetFloodPct}% / ${rSec.maxDcChokeFloodPct}%`, `${sSec.maxJetFloodPct}% / ${sSec.maxDcChokeFloodPct}%`, 'Max Allowed: 85.0%'],
+      ['Aerated DC Backup / Residence Time', '% / s', `${rSec.maxDcBackupPct}% / ${rSec.minDcResidenceSec} s`, `${sSec.maxDcBackupPct}% / ${sSec.minDcResidenceSec} s`, 'Recommended ≤50% / ≥3.5 s'],
+      ['Weeping Safety Ratio (u_h / u_weep)', 'x', `${rSec.avgWeepSafetyRatio.toFixed(2)}x`, `${sSec.avgWeepSafetyRatio.toFixed(2)}x`, 'Lockett Criterion ≥ 1.10x'],
+      ['Entrainment (ψ) / Dry Drop (h_d)', '- / mm liq', `${rSec.maxEntrainmentPsi} / ${rSec.avgDryDropMmLiq}`, `${sSec.maxEntrainmentPsi} / ${sSec.avgDryDropMmLiq}`, 'Fair Entrainment'],
+      ['Avg Tray ΔP / Section Total ΔP', 'mbar', `${rSec.avgTrayDpMbar} / ${rSec.sectionDpMbar}`, `${sSec.avgTrayDpMbar} / ${sSec.sectionDpMbar}`, `Total Col ΔP = ${design.totalInternalsDpMbar} mbar`],
+      ['Chan–Fair Stage Efficiency (E_MV)', '%', `${rSec.avgChanFairEffPct}%`, `${sSec.avgChanFairEffPct}%`, `O'Connell Avg ${design.avgOconnellEffPct}%`],
+    ], lnT);
+    ws2.pageSetup.printArea = `A1:F${r2 - 1}`;
+  } else {
+    const ws2 = wb.addWorksheet('2_PACKING_INTERNALS_DS', {
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
+    });
+    [5, 34, 14, 24, 24, 26].forEach((w, i) => {
+      ws2.getColumn(i + 1).width = w;
+    });
+    let r2 = 1;
+    ws2.getRow(r2).height = 24;
+    merge(ws2, `A${r2}`, `F${r2}`, {
+      value: `PACKED COLUMN INTERNALS SPECIFICATION DATASHEET (패킹 컬럼 내부장치 데이터시트) — [${unitTag}]`,
+      f: { name: 'Arial', bold: true, size: 12, color: { argb: 'FFFFFFFF' } },
+      fi: fill.darkNav(),
+      al: align.cc,
+      bo: border.outer,
+    });
+    r2++;
+
+    const pk = design.packingSpec;
+    const hw = design.packingHardware;
+    const rSec = design.rectifying;
+    const sSec = design.stripping;
+
+    styleBanner(ws2, r2++, 'F', 'A. PACKING ELEMENT SPECIFICATION (패킹 종류 · 크기 · 재질 · 물성치)');
+    ws2.getRow(r2).height = 14;
+    ['No.', 'PACKING PROPERTY ITEM', 'UNIT', 'SPECIFICATION', 'SECONDARY / NOTE', 'STANDARD / REF'].forEach((h, i) => {
+      sc(ws2, `${String.fromCharCode(65 + i)}${r2}`, { value: h, f: font.header(8.5), fi: fill.gray(), al: align.cc, bo: border.inner });
+    });
+    r2++;
+
+    let lnP = 1;
+    const pkMetaRows: Array<[string, string, string, string, string]> = [
+      ['Packing Category (패킹 형식 구분)', '-', pk.category === 'structured' ? 'Structured Corrugated Sheet' : 'Random Dumped Packing', pk.key.toUpperCase(), 'High-Efficiency Mass Transfer'],
+      ['Packing Commercial Model (패킹 종류)', '-', pk.name, `Max Bed Limit ${colConfig.internalsConfig?.maxBedHeightM ?? 5.5} m`, pk.materialNote],
+      ['Nominal Size / Crimp Spec (패킹 크기)', 'mm / Crimp', pk.nominalSizeLabel || '-', `${design.packedBedCount} Bed(s) Total`, 'Standard Element Geometry'],
+      ['Packing Material (패킹 재질)', '-', design.recommendedMaterialLabel, '0.12~0.6 mmt Sheet/Ring', 'Corrosion Verified'],
+      ['Specific Surface Area (비표면적 a_p)', 'm²/m³', `${pk.surfaceAreaM2M3}`, `Void ε = ${(pk.voidFraction * 100).toFixed(1)}%`, `Packing Factor F_p = ${pk.packingFactorFpM1} 1/m`],
+      ['Section Avg HETP / H_OG', 'm', `Rect ${rSec.hetpAvgM} m / Strip ${sSec.hetpAvgM} m`, `Avg H_OG = ${design.avgPackedHogM} m`, 'Billet–Schultes (1999) + GPDC'],
+    ];
+    for (const [item, unit, v1, v2, note] of pkMetaRows) {
+      ws2.getRow(r2).height = 14.5;
+      sc(ws2, `A${r2}`, { value: lnP++, f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+      sc(ws2, `B${r2}`, { value: item, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `C${r2}`, { value: unit, f: font.unit(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+      sc(ws2, `D${r2}`, { value: v1, f: font.value(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `E${r2}`, { value: v2, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+      sc(ws2, `F${r2}`, { value: note, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+      r2++;
+    }
+
+    styleBanner(ws2, r2++, 'F', 'B. PACKED BED SCHEDULE (베드별 배드높이 · HETP · 설치고도 EL)');
+    ws2.getRow(r2).height = 14;
+    ['BED #', 'SECTION (구간)', 'BED ID (mm)', 'BED HEIGHT (배드높이)', 'HETP (mm) / Eq. Stages', 'ELEVATION EL & ΔP'].forEach((h, i) => {
+      sc(ws2, `${String.fromCharCode(65 + i)}${r2}`, { value: h, f: font.header(8.5), fi: fill.gray(), al: align.cc, bo: border.inner });
+    });
+    r2++;
+    for (const bed of design.packedBeds) {
+      ws2.getRow(r2).height = 14.5;
+      sc(ws2, `A${r2}`, { value: `Bed #${bed.bedNumber}`, f: font.header(), fi: fill.ltBlue(), al: align.cc, bo: border.inner });
+      sc(ws2, `B${r2}`, { value: bed.sectionLabel, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `C${r2}`, { value: `Ø${bed.diameterMm}`, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+      sc(ws2, `D${r2}`, { value: `${bed.bedHeightMm} mm (${bed.bedHeightM} m)`, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+      sc(ws2, `E${r2}`, { value: `HETP ${bed.hetpMm} mm (${bed.eqTheoreticalStages} stg)`, f: font.label(), fi: fill.white(), al: align.cc, bo: border.inner });
+      sc(ws2, `F${r2}`, { value: `EL +${bed.botElMm} ~ +${bed.topElMm} mm (ΔP ${bed.bedDpMbar} mbar)`, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+      r2++;
+    }
+
+    styleBanner(ws2, r2++, 'F', 'C. TOWER INTERNALS HARDWARE (분배기 · 재분배기 · 지지판 · 홀드다운 · 미스트제거기)');
+    ws2.getRow(r2).height = 14;
+    ['TAG', 'HARDWARE ITEM (내부장치)', 'QTY', 'TYPE SPECIFICATION', 'FREE AREA / DRIP PTS', 'ELEVATION / MATERIAL'].forEach((h, i) => {
+      sc(ws2, `${String.fromCharCode(65 + i)}${r2}`, { value: h, f: font.header(8.5), fi: fill.gray(), al: align.cc, bo: border.inner });
+    });
+    r2++;
+    const hwRows: Array<[string, string, string, string, string, string]> = [
+      [hw.topDistributor.tag, 'Primary Top Liquid Distributor (상부 액체분배기)', '1 EA', hw.topDistributor.type, `${hw.topDistributor.dripPointsPerM2} pts/m² (${hw.topDistributor.totalDripPoints} pts)`, `EL +${hw.topDistributor.elevationMm} mm (${hw.topDistributor.turndownSpec})`],
+      ...hw.redistributors.items.map((rd) => [
+        rd.tag,
+        `Collector & Liquid Redistributor (액체 재분배기 - ${rd.location})`,
+        '1 EA',
+        `${rd.collectorType} + ${rd.redistributorType}`,
+        `${rd.freeGasAreaPct}% Free Gas (${rd.dripPointsPerM2} pts/m²)`,
+        `EL +${rd.elevationMm} mm (Span ${rd.interBedHeightMm} mm)`,
+      ] as [string, string, string, string, string, string]),
+      [
+        'SP-ALL',
+        'Packing Support Plates (패킹 지지판)',
+        `${hw.supportPlates.count} EA`,
+        hw.supportPlates.type,
+        `${hw.supportPlates.freeAreaPct}% Open · Load ${hw.supportPlates.allowableLoadKgM2} kg/m²`,
+        `EL: ${hw.supportPlates.elevationsMm.map((e) => `+${e}`).join(', ')} mm`,
+      ],
+      [
+        'HD-ALL',
+        'Hold-Down Grids / Bed Limiters (패킹 홀드다운)',
+        `${hw.holdDownGrids.count} EA`,
+        hw.holdDownGrids.type,
+        `${hw.holdDownGrids.freeAreaPct}% Open`,
+        `EL: ${hw.holdDownGrids.elevationsMm.map((e) => `+${e}`).join(', ')} mm`,
+      ],
+      [
+        hw.demister.tag,
+        'Overhead Mist Eliminator Pad (미스트 제거기)',
+        '1 EA',
+        hw.demister.type,
+        `${hw.demister.thicknessMm} mmt (${hw.demister.densityKgM3} kg/m³)`,
+        `EL +${hw.demister.elevationMm} mm`,
+      ],
+    ];
+    for (const [tag, name, qty, typeS, specS, elS] of hwRows) {
+      ws2.getRow(r2).height = 14.5;
+      sc(ws2, `A${r2}`, { value: tag, f: font.header(), fi: fill.ltBlue(), al: align.cc, bo: border.inner });
+      sc(ws2, `B${r2}`, { value: name, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `C${r2}`, { value: qty, f: font.value(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+      sc(ws2, `D${r2}`, { value: typeS, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `E${r2}`, { value: specS, f: font.value(), fi: fill.white(), al: align.cc, bo: border.inner });
+      sc(ws2, `F${r2}`, { value: elS, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+      r2++;
+    }
+
+    styleBanner(ws2, r2++, 'F', 'D. PACKED BED HYDRAULIC OPERATING RANGE (운전범위 · 적심률 · 압손 검토)');
+    const pkHydRows: Array<[string, string, string, string, string]> = [
+      ['Operating Load Window (운전범위)', '% Design', `Rect: ${rSec.operatingLoadMinPct}% ~ ${rSec.operatingLoadMaxPct}%`, `Strip: ${sSec.operatingLoadMinPct}% ~ ${sSec.operatingLoadMaxPct}%`, `Turndown ${design.minTurndownRatio.toFixed(2)} : 1`],
+      ['Billet–Schultes / GPDC Flood (범람율)', '%', `Rect ${rSec.maxFloodPct}% (GPDC ${rSec.gpdcFloodMaxPct}%)`, `Strip ${sSec.maxFloodPct}% (GPDC ${sSec.gpdcFloodMaxPct}%)`, 'Max Allowed 85%'],
+      ['Dry / Irrigated Packing ΔP', 'mbar/m', `Rect ${rSec.avgDryDpMbarM} / ${rSec.avgIrrigatedDpMbarM}`, `Strip ${sSec.avgDryDpMbarM} / ${sSec.avgIrrigatedDpMbarM}`, `Total ΔP = ${design.totalInternalsDpMbar} mbar`],
+      ['Liquid Wetting Rate vs MWR (적심률)', 'm³/m²h', `Rect ${rSec.avgWettingRateM3M2H} (Min ${rSec.minWettingRateM3M2H})`, `Strip ${sSec.avgWettingRateM3M2H} (Min ${sSec.minWettingRateM3M2H})`, `Safety: ${rSec.wettingSafetyRatio}x / ${sSec.wettingSafetyRatio}x`],
+      ['Dynamic Liquid Holdup h_L / Avg H_OG', '% / m', `Rect ${rSec.avgLiquidHoldupPct}% / ${rSec.avgHogM} m`, `Strip ${sSec.avgLiquidHoldupPct}% / ${sSec.avgHogM} m`, 'Mass Transfer Efficiency Basis'],
+    ];
+    for (const [item, unit, v1, v2, note] of pkHydRows) {
+      ws2.getRow(r2).height = 14.5;
+      sc(ws2, `A${r2}`, { value: lnP++, f: font.small(8), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+      sc(ws2, `B${r2}`, { value: item, f: font.label(), fi: fill.white(), al: align.lc, bo: border.inner });
+      sc(ws2, `C${r2}`, { value: unit, f: font.unit(), fi: fill.ltGray(), al: align.cc, bo: border.inner });
+      sc(ws2, `D${r2}`, { value: v1, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+      sc(ws2, `E${r2}`, { value: v2, f: font.value(), fi: fill.white(), al: align.rc, bo: border.inner });
+      sc(ws2, `F${r2}`, { value: note, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
+      r2++;
+    }
+    ws2.pageSetup.printArea = `A1:F${r2 - 1}`;
+  }
+
+  // =========================================================================
+  // SHEET 3: 3_STAGE_HYDRAULICS (단별 상세 수력학 프로파일)
+  // =========================================================================
+  const ws3 = wb.addWorksheet('3_STAGE_HYDRAULICS', {
+    pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  const s3Headers = isTray
+    ? ['Stage', 'Section', 'Temp (°C)', 'Press (barA)', 'Vap (kg/h)', 'Liq (kg/h)', 'F_s (Pa^0.5)', 'Flood (%)', 'Jet (%)', 'DC Choke (%)', 'DC Backup (%)', 'Weep Ratio', 'ΔP (mbar)', 'Chan-Fair Eff (%)', 'Status']
+    : ['Stage', 'Section', 'Temp (°C)', 'Press (barA)', 'Vap (kg/h)', 'Liq (kg/h)', 'F_s (Pa^0.5)', 'B-S Flood (%)', 'GPDC Flood (%)', 'Dry ΔP (mbar/m)', 'Irrig ΔP (mbar/m)', 'Wetting (m³/m²h)', 'Holdup (%)', 'HETP (m)', 'Status'];
+  s3Headers.forEach((_, idx) => {
+    ws3.getColumn(idx + 1).width = idx === 1 ? 14 : idx === s3Headers.length - 1 ? 13 : 12;
+  });
+  ws3.getRow(1).height = 20;
+  merge(ws3, 'A1', `${String.fromCharCode(64 + s3Headers.length)}1`, {
+    value: `STAGE-BY-STAGE HYDRAULIC PROFILE (${isTray ? 'TRAYED COLUMN' : 'PACKED COLUMN'}) — [${unitTag}]`,
+    f: { name: 'Arial', bold: true, size: 11, color: { argb: 'FFFFFFFF' } },
+    fi: fill.darkNav(),
+    al: align.cc,
+    bo: border.outer,
+  });
+  ws3.getRow(2).height = 15;
+  s3Headers.forEach((h, i) => {
+    sc(ws3, `${String.fromCharCode(65 + i)}2`, { value: h, f: font.header(8.5), fi: fill.gray(), al: align.cc, bo: border.inner });
+  });
+  design.stageRows.forEach((sr, idx) => {
+    const rr = idx + 3;
+    ws3.getRow(rr).height = 14;
+    const vals: (string | number)[] = isTray
+      ? [
+          sr.stage,
+          sr.section.toUpperCase(),
+          Number(sr.tempC.toFixed(1)),
+          Number(sr.pressBarA.toFixed(3)),
+          Math.round(sr.vapMassKgH),
+          Math.round(sr.liqMassKgH),
+          Number(sr.fFactorPa05.toFixed(2)),
+          Number(sr.floodPct.toFixed(1)),
+          Number(sr.jetFloodPct.toFixed(1)),
+          Number(sr.dcChokeFloodPct.toFixed(1)),
+          Number(sr.dcBackupPct.toFixed(1)),
+          Number(sr.weepRatio.toFixed(2)),
+          Number(sr.dpMbar.toFixed(2)),
+          Number(sr.chanFairEffPct.toFixed(1)),
+          sr.status.toUpperCase(),
+        ]
+      : [
+          sr.stage,
+          sr.section.toUpperCase(),
+          Number(sr.tempC.toFixed(1)),
+          Number(sr.pressBarA.toFixed(3)),
+          Math.round(sr.vapMassKgH),
+          Math.round(sr.liqMassKgH),
+          Number(sr.fFactorPa05.toFixed(2)),
+          Number(sr.bsFloodPct.toFixed(1)),
+          Number(sr.gpdcFloodPct.toFixed(1)),
+          Number(sr.dryDpMbarM.toFixed(2)),
+          Number(sr.specificDpMbarM.toFixed(2)),
+          Number(sr.wettingRateM3M2H.toFixed(2)),
+          Number((sr.liquidHoldupFrac * 100).toFixed(2)),
+          Number(sr.localHetpM.toFixed(3)),
+          sr.status.toUpperCase(),
+        ];
+    vals.forEach((v, cIdx) => {
+      sc(ws3, `${String.fromCharCode(65 + cIdx)}${rr}`, {
+        value: v,
+        f: cIdx === 0 || cIdx === vals.length - 1 ? font.header(8.5) : font.label(8.5),
+        fi: cIdx === vals.length - 1 && sr.status !== 'optimal' ? fill.gold() : fill.white(),
+        al: typeof v === 'number' ? align.rc : align.cc,
+        bo: border.inner,
+      });
+    });
+  });
+
+  const rawBuf = await wb.xlsx.writeBuffer();
+  return rawBuf instanceof Uint8Array ? rawBuf : new Uint8Array(rawBuf as ArrayBuffer);
+}
+
+export async function downloadColumnEpcDatasheet(params: ColumnEpcDsParams): Promise<void> {
+  const buf = await exportColumnEpcDatasheet(params);
+  const kind = params.design.internalsKind === 'tray' ? 'TRAY' : 'PACKED';
+  const safeTag = (params.unitTag || 'COL').replace(/[^A-Za-z0-9_-]/g, '_');
+  const blob = new Blob([buf as BlobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  saveAs(blob, `PDS_${safeTag}_${kind}_${today()}.xlsx`);
 }

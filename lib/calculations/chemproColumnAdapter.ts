@@ -10,6 +10,15 @@ import {
   calcBilletSchultesPacking,
   type PackingCatalogSpec,
 } from './columnInternalsDesign';
+import {
+  buildChemproVesselAndLevels,
+  pickChemproNozzleDn,
+  type ChemproManholeItem,
+  type ChemproNozzleItem,
+  type ChemproPackingDetail,
+  type ChemproTrayDetail,
+  type ChemproVesselSpec,
+} from './chemproColumnEpcHelper';
 
 const G_ACCEL = 9.80665;
 const R_GAS_KJ_KMOL_K = 8.31446;
@@ -218,6 +227,11 @@ export interface ChemproDistillationResult {
   flood_pct: number;
   trayHydraulics: ReturnType<typeof calcTrayPointHydraulics> | null;
   billetSchultes: ReturnType<typeof calcBilletSchultesPacking> | null;
+  vesselSpec: ChemproVesselSpec;
+  trayDetail: ChemproTrayDetail | null;
+  packingDetail: ChemproPackingDetail | null;
+  nozzleSchedule: ChemproNozzleItem[];
+  manholeSchedule: ChemproManholeItem[];
   status: 'ok' | 'warning' | 'error';
   iterations: ColumnIterationRow[];
   warnings: ColumnWarning[];
@@ -1470,6 +1484,158 @@ export function solveDistillationColumn(
       ? 'warning'
       : 'ok';
 
+  // ── EPC 본체 · 트레이/패킹 상세 · 노즐 EL 스케줄 구축 ──
+  const vesselSpec = buildChemproVesselAndLevels({
+    D_col_m,
+    H_tangent_m,
+    P_op_barA: P_bar,
+    T_max_C: Math.max(T_top_C, T_bot_C),
+    skirtHeightMm: 3200,
+    isAbsorber: false,
+  });
+
+  const stripBotEl = vesselSpec.hllElMm + 900;
+  const internalsSpanMm = Math.max(1200, vesselSpec.ttlElMm - stripBotEl - 950);
+  const feedElMm = stripBotEl + Math.round(internalsSpanMm * (1 - clampNum(feed_stage_actual / Math.max(2, N_actual), 0.15, 0.85)));
+
+  let trayDetail: ChemproTrayDetail | null = null;
+  let packingDetail: ChemproPackingDetail | null = null;
+
+  if (internals === 'tray' && trayHydraulics) {
+    const gm = trayHydraulics.geom;
+    const trTd = Number(clampNum(trayType === 'bubble_cap' ? weep_ratio * 1.6 : trayType === 'valve' ? weep_ratio * 1.25 : weep_ratio, 1.1, 7.5).toFixed(2));
+    const dcCle = Math.round(Math.min(weirH_mm - 5, clampNum(weirH_mm - 12, 18, 65)));
+    const pPt = trayType === 'sieve'
+      ? Number((holeD_mm * Math.sqrt(0.907 / Math.max(0.04, holeAreaPct / 100))).toFixed(1))
+      : trayType === 'valve' ? 76.0 : 125.0;
+    trayDetail = {
+      trayTypeLabel: trayType === 'valve' ? 'Moving Valve Tray' : trayType === 'bubble_cap' ? 'Bubble-Cap Tray' : 'Perforated Sieve Tray',
+      passes: gm.passes,
+      spacingMm: Math.round(traySpacing_m * 1000),
+      activeAreaM2: Number(gm.areaActiveM2.toFixed(3)),
+      activeAreaPct: Number(((gm.areaActiveM2 / Math.max(0.05, gm.areaTotalM2)) * 100).toFixed(1)),
+      holeD_mm,
+      holePitchMm: pPt,
+      openAreaPct: holeAreaPct,
+      openAreaTowerPct: Number(((gm.areaHoleM2 / Math.max(0.05, gm.areaTotalM2)) * 100).toFixed(1)),
+      deckThicknessMm: 3.0,
+      weirH_mm,
+      weirL_mm: Math.round(gm.weirLengthM * 1000),
+      weirCrestMm: Number(trayHydraulics.weirCrestMm.toFixed(1)),
+      dcWidthTopMm: gm.dcWidthTopMm,
+      dcWidthBotMm: gm.dcWidthBotMm,
+      dcAreaPct: Number(((gm.areaDcM2 / Math.max(0.05, gm.areaTotalM2)) * 100).toFixed(1)),
+      dcClearanceMm: dcCle,
+      dryDropMmLiq: Number(trayHydraulics.dryDropMmLiq.toFixed(1)),
+      opMinPct: Math.round(clampNum(100 / Math.max(1.05, trTd), 18, 92)),
+      opMaxPct: Math.round(clampNum(100 * (85 / Math.max(25, flood_pct_actual)), 70, 210)),
+      turndownRatio: trTd,
+    };
+  } else if (internals === 'packed') {
+    const nb = Math.max(2, N_beds);
+    const gapMm = 850;
+    const bedH = Math.max(500, Math.round((H_pack_total_m * 1000) / nb));
+    const beds: ChemproPackingDetail['beds'] = [];
+    const topStartEl = stripBotEl + Math.max(nb * bedH + (nb - 1) * gapMm, internalsSpanMm);
+    let curTop = Math.min(vesselSpec.ttlElMm - 900, topStartEl);
+    for (let b = 0; b < nb; b++) {
+      const botEl = curTop - bedH;
+      beds.push({
+        bedNo: b + 1,
+        section: b < Math.ceil(nb / 2) ? 'Rectifying' : 'Stripping',
+        heightMm: bedH,
+        botElMm: botEl,
+        topElMm: curTop,
+        hetpMm: Math.round(HETP_m * 1000),
+        dpMbar: Number((dP_total_mbar / nb).toFixed(1)),
+      });
+      curTop = botEl - gapMm;
+    }
+    const dripPerM2 = packSpec.type === 'Structured' ? (packSpec.ap >= 320 ? 140 : 100) : 70;
+    const areaTot = (Math.PI * D_col_m * D_col_m) / 4.0;
+    const wets = billetSchultes ? billetSchultes.wettingRateM3M2H : (Lw_kgh / Math.max(300, rhoL)) / Math.max(0.05, areaTot);
+    const mwr = packSpec.type === 'Structured' ? 0.8 : 1.5;
+    const pkTd = Number(clampNum((wets / Math.max(0.2, mwr)) * 1.15, 1.3, 6.5).toFixed(2));
+    const redItems = beds.slice(0, -1).map((ub, idx) => ({
+      tag: `RD-${idx + 1}`,
+      type: packSpec.type === 'Structured' ? 'Chimney Collector + Trough Redistributor' : 'Chimney Collector + Orifice Redistributor',
+      interBedHeightMm: gapMm,
+      elevationMm: ub.botElMm - Math.round(gapMm * 0.5),
+      freeAreaPct: 35,
+    }));
+    packingDetail = {
+      categoryLabel: packSpec.type === 'Structured' ? 'Structured Corrugated Sheet Packing' : 'Random Dumped Tower Packing',
+      modelName: packSpec.name,
+      nominalSize: packSpec.type === 'Structured' ? `${packSpec.ap} m²/m³ (45° Y-Crimp)` : `${packSpec.size_mm} mm Nominal`,
+      material: packSpec.mat,
+      ap: packSpec.ap,
+      voidPct: packSpec.void_pct,
+      Fp: packSpec.Fp,
+      hetpMm: Math.round(HETP_m * 1000),
+      totalPackedHeightMm: Math.round(H_pack_total_m * 1000),
+      beds,
+      topDistributor: {
+        tag: 'LD-1',
+        type: packSpec.type === 'Structured' ? 'Narrow-Trough Gravity Orifice Distributor' : 'Orifice Pan Gravity Distributor',
+        dripPointsPerM2: dripPerM2,
+        totalDripPoints: Math.ceil(dripPerM2 * areaTot),
+        elevationMm: Math.min(vesselSpec.ttlElMm - 480, beds[0].topElMm + 280),
+      },
+      redistributors: { count: redItems.length, items: redItems },
+      supportPlate: {
+        count: beds.length,
+        type: packSpec.type === 'Structured' ? 'Corrugated Strip Support Grid (88% Free)' : 'Gas-Injection Beam Support Plate (85% Free)',
+        freeAreaPct: packSpec.type === 'Structured' ? 88 : 85,
+        elevationsMm: beds.map((b) => b.botElMm),
+      },
+      holdDownGrid: {
+        count: beds.length,
+        type: packSpec.type === 'Structured' ? 'Bolted Bed Limiter Grid' : 'Weighted Hold-Down Grid',
+        freeAreaPct: 92,
+        elevationsMm: beds.map((b) => b.topElMm),
+      },
+      demister: {
+        tag: 'ME-1',
+        type: 'Knitted Wire-Mesh Demister Pad',
+        thicknessMm: 150,
+        elevationMm: vesselSpec.ttlElMm - 240,
+      },
+      mwrM3M2H: mwr,
+      wettingRateM3M2H: Number(wets.toFixed(2)),
+      wettingSafetyRatio: Number((wets / mwr).toFixed(2)),
+      dryDpMbarM: billetSchultes ? billetSchultes.dryDpMbarM : Number((dP_pack_mbar_m * 0.55).toFixed(2)),
+      irrigDpMbarM: Number(dP_pack_mbar_m.toFixed(2)),
+      opMinPct: Math.round(clampNum(100 / Math.max(1.05, pkTd), 20, 90)),
+      opMaxPct: Math.round(clampNum(100 * (85 / Math.max(25, flood_pct_actual)), 70, 210)),
+      turndownRatio: pkTd,
+    };
+  }
+
+  const fKgH = F * mw_avg;
+  const dKgH = D * mw_avg;
+  const bKgH = B * mw_avg;
+  const refKgH = Math.max(10, R * dKgH);
+  const nz1 = pickChemproNozzleDn(Vw_kgh, rhoV, clampNum(30 / Math.sqrt(Math.max(0.1, rhoV)), 8, 25));
+  const nz2 = pickChemproNozzleDn(refKgH, rhoL, 1.8);
+  const nz3 = pickChemproNozzleDn(fKgH, rhoL, 1.8);
+  const nz4 = pickChemproNozzleDn(bKgH, rhoL, 1.5);
+  const nz5 = pickChemproNozzleDn(Vw_kgh * 1.15, rhoV * 1.8, 12.0);
+  const nz6 = pickChemproNozzleDn(Vw_kgh * 2.5, rhoL, 1.3);
+  const nozzleSchedule: ChemproNozzleItem[] = [
+    { tag: 'N1', service: 'Overhead Vapor Out', phase: 'Vapor', selectedDn: nz1.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Vw_kgh), velMS: nz1.velMS, elevationMm: vesselSpec.oalElMm - 200, elevationFromBtlMm: vesselSpec.oalElMm - 200 - vesselSpec.btlElMm, orientationDeg: 0 },
+    { tag: 'N2', service: 'Reflux Return', phase: 'Liquid', selectedDn: nz2.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(refKgH), velMS: nz2.velMS, elevationMm: vesselSpec.ttlElMm - 420, elevationFromBtlMm: vesselSpec.ttlElMm - 420 - vesselSpec.btlElMm, orientationDeg: 90 },
+    { tag: 'N3', service: `Feed In (Stage #${feed_stage_actual})`, phase: 'Liquid/2P', selectedDn: nz3.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(fKgH), velMS: nz3.velMS, elevationMm: feedElMm, elevationFromBtlMm: feedElMm - vesselSpec.btlElMm, orientationDeg: 270 },
+    { tag: 'N4', service: 'Bottoms Product Out', phase: 'Liquid', selectedDn: nz4.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(bKgH), velMS: nz4.velMS, elevationMm: Math.max(800, vesselSpec.btlElMm - 300), elevationFromBtlMm: -300, orientationDeg: 0 },
+    { tag: 'N5', service: 'Reboiler Vapor Return', phase: 'Two-Phase', selectedDn: nz5.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Vw_kgh), velMS: nz5.velMS, elevationMm: Math.min(stripBotEl - 180, Math.round((vesselSpec.hllElMm + stripBotEl) * 0.5)), elevationFromBtlMm: Math.round((vesselSpec.hllElMm + stripBotEl) * 0.5) - vesselSpec.btlElMm, orientationDeg: 90 },
+    { tag: 'N6', service: 'Reboiler Liquid Supply', phase: 'Liquid', selectedDn: nz6.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Vw_kgh * 2.5), velMS: nz6.velMS, elevationMm: vesselSpec.lllElMm, elevationFromBtlMm: vesselSpec.lllElMm - vesselSpec.btlElMm, orientationDeg: 90 },
+  ];
+  const mhSize = D_col_m >= 1.2 ? 'DN500 (20")' : 'DN450 (18")';
+  const manholeSchedule: ChemproManholeItem[] = [
+    { tag: 'M1', sizeDn: mhSize, flangeRating: vesselSpec.flangeRating, service: 'Top Internals Access Manway', elevationMm: vesselSpec.ttlElMm - 380, orientationDeg: 180 },
+    { tag: 'M2', sizeDn: mhSize, flangeRating: vesselSpec.flangeRating, service: 'Feed / Mid-Column Manway', elevationMm: feedElMm, orientationDeg: 180 },
+    { tag: 'M3', sizeDn: mhSize, flangeRating: vesselSpec.flangeRating, service: 'Bottom Sump Manway', elevationMm: Math.min(stripBotEl - 220, vesselSpec.hllElMm + 250), orientationDeg: 180 },
+  ];
+
   return {
     equipTag: inp.equipTag || 'T-101',
     equipName: inp.equipName || `${lkBase.name} / ${hkBase.name} Column`,
@@ -1566,6 +1732,11 @@ export function solveDistillationColumn(
     flood_pct: flood_pct_actual,
     trayHydraulics,
     billetSchultes,
+    vesselSpec,
+    trayDetail,
+    packingDetail,
+    nozzleSchedule,
+    manholeSchedule,
     status,
     iterations,
     warnings,

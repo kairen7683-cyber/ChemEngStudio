@@ -608,17 +608,57 @@ window.ChemEngExcelExporter = (function () {
         ['API 610 Material Class', 'Class', 'Class S-6 (CS / 12% Cr)', 'Electric Motor Driver Spec', `${res.P_motor_std_kW} kW, 380V/3Ph/60Hz, TEFC Ex d IIB T4`]
       ];
     } else if (eqType === 'column') {
+      const isAbs = res.colMode === 'absorption';
+      const isPacked = isAbs || res.internals === 'packed';
+      const vs = res.vesselSpec || {};
+      const td = res.trayDetail || {};
+      const pk = res.packingDetail || {};
+      const lkName = res.lkBase?.name || 'Light Key / Gas';
+      const hkName = res.hkBase?.name || 'Heavy Key / Liquid';
+
       rows = [
-        ['SEC', 'SECTION I — PROCESS MATERIAL & HEAT BALANCE SUMMARY'],
-        ['Binary System (LK / HK)', '-', `${res.lkBase.name} / ${res.hkBase.name}`, 'Avg. Relative Volatility (α)', `α_avg = ${res.alpha.toFixed(3)}`],
-        ['Feed / Distillate / Bottoms Flow', 'kmol/h', `F=${(res.D + res.B).toFixed(1)} / D=${res.D.toFixed(1)} / B=${res.B.toFixed(1)}`, 'Compositions (zF / xD / xB)', `${res.zF.toFixed(3)} / ${res.xD.toFixed(3)} / ${res.xB.toFixed(4)}`],
-        ['Temperature Profile (Top/Feed/Bot)', '°C', `${res.T_top_C.toFixed(1)} / ${res.T_feed_C.toFixed(1)} / ${res.T_bot_C.toFixed(1)} °C`, 'Reflux Ratio (R_op / R_min)', `R = ${res.R.toFixed(2)} (R_min = ${res.Rmin.toFixed(2)})`],
-        ['Condenser Duty (Qc)', 'kW', `${res.Qc_kW.toFixed(1)} kW`, 'Reboiler Duty (Qr)', `${res.Qr_kW.toFixed(1)} kW`],
-        ['SEC', 'SECTION II — STAGE DESIGN & FRI 4-ZONE TRAY HYDRAULICS'],
-        ['Min Stages (N_min) / Theoretical', 'Stages', `${res.Nmin.toFixed(2)} / ${res.N_theo.toFixed(1)}`, 'Actual Trays (N_act) & Feed Tray', `${res.N_actual} Trays (Feed Stage #${res.feed_stage_actual})`],
-        ['Column Inside Diameter (ID)', 'mm (m)', `Ø${(res.D_col_m * 1000).toFixed(0)} mm (${res.D_col_m.toFixed(2)} m)`, 'Tangent-to-Tangent Height (H_T/T)', `${res.H_tangent_m.toFixed(1)} m (HETP = ${res.HETP_m.toFixed(2)} m)`],
-        ['Vapor F-Factor / Velocity', 'Pa^0.5 / m/s', `F_s = ${res.F_factor.toFixed(2)} / u_op = ${res.u_op.toFixed(2)} m/s`, '4-Zone Hydraulic Stability', `Weep ${res.weep_ratio.toFixed(2)}x / DC Backup ${res.dc_backup_pct.toFixed(1)}% / ΔP ${res.dP_total_mbar.toFixed(0)} mbar`]
+        ['SEC', `SECTION I — PROCESS & COLUMN VESSEL SHELL SPECIFICATION (본체 데이터시트 · ${isAbs ? 'ABSORBER' : isPacked ? 'PACKED COLUMN' : 'TRAYED COLUMN'})`],
+        ['Process Fluid System', '-', `${lkName} / ${hkName}`, isAbs ? 'Solute Removal / L/G Ratio' : 'Avg Relative Volatility (α)', isAbs ? `${res.removal_pct?.toFixed(2)}% (L/G ${res.LG_mass_ratio?.toFixed(2)})` : `α_avg = ${res.alpha?.toFixed(3)}`],
+        ['Stream Flows', 'kmol/h (kg/h)', isAbs ? `G=${res.gas_kgh?.toFixed(0)} / L=${res.liq_kgh?.toFixed(0)} kg/h` : `F=${(res.D + res.B).toFixed(1)} / D=${res.D.toFixed(1)} / B=${res.B.toFixed(1)}`, isAbs ? 'Solute Inlet → Outlet' : 'Compositions (zF/xD/xB)', isAbs ? `${res.y_in_ppm} → ${res.y_out_ppm} ppm` : `${res.zF?.toFixed(3)} / ${res.xD?.toFixed(3)} / ${res.xB?.toFixed(4)}`],
+        ['Temperatures & Press', '°C / barA', `${res.T_top_C?.toFixed(1)} / ${res.T_feed_C?.toFixed(1)} / ${res.T_bot_C?.toFixed(1)} °C`, 'Condenser Qc / Reboiler Qr', isAbs ? `Q = ${res.Qc_kW?.toFixed(1)} kW` : `Qc=${res.Qc_kW?.toFixed(1)} / Qr=${res.Qr_kW?.toFixed(1)} kW`],
+        ['Shell ID × T/T Height', 'mm', `ID Ø${vs.idMm || Math.round(res.D_col_m * 1000)} × H_T/T ${vs.hTangentMm || Math.round(res.H_tangent_m * 1000)}`, 'Skirt × O.A.L. Elevation', `Skirt ${vs.skirtHeightMm || 3200} mm × O.A.L. ${vs.oalElMm || '-'} mm`],
+        ['ASME Design P / Temp', 'barG / °C', `${vs.designP_barG || 3.5} barG / ${vs.designT_C || 140} °C`, 'Wall Thickness (Shell/Head)', `${vs.wallThicknessMm || 12}t / 2:1 Head ${vs.headThicknessMm || 12}t (CA ${vs.corrAllowanceMm || 3}mm)`],
+        ['Sump Levels (LLL/NLL/HLL)', 'EL mm', `LLL +${vs.lllElMm || '-'} / NLL +${vs.nllElMm || '-'} / HLL +${vs.hllElMm || '-'}`, 'Weights (Empty / Oper)', `${vs.emptyWeightKg || '-'} / ${vs.operWeightKg || '-'} kg (${vs.material || 'CS/SS316L'})`]
       ];
+
+      if (!isPacked) {
+        rows.push(
+          ['SEC', 'SECTION II — FRACTIONATION TRAY INTERNALS SPECIFICATION (트레이 컬럼 데이터시트)'],
+          ['Tray Type & Stage Count', 'Trays', `${td.trayTypeLabel || res.trayType} (Deck ${td.deckThicknessMm || 3}t)`, 'Actual Trays & Feed Stage', `${res.N_actual} Trays (Feed #${res.feed_stage_actual} · N_th ${res.N_theo?.toFixed(1)})`],
+          ['Flow Passes & Tray Spacing', 'Pass / mm', `${td.passes || res.trayPasses}-Pass Cross-Flow · Spacing ${td.spacingMm || Math.round(res.traySpacing_m * 1000)} mm`, 'Active Area A_a (% A_T)', `${td.activeAreaM2 || '-'} m² (${td.activeAreaPct || '-'}%)`],
+          ['Hole Ø & Open Area Ratio', 'mm / %', `Ø_h = ${td.holeD_mm || res.holeD_mm} mm · Pitch ${td.holePitchMm || 15.1} mm Δ`, 'Perforation / Open Area', `${td.openAreaPct || res.holeAreaPct}% of A_a (${td.openAreaTowerPct || '-'}% of A_T)`],
+          ['Outlet Weir (h_w / L_w / h_ow)', 'mm', `h_w=${td.weirH_mm || res.weirH_mm} / L_w=${td.weirL_mm || '-'} mm`, 'Operating Weir Crest h_ow', `${td.weirCrestMm || '-'} mm (Francis)`],
+          ['Downcomer Width & Clearance', 'mm / %', `W_dc Top/Bot=${td.dcWidthTopMm || '-'}/${td.dcWidthBotMm || '-'} mm (Ad ${td.dcAreaPct || 12}%)`, 'Apron Clearance h_ap', `${td.dcClearanceMm || 38} mm (Pos Seal +${(td.weirH_mm || 50) - (td.dcClearanceMm || 38)} mm)`],
+          ['Operating Range & Flood', '% Design', `${td.opMinPct || 45}% ~ ${td.opMaxPct || 112}% (TD ${td.turndownRatio || 2.2}:1)`, 'Flood / Weep / DC Backup / ΔP', `Flood ${res.flood_pct?.toFixed(1)}% / Weep ${res.weep_ratio?.toFixed(2)}x / DC ${res.dc_backup_pct?.toFixed(1)}% / ΔP ${res.dP_total_mbar?.toFixed(0)} mbar`]
+        );
+      } else {
+        const beds = pk.beds || [];
+        const bedText = beds.length
+          ? beds.map((b) => `B#${b.bedNo} ${b.heightMm}mm (+${b.botElMm}~+${b.topElMm})`).join('; ')
+          : `${res.N_beds} Bed(s), Total ${(res.H_pack_total_m * 1000).toFixed(0)} mm`;
+        rows.push(
+          ['SEC', 'SECTION II — PACKING ELEMENT, BED SCHEDULE & HARDWARE SPECIFICATION (패킹 컬럼 데이터시트)'],
+          ['Packing Category & Model', 'Spec', `${pk.modelName || res.packSpec?.name || 'Packed Bed'} (${pk.categoryLabel || res.packSpec?.type})`, 'Nominal Size / Material', `${pk.nominalSize || `${res.packSpec?.size_mm} mm`} (${pk.material || res.packSpec?.mat})`],
+          ['Surface (a_p), Void (ε), F_p', 'm²/m³ / % / m⁻¹', `a_p=${res.packSpec?.ap || '-'} · ε=${res.packSpec?.void_pct || '-'}% · F_p=${res.packSpec?.Fp || '-'}`, 'HETP / Mass Transfer', `HETP = ${(res.HETP_m * 1000).toFixed(0)} mm (${res.HETP_m?.toFixed(2)} m)${isAbs ? ` · N_OG=${res.N_OG?.toFixed(2)}, HTU=${res.HTU_OG_m?.toFixed(2)}m` : ''}`],
+          ['Packed Bed Height & EL', 'mm / Beds', `Total Z = ${(res.H_pack_total_m * 1000).toFixed(0)} mm (${res.N_beds} Beds)`, 'Bed Schedule & Elevations', bedText],
+          ['Top Liquid Distributor (LD-1)', 'pts/m² / EL', `${pk.topDistributor?.type || 'Gravity Orifice'} (${pk.topDistributor?.dripPointsPerM2 || 90} pts/m², ${pk.topDistributor?.totalDripPoints || '-'} pts)`, 'Redistributors (RD) & Demister', `RD: ${pk.redistributors?.count || 0}EA @ ${(pk.redistributors?.items || []).map((x) => `+${x.elevationMm}`).join(',') || '-'} | ME-1 150t @ +${pk.demister?.elevationMm || '-'}`],
+          ['Support Plate & Hold-Down', 'EA / % Open', `SP ${pk.supportPlate?.count || res.N_beds}EA (${pk.supportPlate?.freeAreaPct || 86}% Open) · EL ${(pk.supportPlate?.elevationsMm || []).map((e) => `+${e}`).join(',')}`, 'Hold-Down Grid (HD)', `HD ${pk.holdDownGrid?.count || res.N_beds}EA (${pk.holdDownGrid?.freeAreaPct || 92}% Open) · EL ${(pk.holdDownGrid?.elevationsMm || []).map((e) => `+${e}`).join(',')}`],
+          ['Operating Range & Wetting', '% / m³/m²h', `${pk.opMinPct || 40}% ~ ${pk.opMaxPct || 115}% (TD ${pk.turndownRatio || 2.4}:1) · L_w=${pk.wettingRateM3M2H || '-'} (MWR ${pk.mwrM3M2H || '-'})`, 'Flood, Dry/Irrig & Total ΔP', `Flood ${res.flood_pct?.toFixed(1)}% · Irrig ${res.dP_pack_mbar_m?.toFixed(2)} mbar/m · Total ${res.dP_total_mbar?.toFixed(1)} mbar`]
+        );
+      }
+
+      rows.push(['SEC', 'SECTION III — NOZZLE & MANHOLE ELEVATION SCHEDULE (노즐·맨홀 EL 스케줄)']);
+      (res.nozzleSchedule || []).forEach((nz) => {
+        rows.push([`${nz.tag} — ${nz.service}`, nz.selectedDn, `${nz.flangeRating} (${nz.orientationDeg}°)`, `EL +${nz.elevationMm} mm (BTL ${nz.elevationFromBtlMm >= 0 ? '+' : ''}${nz.elevationFromBtlMm})`, `${nz.flowKgH} kg/h · ${nz.velMS} m/s`]);
+      });
+      (res.manholeSchedule || []).forEach((mh) => {
+        rows.push([`${mh.tag} — ${mh.service}`, mh.sizeDn, `${mh.flangeRating} (${mh.orientationDeg}°)`, `EL +${mh.elevationMm} mm`, 'Access Manway']);
+      });
     } else if (eqType === 'piping') {
       const s = res.selected;
       rows = [
@@ -771,10 +811,16 @@ window.ChemEngExcelExporter = (function () {
     wb.created = new Date();
 
     const dateStr = new Date().toISOString().slice(0, 10);
+    const colSheetName =
+      res.colMode === 'absorption'
+        ? '1_Packed_Absorber_DS'
+        : res.internals === 'packed'
+        ? '1_Packed_Column_DS'
+        : '1_Tray_Column_DS';
     const sheet1NameMap = {
       hx: '1_TEMA_HX_Datasheet',
       pump: '1_API610_Pump_Datasheet',
-      column: '1_FRI_Column_Datasheet',
+      column: colSheetName,
       piping: '1_B313_Piping_Datasheet',
       vessel: '1_ASME_Vessel_Datasheet',
       psv: '1_API526_PSV_Datasheet'
@@ -796,7 +842,8 @@ window.ChemEngExcelExporter = (function () {
     populateSheet2Sketches(wb, ws2, eqType, res, dateStr);
 
     const buffer = await wb.xlsx.writeBuffer();
-    const fileName = `ChemEng_Datasheet_${eqType.toUpperCase()}_${dateStr}.xlsx`;
+    const colSuffix = eqType === 'column' ? `_${colSheetName.replace(/^1_/, '')}` : '';
+    const fileName = `ChemEng_Datasheet_${eqType.toUpperCase()}${colSuffix}_${dateStr}.xlsx`;
     const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
     // Convert ArrayBuffer to Base64 for Android WebView bridge OR Blob for desktop/mobile browsers

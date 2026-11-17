@@ -73,6 +73,7 @@ export interface ColumnInternalsParams {
 export interface PackingCatalogSpec {
   key: PackingKey;
   name: string;
+  nominalSizeLabel?: string;     // 실무 공칭 규격 / 크림프 기하
   category: 'structured' | 'random';
   materialNote: string;
   packingFactorFpM1: number;     // Fp (1/m, ft^2/ft^3 * 3.28084)
@@ -92,6 +93,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   mellapak_250y: {
     key: 'mellapak_250y',
     name: '규칙 충진물 250Y (Structured Sheet 250 m²/m³)',
+    nominalSizeLabel: '250 m²/m³ · Crimp H=11.9 mm (45° Y-Channel)',
     category: 'structured',
     materialNote: 'SS316L / Duplex / Alloy C-276 — 저압손 진공 정밀증류(ECH/DCH) 표준',
     packingFactorFpM1: 66,
@@ -108,6 +110,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   mellapak_350y: {
     key: 'mellapak_350y',
     name: '규칙 충진물 350Y (Structured Sheet 350 m²/m³)',
+    nominalSizeLabel: '350 m²/m³ · Crimp H=8.5 mm (45° Y-Channel)',
     category: 'structured',
     materialNote: 'SS316L / Alloy C-276 — 고순도 박막 정제 (단수 절감형)',
     packingFactorFpM1: 95,
@@ -124,6 +127,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   corrpak_ptfe_250y: {
     key: 'corrpak_ptfe_250y',
     name: '불소수지(PTFE/PVDF) 규칙 충진물 250Y',
+    nominalSizeLabel: '240 m²/m³ · PTFE Crimp H=12 mm (45° Y)',
     category: 'structured',
     materialNote: 'PTFE / PVDF — 무수염산(AHCl)·폐염산(HCl-H₂O) 강부식 진공증류 전용',
     packingFactorFpM1: 78,
@@ -140,6 +144,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   graphite_struct_250: {
     key: 'graphite_struct_250',
     name: '불침투 흑연(Graphite) 규칙 충진물 220Y',
+    nominalSizeLabel: '220 m²/m³ · Carbon Block/Plate 45° Channel',
     category: 'structured',
     materialNote: '불침투 카본/그라파이트 — 고온 비등 염산(110°C+)·유기염소계 내부식',
     packingFactorFpM1: 88,
@@ -156,6 +161,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   imtp_40_metal: {
     key: 'imtp_40_metal',
     name: '고성능 슬롯 링 #40 (Random Slotted Ring 40mm)',
+    nominalSizeLabel: '#40 · 40 mm Nominal (1.5 in Saddle-Ring)',
     category: 'random',
     materialNote: 'SS316L / CS — 범용 증류·스트리핑 고부하 저차압 불규칙 충진물',
     packingFactorFpM1: 79,
@@ -172,6 +178,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   pall_ring_38_ss: {
     key: 'pall_ring_38_ss',
     name: '금속 폴링 38mm (Metal Slotted Ring 38mm)',
+    nominalSizeLabel: '38 mm Nominal (1.5 in · 0.6mmt)',
     category: 'random',
     materialNote: 'SS316L / Alloy — 파울링(고비점 타르/염) 저항성 우수 스트리핑부 표준',
     packingFactorFpM1: 131,
@@ -188,6 +195,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   pall_ring_25_ss: {
     key: 'pall_ring_25_ss',
     name: '금속 폴링 25mm (Metal Slotted Ring 25mm)',
+    nominalSizeLabel: '25 mm Nominal (1.0 in · 0.5mmt)',
     category: 'random',
     materialNote: 'SS316L — 중소구경 탑(Ø1.2m 이하) 범용 불규칙 충진물',
     packingFactorFpM1: 183,
@@ -204,6 +212,7 @@ export const PACKING_CATALOG: Record<PackingKey, PackingCatalogSpec> = {
   ceramic_intalox_38: {
     key: 'ceramic_intalox_38',
     name: '세라믹 새들 38mm (Ceramic Acid Saddle 38mm)',
+    nominalSizeLabel: '38 mm Nominal (1.5 in Acid Saddle)',
     category: 'random',
     materialNote: '내산 세라믹 — 습식 염소(Cl₂)·진한 염산·황산 건조/흡수/증류 내부식',
     packingFactorFpM1: 170,
@@ -273,6 +282,96 @@ export interface StageHydraulicRow {
   statusNote: string;
 }
 
+export interface PackedBedSpec {
+  bedNumber: number;               // Top-down industrial bed numbering (1..K)
+  section: 'rectifying' | 'stripping';
+  sectionLabel: string;
+  diameterMm: number;
+  bedHeightM: number;
+  bedHeightMm: number;
+  hetpM: number;
+  hetpMm: number;
+  eqTheoreticalStages: number;
+  botElMm: number;                 // Bottom elevation from Base Ring (EL 0)
+  topElMm: number;                 // Top elevation from Base Ring (EL 0)
+  bedDpMbar: number;
+  maxFloodPct: number;
+}
+
+export interface PackingHardwareSchedule {
+  topDistributor: {
+    tag: string;                   // 'LD-1'
+    type: string;
+    dripPointsPerM2: number;
+    totalDripPoints: number;
+    turndownSpec: string;
+    elevationMm: number;
+    material: string;
+  };
+  redistributors: {
+    count: number;
+    items: Array<{
+      tag: string;                 // 'RD-1', 'RD-2', ...
+      location: string;
+      collectorType: string;
+      redistributorType: string;
+      dripPointsPerM2: number;
+      freeGasAreaPct: number;
+      interBedHeightMm: number;
+      elevationMm: number;
+    }>;
+  };
+  supportPlates: {
+    count: number;
+    type: string;
+    freeAreaPct: number;
+    allowableLoadKgM2: number;
+    elevationsMm: number[];
+    material: string;
+  };
+  holdDownGrids: {
+    count: number;
+    type: string;
+    freeAreaPct: number;
+    elevationsMm: number[];
+    material: string;
+  };
+  demister: {
+    tag: string;                   // 'ME-1'
+    type: string;
+    thicknessMm: number;
+    densityKgM3: number;
+    elevationMm: number;
+    material: string;
+  };
+}
+
+export interface ColumnManholeSpec {
+  tag: string;                     // 'M1', 'M2', 'M3'
+  sizeDn: string;                  // 'DN500 (20")'
+  flangeRating: string;            // 'ASME 150# RF'
+  service: string;
+  elevationMm: number;
+  elevationFromBtlMm: number;
+  orientationDeg: number;
+}
+
+export interface ColumnElevationMap {
+  baseElMm: number;                // Base Ring EL +0
+  btlElMm: number;                 // Bottom Tangent Line
+  lllElMm: number;                 // Low Liquid Level (Sump)
+  nllElMm: number;                 // Normal Liquid Level (Sump)
+  hllElMm: number;                 // High Liquid Level (Sump)
+  stripBotElMm: number;            // Bottom Tray or Bottom Bed Support Grid
+  stripTopElMm: number;            // Top of Stripping Internals
+  feedNozzleElMm: number;          // Feed Nozzle N3 Centerline
+  rectBotElMm: number;             // Bottom of Rectifying Internals
+  rectTopElMm: number;             // Top Tray #1 or Top of Bed #1
+  demisterElMm: number;            // Mist Eliminator Centerline
+  ttlElMm: number;                 // Top Tangent Line
+  oalElMm: number;                 // Overall Top Elevation (Top Nozzle / Crown)
+}
+
 export interface SectionGeometrySummary {
   section: 'rectifying' | 'stripping';
   label: string;
@@ -289,6 +388,37 @@ export interface SectionGeometrySummary {
   weirLengthM: number;
   flowPathLengthM: number;
   flowPasses: 1 | 2 | 4;
+  // 실무 트레이 기하·수력 상세 필드
+  holeDiameterMm: number;
+  holePitchMm: number;
+  openAreaPctOfActive: number;
+  openAreaPctOfTower: number;
+  deckThicknessMm: number;
+  weirType: string;
+  weirHeightMm: number;
+  weirLengthMm: number;
+  avgWeirCrestMm: number;
+  dcType: string;
+  dcWidthTopMm: number;
+  dcWidthBotMm: number;
+  dcAreaPctOfTower: number;
+  dcClearanceMm: number;
+  sealPanSpec: string;
+  avgDryDropMmLiq: number;
+  avgTrayDpMbar: number;
+  avgWeepSafetyRatio: number;
+  maxDcBackupPct: number;
+  maxEntrainmentPsi: number;
+  operatingLoadMinPct: number;
+  operatingLoadMaxPct: number;
+  sectionTurndownRatio: number;
+  // 실무 패킹 유체역학·적심률 상세 필드
+  avgWettingRateM3M2H: number;
+  minWettingRateM3M2H: number;
+  wettingSafetyRatio: number;
+  avgIrrigatedDpMbarM: number;
+  avgDryDpMbarM: number;
+  // 기존 핵심 집계 지표
   maxFloodPct: number;
   maxJetFloodPct: number;
   maxDcChokeFloodPct: number;
@@ -316,6 +446,10 @@ export interface ColumnNozzleSpec {
   calcIdMm: number;
   selectedDn: string;              // 예: DN150 (6")
   rhoV2Pa: number;                 // 운동량 ρv² (Pa)
+  elevationMm: number;             // Base Ring(EL +0) 기준 설치 고도 (mm)
+  elevationFromBtlMm: number;      // B.T.L. 기준 상대 고도 (mm)
+  orientationDeg: number;          // 노즐 방위각 (0/90/180/270°)
+  flangeRating: string;            // 예: ASME 150# RFWN
   vaporQuality?: number;           // 2상 노즐 기상 질량분율 x (0..1)
   friedelDpPaPerM?: number;        // Friedel 2상 마찰압손 구배 (Pa/m)
   friedelPhiLO2?: number;          // Friedel 2상 배율 φ²_LO
@@ -338,6 +472,7 @@ export interface ColumnInternalsSolveResult {
   internalsKind: ColumnInternalsKind;
   shellSectionMode: ShellSectionMode;
   trayType: TrayDeckType;
+  trayTypeLabel: string;
   traySpacingMm: number;
   packingSpec: PackingCatalogSpec;
   rectifying: SectionGeometrySummary;
@@ -350,6 +485,8 @@ export interface ColumnInternalsSolveResult {
   minDcResidenceTimeSec: number;
   maxFloodStage: number;
   minTurndownRatio: number;        // 운전가능 최대:최소 턴다운 비 (예: 2.8 : 1)
+  operatingLoadMinPct: number;     // 최소 허용 부하율 (% of Design)
+  operatingLoadMaxPct: number;     // 최대 허용 부하율 (% of Design @ 85% Flood)
   totalInternalsDpMbar: number;
   totalInternalsDpKgcm2: number;
   avgStageDpKgcm2: number;         // MESH 역반영용 단당 평균 ΔP (kgf/cm²)
@@ -363,7 +500,10 @@ export interface ColumnInternalsSolveResult {
   actualTotalTrays: number;
   packedBedCount: number;          // 충진 베드 분할 개수
   totalPackedHeightM: number;
-  // 탑 기계·높이·중량·원가 요약
+  packedBeds: PackedBedSpec[];
+  packingHardware: PackingHardwareSchedule;
+  // 탑 기계·높이·고도·중량·원가 요약
+  sumpResidenceMin: number;
   topDisengageHeightM: number;
   feedFlashZoneHeightM: number;
   sumpLiquidHeightM: number;
@@ -371,16 +511,20 @@ export interface ColumnInternalsSolveResult {
   tangentToTangentHeightM: number;
   skirtHeightM: number;
   totalElevationM: number;
+  elevations: ColumnElevationMap;
   lengthToDiamRatio: number;
   recommendedMaterialCode: Exclude<ShellMaterialCode, 'AUTO'>;
   recommendedMaterialLabel: string;
   materialReason: string;
+  designPressBarG: number;
+  designTempC: number;
   shellWallThicknessMm: number;
   vacuumStiffenerRequired: boolean;
   estimatedDryWeightTon: number;
   mechanical: TowerMechanicalResult;
   costEstimate: ColumnCostBreakdown;
   nozzles: ColumnNozzleSpec[];
+  manholes: ColumnManholeSpec[];
   auxiliaries: ColumnAuxSummary;
   stageRows: StageHydraulicRow[];
   designWarnings: string[];
@@ -630,6 +774,9 @@ export function calcMultiPassTrayGeometry(
   weirLengthM: number;
   flowPathLengthM: number;
   passes: 1 | 2 | 4;
+  dcWidthTopMm: number;
+  dcWidthBotMm: number;
+  sideHeightOverD: number;
 } {
   const D = Math.max(0.3, diamM);
   const areaTotalM2 = (Math.PI * D * D) / 4.0;
@@ -653,21 +800,27 @@ export function calcMultiPassTrayGeometry(
 
   let weirLengthM: number;
   let flowPathLengthM: number;
+  let sideHeightOverD = seg1.heightOverD;
   if (passes === 1) {
     weirLengthM = seg1.chordOverD * D;
     flowPathLengthM = Math.max(0.18, D * (1 - 2 * seg1.heightOverD));
   } else if (passes === 2) {
     // 2-Pass: 측면 다운코머 2개(합계 면적 adFrac) ↔ 중앙 다운코머(폭 ≈ adFrac·D/1.25) 교번 평균 위어길이
     const sideSeg = solveChordSegment(adFrac / 2);
+    sideHeightOverD = sideSeg.heightOverD;
     const centerDcWidthOverD = (adFrac * Math.PI) / 4;
     weirLengthM = 0.5 * (2 * sideSeg.chordOverD * D + 2 * 0.96 * D);
     flowPathLengthM = Math.max(0.16, 0.5 * D * (1 - 2 * sideSeg.heightOverD - centerDcWidthOverD));
   } else {
     // 4-Pass: 측면 + 오프센터 + 센터 다운코머 조합
     const sideSeg = solveChordSegment(adFrac / 4);
+    sideHeightOverD = sideSeg.heightOverD;
     weirLengthM = (2 * sideSeg.chordOverD + 2 * 0.88 + 0.98) * 0.62 * D;
     flowPathLengthM = Math.max(0.14, 0.25 * D * (1 - 2 * sideSeg.heightOverD - 2 * ((adFrac * Math.PI) / 8)));
   }
+
+  const dcWidthTopMm = Math.max(75, Math.round(sideHeightOverD * D * 1000));
+  const dcWidthBotMm = D >= 1.2 ? Math.max(55, Math.round(0.72 * dcWidthTopMm)) : dcWidthTopMm;
 
   return {
     areaTotalM2,
@@ -678,6 +831,9 @@ export function calcMultiPassTrayGeometry(
     weirLengthM: Math.max(0.24, weirLengthM),
     flowPathLengthM,
     passes,
+    dcWidthTopMm,
+    dcWidthBotMm,
+    sideHeightOverD,
   };
 }
 
@@ -1969,6 +2125,91 @@ export function solveColumnInternalsDesign(
   const rectDripTotal = internalsKind === 'packed' ? Math.ceil(dripPtsPerM2 * rectTrayGeom.areaTotalM2) : 0;
   const stripDripTotal = internalsKind === 'packed' ? Math.ceil(dripPtsPerM2 * stripTrayGeom.areaTotalM2) : 0;
 
+  const matInfo = resolveShellMaterial(ic.shellMaterial ?? 'AUTO', simResult, feeds);
+  const deckThicknessMm = matInfo.code === 'CS_A516_70' ? 3.4 : 2.0;
+  const holePitchMm =
+    trayType === 'sieve'
+      ? Number((holeDiameterMm * Math.sqrt(0.907 / Math.max(0.04, holeAreaFrac))).toFixed(1))
+      : trayType === 'valve'
+      ? 76.0
+      : 125.0;
+  const dcClearanceMm = Math.round(Math.min(weirHeightMm - 5, clamp(weirHeightMm - 12, 18, 65)));
+  const weirTypeLabel =
+    trayType === 'bubble_cap' ? 'Straight Notched Overflow Weir' : 'Vertical Chordal Outlet Weir';
+  const sealPanSpecLabel = `Recessed Seal Pan (Pos. Seal ${(weirHeightMm - dcClearanceMm).toFixed(0)} mm)`;
+  const trayTypeLabel =
+    trayType === 'valve'
+      ? 'Moving Valve Tray (Glitsch V-1 / Float Type)'
+      : trayType === 'bubble_cap'
+      ? 'Bubble-Cap Tray (Bell-Type Riser & Cap)'
+      : 'Perforated Sieve Tray (Cross-Flow)';
+
+  const dcTypeOf = (passes: 1 | 2 | 4) =>
+    passes === 1
+      ? '1-Pass Chordal Segmental Downcomer (Sloped)'
+      : passes === 2
+      ? '2-Pass Alternating Chordal + Center Downcomer'
+      : '4-Pass Chordal + Off-Center + Center Downcomer';
+
+  const buildSectionExtra = (
+    rows: StageHydraulicRow[],
+    geom: ReturnType<typeof calcMultiPassTrayGeometry>,
+    sectionMaxFlood: number,
+    sectionDripTotal: number
+  ) => {
+    const minWeepSec = rows.length > 0 ? Math.min(...rows.map((r) => r.weepRatio)) : 1.8;
+    const sectionTurndown = Number(
+      clamp(
+        internalsKind === 'packed'
+          ? Math.max(1.2, minWeepSec * 1.15)
+          : trayType === 'bubble_cap'
+          ? Math.max(2.5, minWeepSec * 1.6)
+          : trayType === 'valve'
+          ? Math.max(1.5, minWeepSec * 1.25)
+          : Math.max(1.05, minWeepSec),
+        0.8,
+        8.0
+      ).toFixed(2)
+    );
+    const operatingLoadMinPct = Math.round(clamp(100.0 / Math.max(1.05, sectionTurndown), 18, 95));
+    const operatingLoadMaxPct = Math.round(clamp(100.0 * (85.0 / Math.max(25.0, sectionMaxFlood)), 70, 220));
+    const avgWetting = Number(avgOf(rows, (r) => r.wettingRateM3M2H, 5.0).toFixed(2));
+    return {
+      holeDiameterMm,
+      holePitchMm,
+      openAreaPctOfActive: Number((holeAreaFrac * 100.0).toFixed(1)),
+      openAreaPctOfTower: Number(((geom.areaHoleM2 / Math.max(0.05, geom.areaTotalM2)) * 100.0).toFixed(1)),
+      deckThicknessMm,
+      weirType: weirTypeLabel,
+      weirHeightMm,
+      weirLengthMm: Math.round(geom.weirLengthM * 1000),
+      avgWeirCrestMm: Number(avgOf(rows, (r) => r.weirCrestMm, 18.0).toFixed(1)),
+      dcType: dcTypeOf(geom.passes),
+      dcWidthTopMm: geom.dcWidthTopMm,
+      dcWidthBotMm: geom.dcWidthBotMm,
+      dcAreaPctOfTower: Number(((geom.areaDcM2 / Math.max(0.05, geom.areaTotalM2)) * 100.0).toFixed(1)),
+      dcClearanceMm,
+      sealPanSpec: sealPanSpecLabel,
+      avgDryDropMmLiq: Number(avgOf(rows, (r) => r.dryDropMmLiq, 18.0).toFixed(1)),
+      avgTrayDpMbar: Number(avgOf(rows, (r) => r.dpMbar, 4.5).toFixed(2)),
+      avgWeepSafetyRatio: Number(avgOf(rows, (r) => r.weepRatio, 1.5).toFixed(2)),
+      maxDcBackupPct: Number((rows.length > 0 ? Math.max(...rows.map((r) => r.dcBackupPct)) : 30).toFixed(1)),
+      maxEntrainmentPsi: Number((rows.length > 0 ? Math.max(...rows.map((r) => r.entrainmentFrac)) : 0.02).toFixed(4)),
+      operatingLoadMinPct,
+      operatingLoadMaxPct,
+      sectionTurndownRatio: sectionTurndown,
+      avgWettingRateM3M2H: avgWetting,
+      minWettingRateM3M2H: packingSpec.minWettingM3M2H,
+      wettingSafetyRatio: Number((avgWetting / Math.max(0.2, packingSpec.minWettingM3M2H)).toFixed(2)),
+      avgIrrigatedDpMbarM: Number(avgOf(rows, (r) => r.specificDpMbarM, 2.0).toFixed(2)),
+      avgDryDpMbarM: Number(avgOf(rows, (r) => r.dryDpMbarM, 1.0).toFixed(2)),
+      distributorTotalDripPoints: sectionDripTotal,
+    };
+  };
+
+  const rectExtra = buildSectionExtra(rectRows, rectTrayGeom, rectMaxFlood, rectDripTotal);
+  const stripExtra = buildSectionExtra(stripRows, stripTrayGeom, stripMaxFlood, stripDripTotal);
+
   const rectifying: SectionGeometrySummary = {
     section: 'rectifying',
     label: '상부 정류부 (Rectifying Section)',
@@ -1985,6 +2226,7 @@ export function solveColumnInternalsDesign(
     weirLengthM: Number(rectTrayGeom.weirLengthM.toFixed(2)),
     flowPathLengthM: Number(rectTrayGeom.flowPathLengthM.toFixed(2)),
     flowPasses: rectTrayGeom.passes,
+    ...rectExtra,
     maxFloodPct: Number(rectMaxFlood.toFixed(1)),
     maxJetFloodPct: Number(Math.max(0, ...rectRows.map((r) => r.jetFloodPct)).toFixed(1)),
     maxDcChokeFloodPct: Number(Math.max(0, ...rectRows.map((r) => r.dcChokeFloodPct)).toFixed(1)),
@@ -1996,7 +2238,6 @@ export function solveColumnInternalsDesign(
     avgHogM: Number(avgOf(rectRows, (r) => r.hogM, 0).toFixed(3)),
     gpdcFloodMaxPct: Number(Math.max(0, ...rectRows.map((r) => r.gpdcFloodPct)).toFixed(1)),
     distributorDripPointsPerM2: dripPtsPerM2,
-    distributorTotalDripPoints: rectDripTotal,
     controllingStage: rectCtrlStage,
     sectionHeightM: Number(rectHeightM.toFixed(2)),
     sectionDpMbar: Number(rectDpMbar.toFixed(1)),
@@ -2019,6 +2260,7 @@ export function solveColumnInternalsDesign(
     weirLengthM: Number(stripTrayGeom.weirLengthM.toFixed(2)),
     flowPathLengthM: Number(stripTrayGeom.flowPathLengthM.toFixed(2)),
     flowPasses: stripTrayGeom.passes,
+    ...stripExtra,
     maxFloodPct: Number(stripMaxFlood.toFixed(1)),
     maxJetFloodPct: Number(Math.max(0, ...stripRows.map((r) => r.jetFloodPct)).toFixed(1)),
     maxDcChokeFloodPct: Number(Math.max(0, ...stripRows.map((r) => r.dcChokeFloodPct)).toFixed(1)),
@@ -2030,14 +2272,13 @@ export function solveColumnInternalsDesign(
     avgHogM: Number(avgOf(stripRows, (r) => r.hogM, 0).toFixed(3)),
     gpdcFloodMaxPct: Number(Math.max(0, ...stripRows.map((r) => r.gpdcFloodPct)).toFixed(1)),
     distributorDripPointsPerM2: dripPtsPerM2,
-    distributorTotalDripPoints: stripDripTotal,
     controllingStage: stripCtrlStage,
     sectionHeightM: Number(stripHeightM.toFixed(2)),
     sectionDpMbar: Number(stripDpMbar.toFixed(1)),
     hetpAvgM: Number(stripHetpAvg.toFixed(2)),
   };
 
-  // 5단계: 탑 기계 치수(섬프 체류시간, 전체 T-T 높이) 산출
+  // 5단계: 탑 기계 치수(섬프 체류시간, 전체 T-T 높이 및 절대 EL 맵) 산출
   const governingDiamM = Math.max(rectDiamM, stripDiamM);
   const sumpResMin = clamp(ic.sumpResidenceMin ?? 4.0, 1.5, 15.0);
   const botStage = stages[stages.length - 1];
@@ -2073,10 +2314,188 @@ export function solveColumnInternalsDesign(
   const totalElevationM = Number((tangentToTangentHeightM + skirtHeightM + 0.6 * governingDiamM).toFixed(2));
   const lengthToDiamRatio = Number((tangentToTangentHeightM / Math.max(0.4, governingDiamM)).toFixed(1));
 
-  const matInfo = resolveShellMaterial(ic.shellMaterial ?? 'AUTO', simResult, feeds);
-  const vacuumStiffenerRequired = (colConfig.topPressKgcm2g ?? 0.05) < -0.05;
+  // 절대 고도 맵 (EL +xxxx mm from Base Ring EL 0)
+  const btlElMm = Math.round(skirtHeightM * 1000);
+  const ttlElMm = btlElMm + Math.round(tangentToTangentHeightM * 1000);
+  const sumpTotMm = Math.round(sumpTotalHeightM * 1000);
+  const sumpLiqMm = Math.min(sumpTotMm - 250, Math.round(sumpLiquidHeightM * 1000));
+  const lllElMm = btlElMm + Math.max(150, Math.round(0.25 * sumpLiqMm));
+  const nllElMm = btlElMm + Math.max(lllElMm - btlElMm + 150, Math.round(0.62 * sumpLiqMm));
+  const hllElMm = btlElMm + Math.max(nllElMm - btlElMm + 150, sumpLiqMm);
+  const stripBotElMm = btlElMm + sumpTotMm;
+  const stripInterBedCount = internalsKind === 'packed' ? Math.max(0, stripBeds - 1) : 0;
+  const stripSpanMm = Math.max(250, Math.round(stripHeightM * 1000) + stripInterBedCount * 850);
+  const stripTopElMm = stripBotElMm + stripSpanMm;
+  const feedFlashMm = Math.max(450, Math.round(feedFlashZoneHeightM * 1000));
+  const feedNozzleElMm = stripTopElMm + Math.round(0.5 * feedFlashMm);
+  const rectBotElMm = stripTopElMm + feedFlashMm;
+  const rectInterBedCount = internalsKind === 'packed' ? Math.max(0, rectBeds - 1) : 0;
+  const rectSpanMm = Math.max(
+    250,
+    Math.min(
+      ttlElMm - rectBotElMm - 600,
+      Math.round(rectHeightM * 1000) + rectInterBedCount * 850
+    )
+  );
+  const rectTopElMm = rectBotElMm + rectSpanMm;
+  const demisterElMm = rectTopElMm + Math.max(250, Math.round(0.62 * (ttlElMm - rectTopElMm)));
+  const oalElMm = Math.max(ttlElMm + Math.round(0.25 * rectDiamM * 1000) + 350, Math.round(totalElevationM * 1000));
 
-  // 6단계: 주요 노즐 6개 사이징 + Friedel (1979) 2상 노즐 압손 검토
+  const elevations: ColumnElevationMap = {
+    baseElMm: 0,
+    btlElMm,
+    lllElMm,
+    nllElMm,
+    hllElMm,
+    stripBotElMm,
+    stripTopElMm,
+    feedNozzleElMm,
+    rectBotElMm,
+    rectTopElMm,
+    demisterElMm,
+    ttlElMm,
+    oalElMm,
+  };
+
+  // 패킹 베드 및 내부 하드웨어 스케줄 (Top -> Bottom 베드 넘버링 Bed #1 .. Bed #K)
+  const packedBeds: PackedBedSpec[] = [];
+  const internalsMatLabel =
+    matInfo.code === 'CS_A516_70' ? 'SS316L / Carbon Steel' : matInfo.label.split('(')[0].trim();
+
+  if (internalsKind === 'packed') {
+    const interGapMm = 850;
+    const rectSingleH = Math.max(0.25, Number((rectHeightM / Math.max(1, rectBeds)).toFixed(2)));
+    for (let b = 0; b < rectBeds; b++) {
+      const topEl = rectTopElMm - b * (Math.round(rectSingleH * 1000) + interGapMm);
+      const botEl =
+        b === rectBeds - 1
+          ? rectBotElMm
+          : Math.max(rectBotElMm, topEl - Math.round(rectSingleH * 1000));
+      const hMm = Math.max(250, topEl - botEl);
+      packedBeds.push({
+        bedNumber: b + 1,
+        section: 'rectifying',
+        sectionLabel: `상부 정류부 Bed #${b + 1}`,
+        diameterMm: Math.round(rectDiamM * 1000),
+        bedHeightM: Number((hMm / 1000).toFixed(2)),
+        bedHeightMm: hMm,
+        hetpM: rectifying.hetpAvgM,
+        hetpMm: Math.round(rectifying.hetpAvgM * 1000),
+        eqTheoreticalStages: Number((rectTheorN / Math.max(1, rectBeds)).toFixed(1)),
+        botElMm: botEl,
+        topElMm: topEl,
+        bedDpMbar: Number((rectDpMbar / Math.max(1, rectBeds)).toFixed(1)),
+        maxFloodPct: rectifying.maxFloodPct,
+      });
+    }
+    const stripSingleH = Math.max(0.25, Number((stripHeightM / Math.max(1, stripBeds)).toFixed(2)));
+    for (let b = 0; b < stripBeds; b++) {
+      const topEl = stripTopElMm - b * (Math.round(stripSingleH * 1000) + interGapMm);
+      const botEl =
+        b === stripBeds - 1
+          ? stripBotElMm
+          : Math.max(stripBotElMm, topEl - Math.round(stripSingleH * 1000));
+      const hMm = Math.max(250, topEl - botEl);
+      packedBeds.push({
+        bedNumber: rectBeds + b + 1,
+        section: 'stripping',
+        sectionLabel: `하부 스트리핑부 Bed #${rectBeds + b + 1}`,
+        diameterMm: Math.round(stripDiamM * 1000),
+        bedHeightM: Number((hMm / 1000).toFixed(2)),
+        bedHeightMm: hMm,
+        hetpM: stripping.hetpAvgM,
+        hetpMm: Math.round(stripping.hetpAvgM * 1000),
+        eqTheoreticalStages: Number((stripTheorN / Math.max(1, stripBeds)).toFixed(1)),
+        botElMm: botEl,
+        topElMm: topEl,
+        bedDpMbar: Number((stripDpMbar / Math.max(1, stripBeds)).toFixed(1)),
+        maxFloodPct: stripping.maxFloodPct,
+      });
+    }
+  }
+
+  const redistributorItems: PackingHardwareSchedule['redistributors']['items'] = [];
+  if (internalsKind === 'packed' && packedBeds.length > 1) {
+    for (let i = 0; i < packedBeds.length - 1; i++) {
+      const upperBed = packedBeds[i];
+      const lowerBed = packedBeds[i + 1];
+      const isFeedInter = upperBed.section === 'rectifying' && lowerBed.section === 'stripping';
+      const elMm = Math.round((upperBed.botElMm + lowerBed.topElMm) / 2);
+      redistributorItems.push({
+        tag: `RD-${i + 1}`,
+        location: isFeedInter
+          ? `Feed Zone (Bed #${upperBed.bedNumber} ↔ #${lowerBed.bedNumber})`
+          : `Inter-Bed (Bed #${upperBed.bedNumber} ↔ #${lowerBed.bedNumber})`,
+        collectorType: 'Venetian-Blind Chimney Tray Collector',
+        redistributorType:
+          packingSpec.category === 'structured'
+            ? 'Narrow-Trough Gravity Redistributor'
+            : 'Orifice Pan + Riser Liquid Redistributor',
+        dripPointsPerM2: dripPtsPerM2,
+        freeGasAreaPct: 35,
+        interBedHeightMm: Math.max(650, upperBed.botElMm - lowerBed.topElMm),
+        elevationMm: elMm,
+      });
+    }
+  }
+
+  const packingHardware: PackingHardwareSchedule = {
+    topDistributor: {
+      tag: 'LD-1',
+      type:
+        packingSpec.category === 'structured'
+          ? 'Narrow-Trough Gravity Orifice Distributor w/ Parting Box'
+          : 'Orifice Pan Gravity Distributor w/ Vapor Risers',
+      dripPointsPerM2: dripPtsPerM2,
+      totalDripPoints: rectDripTotal,
+      turndownSpec: '2.5 : 1 (Gravity Head)',
+      elevationMm: rectTopElMm + 280,
+      material: internalsMatLabel,
+    },
+    redistributors: {
+      count: redistributorItems.length,
+      items: redistributorItems,
+    },
+    supportPlates: {
+      count: packedBeds.length,
+      type:
+        packingSpec.category === 'structured'
+          ? 'Corrugated Strip Support Grid (Open ≥88%)'
+          : 'Gas-Injection Multi-Beam Support Plate (Open ≥85%)',
+      freeAreaPct: packingSpec.category === 'structured' ? 88 : 85,
+      allowableLoadKgM2: 1500,
+      elevationsMm: packedBeds.map((b) => b.botElMm),
+      material: internalsMatLabel,
+    },
+    holdDownGrids: {
+      count: packedBeds.length,
+      type:
+        packingSpec.category === 'structured'
+          ? 'Bolted Bed Limiter Grid (Anti-Uplift)'
+          : 'Weighted Hold-Down Grid (Anti-Fluidization)',
+      freeAreaPct: 92,
+      elevationsMm: packedBeds.map((b) => b.topElMm),
+      material: internalsMatLabel,
+    },
+    demister: {
+      tag: 'ME-1',
+      type: 'Knitted Wire-Mesh Mist Eliminator Pad',
+      thicknessMm: 150,
+      densityKgM3: 144,
+      elevationMm: demisterElMm,
+      material: internalsMatLabel,
+    },
+  };
+
+  const vacuumStiffenerRequired = (colConfig.topPressKgcm2g ?? 0.05) < -0.05;
+  const maxOpPressBarG = Math.max(
+    (colConfig.topPressKgcm2g ?? 0.05) * 0.980665,
+    (simResult.bottomPressKgcm2g ?? 0.2) * 0.980665
+  );
+  const designPressBarG = Math.max(3.5, maxOpPressBarG + 1.8, maxOpPressBarG * 1.15);
+  const defaultFlangeRating = designPressBarG > 16.0 ? 'ASME 300# RFWN' : 'ASME 150# RFWN';
+
+  // 6단계: 주요 노즐 6개 사이징 + Friedel (1979) 2상 노즐 압손 + 설치 고도 EL
   const topStage = stages[0];
   const topProps = topStage ? calcStageMixtureProps(topStage) : botProps;
   const feedStageObj = stages[Math.min(stages.length - 1, Math.max(0, feedStage - 1))] ?? botStage;
@@ -2121,6 +2540,8 @@ export function solveColumnInternalsDesign(
     muGPas: number,
     sigmaNm: number,
     targetVelMS: number,
+    elevationMm: number,
+    orientationDeg: number,
     twoPhaseQuality?: number
   ): ColumnNozzleSpec => {
     const x = clamp(twoPhaseQuality ?? (phase === 'Gas/Vapor' ? 1 : 0), 0, 1);
@@ -2170,6 +2591,10 @@ export function solveColumnInternalsDesign(
       calcIdMm: Number(calcIdMm.toFixed(1)),
       selectedDn: picked.label,
       rhoV2Pa,
+      elevationMm,
+      elevationFromBtlMm: elevationMm - btlElMm,
+      orientationDeg,
+      flangeRating: defaultFlangeRating,
       vaporQuality: phase === 'Two-Phase' ? Number(x.toFixed(3)) : undefined,
       friedelDpPaPerM,
       friedelPhiLO2,
@@ -2189,6 +2614,12 @@ export function solveColumnInternalsDesign(
   const rebRetRhoMix = 1.0 / (rebRetQuality / Math.max(0.05, botProps.rhoVapKgM3) + (1 - rebRetQuality) / botProps.rhoLiqKgM3);
   const uRebRetTarget = clamp(42.0 / Math.sqrt(Math.max(0.15, rebRetRhoMix)), 4.0, 22.0);
 
+  const n1ElMm = ttlElMm + Math.round(0.25 * rectDiamM * 1000) + 250;
+  const n2ElMm = Math.min(ttlElMm - 250, rectTopElMm + 280);
+  const n4ElMm = Math.max(btlElMm - Math.round(0.22 * stripDiamM * 1000), btlElMm - 280);
+  const n5ElMm = Math.min(stripBotElMm - 180, Math.round((hllElMm + stripBotElMm) * 0.5));
+  const n6ElMm = Math.max(btlElMm + 180, Math.round((btlElMm + lllElMm) * 0.65));
+
   const nozzles: ColumnNozzleSpec[] = [
     buildNozzle(
       'N1',
@@ -2200,11 +2631,13 @@ export function solveColumnInternalsDesign(
       topProps.viscLiqCp * 1e-3,
       topProps.viscVapPaS,
       topProps.surfTensMnM * 1e-3,
-      uOvhdTarget
+      uOvhdTarget,
+      n1ElMm,
+      0
     ),
     buildNozzle(
       'N2',
-      '환류액 인입 (Reflux Return)',
+      internalsKind === 'packed' ? '환류 분배기 인입 (Reflux Distributor)' : '환류액 인입 (Reflux Return)',
       'Liquid',
       refluxKgH,
       topProps.rhoLiqKgM3,
@@ -2212,7 +2645,9 @@ export function solveColumnInternalsDesign(
       topProps.viscLiqCp * 1e-3,
       topProps.viscVapPaS,
       topProps.surfTensMnM * 1e-3,
-      1.8
+      1.8,
+      n2ElMm,
+      90
     ),
     buildNozzle(
       'N3',
@@ -2225,6 +2660,8 @@ export function solveColumnInternalsDesign(
       feedProps.viscVapPaS,
       feedProps.surfTensMnM * 1e-3,
       uFeedTarget,
+      feedNozzleElMm,
+      270,
       feedQualityX > 0.002 ? feedQualityX : 0
     ),
     buildNozzle(
@@ -2237,7 +2674,9 @@ export function solveColumnInternalsDesign(
       botProps.viscLiqCp * 1e-3,
       botProps.viscVapPaS,
       botProps.surfTensMnM * 1e-3,
-      1.5
+      1.5,
+      n4ElMm,
+      0
     ),
     buildNozzle(
       'N5',
@@ -2250,6 +2689,8 @@ export function solveColumnInternalsDesign(
       botProps.viscVapPaS,
       botProps.surfTensMnM * 1e-3,
       uRebRetTarget,
+      n5ElMm,
+      90,
       rebRetQuality
     ),
     buildNozzle(
@@ -2262,8 +2703,42 @@ export function solveColumnInternalsDesign(
       botProps.viscLiqCp * 1e-3,
       botProps.viscVapPaS,
       botProps.surfTensMnM * 1e-3,
-      1.3
+      1.3,
+      n6ElMm,
+      90
     ),
+  ];
+
+  const mhRating = defaultFlangeRating.replace(' RFWN', ' RF');
+  const mhSize = governingDiamM >= 1.2 ? 'DN500 (20")' : 'DN450 (18")';
+  const manholes: ColumnManholeSpec[] = [
+    {
+      tag: 'M1',
+      sizeDn: mhSize,
+      flangeRating: mhRating,
+      service: '상부 정류부 / 미스트제거기 점검 맨홀 (Top Manway)',
+      elevationMm: Math.round((rectTopElMm + ttlElMm) * 0.5),
+      elevationFromBtlMm: Math.round((rectTopElMm + ttlElMm) * 0.5) - btlElMm,
+      orientationDeg: 180,
+    },
+    {
+      tag: 'M2',
+      sizeDn: mhSize,
+      flangeRating: mhRating,
+      service: internalsKind === 'packed' ? '중간 재분배기·피드존 맨홀 (Inter-Bed Manway)' : '피드존 점검 맨홀 (Feed Zone Manway)',
+      elevationMm: feedNozzleElMm,
+      elevationFromBtlMm: feedNozzleElMm - btlElMm,
+      orientationDeg: 180,
+    },
+    {
+      tag: 'M3',
+      sizeDn: mhSize,
+      flangeRating: mhRating,
+      service: '탑저 섬프 점검 맨홀 (Bottom Sump Manway)',
+      elevationMm: Math.min(stripBotElMm - 250, hllElMm + 350),
+      elevationFromBtlMm: Math.min(stripBotElMm - 250, hllElMm + 350) - btlElMm,
+      orientationDeg: 180,
+    },
   ];
 
   // 7단계: ASME Sec. VIII Div.1 통합 기계설계 (내압 · 외압/진공보강링 · ASCE 7 풍하중/지진 · 스커트/앵커볼트 · UG-37 노즐보강)
@@ -2281,11 +2756,6 @@ export function solveColumnInternalsDesign(
       : (rectTrays * rectTrayGeom.areaActiveM2 + stripTrays * stripTrayGeom.areaActiveM2) * 0.045;
   const operatingLiquidKN = ((sumpLiqVolM3 + packedLiqVolM3) * botProps.rhoLiqKgM3 * G_ACC) / 1000.0;
 
-  const maxOpPressBarG = Math.max(
-    (colConfig.topPressKgcm2g ?? 0.05) * 0.980665,
-    (simResult.bottomPressKgcm2g ?? 0.2) * 0.980665
-  );
-  const designPressBarG = Math.max(3.5, maxOpPressBarG + 1.8, maxOpPressBarG * 1.15);
   const designPressMpaG = designPressBarG * 0.1;
   const designTempC = Math.max(50, Math.max(simResult.topTempC, simResult.bottomTempC) + 25);
   const corrAllowanceMm =
@@ -2427,11 +2897,13 @@ export function solveColumnInternalsDesign(
         ? Math.max(2.5, minWeepSafety * 1.6)
         : trayType === 'valve'
         ? Math.max(1.5, minWeepSafety * 1.25)
-        : Math.max(1.0, minWeepSafety),
+        : Math.max(1.05, minWeepSafety),
       0.8,
       8.0
     ).toFixed(2)
   );
+  const operatingLoadMinPct = Math.round(clamp(100.0 / Math.max(1.05, minTurndownRatio), 18, 95));
+  const operatingLoadMaxPct = Math.round(clamp(100.0 * (85.0 / Math.max(25.0, maxFloodPct)), 70, 220));
 
   const designWarnings: string[] = [];
   if (maxFloodPct > 85) {
@@ -2484,6 +2956,7 @@ export function solveColumnInternalsDesign(
     internalsKind,
     shellSectionMode,
     trayType,
+    trayTypeLabel,
     traySpacingMm,
     packingSpec,
     rectifying,
@@ -2495,6 +2968,8 @@ export function solveColumnInternalsDesign(
     minDcResidenceTimeSec: Number(minDcResidenceTimeSec.toFixed(2)),
     maxFloodStage,
     minTurndownRatio,
+    operatingLoadMinPct,
+    operatingLoadMaxPct,
     totalInternalsDpMbar,
     totalInternalsDpKgcm2,
     avgStageDpKgcm2,
@@ -2508,6 +2983,9 @@ export function solveColumnInternalsDesign(
     actualTotalTrays: rectTrays + stripTrays,
     packedBedCount,
     totalPackedHeightM: Number((rectHeightM + stripHeightM).toFixed(2)),
+    packedBeds,
+    packingHardware,
+    sumpResidenceMin: sumpResMin,
     topDisengageHeightM,
     feedFlashZoneHeightM,
     sumpLiquidHeightM: Number(sumpLiquidHeightM.toFixed(2)),
@@ -2515,16 +2993,20 @@ export function solveColumnInternalsDesign(
     tangentToTangentHeightM,
     skirtHeightM,
     totalElevationM,
+    elevations,
     lengthToDiamRatio,
     recommendedMaterialCode: matInfo.code,
     recommendedMaterialLabel: matInfo.label,
     materialReason: matInfo.reason,
+    designPressBarG: Number(designPressBarG.toFixed(2)),
+    designTempC: Number(designTempC.toFixed(1)),
     shellWallThicknessMm,
     vacuumStiffenerRequired,
     estimatedDryWeightTon,
     mechanical,
     costEstimate,
     nozzles,
+    manholes,
     auxiliaries: {
       condenserDutyKw: Number(qCondKw.toFixed(1)),
       condenserEstAreaM2,

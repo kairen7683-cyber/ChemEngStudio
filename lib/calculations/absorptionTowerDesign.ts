@@ -18,6 +18,14 @@ import {
   calcBilletSchultesPacking,
   calcEckertGpdcPacking,
 } from './columnInternalsDesign';
+import {
+  buildChemproVesselAndLevels,
+  pickChemproNozzleDn,
+  type ChemproManholeItem,
+  type ChemproNozzleItem,
+  type ChemproPackingDetail,
+  type ChemproVesselSpec,
+} from './chemproColumnEpcHelper';
 
 export type AbsorptionSolverMode = 'quick' | 'rigorous';
 export type AbsorptionService = 'scrubbing' | 'drying' | 'cooling_wash' | 'stripping' | 'absorption' | string;
@@ -592,6 +600,10 @@ export interface AbsorptionColumnResult {
   a_w_ratio: number;
   onda: OndaMassTransferResult;
   billetSchultes: BilletSchultesResult;
+  vesselSpec: ChemproVesselSpec;
+  packingDetail: ChemproPackingDetail;
+  nozzleSchedule: ChemproNozzleItem[];
+  manholeSchedule: ChemproManholeItem[];
   mode: AbsorptionSolverMode;
 }
 
@@ -957,6 +969,106 @@ export function solveAbsorptionColumn(
 
   const N_theo = inp.theoreticalStages_override ?? N_OG;
 
+  const vesselSpec = buildChemproVesselAndLevels({
+    D_col_m,
+    H_tangent_m,
+    P_op_barA: P_bar,
+    T_max_C: Math.max(T_gas_in, T_liq_out),
+    skirtHeightMm: 2800,
+    isAbsorber: true,
+  });
+
+  const stripBotEl = vesselSpec.hllElMm + 900;
+  const nbAbs = Math.max(1, N_beds);
+  const gapAbs = 800;
+  const bedHAbs = Math.max(600, Math.round((H_pack_total_m * 1000) / nbAbs));
+  const absBeds: ChemproPackingDetail['beds'] = [];
+  let curTopAbs = Math.min(vesselSpec.ttlElMm - 850, stripBotEl + nbAbs * bedHAbs + (nbAbs - 1) * gapAbs);
+  for (let b = 0; b < nbAbs; b++) {
+    const botEl = curTopAbs - bedHAbs;
+    absBeds.push({
+      bedNo: b + 1,
+      section: nbAbs > 1 ? `Absorption Bed #${b + 1}` : 'Absorption Packed Bed',
+      heightMm: bedHAbs,
+      botElMm: botEl,
+      topElMm: curTopAbs,
+      hetpMm: Math.round(HETP_m * 1000),
+      dpMbar: Number(((dP_pack_mbar_m * bedHAbs) / 1000.0).toFixed(1)),
+    });
+    curTopAbs = botEl - gapAbs;
+  }
+  const dripAbsPerM2 = packSpec.category === 'structured' ? 100 : 75;
+  const absTd = Number(Math.min(6.5, Math.max(1.2, (Lw_m3m2h / Math.max(0.2, Lw_min_m3m2h)) * 1.15)).toFixed(2));
+  const absRedItems = absBeds.slice(0, -1).map((ub, idx) => ({
+    tag: `RD-${idx + 1}`,
+    type: 'Chimney Collector + Trough Liquid Redistributor',
+    interBedHeightMm: gapAbs,
+    elevationMm: ub.botElMm - Math.round(gapAbs * 0.5),
+    freeAreaPct: 35,
+  }));
+  const packingDetail: ChemproPackingDetail = {
+    categoryLabel: packSpec.category === 'structured' ? 'Structured Tower Packing' : 'Random Scrubbing Packing',
+    modelName: packSpec.name,
+    nominalSize: packSpec.category === 'structured' ? `${packSpec.ap} m²/m³` : `${packSpec.size_mm} mm Nominal`,
+    material: packSpec.mat,
+    ap: packSpec.ap,
+    voidPct: packSpec.void_pct,
+    Fp: packSpec.Fp,
+    hetpMm: Math.round(HETP_m * 1000),
+    totalPackedHeightMm: Math.round(H_pack_total_m * 1000),
+    beds: absBeds,
+    topDistributor: {
+      tag: 'LD-1',
+      type: packSpec.category === 'structured' ? 'Narrow-Trough Gravity Orifice Distributor' : 'Full-Cone Spray / Weir-Trough Distributor',
+      dripPointsPerM2: dripAbsPerM2,
+      totalDripPoints: Math.ceil(dripAbsPerM2 * Ac_actual_m2),
+      elevationMm: Math.min(vesselSpec.ttlElMm - 460, absBeds[0].topElMm + 280),
+    },
+    redistributors: { count: absRedItems.length, items: absRedItems },
+    supportPlate: {
+      count: absBeds.length,
+      type: 'Gas-Injection Multi-Beam Support Grid (Open ≥85%)',
+      freeAreaPct: 86,
+      elevationsMm: absBeds.map((b) => b.botElMm),
+    },
+    holdDownGrid: {
+      count: absBeds.length,
+      type: packSpec.category === 'structured' ? 'Bolted Bed Limiter Grid' : 'Weighted Hold-Down Grid',
+      freeAreaPct: 92,
+      elevationsMm: absBeds.map((b) => b.topElMm),
+    },
+    demister: {
+      tag: 'ME-1',
+      type: 'PP / Alloy Mesh Mist Eliminator Pad',
+      thicknessMm: 150,
+      elevationMm: vesselSpec.ttlElMm - 240,
+    },
+    mwrM3M2H: Lw_min_m3m2h,
+    wettingRateM3M2H: Number(Lw_m3m2h.toFixed(2)),
+    wettingSafetyRatio: Number((Lw_m3m2h / Math.max(0.2, Lw_min_m3m2h)).toFixed(2)),
+    dryDpMbarM: Number(bsRes.dryDpMbarM.toFixed(2)),
+    irrigDpMbarM: Number(dP_pack_mbar_m.toFixed(2)),
+    opMinPct: Math.round(Math.max(20, Math.min(90, 100 / Math.max(1.05, absTd)))),
+    opMaxPct: Math.round(Math.max(70, Math.min(200, 100 * (85 / Math.max(25, flood_actual_pct))))),
+    turndownRatio: absTd,
+  };
+
+  const nzGout = pickChemproNozzleDn(Gm_kgh, rhoV, Math.min(24, Math.max(8, 28 / Math.sqrt(Math.max(0.1, rhoV)))));
+  const nzLin = pickChemproNozzleDn(Lm_kgh, rhoL, 1.8);
+  const nzGin = pickChemproNozzleDn(Gm_kgh, rhoV, Math.min(22, Math.max(8, 25 / Math.sqrt(Math.max(0.1, rhoV)))));
+  const nzLout = pickChemproNozzleDn(Lm_kgh, rhoL, 1.5);
+  const nozzleSchedule: ChemproNozzleItem[] = [
+    { tag: 'N1', service: 'Treated Gas Out', phase: 'Gas', selectedDn: nzGout.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Gm_kgh), velMS: nzGout.velMS, elevationMm: vesselSpec.oalElMm - 200, elevationFromBtlMm: vesselSpec.oalElMm - 200 - vesselSpec.btlElMm, orientationDeg: 0 },
+    { tag: 'N2', service: 'Scrubbing Liquid In', phase: 'Liquid', selectedDn: nzLin.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Lm_kgh), velMS: nzLin.velMS, elevationMm: packingDetail.topDistributor.elevationMm, elevationFromBtlMm: packingDetail.topDistributor.elevationMm - vesselSpec.btlElMm, orientationDeg: 90 },
+    { tag: 'N3', service: 'Feed Gas In', phase: 'Gas', selectedDn: nzGin.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Gm_kgh), velMS: nzGin.velMS, elevationMm: Math.min(absBeds[absBeds.length - 1].botElMm - 250, Math.round((vesselSpec.hllElMm + absBeds[absBeds.length - 1].botElMm) * 0.5)), elevationFromBtlMm: Math.round((vesselSpec.hllElMm + absBeds[absBeds.length - 1].botElMm) * 0.5) - vesselSpec.btlElMm, orientationDeg: 270 },
+    { tag: 'N4', service: 'Bottoms Rich Liquid Out', phase: 'Liquid', selectedDn: nzLout.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Lm_kgh), velMS: nzLout.velMS, elevationMm: Math.max(700, vesselSpec.btlElMm - 280), elevationFromBtlMm: -280, orientationDeg: 0 },
+  ];
+  const mhSizeAbs = D_col_m >= 1.2 ? 'DN500 (20")' : 'DN450 (18")';
+  const manholeSchedule: ChemproManholeItem[] = [
+    { tag: 'M1', sizeDn: mhSizeAbs, flangeRating: vesselSpec.flangeRating, service: 'Top Distributor / Demister Manway', elevationMm: vesselSpec.ttlElMm - 360, orientationDeg: 180 },
+    { tag: 'M2', sizeDn: mhSizeAbs, flangeRating: vesselSpec.flangeRating, service: 'Bottom Packing Support / Gas Inlet Manway', elevationMm: Math.max(vesselSpec.hllElMm + 250, absBeds[absBeds.length - 1].botElMm - 220), orientationDeg: 180 },
+  ];
+
   return {
     equipTag: inp.equipTag ?? 'T-410',
     equipName: inp.equipName ?? `${gasProps.name} Packed Scrubbing / Drying Tower`,
@@ -1075,6 +1187,10 @@ export function solveAbsorptionColumn(
     a_w_ratio: onda.a_w_ratio,
     onda,
     billetSchultes: bsRes,
+    vesselSpec,
+    packingDetail,
+    nozzleSchedule,
+    manholeSchedule,
     mode: solverMode,
   };
 }

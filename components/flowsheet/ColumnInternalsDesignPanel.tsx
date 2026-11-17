@@ -24,6 +24,8 @@ import {
   autoFixColumnInternalsAsync,
   fetchOptionalGeminiAdvice,
 } from '@/lib/calculations/aiEquipmentAdvisor';
+import { downloadColumnCadDxf } from '@/lib/cad/columnDxfExport';
+import { downloadColumnEpcDatasheet } from '@/lib/excel/datasheetExport';
 
 interface ColumnInternalsDesignPanelProps {
   unitTag: string;
@@ -36,7 +38,7 @@ interface ColumnInternalsDesignPanelProps {
   onApplyHydraulicsToMesh?: (avgStageDpKgcm2: number, predictedEffPct: number) => void;
 }
 
-type RightVisualTab = 'drawing' | 'profile' | 'nozzles' | 'mechanical_cost';
+type RightVisualTab = 'datasheet' | 'drawing' | 'profile' | 'nozzles' | 'mechanical_cost';
 
 const MONO = 'JetBrains Mono, monospace';
 
@@ -182,45 +184,449 @@ export default function ColumnInternalsDesignPanel({
   const isSwaged = designRes.shellSectionMode === 'swaged';
   const mech = designRes.mechanical;
   const cost = designRes.costEstimate;
+  const elMap = designRes.elevations;
 
-  // ── 1) 탑 입면 개념도(Elevation) + 트레이 평면도 / 충진베드 상세도 SVG ──
+  const handleDownloadSvg = () => {
+    const svgEl = document.getElementById('col-epc-cad-svg');
+    if (!svgEl) return;
+    const xml = new XMLSerializer().serializeToString(svgEl);
+    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CAD_${unitTag}_${isTray ? 'TRAY' : 'PACKED'}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 350);
+  };
+
+  const handlePrintDatasheet = () => {
+    setVisualTab('datasheet');
+    setTimeout(() => {
+      window.print();
+    }, 150);
+  };
+
+  // ── 0) 실무 EPC 분리 데이터시트 탭 (Part I 본체 + Part II 트레이/패킹 분리 + Part III 노즐·EL) ──
+  const renderEpcDatasheetTab = () => {
+    const rSec = designRes.rectifying;
+    const sSec = designRes.stripping;
+    const pk = designRes.packingSpec;
+    const hw = designRes.packingHardware;
+    const tblStyle: React.CSSProperties = {
+      width: '100%',
+      minWidth: 640,
+      borderCollapse: 'collapse',
+      fontSize: 10.6,
+    };
+    const thSec = (title: string, badge: string, bg: string) => (
+      <div
+        style={{
+          padding: '7px 11px',
+          background: bg,
+          color: '#FFFFFF',
+          fontSize: 11.2,
+          fontWeight: 900,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <span>{title}</span>
+        <span style={{ fontSize: 9.8, opacity: 0.9, fontFamily: MONO }}>{badge}</span>
+      </div>
+    );
+    const tdL: React.CSSProperties = { padding: '5px 8px', fontWeight: 700, color: '#1E293B', borderBottom: '1px solid #E2E8F0' };
+    const tdU: React.CSSProperties = { padding: '5px 7px', textAlign: 'center', color: '#64748B', fontFamily: MONO, fontSize: 10, borderBottom: '1px solid #E2E8F0' };
+    const tdV: React.CSSProperties = { padding: '5px 8px', textAlign: 'right', fontWeight: 900, color: '#0F172A', fontFamily: MONO, borderBottom: '1px solid #E2E8F0' };
+    const tdN: React.CSSProperties = { padding: '5px 8px', color: '#475569', fontSize: 10, borderBottom: '1px solid #E2E8F0' };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+        {/* PART I: 본체 데이터시트 (Vessel & Shell Datasheet) */}
+        <div style={{ ...cardBox, padding: 0, overflow: 'hidden' }}>
+          {thSec(
+            `PART I. 본체 데이터시트 — COLUMN VESSEL & SHELL (${unitTag})`,
+            isTray ? 'TYPE: TRAYED FRACTIONATOR' : 'TYPE: PACKED FRACTIONATOR',
+            '#1E3A5F'
+          )}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tblStyle}>
+              <thead>
+                <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1', color: '#334155' }}>
+                  <th style={{ padding: '5px 8px', textAlign: 'left' }}>설계 항목 (Vessel & Process Spec)</th>
+                  <th style={{ padding: '5px 7px', textAlign: 'center' }}>단위</th>
+                  <th style={{ padding: '5px 8px', textAlign: 'right' }}>설계 사양 (Design Value)</th>
+                  <th style={{ padding: '5px 8px', textAlign: 'left' }}>적용 규격 / 운전 조건</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={tdL}>동체 공칭 내경 (Rectifying / Stripping ID)</td>
+                  <td style={tdU}>mm</td>
+                  <td style={tdV}>Ø{Math.round(rSec.selectedNominalDiamM * 1000)} / Ø{Math.round(sSec.selectedNominalDiamM * 1000)}</td>
+                  <td style={tdN}>{isSwaged ? '이단 직경 (Swaged Cone)' : '단일 직경 (Uniform Shell)'} · Gov Ø{Math.round(designRes.governingDiamM * 1000)} mm</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>탑 탄젠트 높이 (H_T/T) / 스커트 / 전체고도 (O.A.L.)</td>
+                  <td style={tdU}>mm</td>
+                  <td style={tdV}>{(elMap.ttlElMm - elMap.btlElMm).toLocaleString()} / {elMap.btlElMm.toLocaleString()} / {elMap.oalElMm.toLocaleString()}</td>
+                  <td style={tdN}>B.T.L. EL +{elMap.btlElMm} · T.T.L. EL +{elMap.ttlElMm} · L/D = {designRes.lengthToDiamRatio}</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>운전 온도 (Top / Feed / Bottom) & 운전 압력</td>
+                  <td style={tdU}>°C / kG</td>
+                  <td style={tdV}>{simResult.topTempC.toFixed(1)} / {(simResult.stages[Math.max(0, simResult.feedStageUsed - 1)]?.tempC ?? simResult.topTempC).toFixed(1)} / {simResult.bottomTempC.toFixed(1)} °C</td>
+                  <td style={tdN}>P_top {(config.topPressKgcm2g ?? 0.05).toFixed(3)} / P_bot {simResult.bottomPressKgcm2g.toFixed(3)} kg/cm²G · RR={simResult.actualRefluxRatio.toFixed(2)}</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>ASME 설계압력 / 설계온도 / 부식여유 / 용접효율</td>
+                  <td style={tdU}>barG / °C</td>
+                  <td style={tdV}>{designRes.designPressBarG.toFixed(1)} barG / {designRes.designTempC.toFixed(0)} °C</td>
+                  <td style={tdN}>CA={mech.corrosionAllowanceMm.toFixed(1)}mm · E={mech.jointEfficiency.toFixed(2)} · {designRes.vacuumStiffenerRequired ? `진공외압 0.101MPa (링 ${mech.stiffenerCount}EA)` : '상압/가압'}</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>동체/경판/스커트 재질 및 채택 판두께</td>
+                  <td style={tdU}>mm</td>
+                  <td style={tdV}>Shell {mech.selectedShellMm}t / Head {mech.selectedHeadMm}t / Skirt {mech.skirtThicknessMm}t</td>
+                  <td style={tdN}>{designRes.recommendedMaterialLabel} · 2:1 타원경판 ({governingCaseLabel(mech.governingCase)})</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>탑저 섬프 체류시간 & 액위 고도 (LLL / NLL / HLL)</td>
+                  <td style={tdU}>min / EL mm</td>
+                  <td style={tdV}>{designRes.sumpResidenceMin} min ({designRes.sumpLiquidHeightM} m)</td>
+                  <td style={tdN}>LLL EL +{elMap.lllElMm} · NLL EL +{elMap.nllElMm} · HLL EL +{elMap.hllElMm} (Base EL 0 기준)</td>
+                </tr>
+                <tr>
+                  <td style={tdL}>장치 중량 (공탑 / 운전 / 만수) & Bare-Module 원가</td>
+                  <td style={tdU}>ton / M₩</td>
+                  <td style={tdV}>{designRes.estimatedDryWeightTon} / {(mech.operatingWeightKN / 9.80665).toFixed(1)} / {(mech.hydrotestWeightKN / 9.80665).toFixed(1)} t</td>
+                  <td style={tdN}>앵커볼트 {mech.anchorBoltCount}×{mech.anchorBoltSize} · 총 설치비 {formatKrwReadable(cost.bareModuleKrw)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* PART II: 엄격 분리된 내부장치 데이터시트 (TRAY 전용 vs PACKING 전용) */}
+        {isTray ? (
+          <div style={{ ...cardBox, padding: 0, overflow: 'hidden' }}>
+            {thSec(
+              `PART II-A. 트레이 컬럼 내부장치 데이터시트 — FRACTIONATION TRAY SPEC (${unitTag})`,
+              `${designRes.trayType.toUpperCase()} · ${designRes.actualTotalTrays} TRAYS TOTAL`,
+              '#3730A3'
+            )}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tblStyle}>
+                <thead>
+                  <tr style={{ background: '#EEF2FF', borderBottom: '1px solid #C7D2FE', color: '#1E1B4B' }}>
+                    <th style={{ padding: '5px 8px', textAlign: 'left' }}>트레이 설계 항목 (Tray Specification)</th>
+                    <th style={{ padding: '5px 7px', textAlign: 'center' }}>단위</th>
+                    <th style={{ padding: '5px 8px', textAlign: 'right' }}>상부 정류부 (Rectifying)</th>
+                    <th style={{ padding: '5px 8px', textAlign: 'right' }}>하부 스트리핑부 (Stripping)</th>
+                    <th style={{ padding: '5px 8px', textAlign: 'left' }}>비고 / 기준</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={tdL}>트레이 형식 (Tray Type) & 재질</td>
+                    <td style={tdU}>-</td>
+                    <td style={tdV}>{designRes.trayTypeLabel}</td>
+                    <td style={tdV}>{designRes.trayTypeLabel}</td>
+                    <td style={tdN}>Deck {rSec.deckThicknessMm}mmt ({designRes.recommendedMaterialCode})</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>유로 패스 수 (Flow Passes) & 유로길이 (FPL)</td>
+                    <td style={tdU}>Pass / mm</td>
+                    <td style={tdV}>{rSec.flowPasses}-Pass ({Math.round(rSec.flowPathLengthM * 1000)} mm)</td>
+                    <td style={tdV}>{sSec.flowPasses}-Pass ({Math.round(sSec.flowPathLengthM * 1000)} mm)</td>
+                    <td style={tdN}>정류 #{rSec.stageStart}~#{rSec.stageEnd} ({rSec.actualTraysOrBeds}단) / 스 #{sSec.stageStart}~#{sSec.stageEnd} ({sSec.actualTraysOrBeds}단)</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>단간격 (Tray Spacing) & 구간 총 높이</td>
+                    <td style={tdU}>mm / m</td>
+                    <td style={tdV}>{designRes.traySpacingMm} mm ({rSec.sectionHeightM} m)</td>
+                    <td style={tdV}>{designRes.traySpacingMm} mm ({sSec.sectionHeightM} m)</td>
+                    <td style={tdN}>Feed Nozzle #{simResult.feedStageUsed}단 (EL +{elMap.feedNozzleElMm})</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>홀지름 (Hole/Valve Ø) & 정삼각 피치 (Pitch)</td>
+                    <td style={tdU}>mm</td>
+                    <td style={tdV}>Ø{rSec.holeDiameterMm} / P={rSec.holePitchMm} mm Δ</td>
+                    <td style={tdV}>Ø{sSec.holeDiameterMm} / P={sSec.holePitchMm} mm Δ</td>
+                    <td style={tdN}>60° 삼각 천공 배열</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>개공비 (Open Area % of A_a / % of A_T) & 활성면적 A_a</td>
+                    <td style={tdU}>% / m²</td>
+                    <td style={tdV}>{rSec.openAreaPctOfActive}% Aa ({rSec.openAreaPctOfTower}% AT)</td>
+                    <td style={tdV}>{sSec.openAreaPctOfActive}% Aa ({sSec.openAreaPctOfTower}% AT)</td>
+                    <td style={tdN}>A_a = {rSec.activeAreaM2} / {sSec.activeAreaM2} m² (A_h={rSec.holeAreaM2}/{sSec.holeAreaM2} m²)</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>출구 위어 형식 · 높이(h_w) · 길이(L_w) · 월류수두(h_ow)</td>
+                    <td style={tdU}>mm</td>
+                    <td style={tdV}>h_w={rSec.weirHeightMm} · L_w={rSec.weirLengthMm} · h_ow={rSec.avgWeirCrestMm}</td>
+                    <td style={tdV}>h_w={sSec.weirHeightMm} · L_w={sSec.weirLengthMm} · h_ow={sSec.avgWeirCrestMm}</td>
+                    <td style={tdN}>{rSec.weirType}</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>다운커머 형식 · 상/하 폭(W_dc) · 면적비(A_d/A_T)</td>
+                    <td style={tdU}>mm / %</td>
+                    <td style={tdV}>{rSec.dcWidthTopMm} / {rSec.dcWidthBotMm} mm ({rSec.dcAreaPctOfTower}%)</td>
+                    <td style={tdV}>{sSec.dcWidthTopMm} / {sSec.dcWidthBotMm} mm ({sSec.dcAreaPctOfTower}%)</td>
+                    <td style={tdN}>{sSec.dcType}</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>다운코머 하단 틈새(Apron Clearance h_ap) & 씰팬</td>
+                    <td style={tdU}>mm</td>
+                    <td style={tdV}>{rSec.dcClearanceMm} mm</td>
+                    <td style={tdV}>{sSec.dcClearanceMm} mm</td>
+                    <td style={tdN}>{rSec.sealPanSpec}</td>
+                  </tr>
+                  <tr style={{ background: '#F8FAFC' }}>
+                    <td style={tdL}>운전 가능 범위 (Operating Window) & 턴다운 비</td>
+                    <td style={tdU}>% / Ratio</td>
+                    <td style={tdV}>{rSec.operatingLoadMinPct}% ~ {rSec.operatingLoadMaxPct}% ({rSec.sectionTurndownRatio}:1)</td>
+                    <td style={tdV}>{sSec.operatingLoadMinPct}% ~ {sSec.operatingLoadMaxPct}% ({sSec.sectionTurndownRatio}:1)</td>
+                    <td style={tdN}>통합 운전범위 {designRes.operatingLoadMinPct}%~{designRes.operatingLoadMaxPct}% · Lockett Weep {rSec.avgWeepSafetyRatio}/{sSec.avgWeepSafetyRatio}x</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>범람율(Jet/Choke) · DC백업 · 단당 ΔP · Chan-Fair 효율</td>
+                    <td style={tdU}>% / mbar</td>
+                    <td style={tdV}>Flood {rSec.maxFloodPct}% · DC {rSec.maxDcBackupPct}% · {rSec.avgTrayDpMbar} mbar</td>
+                    <td style={tdV}>Flood {sSec.maxFloodPct}% · DC {sSec.maxDcBackupPct}% · {sSec.avgTrayDpMbar} mbar</td>
+                    <td style={tdN}>총 ΔP {designRes.totalInternalsDpMbar} mbar · 효율 {designRes.avgChanFairEffPct}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div style={{ ...cardBox, padding: 0, overflow: 'hidden' }}>
+            {thSec(
+              `PART II-B. 패킹 컬럼 내부장치 데이터시트 — PACKED INTERNALS SPEC (${unitTag})`,
+              `${pk.category.toUpperCase()} · ${designRes.packedBedCount} BEDS · Z=${designRes.totalPackedHeightM} m`,
+              '#0F766E'
+            )}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={tblStyle}>
+                <thead>
+                  <tr style={{ background: '#CCFBF1', borderBottom: '1px solid #99F6E4', color: '#134E4A' }}>
+                    <th style={{ padding: '5px 8px', textAlign: 'left' }}>패킹 & 인터널 항목 (Packing & Hardware)</th>
+                    <th style={{ padding: '5px 7px', textAlign: 'center' }}>단위</th>
+                    <th style={{ padding: '5px 8px', textAlign: 'right' }}>설계 사양 (Specification)</th>
+                    <th style={{ padding: '5px 8px', textAlign: 'left' }}>보조 지표 / 운전 범위 / EL 위치</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={tdL}>패킹 종류 (Category & Model)</td>
+                    <td style={tdU}>-</td>
+                    <td style={tdV}>{pk.name}</td>
+                    <td style={tdN}>{pk.category === 'structured' ? '규칙 패킹 (Structured)' : '불규칙 패킹 (Random)'} · {pk.materialNote}</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>패킹 공칭 크기 / 크림프 규격 (Nominal Size)</td>
+                    <td style={tdU}>mm</td>
+                    <td style={tdV}>{pk.nominalSizeLabel || '-'}</td>
+                    <td style={tdN}>비표면적 a_p={pk.surfaceAreaM2M3} m²/m³ · 공극률 ε={(pk.voidFraction * 100).toFixed(1)}% · F_p={pk.packingFactorFpM1} 1/m</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>배드 높이 총합 (Total Bed Height) & 구간별 HETP</td>
+                    <td style={tdU}>mm / m</td>
+                    <td style={tdV}>{Math.round(designRes.totalPackedHeightM * 1000)} mm ({designRes.totalPackedHeightM} m)</td>
+                    <td style={tdN}>정류 HETP {rSec.hetpAvgM}m · 스트리핑 HETP {sSec.hetpAvgM}m · 평균 H_OG={designRes.avgPackedHogM}m</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>상부 액체 분배기 ({hw.topDistributor.tag} Top Distributor)</td>
+                    <td style={tdU}>pts/m²</td>
+                    <td style={tdV}>{hw.topDistributor.dripPointsPerM2} pts/m² (총 {hw.topDistributor.totalDripPoints}공)</td>
+                    <td style={tdN}>{hw.topDistributor.type} · EL +{hw.topDistributor.elevationMm} mm</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>중간 콜렉터 & 액체 재분배기 (Redistributors)</td>
+                    <td style={tdU}>EA</td>
+                    <td style={tdV}>{hw.redistributors.count} 기 ({hw.redistributors.items.map((x) => x.tag).join(', ') || 'None'})</td>
+                    <td style={tdN}>
+                      {hw.redistributors.items.length > 0
+                        ? hw.redistributors.items.map((rd) => `${rd.tag}@EL+${rd.elevationMm} (${rd.collectorType})`).join(' | ')
+                        : '단일 베드 구간으로 중간 재분배기 불필요'}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>패킹 지지판 ({hw.supportPlates.count} EA Support Plate)</td>
+                    <td style={tdU}>% Open</td>
+                    <td style={tdV}>{hw.supportPlates.freeAreaPct}% Free Area</td>
+                    <td style={tdN}>{hw.supportPlates.type} · EL: {hw.supportPlates.elevationsMm.map((e) => `+${e}`).join(', ')} mm</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>패킹 홀드다운 그리드 ({hw.holdDownGrids.count} EA Hold-Down)</td>
+                    <td style={tdU}>% Open</td>
+                    <td style={tdV}>{hw.holdDownGrids.freeAreaPct}% Free Area</td>
+                    <td style={tdN}>{hw.holdDownGrids.type} · EL: {hw.holdDownGrids.elevationsMm.map((e) => `+${e}`).join(', ')} mm</td>
+                  </tr>
+                  <tr>
+                    <td style={tdL}>탑정 미스트 제거기 ({hw.demister.tag} Demister Pad)</td>
+                    <td style={tdU}>mm</td>
+                    <td style={tdV}>{hw.demister.thicknessMm}t ({hw.demister.densityKgM3} kg/m³)</td>
+                    <td style={tdN}>{hw.demister.type} · EL +{hw.demister.elevationMm} mm</td>
+                  </tr>
+                  <tr style={{ background: '#F0FDFA' }}>
+                    <td style={tdL}>패킹 운전 범위 (Operating Range) & 적심률 (Wetting Rate)</td>
+                    <td style={tdU}>% / m³/m²h</td>
+                    <td style={tdV}>{designRes.operatingLoadMinPct}% ~ {designRes.operatingLoadMaxPct}% (TD {designRes.minTurndownRatio}:1)</td>
+                    <td style={tdN}>적심률 {rSec.avgWettingRateM3M2H}/{sSec.avgWettingRateM3M2H} (MWR {pk.minWettingM3M2H}) · B-S Flood {designRes.maxFloodPct}% · 총 ΔP {designRes.totalInternalsDpMbar} mbar</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '6px 10px', background: '#F8FAFC', borderTop: '1px solid #CBD5E1' }}>
+              <div style={{ fontSize: 10.2, fontWeight: 900, color: '#0F766E', marginBottom: 4 }}>
+                베드별 상세 배분 스케줄 (Top → Bottom Bed #1 ~ #{designRes.packedBeds.length})
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10.2, fontFamily: MONO }}>
+                <thead>
+                  <tr style={{ background: '#E2E8F0', color: '#334155' }}>
+                    <th style={{ padding: '3px 6px', textAlign: 'center' }}>Bed #</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'left' }}>구간</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>내경 (mm)</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>배드높이 (mm)</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>HETP (mm)</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>이론단</th>
+                    <th style={{ padding: '3px 6px', textAlign: 'right' }}>EL (mm)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {designRes.packedBeds.map((b) => (
+                    <tr key={b.bedNumber} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                      <td style={{ padding: '3px 6px', textAlign: 'center', fontWeight: 900 }}>#{b.bedNumber}</td>
+                      <td style={{ padding: '3px 6px' }}>{b.sectionLabel}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>Ø{b.diameterMm}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right', fontWeight: 900 }}>{b.bedHeightMm} ({b.bedHeightM}m)</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{b.hetpMm}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{b.eqTheoreticalStages}</td>
+                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>EL +{b.botElMm} ~ +{b.topElMm}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* PART III: 노즐 및 맨홀 설치 EL 스케줄 */}
+        <div style={{ ...cardBox, padding: 0, overflow: 'hidden' }}>
+          {thSec('PART III. 노즐·맨홀 설치 고도(EL) 및 플랜지 스케줄', 'Base Ring EL +0 mm 기준', '#334155')}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tblStyle}>
+              <thead>
+                <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1', color: '#334155' }}>
+                  <th style={{ padding: '4px 7px', textAlign: 'center' }}>Tag</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'left' }}>서비스</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'center' }}>규격 (DN)</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'center' }}>플랜지 등급</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'center' }}>방위각</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'right' }}>설치 고도 EL</th>
+                  <th style={{ padding: '4px 7px', textAlign: 'right' }}>From B.T.L.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {designRes.nozzles.map((nz) => (
+                  <tr key={nz.nozzleTag} style={{ borderBottom: '1px solid #E2E8F0' }}>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, color: '#4338CA', fontFamily: MONO }}>{nz.nozzleTag}</td>
+                    <td style={{ padding: '4px 7px' }}>{nz.service}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, fontFamily: MONO }}>{nz.selectedDn}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontFamily: MONO }}>{nz.flangeRating}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontFamily: MONO }}>{nz.orientationDeg}°</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 900, fontFamily: MONO }}>EL +{nz.elevationMm} mm</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'right', fontFamily: MONO }}>{nz.elevationFromBtlMm >= 0 ? '+' : ''}{nz.elevationFromBtlMm} mm</td>
+                  </tr>
+                ))}
+                {designRes.manholes.map((mh) => (
+                  <tr key={mh.tag} style={{ borderBottom: '1px solid #E2E8F0', background: '#FFFBEB' }}>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, color: '#B45309', fontFamily: MONO }}>{mh.tag}</td>
+                    <td style={{ padding: '4px 7px' }}>{mh.service}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, fontFamily: MONO }}>{mh.sizeDn}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontFamily: MONO }}>{mh.flangeRating}</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontFamily: MONO }}>{mh.orientationDeg}°</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 900, fontFamily: MONO }}>EL +{mh.elevationMm} mm</td>
+                    <td style={{ padding: '4px 7px', textAlign: 'right', fontFamily: MONO }}>+{mh.elevationFromBtlMm} mm</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── 1) 정밀 축척 엔지니어링 CAD 입면도(GA Elevation) + 단면 상세도 SVG ──
   const renderConceptualDrawingSvg = () => {
     const dRect = designRes.rectifying.selectedNominalDiamM;
     const dStrip = designRes.stripping.selectedNominalDiamM;
     const dMax = Math.max(dRect, dStrip, 0.5);
+    const oalMm = Math.max(4000, elMap.oalElMm);
 
-    const rectPxW = Math.round(74 + 56 * (dRect / dMax));
-    const stripPxW = Math.round(74 + 56 * (dStrip / dMax));
-    const cx = 165;
-    const topHeadY = 54;
-    const rectTopY = 74;
-    const rectBottomY = 178;
-    const feedZoneBottomY = 204;
-    const stripBottomY = 312;
-    const sumpBottomY = 362;
-    const skirtBottomY = 398;
+    const cx = 248;
+    const gradeY = 548;
+    const topPxY = 66;
+    const spanPxH = gradeY - topPxY;
+    const yPx = (mm: number) => gradeY - (mm / oalMm) * spanPxH;
 
+    const rectPxW = Math.round(64 + 44 * (dRect / dMax));
+    const stripPxW = Math.round(64 + 44 * (dStrip / dMax));
     const rectLeft = cx - rectPxW / 2;
     const rectRight = cx + rectPxW / 2;
     const stripLeft = cx - stripPxW / 2;
     const stripRight = cx + stripPxW / 2;
 
-    const planCx = 458;
-    const planCy = 160;
-    const planR = 84;
+    const btlY = yPx(elMap.btlElMm);
+    const ttlY = yPx(elMap.ttlElMm);
+    const headDepthR = Math.max(12, Math.round(rectPxW * 0.25));
+    const headDepthS = Math.max(12, Math.round(stripPxW * 0.25));
+    const rectBotY = yPx(elMap.rectBotElMm);
+    const rectTopY = yPx(elMap.rectTopElMm);
+    const stripBotY = yPx(elMap.stripBotElMm);
+    const stripTopY = yPx(elMap.stripTopElMm);
+    const lllY = yPx(elMap.lllElMm);
+    const nllY = yPx(elMap.nllElMm);
+    const hllY = yPx(elMap.hllElMm);
+
+    const planCx = 605;
+    const planCy = 168;
+    const planR = 80;
     const dcFrac = (ic.downcomerAreaPct ?? 12) / 100.0;
     const dcChordOffset = Math.round(planR * (1 - 1.55 * dcFrac));
     const activePasses = designRes.stripping.flowPasses;
 
+    const nzByTag = Object.fromEntries(designRes.nozzles.map((n) => [n.nozzleTag, n]));
+    const datumTicks: Array<{ label: string; mm: number; color: string }> = [
+      { label: 'O.A.L.', mm: elMap.oalElMm, color: '#1E293B' },
+      { label: 'T.T.L.', mm: elMap.ttlElMm, color: '#1D4ED8' },
+      { label: isTray ? 'Top Tray' : 'Bed #1 Top', mm: elMap.rectTopElMm, color: '#0F766E' },
+      { label: 'Feed N3', mm: elMap.feedNozzleElMm, color: '#B91C1C' },
+      { label: isTray ? 'Bot Tray' : 'Strip Bot', mm: elMap.stripBotElMm, color: '#0F766E' },
+      { label: 'HLL', mm: elMap.hllElMm, color: '#0369A1' },
+      { label: 'B.T.L.', mm: elMap.btlElMm, color: '#1D4ED8' },
+      { label: 'Base EL', mm: 0, color: '#475569' },
+    ];
+
     return (
       <svg
-        viewBox="0 0 610 422"
+        id="col-epc-cad-svg"
+        viewBox="0 0 920 620"
         style={{
           width: '100%',
-          height: isMobile ? 'auto' : 365,
-          aspectRatio: isMobile ? '610 / 422' : undefined,
+          height: isMobile ? 'auto' : 475,
+          aspectRatio: '920 / 620',
           background: '#FFFFFF',
-          border: '1px solid #E2E8F0',
+          border: '1.5px solid #CBD5E1',
           borderRadius: 8,
           display: 'block',
         }}
@@ -231,278 +637,242 @@ export default function ColumnInternalsDesignPanel({
             <stop offset="45%" stopColor="#F8FAFC" />
             <stop offset="100%" stopColor="#CBD5E1" />
           </linearGradient>
-          <pattern id="packCrossHatch" width="10" height="10" patternUnits="userSpaceOnUse">
-            <path d="M 0 10 L 10 0 M -2 2 L 2 -2 M 8 12 L 12 8" stroke="#64748B" strokeWidth="0.9" opacity="0.55" />
-            <path d="M 0 0 L 10 10 M -2 8 L 2 12 M 8 -2 L 12 2" stroke="#64748B" strokeWidth="0.9" opacity="0.55" />
+          <pattern id="packCrossHatch" width="8" height="8" patternUnits="userSpaceOnUse">
+            <path d="M 0 8 L 8 0 M -2 2 L 2 -2 M 6 10 L 10 6" stroke="#0F766E" strokeWidth="0.85" opacity="0.55" />
+            <path d="M 0 0 L 8 8 M -2 6 L 2 10 M 6 -2 L 10 2" stroke="#0F766E" strokeWidth="0.85" opacity="0.55" />
           </pattern>
         </defs>
 
-        <text x={14} y={20} fontSize={11.5} fontWeight={900} fill="#0F172A">
-          [{unitTag}] 탑 입면 개념도 (T-T {designRes.tangentToTangentHeightM}m)
+        {/* 도면 외곽 CAD 프레임 */}
+        <rect x={4} y={4} width={912} height={612} fill="none" stroke="#94A3B8" strokeWidth={1.2} />
+        <line x1={465} y1={12} x2={465} y2={608} stroke="#E2E8F0" strokeWidth={1.2} />
+
+        {/* 좌측 상단 타이틀 */}
+        <text x={14} y={24} fontSize={12} fontWeight={900} fill="#0F172A">
+          [{unitTag}] 정밀 CAD 입면도 (GA ELEVATION · 축척 비례 EL +mm)
         </text>
-        <text x={14} y={34} fontSize={9.5} fontWeight={700} fill="#475569">
+        <text x={14} y={40} fontSize={9.6} fontWeight={700} fill="#475569" fontFamily={MONO}>
           {isSwaged
-            ? `이단 동체: 상부 Ø${dRect.toFixed(2)}m / 하부 Ø${dStrip.toFixed(2)}m`
-            : `단일 동체: 내경 Ø${dRect.toFixed(2)}m · ASME ${designRes.shellWallThicknessMm}t`}
+            ? `이단 동체 ID: 정류 Ø${Math.round(dRect * 1000)} / 스 Ø${Math.round(dStrip * 1000)}mm (${designRes.shellWallThicknessMm}t)`
+            : `동체 ID Ø${Math.round(dRect * 1000)}mm (${designRes.shellWallThicknessMm}t) · T-T ${(elMap.ttlElMm - elMap.btlElMm).toLocaleString()}mm`}
         </text>
 
-        <path
-          d={`M ${cx} ${topHeadY - 12} L ${cx} 28 L 278 28 L 278 46`}
-          fill="none"
-          stroke="#2563EB"
-          strokeWidth={2}
-        />
-        <circle cx={278} cy={56} r={10} fill="#EFF6FF" stroke="#2563EB" strokeWidth={1.6} />
-        <text x={278} y={59} textAnchor="middle" fontSize={7.5} fontWeight={900} fill="#1D4ED8">
-          QC
-        </text>
-        <rect x={256} y={74} width={44} height={18} rx={7} fill="#F1F5F9" stroke="#334155" strokeWidth={1.4} />
-        <text x={278} y={86} textAnchor="middle" fontSize={7.5} fontWeight={800} fill="#0F172A">
-          환류드럼
-        </text>
-        <path
-          d={`M 256 83 L ${rectRight} 83`}
-          fill="none"
-          stroke="#059669"
-          strokeWidth={1.8}
-          strokeDasharray="3 2"
-        />
-        <text x={rectRight + 6} y={79} fontSize={8.5} fontWeight={800} fill="#047857">
-          N2 환류
-        </text>
+        {/* 좌측 절대 고도 눈금 (EL +xxxx mm Datum Ladder) */}
+        <line x1={110} y1={yPx(elMap.oalElMm)} x2={110} y2={gradeY} stroke="#CBD5E1" strokeWidth={1} strokeDasharray="3 2" />
+        {datumTicks.map((dt) => {
+          const yy = yPx(dt.mm);
+          return (
+            <g key={dt.label}>
+              <line x1={105} y1={yy} x2={stripLeft - 8} y2={yy} stroke="#CBD5E1" strokeWidth={0.8} strokeDasharray="2 2" />
+              <line x1={104} y1={yy} x2={114} y2={yy} stroke={dt.color} strokeWidth={1.4} />
+              <text x={100} y={yy + 3} textAnchor="end" fontSize={8.2} fontWeight={800} fill={dt.color} fontFamily={MONO}>
+                {dt.label} +{dt.mm}
+              </text>
+            </g>
+          );
+        })}
 
+        {/* 중심선 */}
+        <line x1={cx} y1={topPxY - 14} x2={cx} y2={gradeY + 12} stroke="#94A3B8" strokeWidth={0.9} strokeDasharray="8 3 2 3" />
+
+        {/* 베이스 링 & 지지 스커트 (EL 0 -> B.T.L.) */}
         <path
-          d={`M ${stripLeft + 4} ${sumpBottomY + 8} L ${stripLeft - 6} ${skirtBottomY} M ${stripRight - 4} ${sumpBottomY + 8} L ${stripRight + 6} ${skirtBottomY}`}
+          d={`M ${stripLeft + 2} ${btlY} L ${stripLeft - 5} ${gradeY} M ${stripRight - 2} ${btlY} L ${stripRight + 5} ${gradeY}`}
           stroke="#475569"
           strokeWidth={2.5}
         />
-        <line x1={stripLeft - 18} y1={skirtBottomY} x2={stripRight + 18} y2={skirtBottomY} stroke="#1E293B" strokeWidth={3} />
+        <line x1={stripLeft - 18} y1={gradeY} x2={stripRight + 18} y2={gradeY} stroke="#0F172A" strokeWidth={3.2} />
 
+        {/* 용기 본체 (원통 + 2:1 타원경판) */}
         <path
           d={`
-            M ${rectLeft} ${topHeadY}
-            Q ${cx} ${topHeadY - 24} ${rectRight} ${topHeadY}
-            L ${rectRight} ${rectBottomY}
-            L ${stripRight} ${feedZoneBottomY}
-            L ${stripRight} ${sumpBottomY}
-            Q ${cx} ${sumpBottomY + 24} ${stripLeft} ${sumpBottomY}
-            L ${stripLeft} ${feedZoneBottomY}
-            L ${rectLeft} ${rectBottomY}
+            M ${rectLeft} ${ttlY}
+            Q ${cx} ${ttlY - headDepthR * 1.4} ${rectRight} ${ttlY}
+            L ${rectRight} ${rectBotY}
+            L ${stripRight} ${stripTopY}
+            L ${stripRight} ${btlY}
+            Q ${cx} ${btlY + headDepthS * 1.4} ${stripLeft} ${btlY}
+            L ${stripLeft} ${stripTopY}
+            L ${rectLeft} ${rectBotY}
             Z
           `}
           fill="url(#colShellGrad)"
-          stroke="#1E293B"
+          stroke="#0F172A"
           strokeWidth={2.2}
         />
 
-        <path
-          d={`
-            M ${stripLeft + 2} ${sumpBottomY - 24}
-            L ${stripRight - 2} ${sumpBottomY - 24}
-            L ${stripRight - 2} ${sumpBottomY}
-            Q ${cx} ${sumpBottomY + 21} ${stripLeft + 2} ${sumpBottomY}
-            Z
-          `}
-          fill="#93C5FD"
-          opacity={0.55}
-        />
-        <text x={cx} y={sumpBottomY - 8} textAnchor="middle" fontSize={8.5} fontWeight={800} fill="#1E3A8A">
-          섬프 액위 ({designRes.sumpLiquidHeightM}m)
+        {/* 섬프 액위 LLL / NLL / HLL */}
+        <rect x={stripLeft + 2} y={hllY} width={stripPxW - 4} height={Math.max(4, btlY - hllY)} fill="#93C5FD" opacity={0.45} />
+        <line x1={stripLeft + 3} y1={hllY} x2={stripRight - 3} y2={hllY} stroke="#0369A1" strokeWidth={1.2} />
+        <line x1={stripLeft + 3} y1={nllY} x2={stripRight - 3} y2={nllY} stroke="#0284C7" strokeWidth={1.1} strokeDasharray="3 2" />
+        <line x1={stripLeft + 3} y1={lllY} x2={stripRight - 3} y2={lllY} stroke="#38BDF8" strokeWidth={1.1} strokeDasharray="2 2" />
+        <text x={cx} y={Math.max(hllY + 11, (hllY + btlY) / 2 + 3)} textAnchor="middle" fontSize={7.8} fontWeight={800} fill="#1E3A8A" fontFamily={MONO}>
+          HLL +{elMap.hllElMm}
         </text>
 
+        {/* 인터널 상세 (트레이 단 vs 충진 베드+하드웨어) */}
         {isTray ? (
-          <>
-            {[0, 1, 2, 3, 4, 5].map((i) => {
-              const y = rectTopY + 12 + i * 15.5;
-              const dcSideLeft = i % 2 === 0;
-              return (
-                <g key={`rt-${i}`}>
-                  <line
-                    x1={dcSideLeft ? rectLeft + 14 : rectLeft + 2}
-                    y1={y}
-                    x2={dcSideLeft ? rectRight - 2 : rectRight - 14}
-                    y2={y}
-                    stroke="#334155"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 2"
-                  />
-                  <line
-                    x1={dcSideLeft ? rectLeft + 14 : rectRight - 14}
-                    y1={y}
-                    x2={dcSideLeft ? rectLeft + 14 : rectRight - 14}
-                    y2={y + 11}
-                    stroke="#475569"
-                    strokeWidth={1.5}
-                  />
-                </g>
-              );
-            })}
-            {[0, 1, 2, 3, 4, 5].map((i) => {
-              const y = feedZoneBottomY + 12 + i * 16.5;
-              const dcSideLeft = i % 2 === 1;
-              return (
-                <g key={`st-${i}`}>
-                  <line
-                    x1={dcSideLeft ? stripLeft + 15 : stripLeft + 2}
-                    y1={y}
-                    x2={dcSideLeft ? stripRight - 2 : stripRight - 15}
-                    y2={y}
-                    stroke="#334155"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 2"
-                  />
-                  <line
-                    x1={dcSideLeft ? stripLeft + 15 : stripRight - 15}
-                    y1={y}
-                    x2={dcSideLeft ? stripLeft + 15 : stripRight - 15}
-                    y2={y + 12}
-                    stroke="#475569"
-                    strokeWidth={1.5}
-                  />
-                </g>
-              );
-            })}
-          </>
+          (() => {
+            const rN = Math.min(18, Math.max(2, designRes.rectifying.actualTraysOrBeds));
+            const sN = Math.min(18, Math.max(2, designRes.stripping.actualTraysOrBeds));
+            return (
+              <>
+                {Array.from({ length: rN }, (_, i) => {
+                  const frac = rN === 1 ? 0.5 : i / (rN - 1);
+                  const yy = rectTopY + frac * Math.max(8, rectBotY - rectTopY);
+                  const dcL = i % 2 === 0;
+                  return (
+                    <g key={`rt-${i}`}>
+                      <line x1={dcL ? rectLeft + 10 : rectLeft + 2} y1={yy} x2={dcL ? rectRight - 2 : rectRight - 10} y2={yy} stroke="#1E293B" strokeWidth={1.2} />
+                      {i < rN - 1 && (
+                        <line x1={dcL ? rectLeft + 10 : rectRight - 10} y1={yy} x2={dcL ? rectLeft + 10 : rectRight - 10} y2={yy + Math.max(4, (rectBotY - rectTopY) / rN - 2)} stroke="#475569" strokeWidth={1.1} />
+                      )}
+                    </g>
+                  );
+                })}
+                {Array.from({ length: sN }, (_, i) => {
+                  const frac = sN === 1 ? 0.5 : i / (sN - 1);
+                  const yy = stripTopY + frac * Math.max(8, stripBotY - stripTopY);
+                  const dcL = i % 2 === 1;
+                  return (
+                    <g key={`st-${i}`}>
+                      <line x1={dcL ? stripLeft + 10 : stripLeft + 2} y1={yy} x2={dcL ? stripRight - 2 : stripRight - 10} y2={yy} stroke="#1E293B" strokeWidth={1.2} />
+                      {i < sN - 1 && (
+                        <line x1={dcL ? stripLeft + 10 : stripRight - 10} y1={yy} x2={dcL ? stripLeft + 10 : stripRight - 10} y2={yy + Math.max(4, (stripBotY - stripTopY) / sN - 2)} stroke="#475569" strokeWidth={1.1} />
+                      )}
+                    </g>
+                  );
+                })}
+              </>
+            );
+          })()
         ) : (
           <>
-            <line x1={rectLeft + 5} y1={rectTopY + 6} x2={rectRight - 5} y2={rectTopY + 6} stroke="#0F766E" strokeWidth={2} />
-            <rect
-              x={rectLeft + 6}
-              y={rectTopY + 12}
-              width={rectPxW - 12}
-              height={rectBottomY - rectTopY - 18}
-              fill="url(#packCrossHatch)"
-              stroke="#0F766E"
-              strokeWidth={1.3}
-            />
-            <text x={cx} y={(rectTopY + rectBottomY) / 2 + 4} textAnchor="middle" fontSize={9} fontWeight={900} fill="#0F766E">
-              정류 베드 ({designRes.rectifying.sectionHeightM}m)
-            </text>
-
-            <line x1={stripLeft + 5} y1={feedZoneBottomY + 6} x2={stripRight - 5} y2={feedZoneBottomY + 6} stroke="#0F766E" strokeWidth={2} />
-            <rect
-              x={stripLeft + 6}
-              y={feedZoneBottomY + 12}
-              width={stripPxW - 12}
-              height={stripBottomY - feedZoneBottomY - 18}
-              fill="url(#packCrossHatch)"
-              stroke="#0F766E"
-              strokeWidth={1.3}
-            />
-            <text x={cx} y={(feedZoneBottomY + stripBottomY) / 2 + 4} textAnchor="middle" fontSize={9} fontWeight={900} fill="#0F766E">
-              스트리핑 베드 ({designRes.stripping.sectionHeightM}m)
-            </text>
+            {designRes.packedBeds.map((b) => {
+              const isR = b.section === 'rectifying';
+              const bx = (isR ? rectLeft : stripLeft) + 4;
+              const bw = (isR ? rectPxW : stripPxW) - 8;
+              const byTop = yPx(b.topElMm);
+              const byBot = yPx(b.botElMm);
+              const bh = Math.max(10, byBot - byTop);
+              return (
+                <g key={b.bedNumber}>
+                  <rect x={bx} y={byTop} width={bw} height={bh} fill="url(#packCrossHatch)" stroke="#0F766E" strokeWidth={1.2} />
+                  <line x1={bx - 2} y1={byBot} x2={bx + bw + 2} y2={byBot} stroke="#0F172A" strokeWidth={2.2} />
+                  <line x1={bx - 2} y1={byTop} x2={bx + bw + 2} y2={byTop} stroke="#D97706" strokeWidth={1.6} />
+                  <text x={cx} y={byTop + bh / 2 + 3} textAnchor="middle" fontSize={7.6} fontWeight={900} fill="#0F766E" fontFamily={MONO}>
+                    B#{b.bedNumber} {b.bedHeightM}m
+                  </text>
+                </g>
+              );
+            })}
+            {/* LD-1 상부 분배기 & ME-1 미스트 제거기 */}
+            <rect x={rectLeft + 5} y={yPx(designRes.packingHardware.topDistributor.elevationMm) - 2} width={rectPxW - 10} height={4} fill="#0284C7" />
+            <rect x={rectLeft + 6} y={yPx(designRes.packingHardware.demister.elevationMm) - 4} width={rectPxW - 12} height={7} fill="#FDE68A" stroke="#D97706" strokeWidth={1} />
+            {designRes.packingHardware.redistributors.items.map((rd) => (
+              <rect key={rd.tag} x={rectLeft + 4} y={yPx(rd.elevationMm) - 3} width={rectPxW - 8} height={6} fill="#7C3AED" opacity={0.85} />
+            ))}
           </>
         )}
 
-        <line x1={38} y1={(rectBottomY + feedZoneBottomY) / 2} x2={rectLeft} y2={(rectBottomY + feedZoneBottomY) / 2} stroke="#DC2626" strokeWidth={2.4} />
-        <polygon
-          points={`${rectLeft - 2},${(rectBottomY + feedZoneBottomY) / 2} ${rectLeft - 9},${(rectBottomY + feedZoneBottomY) / 2 - 4} ${rectLeft - 9},${(rectBottomY + feedZoneBottomY) / 2 + 4}`}
-          fill="#DC2626"
-        />
-        <text x={36} y={(rectBottomY + feedZoneBottomY) / 2 - 6} fontSize={8.8} fontWeight={900} fill="#B91C1C">
-          N3 피드 (#{simResult.feedStageUsed}단)
+        {/* 맨홀 M1..M3 */}
+        {designRes.manholes.map((mh) => (
+          <g key={mh.tag}>
+            <circle cx={cx} cy={yPx(mh.elevationMm)} r={4.5} fill="#FEF3C7" stroke="#B45309" strokeWidth={1.4} />
+            <text x={cx + 7} y={yPx(mh.elevationMm) + 2.5} fontSize={7.2} fontWeight={900} fill="#B45309" fontFamily={MONO}>
+              {mh.tag}
+            </text>
+          </g>
+        ))}
+
+        {/* 노즐 N1..N6 정확 고도 콜아웃 */}
+        {designRes.nozzles.map((nz) => {
+          const ny = yPx(nz.elevationMm);
+          if (nz.nozzleTag === 'N1') {
+            return (
+              <g key="N1">
+                <line x1={cx} y1={ttlY - headDepthR} x2={cx} y2={ny - 6} stroke="#1D4ED8" strokeWidth={2.2} />
+                <text x={cx + 8} y={ny - 6} fontSize={8.2} fontWeight={900} fill="#1D4ED8" fontFamily={MONO}>
+                  N1 {nz.selectedDn} (+{nz.elevationMm})
+                </text>
+              </g>
+            );
+          }
+          if (nz.nozzleTag === 'N4') {
+            return (
+              <g key="N4">
+                <line x1={cx} y1={btlY + headDepthS} x2={cx + 42} y2={gradeY + 12} stroke="#0F172A" strokeWidth={2} />
+                <text x={cx + 46} y={gradeY + 15} fontSize={8.2} fontWeight={900} fill="#0F172A" fontFamily={MONO}>
+                  N4 {nz.selectedDn} (+{nz.elevationMm})
+                </text>
+              </g>
+            );
+          }
+          const isLeft = nz.orientationDeg === 270;
+          const xEdge = ny <= rectBotY ? (isLeft ? rectLeft : rectRight) : (isLeft ? stripLeft : stripRight);
+          const xOut = isLeft ? xEdge - 24 : xEdge + 24;
+          const clr = nz.nozzleTag === 'N3' ? '#DC2626' : nz.nozzleTag === 'N2' ? '#059669' : '#B91C1C';
+          return (
+            <g key={nz.nozzleTag}>
+              <line x1={xEdge} y1={ny} x2={xOut} y2={ny} stroke={clr} strokeWidth={2.2} />
+              <line x1={xOut} y1={ny - 4} x2={xOut} y2={ny + 4} stroke={clr} strokeWidth={2} />
+              <text
+                x={isLeft ? xOut - 4 : xOut + 4}
+                y={ny + 3}
+                textAnchor={isLeft ? 'end' : 'start'}
+                fontSize={8}
+                fontWeight={900}
+                fill={clr}
+                fontFamily={MONO}
+              >
+                {nz.nozzleTag} {nz.selectedDn.split(' ')[0]} (+{nz.elevationMm})
+              </text>
+            </g>
+          );
+        })}
+
+        {/* 우측 치수선 체인: T/T & Skirt & OAL */}
+        <line x1={408} y1={ttlY} x2={408} y2={btlY} stroke="#4338CA" strokeWidth={1.3} />
+        <line x1={403} y1={ttlY} x2={413} y2={ttlY} stroke="#4338CA" strokeWidth={1.3} />
+        <line x1={403} y1={btlY} x2={413} y2={btlY} stroke="#4338CA" strokeWidth={1.3} />
+        <text x={415} y={(ttlY + btlY) / 2} transform={`rotate(-90, 415, ${(ttlY + btlY) / 2})`} textAnchor="middle" fontSize={8.5} fontWeight={900} fill="#4338CA" fontFamily={MONO}>
+          H_T/T = {(elMap.ttlElMm - elMap.btlElMm).toLocaleString()} mm
+        </text>
+        <line x1={438} y1={yPx(elMap.oalElMm)} x2={438} y2={gradeY} stroke="#DC2626" strokeWidth={1.3} />
+        <line x1={433} y1={yPx(elMap.oalElMm)} x2={443} y2={yPx(elMap.oalElMm)} stroke="#DC2626" strokeWidth={1.3} />
+        <line x1={433} y1={gradeY} x2={443} y2={gradeY} stroke="#DC2626" strokeWidth={1.3} />
+        <text x={446} y={(yPx(elMap.oalElMm) + gradeY) / 2} transform={`rotate(-90, 446, ${(yPx(elMap.oalElMm) + gradeY) / 2})`} textAnchor="middle" fontSize={8.5} fontWeight={900} fill="#DC2626" fontFamily={MONO}>
+          O.A.L. = {elMap.oalElMm.toLocaleString()} mm (Skirt {elMap.btlElMm}mm)
         </text>
 
-        <path
-          d={`M ${stripRight} ${sumpBottomY - 8} L 280 ${sumpBottomY - 8} L 280 ${stripBottomY + 16} L ${stripRight} ${stripBottomY + 16}`}
-          fill="none"
-          stroke="#DC2626"
-          strokeWidth={1.8}
-        />
-        <circle cx={280} cy={(sumpBottomY + stripBottomY + 8) / 2} r={10} fill="#FEF2F2" stroke="#DC2626" strokeWidth={1.6} />
-        <text x={280} y={(sumpBottomY + stripBottomY + 8) / 2 + 3} textAnchor="middle" fontSize={7.5} fontWeight={900} fill="#B91C1C">
-          QR
-        </text>
-
-        <path d={`M ${cx} ${sumpBottomY + 13} L ${cx} ${skirtBottomY - 6} L 278 ${skirtBottomY - 6}`} fill="none" stroke="#1E293B" strokeWidth={1.8} />
-        <text x={282} y={skirtBottomY - 3} fontSize={8.5} fontWeight={800} fill="#0F172A">
-          N4 탑저관출
-        </text>
-
-        <line x1={22} y1={topHeadY} x2={22} y2={sumpBottomY} stroke="#6366F1" strokeWidth={1.3} />
-        <line x1={17} y1={topHeadY} x2={27} y2={topHeadY} stroke="#6366F1" strokeWidth={1.3} />
-        <line x1={17} y1={sumpBottomY} x2={27} y2={sumpBottomY} stroke="#6366F1" strokeWidth={1.3} />
-        <text
-          x={14}
-          y={(topHeadY + sumpBottomY) / 2}
-          transform={`rotate(-90, 14, ${(topHeadY + sumpBottomY) / 2})`}
-          textAnchor="middle"
-          fontSize={9}
-          fontWeight={900}
-          fill="#4338CA"
-          fontFamily={MONO}
-        >
-          H_TT = {designRes.tangentToTangentHeightM} m (L/D {designRes.lengthToDiamRatio})
-        </text>
-
-        <line x1={322} y1={14} x2={322} y2={408} stroke="#E2E8F0" strokeWidth={1.2} />
-
-        <text x={336} y={20} fontSize={11.5} fontWeight={900} fill="#0F172A">
+        {/* 우측 하단/상단: SECTION A-A 평면 상세 */}
+        <text x={478} y={24} fontSize={12} fontWeight={900} fill="#0F172A">
           {isTray
-            ? `트레이 데크 평면 단면도 (${activePasses}-Pass · ${designRes.trayType.toUpperCase()})`
-            : `충진층 구성 & 액체 분배기 (${designRes.packedBedCount} Beds · Billet–Schultes)`}
+            ? `SECTION A-A: ${activePasses}-Pass 트레이 평면 & 수력 치수 상세`
+            : `SECTION A-A: 분배기(LD-1) · 베드 하드웨어 스택 상세`}
         </text>
-        <text x={336} y={34} fontSize={9.2} fontWeight={700} fill="#475569">
+        <text x={478} y={40} fontSize={9.4} fontWeight={700} fill="#475569" fontFamily={MONO}>
           {isTray
-            ? `Ø${designRes.governingDiamM}m · Aa=${designRes.stripping.activeAreaM2}m² · Lw=${designRes.stripping.weirLengthM}m · FPL=${designRes.stripping.flowPathLengthM}m`
-            : `${designRes.packingSpec.name} · Fp=${designRes.packingSpec.packingFactorFpM1}/m`}
+            ? `Spacing=${designRes.traySpacingMm}mm · Øh=${designRes.stripping.holeDiameterMm}mm · 개공=${designRes.stripping.openAreaPctOfActive}% · hw=${designRes.stripping.weirHeightMm}mm · hap=${designRes.stripping.dcClearanceMm}mm`
+            : `${designRes.packingSpec.name} (${designRes.packingSpec.nominalSizeLabel || ''})`}
         </text>
 
         {isTray ? (
           <g>
             <circle cx={planCx} cy={planCy} r={planR} fill="#F8FAFC" stroke="#1E293B" strokeWidth={2.4} />
             <circle cx={planCx} cy={planCy} r={planR - 4} fill="#EEF2FF" />
-
             <clipPath id="trayCircleClip">
               <circle cx={planCx} cy={planCy} r={planR - 1} />
             </clipPath>
             <g clipPath="url(#trayCircleClip)">
-              <rect
-                x={planCx - planR}
-                y={planCy - planR}
-                width={planR - dcChordOffset}
-                height={planR * 2}
-                fill="#BFDBFE"
-                opacity={0.75}
-              />
-              <rect
-                x={planCx + dcChordOffset}
-                y={planCy - planR}
-                width={planR - dcChordOffset}
-                height={planR * 2}
-                fill="#93C5FD"
-              />
+              <rect x={planCx - planR} y={planCy - planR} width={planR - dcChordOffset} height={planR * 2} fill="#BFDBFE" opacity={0.78} />
+              <rect x={planCx + dcChordOffset} y={planCy - planR} width={planR - dcChordOffset} height={planR * 2} fill="#93C5FD" />
               {activePasses >= 2 && (
-                <rect
-                  x={planCx - 9}
-                  y={planCy - planR}
-                  width={18}
-                  height={planR * 2}
-                  fill="#93C5FD"
-                  stroke="#1D4ED8"
-                  strokeWidth={1.2}
-                />
+                <rect x={planCx - 9} y={planCy - planR} width={18} height={planR * 2} fill="#93C5FD" stroke="#1D4ED8" strokeWidth={1.2} />
               )}
-              <line
-                x1={planCx + dcChordOffset}
-                y1={planCy - planR}
-                x2={planCx + dcChordOffset}
-                y2={planCy + planR}
-                stroke="#1D4ED8"
-                strokeWidth={2.2}
-              />
-              <line
-                x1={planCx - dcChordOffset}
-                y1={planCy - planR}
-                x2={planCx - dcChordOffset}
-                y2={planCy + planR}
-                stroke="#64748B"
-                strokeWidth={1.4}
-                strokeDasharray="3 2"
-              />
+              <line x1={planCx + dcChordOffset} y1={planCy - planR} x2={planCx + dcChordOffset} y2={planCy + planR} stroke="#1D4ED8" strokeWidth={2.2} />
+              <line x1={planCx - dcChordOffset} y1={planCy - planR} x2={planCx - dcChordOffset} y2={planCy + planR} stroke="#64748B" strokeWidth={1.4} strokeDasharray="3 2" />
             </g>
-
             {[-36, -18, 0, 18, 36].map((dy) =>
               [-28, -10, 10, 28].map((dx) => {
                 if (activePasses >= 2 && Math.abs(dx) < 13) return null;
@@ -511,82 +881,111 @@ export default function ColumnInternalsDesignPanel({
                     key={`h-${dx}-${dy}`}
                     cx={planCx + dx}
                     cy={planCy + dy}
-                    r={designRes.trayType === 'sieve' ? 2.1 : 3.2}
+                    r={designRes.trayType === 'sieve' ? 2.0 : 3.0}
                     fill={designRes.trayType === 'sieve' ? '#4338CA' : '#FFFFFF'}
                     stroke="#4338CA"
-                    strokeWidth={1.2}
+                    strokeWidth={1.1}
                   />
                 );
               })
             )}
-
-            <text x={planCx + dcChordOffset + 6} y={planCy + 3} fontSize={8} fontWeight={900} fill="#1E3A8A">
-              DC
-            </text>
-            <text x={planCx} y={planCy + planR + 18} textAnchor="middle" fontSize={9.2} fontWeight={800} fill="#334155" fontFamily={MONO}>
-              Jet {designRes.maxJetFloodPct}% · DC초크 {designRes.maxDcChokeFloodPct}% · τ_dc {designRes.minDcResidenceTimeSec}s
-            </text>
+            <text x={planCx + dcChordOffset + 4} y={planCy + 3} fontSize={8} fontWeight={900} fill="#1E3A8A">DC</text>
+            {/* 우측 트레이 수치 카드 */}
+            <rect x={706} y={76} width={198} height={184} rx={6} fill="#F8FAFC" stroke="#CBD5E1" strokeWidth={1.2} />
+            <text x={716} y={96} fontSize={9.6} fontWeight={900} fill="#3730A3">트레이 상세 치수 (mm)</text>
+            <text x={716} y={115} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 패스: {activePasses}-Pass (FPL {Math.round(designRes.stripping.flowPathLengthM * 1000)}mm)</text>
+            <text x={716} y={132} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 단간격: {designRes.traySpacingMm} mm</text>
+            <text x={716} y={149} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 홀/밸브: Ø{designRes.stripping.holeDiameterMm} @ {designRes.stripping.holePitchMm}mm</text>
+            <text x={716} y={166} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 개공비: {designRes.stripping.openAreaPctOfActive}% Aa ({designRes.stripping.openAreaPctOfTower}% AT)</text>
+            <text x={716} y={183} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 위어: hw={designRes.stripping.weirHeightMm} / Lw={designRes.stripping.weirLengthMm}</text>
+            <text x={716} y={200} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• DC폭: {designRes.stripping.dcWidthTopMm}/{designRes.stripping.dcWidthBotMm} (Ad {designRes.stripping.dcAreaPctOfTower}%)</text>
+            <text x={716} y={217} fontSize={8.8} fontWeight={700} fill="#1E293B" fontFamily={MONO}>• 틈새 hap: {designRes.stripping.dcClearanceMm} mm</text>
+            <text x={716} y={238} fontSize={8.8} fontWeight={900} fill="#047857" fontFamily={MONO}>• 운전범위: {designRes.operatingLoadMinPct}~{designRes.operatingLoadMaxPct}% ({designRes.minTurndownRatio}:1)</text>
           </g>
         ) : (
           <g>
-            <rect x={352} y={56} width={215} height={195} rx={8} fill="#F8FAFC" stroke="#CBD5E1" strokeWidth={1.4} />
-            <text x={460} y={78} textAnchor="middle" fontSize={10} fontWeight={900} fill="#0F766E">
-              인터널 표준 조립 스택 (Top → Bottom)
+            <rect x={478} y={64} width={426} height={224} rx={8} fill="#F8FAFC" stroke="#CBD5E1" strokeWidth={1.3} />
+            <text x={691} y={84} textAnchor="middle" fontSize={10} fontWeight={900} fill="#0F766E">
+              패킹 컬럼 내부 하드웨어 조립 스택 (Top → Bottom)
             </text>
             {[
-              { y: 92, title: '1. 미스트 엘리미네이터 (Demister Pad)', sub: '탑정 비말 포집 (150mm Wire Mesh / Vane)' },
               {
-                y: 126,
-                title: '2. 오리피스/트로프 액체 분배기',
-                sub: `점적 밀도 ${designRes.distributorDripPointsPerM2} pts/m² (총 ${designRes.distributorTotalDripPoints}공)`,
+                y: 94,
+                title: `1. 미스트 제거기 (${designRes.packingHardware.demister.tag}) @ EL +${designRes.packingHardware.demister.elevationMm} mm`,
+                sub: `${designRes.packingHardware.demister.type} (${designRes.packingHardware.demister.thicknessMm}mmt)`,
               },
               {
-                y: 160,
-                title: '3. 홀드다운 그리드 & 충진베드',
-                sub: `총 충진고 ${designRes.totalPackedHeightM}m · 홀드업 h_L=${designRes.avgPackedHoldupPct}%`,
+                y: 132,
+                title: `2. 상부 액체 분배기 (${designRes.packingHardware.topDistributor.tag}) @ EL +${designRes.packingHardware.topDistributor.elevationMm} mm`,
+                sub: `점적 ${designRes.packingHardware.topDistributor.dripPointsPerM2} pts/m² (총 ${designRes.packingHardware.topDistributor.totalDripPoints}공) · ${designRes.packingHardware.topDistributor.type}`,
               },
               {
-                y: 194,
-                title: '4. 콜렉터 & 멀티빔 서포트 플레이트',
-                sub: `평균 H_OG=${designRes.avgPackedHogM}m · HETP=${designRes.stripping.hetpAvgM}m`,
+                y: 170,
+                title: `3. 홀드다운 그리드(${designRes.packingHardware.holdDownGrids.count}EA) & ${designRes.packedBedCount}개 충진 베드`,
+                sub: `총 충진고 ${designRes.totalPackedHeightM}m · 정류 HETP ${designRes.rectifying.hetpAvgM}m / 스 ${designRes.stripping.hetpAvgM}m`,
+              },
+              {
+                y: 208,
+                title: `4. 중간 재분배기(${designRes.packingHardware.redistributors.count}EA) & 지지판(${designRes.packingHardware.supportPlates.count}EA)`,
+                sub: `지지판 개구 ${designRes.packingHardware.supportPlates.freeAreaPct}% · 적심 MWR=${designRes.packingSpec.minWettingM3M2H} m³/m²h`,
+              },
+              {
+                y: 246,
+                title: `5. 운전범위 ${designRes.operatingLoadMinPct}% ~ ${designRes.operatingLoadMaxPct}% (Turndown ${designRes.minTurndownRatio}:1)`,
+                sub: `B-S Flood ${designRes.maxFloodPct}% · 홀드업 h_L=${designRes.avgPackedHoldupPct}% · ΔP=${designRes.totalInternalsDpMbar} mbar`,
               },
             ].map((b, idx) => (
               <g key={idx}>
-                <rect x={364} y={b.y} width={192} height={28} rx={5} fill="#FFFFFF" stroke="#99F6E4" strokeWidth={1.2} />
-                <text x={372} y={b.y + 12} fontSize={8.8} fontWeight={900} fill="#0F172A">
-                  {b.title}
-                </text>
-                <text x={372} y={b.y + 23} fontSize={8} fontWeight={600} fill="#475569">
-                  {b.sub}
-                </text>
+                <rect x={488} y={b.y} width={406} height={33} rx={5} fill="#FFFFFF" stroke="#99F6E4" strokeWidth={1.1} />
+                <text x={496} y={b.y + 13} fontSize={8.7} fontWeight={900} fill="#0F172A" fontFamily={MONO}>{b.title}</text>
+                <text x={496} y={b.y + 26} fontSize={8.1} fontWeight={600} fill="#475569">{b.sub}</text>
               </g>
             ))}
           </g>
         )}
 
-        <rect x={338} y={272} width={256} height={134} rx={7} fill="#F8FAFC" stroke="#CBD5E1" strokeWidth={1.2} />
-        <text x={348} y={290} fontSize={10} fontWeight={900} fill="#1E293B">
-          기계·수력학·원가 개념설계 핵심 요약
+        {/* 우측 하단: 본체 기계·원가·노즐 요약 박스 */}
+        <rect x={478} y={302} width={426} height={294} rx={7} fill="#F8FAFC" stroke="#CBD5E1" strokeWidth={1.3} />
+        <text x={490} y={322} fontSize={10.4} fontWeight={900} fill="#1E293B">
+          본체 기계사양 · 노즐 EL · 장치원가 CAD 타이틀 블록
         </text>
-        <text x={348} y={307} fontSize={9} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          {isTray
-            ? `• Chan-Fair 단효율: ${designRes.avgChanFairEffPct}% (O'Connell ${designRes.avgOconnellEffPct}%)`
-            : `• B-S 홀드업 h_L=${designRes.avgPackedHoldupPct}% · H_OG=${designRes.avgPackedHogM}m`}
+        <text x={490} y={341} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • ASME 설계 P/T: {designRes.designPressBarG.toFixed(1)} barG / {designRes.designTempC.toFixed(0)} °C (CA {mech.corrosionAllowanceMm}mm)
         </text>
-        <text x={348} y={323} fontSize={9} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          • 상부 Ø{dRect.toFixed(2)}m({designRes.rectifying.maxFloodPct}%) / 하부 Ø{dStrip.toFixed(2)}m({designRes.stripping.maxFloodPct}%)
+        <text x={490} y={358} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 동체/경판/스커트: {mech.selectedShellMm}t / {mech.selectedHeadMm}t / {mech.skirtThicknessMm}t ({designRes.recommendedMaterialCode})
         </text>
-        <text x={348} y={339} fontSize={9} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          • 인터널 총 차압: {designRes.totalInternalsDpMbar} mbar ({designRes.totalInternalsDpKgcm2} kgf/cm²)
+        <text x={490} y={375} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 공탑/운전/만수 중량: {designRes.estimatedDryWeightTon} / {(mech.operatingWeightKN / 9.80665).toFixed(1)} / {(mech.hydrotestWeightKN / 9.80665).toFixed(1)} ton
         </text>
-        <text x={348} y={355} fontSize={9} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          • ASME 동체/경판: {mech.selectedShellMm}t / {mech.selectedHeadMm}t (공탑 {designRes.estimatedDryWeightTon} ton)
+        <text x={490} y={392} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 주요 노즐: N1 {nzByTag.N1?.selectedDn.split(' ')[0]} · N2 {nzByTag.N2?.selectedDn.split(' ')[0]} · N3 {nzByTag.N3?.selectedDn.split(' ')[0]} · N4 {nzByTag.N4?.selectedDn.split(' ')[0]}
         </text>
-        <text x={348} y={371} fontSize={9} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          • 외압 보강링: {mech.stiffenerCount > 0 ? `${mech.stiffenerCount}개 (${mech.stiffenerSection} @ ${mech.stiffenerSpacingM}m)` : '무보강 만족'}
+        <text x={490} y={409} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 리보일러 노즐: N5 {nzByTag.N5?.selectedDn.split(' ')[0]} (+{nzByTag.N5?.elevationMm}) · N6 {nzByTag.N6?.selectedDn.split(' ')[0]} (+{nzByTag.N6?.elevationMm})
         </text>
-        <text x={348} y={388} fontSize={9.1} fontWeight={900} fill="#047857" fontFamily={MONO}>
+        <text x={490} y={426} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 맨홀(180°): {designRes.manholes.map((m) => `${m.tag}(+${m.elevationMm})`).join(' · ')}
+        </text>
+        <text x={490} y={443} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
+          • 외압 보강링: {mech.stiffenerCount > 0 ? `${mech.stiffenerCount}EA (${mech.stiffenerSection} @ ${mech.stiffenerSpacingM}m)` : '무보강 안전 (UG-28 OK)'}
+        </text>
+        <text x={490} y={462} fontSize={9.4} fontWeight={900} fill="#047857" fontFamily={MONO}>
           • 설치원가(C_BM): ${cost.bareModuleUsd.toLocaleString()} ({formatKrwReadable(cost.bareModuleKrw)})
+        </text>
+
+        {/* 하단 CAD 표제란 */}
+        <rect x={488} y={482} width={406} height={102} rx={4} fill="#FFFFFF" stroke="#475569" strokeWidth={1.2} />
+        <line x1={488} y1={514} x2={894} y2={514} stroke="#94A3B8" strokeWidth={1} />
+        <line x1={488} y1={548} x2={894} y2={548} stroke="#94A3B8" strokeWidth={1} />
+        <text x={691} y={502} textAnchor="middle" fontSize={10.2} fontWeight={900} fill="#0F172A">
+          CHEMENG STUDIO EPC CAD — COLUMN GA &amp; INTERNALS
+        </text>
+        <text x={498} y={534} fontSize={9} fontWeight={800} fill="#334155" fontFamily={MONO}>
+          TAG: {unitTag} | {isTray ? 'TRAYED COLUMN' : 'PACKED COLUMN'} | REV 0
+        </text>
+        <text x={498} y={569} fontSize={8.6} fontWeight={700} fill="#475569" fontFamily={MONO}>
+          SCALE: PROPORTIONAL EL (UNIT: MM) | CODE: ASME VIII-1 / FRI
         </text>
       </svg>
     );
@@ -1731,7 +2130,7 @@ export default function ColumnInternalsDesignPanel({
             gap: 11,
           }}
         >
-          {/* 우측 상단 4탭 전환 바 (360px 모바일 2x2 그리드 무오버플로우 대응) */}
+          {/* 우측 상단 5탭 전환 바 + EPC 내보내기 툴바 */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <div
               style={{
@@ -1745,23 +2144,28 @@ export default function ColumnInternalsDesignPanel({
               {(
                 [
                   {
+                    id: 'datasheet' as RightVisualTab,
+                    label: '📋 실무 데이터시트',
+                    shortLabel: '📋 데이터시트',
+                  },
+                  {
                     id: 'drawing' as RightVisualTab,
-                    label: '📐 입면·단면도',
-                    shortLabel: '📐 입면·단면도',
+                    label: '📐 정밀 CAD 도면',
+                    shortLabel: '📐 CAD 도면',
                   },
                   {
                     id: 'profile' as RightVisualTab,
                     label: '📊 범람율·차압',
-                    shortLabel: '📊 범람율·차압',
+                    shortLabel: '📊 범람·차압',
                   },
                   {
                     id: 'nozzles' as RightVisualTab,
-                    label: '🔩 노즐·부속설비',
-                    shortLabel: '🔩 노즐·부속설비',
+                    label: '🔩 노즐·EL·부속설비',
+                    shortLabel: '🔩 노즐·EL',
                   },
                   {
                     id: 'mechanical_cost' as RightVisualTab,
-                    label: '🛡️ 기계설계(ASME) · 풍/지진 · 장치원가',
+                    label: '🛡️ ASME · 풍/지진 · 원가',
                     shortLabel: '🛡️ ASME·원가',
                   },
                 ] as const
@@ -1790,13 +2194,95 @@ export default function ColumnInternalsDesignPanel({
                 );
               })}
             </div>
-            {!isMobile && (
-              <span style={{ fontSize: 10.2, fontWeight: 800, color: '#475569' }}>
-                [{unitTag}] {unitLabel}
-              </span>
-            )}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() =>
+                  void downloadColumnEpcDatasheet({
+                    unitTag,
+                    unitLabel,
+                    colConfig: config,
+                    feeds,
+                    simResult,
+                    design: designRes,
+                  })
+                }
+                style={{
+                  padding: '5px 9px',
+                  borderRadius: 6,
+                  border: '1px solid #047857',
+                  background: '#ECFDF5',
+                  color: '#065F46',
+                  fontSize: 10.3,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                📊 엑셀 데이터시트 (.xlsx)
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadColumnCadDxf({
+                    unitTag,
+                    unitLabel,
+                    colConfig: config,
+                    simResult,
+                    design: designRes,
+                  })
+                }
+                style={{
+                  padding: '5px 9px',
+                  borderRadius: 6,
+                  border: '1px solid #1D4ED8',
+                  background: '#EFF6FF',
+                  color: '#1E3A8A',
+                  fontSize: 10.3,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                📐 AutoCAD (.dxf)
+              </button>
+              {visualTab === 'drawing' && (
+                <button
+                  type="button"
+                  onClick={handleDownloadSvg}
+                  style={{
+                    padding: '5px 8px',
+                    borderRadius: 6,
+                    border: '1px solid #64748B',
+                    background: '#F8FAFC',
+                    color: '#334155',
+                    fontSize: 10.2,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🖼 SVG
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handlePrintDatasheet}
+                style={{
+                  padding: '5px 8px',
+                  borderRadius: 6,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#334155',
+                  fontSize: 10.2,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                🖨 인쇄
+              </button>
+            </div>
           </div>
 
+          {visualTab === 'datasheet' && renderEpcDatasheetTab()}
           {visualTab === 'drawing' && renderConceptualDrawingSvg()}
           {visualTab === 'profile' && renderHydraulicProfileSvg()}
           {visualTab === 'mechanical_cost' && renderMechanicalAndCostTab()}
@@ -1805,42 +2291,57 @@ export default function ColumnInternalsDesignPanel({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ ...cardBox, overflow: 'hidden' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                  🔩 컬럼 주요 노즐 스케줄 (운동량 ρv² 및 Friedel 2상 배관 차압 검토)
+                  🔩 컬럼 주요 노즐·맨홀 스케줄 (설치 고도 EL +mm · 운동량 ρv² · Friedel 2상 차압)
                 </div>
                 <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table style={{ width: '100%', minWidth: 640, borderCollapse: 'collapse', fontSize: 10.5 }}>
+                  <table style={{ width: '100%', minWidth: 740, borderCollapse: 'collapse', fontSize: 10.4 }}>
                     <thead>
                       <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1', color: '#334155' }}>
-                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>노즐</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>서비스 명칭</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'center' }}>상(Phase)</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>유량 (kg/h)</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>유속 (m/s)</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>ρv² (Pa)</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>Friedel 2상 ΔP</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>선정 규격</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'left' }}>태그</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'left' }}>서비스 명칭</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'center' }}>선정 규격 / 등급</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'center' }}>방위각</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'right' }}>설치 EL (Base / BTL)</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'right' }}>유량 (kg/h)</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'right' }}>유속 · ρv²</th>
+                        <th style={{ padding: '5px 6px', textAlign: 'right' }}>Friedel 2상 ΔP</th>
                       </tr>
                     </thead>
                     <tbody>
                       {designRes.nozzles.map((nz) => (
                         <tr key={nz.nozzleTag} style={{ borderBottom: '1px solid #E2E8F0' }}>
-                          <td style={{ padding: '5px 7px', fontWeight: 900, color: '#4338CA', fontFamily: MONO }}>{nz.nozzleTag}</td>
-                          <td style={{ padding: '5px 7px', fontWeight: 700, color: '#0F172A' }}>{nz.service}</td>
-                          <td style={{ padding: '5px 7px', textAlign: 'center', color: '#475569' }}>
-                            {nz.phase}
-                            {nz.vaporQuality !== undefined ? ` (x=${nz.vaporQuality})` : ''}
+                          <td style={{ padding: '5px 6px', fontWeight: 900, color: '#4338CA', fontFamily: MONO }}>{nz.nozzleTag}</td>
+                          <td style={{ padding: '5px 6px', fontWeight: 700, color: '#0F172A' }}>{nz.service}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'center', fontWeight: 900, color: '#065F46', fontFamily: MONO }}>
+                            {nz.selectedDn} · {nz.flangeRating}
                           </td>
-                          <td style={{ padding: '5px 7px', textAlign: 'right', fontFamily: MONO }}>{nz.massFlowKgH.toLocaleString()}</td>
-                          <td style={{ padding: '5px 7px', textAlign: 'right', fontFamily: MONO }}>{nz.designVelMS}</td>
-                          <td style={{ padding: '5px 7px', textAlign: 'right', fontFamily: MONO }}>{nz.rhoV2Pa.toLocaleString()}</td>
-                          <td style={{ padding: '5px 7px', textAlign: 'right', fontFamily: MONO, color: '#0F766E' }}>
+                          <td style={{ padding: '5px 6px', textAlign: 'center', fontFamily: MONO }}>{nz.orientationDeg}°</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 900, fontFamily: MONO, color: '#1E3A8A' }}>
+                            +{nz.elevationMm} ({nz.elevationFromBtlMm >= 0 ? '+' : ''}{nz.elevationFromBtlMm})
+                          </td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO }}>{nz.massFlowKgH.toLocaleString()}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO }}>{nz.designVelMS} m/s · {nz.rhoV2Pa.toLocaleString()} Pa</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO, color: '#0F766E' }}>
                             {nz.friedelDpPaPerM !== undefined
                               ? `${nz.friedelDpPaPerM} Pa/m (${nz.estLineDpKpa} kPa)`
                               : '-'}
                           </td>
-                          <td style={{ padding: '5px 7px', textAlign: 'right', fontWeight: 900, color: '#065F46', fontFamily: MONO }}>
-                            {nz.selectedDn}
+                        </tr>
+                      ))}
+                      {designRes.manholes.map((mh) => (
+                        <tr key={mh.tag} style={{ borderBottom: '1px solid #E2E8F0', background: '#FFFBEB' }}>
+                          <td style={{ padding: '5px 6px', fontWeight: 900, color: '#B45309', fontFamily: MONO }}>{mh.tag}</td>
+                          <td style={{ padding: '5px 6px', fontWeight: 700, color: '#78350F' }}>{mh.service}</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'center', fontWeight: 900, color: '#92400E', fontFamily: MONO }}>
+                            {mh.sizeDn} · {mh.flangeRating}
                           </td>
+                          <td style={{ padding: '5px 6px', textAlign: 'center', fontFamily: MONO }}>{mh.orientationDeg}°</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontWeight: 900, fontFamily: MONO, color: '#92400E' }}>
+                            +{mh.elevationMm} (+{mh.elevationFromBtlMm})
+                          </td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO }}>-</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO }}>Manway</td>
+                          <td style={{ padding: '5px 6px', textAlign: 'right', fontFamily: MONO }}>-</td>
                         </tr>
                       ))}
                     </tbody>

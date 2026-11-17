@@ -7,6 +7,9 @@
  */
 
 window.ChemEngSolvers = (function () {
+  function clamp(v, lo, hi) {
+    return Math.min(hi, Math.max(lo, v));
+  }
   function getUnifiedKernel() {
     return (typeof window !== "undefined" && window.__ChemEngUnifiedKernel) ||
       (typeof globalThis !== "undefined" && globalThis.__ChemEngUnifiedKernel) ||
@@ -1193,103 +1196,235 @@ window.ChemEngSolvers = (function () {
       ctx.fillText(`Nt = ${res.N_tubes} EA (OD ${res.do_mm}×${res.tw_mm}t)`, cx - 76, cy + cr + 16);
       ctx.fillText(`Bundle Ø${res.D_bundle_mm} / Shell ID Ø${res.D_shell_mm} (${res.t_shell_mm}t)`, cx - 92, cy + cr + 30);
     } else if (eqType === 'column') {
-      const isPacked = res.colMode === 'absorption' || res.internals === 'packed';
-      // Column Elevation + Internals DWG
-      const tx = 140, ty = 42, tw = 78, th = 225;
-      ctx.strokeStyle = '#e2e8f0';
+      const isAbs = res.colMode === 'absorption';
+      const isPacked = isAbs || res.internals === 'packed';
+      const vs = res.vesselSpec || {};
+      const idMm = vs.idMm || Math.round((res.D_col_m || 1.0) * 1000);
+      const btlMm = vs.btlElMm || (isAbs ? 2800 : 3200);
+      const ttlMm = vs.ttlElMm || (btlMm + Math.round((res.H_tangent_m || 12.0) * 1000));
+      const oalMm = vs.oalElMm || (ttlMm + Math.round(0.25 * idMm) + 450);
+      const hllMm = vs.hllElMm || (btlMm + 1100);
+      const nllMm = vs.nllElMm || (btlMm + 750);
+      const lllMm = vs.lllElMm || (btlMm + 350);
+
+      const tx = 138, tw = 74, gradeY = h - 38, topCrownY = 38;
+      const spanPx = gradeY - topCrownY;
+      const yAtEl = (elMm) => gradeY - (Math.max(0, Math.min(oalMm, elMm)) / Math.max(1000, oalMm)) * spanPx;
+      const btlY = yAtEl(btlMm);
+      const ttlY = yAtEl(ttlMm);
+      const hllY = yAtEl(hllMm);
+      const nllY = yAtEl(nllMm);
+      const lllY = yAtEl(lllMm);
+      const colCx = tx + tw / 2;
+      const headRx = tw / 2;
+      const headRy = Math.max(11, Math.round(tw * 0.24));
+
+      // Centerline
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.45)';
+      ctx.setLineDash([7, 3, 2, 3]);
+      ctx.beginPath(); ctx.moveTo(colCx, topCrownY - 10); ctx.lineTo(colCx, gradeY + 8); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Grade Line & Skirt (EL 0 -> B.T.L.)
+      ctx.strokeStyle = '#94a3b8';
       ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(tx - 12, gradeY); ctx.lineTo(tx + tw + 12, gradeY); ctx.stroke();
+      ctx.lineWidth = 1.8;
       ctx.beginPath();
-      ctx.roundRect(tx, ty, tw, th, 28);
+      ctx.moveTo(tx + 2, btlY); ctx.lineTo(tx - 3, gradeY);
+      ctx.moveTo(tx + tw - 2, btlY); ctx.lineTo(tx + tw + 3, gradeY);
       ctx.stroke();
 
-      // Skirt
-      ctx.strokeRect(tx + 4, ty + th - 10, tw - 8, 34);
+      // Vessel Shell + 2:1 Semi-Ellipsoidal Heads
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(tx, ttlY);
+      ctx.quadraticCurveTo(colCx, ttlY - headRy * 1.45, tx + tw, ttlY);
+      ctx.lineTo(tx + tw, btlY);
+      ctx.quadraticCurveTo(colCx, btlY + headRy * 1.45, tx, btlY);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.10)';
+      ctx.fill();
+      ctx.stroke();
+
+      // Sump LLL/NLL/HLL Levels
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.25)';
+      ctx.fillRect(tx + 2, hllY, tw - 4, Math.max(3, btlY - hllY));
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath(); ctx.moveTo(tx + 2, hllY); ctx.lineTo(tx + tw - 2, hllY); ctx.stroke();
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath(); ctx.moveTo(tx + 2, nllY); ctx.lineTo(tx + tw - 2, nllY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(tx + 2, lllY); ctx.lineTo(tx + tw - 2, lllY); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Left EL Datum Ticks
+      ctx.font = '8.5px "JetBrains Mono", monospace';
+      [
+        ['O.A.L.', oalMm, '#e2e8f0'],
+        ['T.T.L.', ttlMm, '#7dd3fc'],
+        ['HLL', hllMm, '#38bdf8'],
+        ['B.T.L.', btlMm, '#7dd3fc'],
+        ['BASE', 0, '#94a3b8']
+      ].forEach(([lbl, em, clr]) => {
+        const yy = yAtEl(em);
+        ctx.strokeStyle = 'rgba(148,163,184,0.38)';
+        ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(54, yy); ctx.lineTo(tx - 4, yy); ctx.stroke();
+        ctx.fillStyle = clr;
+        ctx.fillText(`${lbl} +${em}`, 8, yy + 3);
+      });
 
       if (isPacked) {
-        // Wire Mesh Mist Eliminator at Top
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.35)';
-        ctx.fillRect(tx + 6, ty + 24, tw - 12, 10);
-        // Liquid Distributor Pipe
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(tx + 10, ty + 44); ctx.lineTo(tx + tw + 35, ty + 44); ctx.stroke();
-        // Packed Beds (1 or 2 beds with cross-hatch)
-        const nBeds = res.N_beds || 1;
-        const bedH = nBeds >= 2 ? 64 : 132;
-        for (let b = 0; b < Math.min(2, nBeds); b++) {
-          const by0 = ty + 54 + b * (bedH + 22);
+        const pk = res.packingDetail;
+        const beds = pk?.beds?.length ? pk.beds : [
+          { bedNo: 1, botElMm: btlMm + Math.round((ttlMm - btlMm) * 0.24), topElMm: ttlMm - 950, heightMm: Math.round((res.H_pack_total_m || 4) * 1000) }
+        ];
+        beds.forEach((b) => {
+          const byTop = yAtEl(b.topElMm);
+          const byBot = yAtEl(b.botElMm);
+          const bh = Math.max(12, byBot - byTop);
           ctx.fillStyle = 'rgba(16, 185, 129, 0.18)';
-          ctx.fillRect(tx + 6, by0, tw - 12, bedH);
+          ctx.fillRect(tx + 5, byTop, tw - 10, bh);
           ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = 1.4;
-          ctx.strokeRect(tx + 6, by0, tw - 12, bedH);
+          ctx.lineWidth = 1.3;
+          ctx.strokeRect(tx + 5, byTop, tw - 10, bh);
           ctx.beginPath();
-          ctx.moveTo(tx + 6, by0); ctx.lineTo(tx + tw - 6, by0 + bedH);
-          ctx.moveTo(tx + tw - 6, by0); ctx.lineTo(tx + 6, by0 + bedH);
+          ctx.moveTo(tx + 5, byTop); ctx.lineTo(tx + tw - 5, byBot);
+          ctx.moveTo(tx + tw - 5, byTop); ctx.lineTo(tx + 5, byBot);
           ctx.stroke();
-        }
-        // Bottom Gas Feed Nozzle
-        ctx.strokeStyle = '#fcd34d';
-        ctx.lineWidth = 2.2;
-        ctx.beginPath(); ctx.moveTo(tx - 48, ty + th - 36); ctx.lineTo(tx, ty + th - 36); ctx.stroke();
-        ctx.fillStyle = '#fcd34d';
-        ctx.font = 'bold 9.5px monospace';
-        ctx.fillText(`GAS IN (${res.gas_kgh ? res.gas_kgh.toFixed(0) + ' kg/h' : 'V_in'})`, tx - 135, ty + th - 40);
+          // Support Plate (bot) & Hold-Down Grid (top)
+          ctx.strokeStyle = '#fbbf24';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath(); ctx.moveTo(tx + 3, byBot); ctx.lineTo(tx + tw - 3, byBot); ctx.stroke();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath(); ctx.moveTo(tx + 3, byTop); ctx.lineTo(tx + tw - 3, byTop); ctx.stroke();
+        });
+        // Demister ME-1 & Top Liquid Distributor LD-1
+        const demEl = pk?.demister?.elevationMm || (ttlMm - 240);
+        const ldEl = pk?.topDistributor?.elevationMm || (beds[0].topElMm + 280);
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.45)';
+        ctx.fillRect(tx + 5, yAtEl(demEl) - 3, tw - 10, 6);
         ctx.fillStyle = '#38bdf8';
-        ctx.fillText(`LIQ IN (${res.liq_kgh ? res.liq_kgh.toFixed(0) + ' kg/h' : 'L_in'})`, tx + tw + 8, ty + 38);
+        ctx.fillRect(tx + 6, yAtEl(ldEl) - 2, tw - 12, 4);
+        if (pk?.redistributors?.items?.length) {
+          pk.redistributors.items.forEach((rd) => {
+            ctx.fillStyle = '#a855f7';
+            ctx.fillRect(tx + 5, yAtEl(rd.elevationMm) - 2, tw - 10, 4);
+          });
+        }
+      } else {
+        // Tray Decks + Alternating Downcomers & Outlet Weirs
+        const trBotEl = hllMm + 900;
+        const trTopEl = ttlMm - 950;
+        const nShow = Math.min(18, Math.max(4, res.N_actual || 10));
+        for (let i = 0; i < nShow; i++) {
+          const frac = nShow === 1 ? 0.5 : i / (nShow - 1);
+          const yy = yAtEl(trTopEl - frac * (trTopEl - trBotEl));
+          const dcL = i % 2 === 0;
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.moveTo(dcL ? tx + 11 : tx + 3, yy);
+          ctx.lineTo(dcL ? tx + tw - 3 : tx + tw - 11, yy);
+          ctx.stroke();
+          if (i < nShow - 1) {
+            ctx.strokeStyle = '#94a3b8';
+            ctx.beginPath();
+            ctx.moveTo(dcL ? tx + 11 : tx + tw - 11, yy);
+            ctx.lineTo(dcL ? tx + 11 : tx + tw - 11, yy + Math.max(3, (yAtEl(trBotEl) - yAtEl(trTopEl)) / nShow - 2));
+            ctx.stroke();
+          }
+        }
+      }
 
-        drawDimLine(ctx, tx + tw + 38, ty, tx + tw + 38, ty + th, `T/T H = ${res.H_tangent_m.toFixed(1)} m (Pack Z = ${res.H_pack_total_m.toFixed(2)} m)`, '#38bdf8');
-        drawDimLine(ctx, tx, ty - 18, tx + tw, ty - 18, `ID Ø${(res.D_col_m * 1000).toFixed(0)} mm`, '#f43f5e');
+      // Exact Nozzles N1..N6 from nozzleSchedule
+      const nzList = res.nozzleSchedule || [];
+      nzList.forEach((nz) => {
+        const ny = yAtEl(nz.elevationMm);
+        if (nz.tag === 'N1') {
+          ctx.strokeStyle = '#7dd3fc';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath(); ctx.moveTo(colCx, ttlY - headRy); ctx.lineTo(colCx, ny - 4); ctx.stroke();
+          ctx.fillStyle = '#7dd3fc';
+          ctx.font = 'bold 8.5px monospace';
+          ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]} (+${nz.elevationMm})`, colCx + 10, ny);
+        } else if (nz.tag === 'N4') {
+          ctx.strokeStyle = '#94a3b8';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath(); ctx.moveTo(colCx, btlY + headRy); ctx.lineTo(colCx, gradeY + 6); ctx.stroke();
+          ctx.fillStyle = '#cbd5e1';
+          ctx.font = 'bold 8.5px monospace';
+          ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]}`, colCx + 10, gradeY + 12);
+        } else if (nz.orientationDeg === 270) {
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath(); ctx.moveTo(tx - 24, ny); ctx.lineTo(tx, ny); ctx.stroke();
+          ctx.fillStyle = '#fcd34d';
+          ctx.font = 'bold 8.5px monospace';
+          ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]} (+${nz.elevationMm})`, tx - 112, ny - 4);
+        } else {
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath(); ctx.moveTo(tx + tw, ny); ctx.lineTo(tx + tw + 22, ny); ctx.stroke();
+          ctx.fillStyle = '#7dd3fc';
+          ctx.font = 'bold 8.5px monospace';
+          ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]} (+${nz.elevationMm})`, tx + tw + 26, ny + 3);
+        }
+      });
 
-        // Right Side Packed Bed Plan View
-        const cx = w - 165, cy = 135, cr = 64;
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 2.2;
-        ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
+      drawDimLine(ctx, tx + tw + 130, ttlY, tx + tw + 130, btlY, `T/T ${(ttlMm - btlMm)}mm`, '#38bdf8');
+      drawDimLine(ctx, tx, topCrownY - 12, tx + tw, topCrownY - 12, `ID Ø${idMm}mm (${vs.wallThicknessMm || 12}t)`, '#f43f5e');
+
+      // Right Side Section A-A Plan View + Engineering Spec Block
+      const cx = w - 165, cy = 122, cr = 58;
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
+
+      if (isPacked) {
+        const pk = res.packingDetail;
         ctx.strokeStyle = '#10b981';
-        ctx.lineWidth = 1.3;
+        ctx.lineWidth = 1.2;
         for (let r = -2; r <= 2; r++) {
           for (let c = -2; c <= 2; c++) {
-            if (Math.hypot(r * 18, c * 18) <= cr - 14) {
-              ctx.beginPath(); ctx.arc(cx + c * 18, cy + r * 18, 6.5, 0, Math.PI * 2); ctx.stroke();
+            if (Math.hypot(r * 16, c * 16) <= cr - 12) {
+              ctx.beginPath(); ctx.arc(cx + c * 16, cy + r * 16, 5.5, 0, Math.PI * 2); ctx.stroke();
             }
           }
         }
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 10px "JetBrains Mono", monospace';
+        ctx.fillText(`SECTION A-A: DISTRIBUTOR & PACKING`, cx - 96, cy - cr - 12);
+        ctx.fillStyle = '#34d399';
+        ctx.font = 'bold 9.2px monospace';
+        ctx.fillText(`${pk?.nominalSize || res.packSpec?.name || 'Packed Bed'}`, cx - 104, cy + cr + 16);
+        ctx.fillText(`Beds: ${res.N_beds}EA (${Math.round((res.H_pack_total_m || 4) * 1000)}mm) | HETP: ${Math.round((res.HETP_m || 0.5) * 1000)}mm`, cx - 104, cy + cr + 30);
         ctx.fillStyle = '#7dd3fc';
-        ctx.fillText(`PACKED BED PLAN VIEW`, cx - 64, cy - cr - 12);
-        ctx.fillText(`${res.packSpec ? res.packSpec.name : 'Packed Bed'}`, cx - 84, cy + cr + 16);
-        ctx.fillText(`Fp=${res.packSpec ? res.packSpec.Fp : 65} m⁻¹ · Flood=${res.flood_pct.toFixed(0)}% · ΔP=${res.dP_total_mbar.toFixed(1)} mbar`, cx - 102, cy + cr + 30);
+        ctx.fillText(`LD-1: ${pk?.topDistributor?.dripPointsPerM2 || 80} pts/m² | RD: ${pk?.redistributors?.count || 0}EA | SP/HD: ${res.N_beds}EA`, cx - 104, cy + cr + 44);
+        ctx.fillText(`Range: ${pk?.opMinPct || 40}~${pk?.opMaxPct || 110}% | Flood=${res.flood_pct.toFixed(0)}% | ΔP=${res.dP_total_mbar.toFixed(1)}mbar`, cx - 104, cy + cr + 58);
       } else {
-        // Trays
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1.2;
-        for (let i = 1; i <= 10; i++) {
-          const y = ty + 24 + (i * (th - 48)) / 11;
-          ctx.beginPath(); ctx.moveTo(tx + 4, y); ctx.lineTo(tx + tw - 4, y); ctx.stroke();
-        }
-        // Feed Nozzle
-        const fy = ty + 24 + (th - 48) * (res.feed_stage_actual / Math.max(1, res.N_actual));
-        ctx.strokeStyle = '#f59e0b';
-        ctx.lineWidth = 2.2;
-        ctx.beginPath(); ctx.moveTo(tx - 45, fy); ctx.lineTo(tx, fy); ctx.stroke();
-        ctx.fillStyle = '#fcd34d';
-        ctx.font = 'bold 10px monospace';
-        ctx.fillText(`FEED #${res.feed_stage_actual} (${res.T_feed_C.toFixed(1)}°C)`, tx - 140, fy - 5);
-
-        drawDimLine(ctx, tx + tw + 35, ty, tx + tw + 35, ty + th, `T/T H = ${res.H_tangent_m.toFixed(1)} m (${res.N_actual} Trays)`, '#38bdf8');
-        drawDimLine(ctx, tx, ty - 18, tx + tw, ty - 18, `ID Ø${(res.D_col_m * 1000).toFixed(0)} mm`, '#f43f5e');
-
-        // Right Side Tray Detail
-        const cx = w - 165, cy = 135, cr = 64;
-        ctx.strokeStyle = '#e2e8f0';
-        ctx.lineWidth = 2.2;
-        ctx.beginPath(); ctx.arc(cx, cy, cr, 0, Math.PI * 2); ctx.stroke();
+        const td = res.trayDetail;
         ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(cx - cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx - cr * 0.72, cy + cr * 0.68); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(cx + cr * 0.72, cy - cr * 0.68); ctx.lineTo(cx + cr * 0.72, cy + cr * 0.68); ctx.stroke();
+        if ((td?.passes || res.trayPasses) >= 2) {
+          ctx.beginPath(); ctx.moveTo(cx - 5, cy - cr * 0.96); ctx.lineTo(cx - 5, cy + cr * 0.96); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(cx + 5, cy - cr * 0.96); ctx.lineTo(cx + 5, cy + cr * 0.96); ctx.stroke();
+        }
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = 'bold 10px "JetBrains Mono", monospace';
+        ctx.fillText(`SECTION A-A: ${td?.passes || res.trayPasses}-PASS TRAY PLAN`, cx - 86, cy - cr - 12);
         ctx.fillStyle = '#7dd3fc';
-        ctx.fillText(`SIEVE TRAY PLAN VIEW`, cx - 58, cy - cr - 12);
-        ctx.fillText(`Spacing: ${(res.H_tangent_m - 3.5) / Math.max(1, res.N_actual) * 1000 | 0} mm | Weir: 50 mm`, cx - 72, cy + cr + 18);
+        ctx.font = 'bold 9.2px monospace';
+        ctx.fillText(`Spacing: ${td?.spacingMm || Math.round((res.traySpacing_m || 0.5) * 1000)}mm | Øh=${td?.holeD_mm || res.holeD_mm}mm | Open=${td?.openAreaPct || res.holeAreaPct}%`, cx - 104, cy + cr + 16);
+        ctx.fillText(`Weir hw=${td?.weirH_mm || res.weirH_mm}mm (Lw=${td?.weirL_mm || 600}mm) | DC=${td?.dcWidthTopMm || 140}/${td?.dcWidthBotMm || 110}mm`, cx - 104, cy + cr + 30);
+        ctx.fillText(`Clearance hap=${td?.dcClearanceMm || 38}mm | ${res.N_actual} Trays (Feed #${res.feed_stage_actual})`, cx - 104, cy + cr + 44);
+        ctx.fillStyle = '#34d399';
+        ctx.fillText(`Range: ${td?.opMinPct || 45}~${td?.opMaxPct || 112}% (${td?.turndownRatio || 2.2}:1) | ΔP=${res.dP_total_mbar.toFixed(1)}mbar`, cx - 104, cy + cr + 58);
       }
     } else if (eqType === 'pump') {
       // API 610 OH2 Process Pump + Motor Skid GA Drawing + Impeller Detail
@@ -2192,6 +2327,11 @@ window.ChemEngSolvers = (function () {
       const eqService = res.equipName || `${res.lkBase.name} / ${res.hkBase.name} Packed Absorption Tower`;
       const costUsd = Math.round(24000 + 2800 * res.H_pack_total_m * Math.pow(res.D_col_m, 1.4));
       const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
+      const vs = res.vesselSpec || {};
+      const pk = res.packingDetail || {};
+      const beds = pk.beds || [];
+      const nzList = res.nozzleSchedule || [];
+      const mhList = res.manholeSchedule || [];
       const absSketchSvg = `
         <svg viewBox="0 0 260 155" style="width:100%;height:145px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="64" y="18" width="44" height="114" rx="14" fill="none" stroke="#e2e8f0" stroke-width="2"/>
@@ -2212,65 +2352,114 @@ window.ChemEngSolvers = (function () {
           <text x="130" y="146" fill="#34d399" font-size="8.5" text-anchor="middle">N_OG=${res.N_OG.toFixed(2)} · HTU_OG=${res.HTU_OG_m.toFixed(2)}m · Z=${res.H_pack_total_m.toFixed(2)}m · Rem=${res.removal_pct.toFixed(2)}%</text>
         </svg>
       `;
+      let lnA = 1;
+      const bedSummary = beds.length
+        ? beds.map((b) => `Bed#${b.bedNo}: ${b.heightMm}mm (EL+${b.botElMm}~+${b.topElMm})`).join(' | ')
+        : `${res.N_beds} Bed(s) × ${(res.H_bed_m * 1000).toFixed(0)}mm`;
+      const rdSummary = (pk.redistributors?.count || 0) > 0
+        ? `${pk.redistributors.count} EA (${pk.redistributors.items.map((x) => `${x.tag}@+${x.elevationMm}`).join(', ')})`
+        : 'None Required (Single Bed)';
+      const nozHtmlAbs = [...nzList, ...mhList.map((m) => ({
+        tag: m.tag, service: m.service, phase: 'Manway', selectedDn: m.sizeDn, flangeRating: m.flangeRating,
+        flowKgH: '-', velMS: '-', elevationMm: m.elevationMm, orientationDeg: m.orientationDeg
+      }))].map((nz) => `
+        <tr>
+          <td class="ln">${lnA++}</td><td class="val-hi">${nz.tag}</td><td colspan="2">${nz.service}</td>
+          <td class="val-hi" colspan="2">${nz.selectedDn} (${nz.flangeRating})</td>
+          <td class="val" style="text-align:center;">${nz.orientationDeg}°</td>
+          <td class="val-hi" colspan="2">EL +${nz.elevationMm} mm</td>
+          <td class="val">${nz.flowKgH !== '-' ? `${nz.flowKgH} kg/h (${nz.velMS} m/s)` : 'Hinged Manway'}</td>
+        </tr>
+      `).join('');
+
       return `
-        ${buildTopSheetHeader('PACKED GAS ABSORPTION / SCRUBBING / DRYING TOWER SPECIFICATION SHEET', eqTag, eqService, `GPDC-${eqTag}`, costKrw, costUsd, dateStr)}
+        ${buildTopSheetHeader('PACKED ABSORPTION / SCRUBBING COLUMN SPECIFICATION DATASHEET (본체 + 패킹 분리 양식)', eqTag, eqService, `GPDC-${eqTag}`, costKrw, costUsd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
-            <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — GAS-LIQUID MASS TRANSFER & PROCESS OPERATING SUMMARY (가스 흡수/세정/건조 공정 사양)</td></tr>
+            <tr class="sec-hdr"><td class="ln">${lnA++}</td><td colspan="9">PART I — COLUMN VESSEL & PROCESS SHELL SPECIFICATION (본체 데이터시트 · PACKED ABSORBER)</td></tr>
             <tr>
-              <td class="ln">2</td><td colspan="2"><b>Gas Stream / Absorbent Liquid</b></td><td colspan="3" class="val-hi">Gas: ${res.lkBase.name} / Liquid: ${res.hkBase.name}</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Gas Stream / Absorbent Liquid</b></td><td colspan="3" class="val-hi">Gas: ${res.lkBase.name} / Liq: ${res.hkBase.name}</td>
               <td colspan="2"><b>Operating Pressure & Temps</b></td><td colspan="2" class="val-hi">${res.P_bar.toFixed(2)} barA · Gas In ${res.T_feed_C.toFixed(1)}°C / Liq In ${res.T_top_C.toFixed(1)}°C</td>
             </tr>
             <tr>
-              <td class="ln">3</td><td colspan="2"><b>Feed Gas / Scrubbing Liquid Flow</b></td><td class="unit-c">kg/h (kmol/h)</td>
-              <td colspan="2" class="val-hi">Gas G = ${res.gas_kgh.toFixed(0)} kg/h (${res.D.toFixed(1)} kmol/h)</td>
-              <td colspan="2"><b>Scrubbing / Drying Liquid Flow</b></td><td colspan="2" class="val-hi">Liquid L = ${res.liq_kgh.toFixed(0)} kg/h (${res.B.toFixed(1)} kmol/h · L/G = ${res.LG_mass_ratio.toFixed(2)})</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Feed Gas / Liquid Flowrate</b></td><td class="unit-c">kg/h (kmol/h)</td>
+              <td colspan="2" class="val-hi">G = ${res.gas_kgh.toFixed(0)} kg/h (${res.D.toFixed(1)} kmol/h)</td>
+              <td colspan="2"><b>Liquid Flowrate & L/G Ratio</b></td><td colspan="2" class="val-hi">L = ${res.liq_kgh.toFixed(0)} kg/h (${res.B.toFixed(1)} kmol/h · L/G=${res.LG_mass_ratio.toFixed(2)})</td>
             </tr>
             <tr>
-              <td class="ln">4</td><td colspan="2"><b>Solute / Moisture Inlet → Outlet</b></td><td class="unit-c">ppm (vol)</td>
-              <td colspan="2" class="val-hi">Inlet y_in = ${res.y_in_ppm.toLocaleString()} ppm → Outlet y_out = ${res.y_out_ppm} ppm</td>
-              <td colspan="2"><b>Removal Efficiency & Absorption</b></td><td colspan="2" class="val-hi" style="color:#34d399;">${res.removal_pct.toFixed(3)} % Removed (${res.m_abs_kgh.toFixed(2)} kg/h · Q = ${res.Qc_kW.toFixed(1)} kW)</td>
-            </tr>
-            <tr class="sec-hdr"><td class="ln">5</td><td colspan="9">SECTION II — ECKERT GPDC HYDRAULICS, MASS TRANSFER (N_OG · HTU_OG) & PACKING INTERNALS</td></tr>
-            <tr>
-              <td class="ln">6</td><td colspan="2"><b>Transfer Units (N_OG) & Height (HTU_OG)</b></td><td class="unit-c">NTU / m</td>
-              <td colspan="4" class="val-hi">Colburn N_OG = ${res.N_OG.toFixed(2)} NTU · Onda HTU_OG = ${res.HTU_OG_m.toFixed(2)} m (Absorption Factor A = ${(1 / Math.max(0.01, 0.12)).toFixed(1)})</td>
-              <td colspan="2" rowspan="6" style="padding:4px;vertical-align:middle;background:#050b18;">${absSketchSvg}</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Solute Inlet → Outlet & Removal</b></td><td class="unit-c">ppm / %</td>
+              <td colspan="2" class="val-hi">${res.y_in_ppm.toLocaleString()} → ${res.y_out_ppm} ppm</td>
+              <td colspan="2"><b>Removal Efficiency & Duty</b></td><td colspan="2" class="val-hi" style="color:#34d399;">${res.removal_pct.toFixed(3)}% (${res.m_abs_kgh.toFixed(2)} kg/h · ${res.Qc_kW.toFixed(1)} kW)</td>
             </tr>
             <tr>
-              <td class="ln">7</td><td colspan="2"><b>Total Packed Bed Height (Z) & Beds</b></td><td class="unit-c">m / Beds</td>
-              <td colspan="4" class="val-hi" style="color:#34d399;">Total Packed Height Z = ${res.H_pack_total_m.toFixed(2)} m (${res.N_beds} Bed × ${res.H_bed_m.toFixed(2)} m/bed · ${res.N_beds > 1 ? (res.N_beds - 1) + ' Liquid Redistributor' : 'Single Bed'})</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Shell ID × T/T Height × Skirt × O.A.L.</b></td><td class="unit-c">mm</td>
+              <td colspan="4" class="val-hi">ID Ø${vs.idMm || Math.round(res.D_col_m * 1000)} × H_T/T ${vs.hTangentMm || Math.round(res.H_tangent_m * 1000)} × Skirt ${vs.skirtHeightMm || 2800} × O.A.L. ${vs.oalElMm || Math.round((res.H_tangent_m + 3.5) * 1000)} mm</td>
+              <td colspan="2" rowspan="5" style="padding:4px;vertical-align:middle;background:#050b18;">${absSketchSvg}</td>
             </tr>
             <tr>
-              <td class="ln">8</td><td colspan="2"><b>Tower Inside Diameter × T/T Height</b></td><td class="unit-c">mm × m</td>
-              <td colspan="4" class="val-hi">ID Ø${(res.D_col_m * 1000).toFixed(0)} mm (${res.D_col_m.toFixed(2)} m) × T/T Height ${res.H_tangent_m.toFixed(1)} m (Cross Area A_col = ${(Math.PI * 0.25 * res.D_col_m * res.D_col_m).toFixed(2)} m²)</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>ASME Design P / T & Wall Thickness</b></td><td class="unit-c">barG / °C / mm</td>
+              <td colspan="4" class="val">${vs.designP_barG || 3.5} barG / ${vs.designT_C || 120}°C · Shell ${vs.wallThicknessMm || 10}t / 2:1 Head ${vs.headThicknessMm || 10}t (CA ${vs.corrAllowanceMm || 2.0}mm)</td>
             </tr>
             <tr>
-              <td class="ln">9</td><td colspan="2"><b>Eckert GPDC Flooding & Gas Velocity</b></td><td class="unit-c">m/s / Pa^0.5</td>
-              <td colspan="4" class="val">F_LV = ${res.FLV.toFixed(3)} · u_op = ${res.u_op.toFixed(2)} m/s (${res.flood_pct.toFixed(0)}% of Flood u_f = ${res.u_flood.toFixed(2)} m/s) · F-Factor = ${res.F_factor.toFixed(2)} Pa^0.5</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Sump Levels (LLL / NLL / HLL EL) & Weight</b></td><td class="unit-c">EL mm / kg</td>
+              <td colspan="4" class="val">LLL +${vs.lllElMm || 3100} / NLL +${vs.nllElMm || 3550} / HLL +${vs.hllElMm || 4000} · Empty ${vs.emptyWeightKg?.toLocaleString() || '-'} / Oper ${vs.operWeightKg?.toLocaleString() || '-'} kg</td>
+            </tr>
+            <tr class="sec-hdr"><td class="ln">${lnA++}</td><td colspan="9">PART II-B — PACKED COLUMN INTERNALS & HARDWARE DATASHEET (패킹 컬럼 데이터시트)</td></tr>
+            <tr>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Packing Category, Model & Size (종류/크기)</b></td><td class="unit-c">Spec</td>
+              <td colspan="4" class="val-hi">${pk.modelName || res.packSpec.name} · Size: ${pk.nominalSize || `${res.packSpec.size_mm} mm`} (${pk.material || res.packSpec.mat})</td>
             </tr>
             <tr>
-              <td class="ln">10</td><td colspan="2"><b>Packing Spec & Liquid Wetting Rate</b></td><td class="unit-c">Spec / m³/m²h</td>
-              <td colspan="4" class="val-hi">${res.packSpec.name} (Fp=${res.packSpec.Fp} m⁻¹, a_p=${res.packSpec.ap} m²/m³, ε=${res.packSpec.void_pct}%) · Wetting Rate L_w = ${res.wetting_rate_m3m2h.toFixed(1)} m³/m²h</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Surface Area (a_p), Void (ε) & Factor (F_p)</b></td><td class="unit-c">m²/m³ / % / m⁻¹</td>
+              <td colspan="2" class="val-hi">a_p = ${res.packSpec.ap} m²/m³ · ε = ${res.packSpec.void_pct}% · F_p = ${res.packSpec.Fp} m⁻¹</td>
+              <td colspan="2"><b>Mass Transfer (N_OG · HTU_OG · HETP)</b></td><td colspan="2" class="val-hi">N_OG = ${res.N_OG.toFixed(2)} · HTU_OG = ${res.HTU_OG_m.toFixed(2)} m · HETP = ${res.HETP_m.toFixed(2)} m</td>
             </tr>
             <tr>
-              <td class="ln">11</td><td colspan="2"><b>Packing ΔP/m, Total ΔP & Shell Material</b></td><td class="unit-c">mbar / Spec</td>
-              <td colspan="4" class="val-hi">ΔP/m = ${res.dP_pack_mbar_m.toFixed(2)} mbar/m · Total Tower ΔP = ${res.dP_total_mbar.toFixed(1)} mbar · Shell: FRP / PVC-Lined CS / Rubber-Lined CS + Ti/PP Demister</td>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Packed Bed Heights & EL (배드높이)</b></td><td class="unit-c">mm / Beds</td>
+              <td colspan="6" class="val-hi" style="color:#34d399;">Total Z = ${(res.H_pack_total_m * 1000).toFixed(0)} mm (${res.H_pack_total_m.toFixed(2)} m, ${res.N_beds} Bed) · ${bedSummary}</td>
             </tr>
+            <tr>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Top Distributor (상부 분배기 LD-1)</b></td><td class="unit-c">pts/m²</td>
+              <td colspan="2" class="val-hi">${pk.topDistributor?.type || 'Gravity Trough Distributor'}</td>
+              <td colspan="2"><b>Drip Density & Elevation</b></td><td colspan="2" class="val-hi">${pk.topDistributor?.dripPointsPerM2 || 80} pts/m² (${pk.topDistributor?.totalDripPoints || '-'} pts) @ EL +${pk.topDistributor?.elevationMm || '-'} mm</td>
+            </tr>
+            <tr>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Liquid Redistributor (재분배기 RD)</b></td><td class="unit-c">EA / EL</td>
+              <td colspan="2" class="val">${rdSummary}</td>
+              <td colspan="2"><b>Mist Eliminator (ME-1)</b></td><td colspan="2" class="val">${pk.demister?.type || 'Wire-Mesh Pad'} (${pk.demister?.thicknessMm || 150}t) @ EL +${pk.demister?.elevationMm || '-'} mm</td>
+            </tr>
+            <tr>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Packing Support Plate (지지판 SP)</b></td><td class="unit-c">EA / % Open</td>
+              <td colspan="2" class="val">${pk.supportPlate?.count || res.N_beds} EA · ${pk.supportPlate?.type || 'Gas-Injection Support Plate'}</td>
+              <td colspan="2"><b>Hold-Down Grid (홀드다운 HD)</b></td><td colspan="2" class="val">${pk.holdDownGrid?.count || res.N_beds} EA · ${pk.holdDownGrid?.type || 'Weighted Hold-Down Grid'}</td>
+            </tr>
+            <tr>
+              <td class="ln">${lnA++}</td><td colspan="2"><b>Operating Window & Wetting (운전범위/적심)</b></td><td class="unit-c">% / m³/m²h</td>
+              <td colspan="2" class="val-hi" style="color:#34d399;">${pk.opMinPct || 40}% ~ ${pk.opMaxPct || 115}% (TD ${pk.turndownRatio || 2.5}:1) · L_w=${res.wetting_rate_m3m2h.toFixed(1)} (MWR ${pk.mwrM3M2H || 1.5})</td>
+              <td colspan="2"><b>GPDC Flood, Dry/Irrig & Total ΔP</b></td><td colspan="2" class="val-hi">Flood ${res.flood_pct.toFixed(1)}% · ΔP=${res.dP_pack_mbar_m.toFixed(2)} mbar/m · Total ${res.dP_total_mbar.toFixed(1)} mbar</td>
+            </tr>
+            <tr class="sec-hdr"><td class="ln">${lnA++}</td><td colspan="9">PART III — NOZZLE & MANHOLE ELEVATION SCHEDULE (노즐·맨홀 규격 및 EL 위치)</td></tr>
+            <tr><td class="ln">-</td><td><b>Tag</b></td><td colspan="2"><b>Service</b></td><td colspan="2"><b>Size & Rating</b></td><td><b>Orient</b></td><td colspan="2"><b>Elevation (Base EL 0)</b></td><td><b>Flow / Vel</b></td></tr>
+            ${nozHtmlAbs}
           </tbody>
         </table>
       `;
     }
 
     // =======================================================================
-    // 3B. DISTILLATION COLUMN (ASME / FRI 25-Row Process Fractionation Sheet!)
+    // 3B. DISTILLATION COLUMN — VESSEL + STRICTLY SEPARATED TRAY / PACKING DATASHEET
     // =======================================================================
     if (eqType === 'column') {
       const isPacked = res.internals === 'packed';
       const costUsd = Math.round(28000 + 2200 * res.N_actual * Math.pow(res.D_col_m, 1.45) * (isPacked ? 1.15 : 1.0));
       const costKrw = Math.round((costUsd * 1380) / 10000) * 10000;
       const eqTag = res.equipTag || 'T-101';
-      const eqService = res.equipName || `${res.lkBase.name} / ${res.hkBase.name} Fractionator (${isPacked ? 'PACKED' : 'TRAYED'})`;
+      const eqService = res.equipName || `${res.lkBase.name} / ${res.hkBase.name} Fractionator (${isPacked ? 'PACKED COLUMN' : 'TRAYED COLUMN'})`;
+      const vs = res.vesselSpec || {};
+      const td = res.trayDetail || {};
+      const pk = res.packingDetail || {};
+      const nzList = res.nozzleSchedule || [];
+      const mhList = res.manholeSchedule || [];
       const colSketchSvg = `
         <svg viewBox="0 0 260 155" style="width:100%;height:145px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
           <rect x="64" y="18" width="44" height="114" rx="14" fill="none" stroke="#e2e8f0" stroke-width="2"/>
@@ -2293,68 +2482,111 @@ window.ChemEngSolvers = (function () {
           <line x1="162" y1="45" x2="162" y2="99" stroke="#10b981" stroke-width="1.5"/>
           <line x1="208" y1="45" x2="208" y2="99" stroke="#10b981" stroke-width="1.5"/>
           <text x="130" y="12" fill="#38bdf8" font-size="9" text-anchor="middle" font-weight="bold">ID Ø${(res.D_col_m*1000).toFixed(0)}mm × H ${res.H_tangent_m.toFixed(1)}m (${isPacked ? `${res.N_beds} Packed Beds` : `${res.N_actual} Trays`})</text>
-          <text x="130" y="146" fill="#34d399" font-size="8.5" text-anchor="middle">${isPacked ? `HETP=${res.HETP_m.toFixed(2)}m · H_pack=${res.H_pack_total_m.toFixed(1)}m` : `Feed #${res.feed_stage_actual}`} · Qc=${res.Qc_kW.toFixed(0)}kW · Qr=${res.Qr_kW.toFixed(0)}kW</text>
+          <text x="130" y="146" fill="#34d399" font-size="8.5" text-anchor="middle">${isPacked ? `HETP=${res.HETP_m.toFixed(2)}m · H_pack=${res.H_pack_total_m.toFixed(1)}m` : `Feed #${res.feed_stage_actual} · ${td.passes || res.trayPasses}-Pass`} · Qc=${res.Qc_kW.toFixed(0)}kW · Qr=${res.Qr_kW.toFixed(0)}kW</text>
         </svg>
       `;
+      let lnC = 1;
+      const bedSummary = (pk.beds || []).length
+        ? pk.beds.map((b) => `Bed#${b.bedNo} (${b.section}): ${b.heightMm}mm @ EL+${b.botElMm}~+${b.topElMm}`).join(' | ')
+        : `${res.N_beds} Beds · H_pack = ${res.H_pack_total_m.toFixed(2)} m`;
+      const rdSummary = (pk.redistributors?.count || 0) > 0
+        ? `${pk.redistributors.count} EA (${pk.redistributors.items.map((x) => `${x.tag}@+${x.elevationMm}`).join(', ')})`
+        : 'None Required';
+      const nozHtmlDist = [...nzList, ...mhList.map((m) => ({
+        tag: m.tag, service: m.service, phase: 'Manway', selectedDn: m.sizeDn, flangeRating: m.flangeRating,
+        flowKgH: '-', velMS: '-', elevationMm: m.elevationMm, orientationDeg: m.orientationDeg
+      }))].map((nz) => `
+        <tr>
+          <td class="ln">${lnC++}</td><td class="val-hi">${nz.tag}</td><td colspan="2">${nz.service}</td>
+          <td class="val-hi" colspan="2">${nz.selectedDn} (${nz.flangeRating})</td>
+          <td class="val" style="text-align:center;">${nz.orientationDeg}°</td>
+          <td class="val-hi" colspan="2">EL +${nz.elevationMm} mm</td>
+          <td class="val">${nz.flowKgH !== '-' ? `${nz.flowKgH} kg/h (${nz.velMS} m/s)` : 'Hinged Manway'}</td>
+        </tr>
+      `).join('');
+
+      const part2Html = isPacked ? `
+        <tr class="sec-hdr"><td class="ln">${lnC++}</td><td colspan="9">PART II-B — PACKED COLUMN INTERNALS & HARDWARE DATASHEET (패킹 컬럼 데이터시트)</td></tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Packing Category, Model & Size (패킹 종류·크기)</b></td><td class="unit-c">Spec</td>
+          <td colspan="4" class="val-hi">${pk.modelName || res.packSpec.name} · Size: ${pk.nominalSize || `${res.packSpec.size_mm} mm`} (${pk.categoryLabel || res.packSpec.type})</td>
+          <td colspan="2" rowspan="6" style="padding:4px;vertical-align:middle;background:#050b18;">${colSketchSvg}</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Specific Surface (a_p), Void (ε) & F_p</b></td><td class="unit-c">m²/m³ / % / m⁻¹</td>
+          <td colspan="4" class="val">a_p = ${res.packSpec.ap} m²/m³ · ε = ${res.packSpec.void_pct}% · F_p = ${res.packSpec.Fp} m⁻¹ · Mat: ${pk.material || res.packSpec.mat}</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Total Packed Bed Height & HETP (배드높이/HETP)</b></td><td class="unit-c">mm / m</td>
+          <td colspan="4" class="val-hi" style="color:#34d399;">Total Z = ${(res.H_pack_total_m * 1000).toFixed(0)} mm (${res.N_beds} Beds) · Avg HETP = ${(res.HETP_m * 1000).toFixed(0)} mm (${res.HETP_m.toFixed(2)} m) · ${bedSummary}</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Top Liquid Distributor (분배기 LD-1) & Demister</b></td><td class="unit-c">pts/m² / EL</td>
+          <td colspan="4" class="val-hi">${pk.topDistributor?.type || 'Gravity Trough'} (${pk.topDistributor?.dripPointsPerM2 || 100} pts/m², ${pk.topDistributor?.totalDripPoints || '-'} pts @ EL +${pk.topDistributor?.elevationMm || '-'}) · Demister ${pk.demister?.thicknessMm || 150}t @ +${pk.demister?.elevationMm || '-'}</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Redistributors (재분배기), Support & Hold-Down</b></td><td class="unit-c">EA / EL</td>
+          <td colspan="4" class="val">RD: ${rdSummary} · Support Plate: ${pk.supportPlate?.count || res.N_beds}EA (${pk.supportPlate?.freeAreaPct || 86}%) · Hold-Down: ${pk.holdDownGrid?.count || res.N_beds}EA (${pk.holdDownGrid?.freeAreaPct || 92}%)</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Operating Window, Wetting Rate & Pressure Drop</b></td><td class="unit-c">% / mbar</td>
+          <td colspan="4" class="val-hi">${pk.opMinPct || 40}% ~ ${pk.opMaxPct || 115}% (TD ${pk.turndownRatio || 2.5}:1) · L_w=${pk.wettingRateM3M2H || '-'} (MWR ${pk.mwrM3M2H || 0.8}) · Flood ${res.flood_pct.toFixed(1)}% · ΔP=${res.dP_pack_mbar_m.toFixed(2)} mbar/m (Tot ${res.dP_total_mbar.toFixed(1)})</td>
+        </tr>
+      ` : `
+        <tr class="sec-hdr"><td class="ln">${lnC++}</td><td colspan="9">PART II-A — FRACTIONATION TRAY INTERNALS DATASHEET (트레이 컬럼 데이터시트)</td></tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Tray Type & Deck Material / Thickness</b></td><td class="unit-c">Spec / mm</td>
+          <td colspan="4" class="val-hi">${td.trayTypeLabel || res.trayType} · Deck ${td.deckThicknessMm || 3.0} mmt · Stages: N_theo=${res.N_theo.toFixed(1)} → N_act=${res.N_actual} (Feed #${res.feed_stage_actual})</td>
+          <td colspan="2" rowspan="6" style="padding:4px;vertical-align:middle;background:#050b18;">${colSketchSvg}</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Flow Passes (패스 수) & Tray Spacing (단간격)</b></td><td class="unit-c">Pass / mm</td>
+          <td colspan="4" class="val-hi" style="color:#34d399;">${td.passes || res.trayPasses}-Pass Cross-Flow · Tray Spacing = ${td.spacingMm || Math.round(res.traySpacing_m * 1000)} mm · Active Area A_a = ${td.activeAreaM2 || '-'} m² (${td.activeAreaPct || '-'}%)</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Hole / Valve Diameter (홀지름) & Open Area (개공비)</b></td><td class="unit-c">mm / %</td>
+          <td colspan="4" class="val-hi">Ø_h = ${td.holeD_mm || res.holeD_mm} mm · Pitch = ${td.holePitchMm || 15.1} mm (60° Δ) · Open Area = ${td.openAreaPct || res.holeAreaPct}% of A_a (${td.openAreaTowerPct || '-'}% of A_T)</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Outlet Weir Geometry (위어 높이·길이·월류수두)</b></td><td class="unit-c">mm</td>
+          <td colspan="4" class="val">Weir Height h_w = ${td.weirH_mm || res.weirH_mm} mm · Weir Length L_w = ${td.weirL_mm || '-'} mm · Weir Crest h_ow = ${td.weirCrestMm || '-'} mm</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Downcomer Geometry (다운커머 폭·면적·틈새)</b></td><td class="unit-c">mm / %</td>
+          <td colspan="4" class="val-hi">DC Top / Bot Width = ${td.dcWidthTopMm || '-'} / ${td.dcWidthBotMm || '-'} mm · DC Area = ${td.dcAreaPct || 12}% A_T · Apron Clearance h_ap = ${td.dcClearanceMm || 38} mm (Seal +${(td.weirH_mm || 50) - (td.dcClearanceMm || 38)}mm)</td>
+        </tr>
+        <tr>
+          <td class="ln">${lnC++}</td><td colspan="2"><b>Operating Window (운전범위), Flood, Weep & ΔP</b></td><td class="unit-c">% / mbar</td>
+          <td colspan="4" class="val-hi">${td.opMinPct || 45}% ~ ${td.opMaxPct || 112}% (TD ${td.turndownRatio || 2.2}:1) · Flood ${res.flood_pct.toFixed(1)}% · Weep ${res.weep_ratio.toFixed(2)}x · DC Backup ${res.dc_backup_pct.toFixed(1)}% · ΔP/tray ${res.dP_tray_mbar.toFixed(2)} mbar (Tot ${res.dP_total_mbar.toFixed(1)})</td>
+        </tr>
+      `;
+
       return `
-        ${buildTopSheetHeader('PROCESS FRACTIONATION COLUMN & INTERNALS SPECIFICATION SHEET', eqTag, eqService, `FRI-${eqTag}`, costKrw, costUsd, dateStr)}
+        ${buildTopSheetHeader(`PROCESS COLUMN EPC DATASHEET (본체 + ${isPacked ? '패킹' : '트레이'} 엄격 분리)`, eqTag, eqService, `FRI-${eqTag}`, costKrw, costUsd, dateStr)}
         <table class="tema-excel-table">
           <tbody>
-            <tr class="sec-hdr"><td class="ln">1</td><td colspan="9">SECTION I — PROCESS MATERIAL & HEAT BALANCE SUMMARY (탑 물질수지 및 열부하 사양)</td></tr>
+            <tr class="sec-hdr"><td class="ln">${lnC++}</td><td colspan="9">PART I — COLUMN VESSEL & PROCESS SHELL SPECIFICATION (본체 데이터시트 · ${isPacked ? 'PACKED' : 'TRAYED'})</td></tr>
             <tr>
-              <td class="ln">2</td><td colspan="2"><b>Binary System (Light / Heavy Key)</b></td><td colspan="3" class="val-hi">${res.lkBase.name} (LK) / ${res.hkBase.name} (HK)</td>
-              <td colspan="2"><b>Avg. Relative Volatility (α)</b></td><td colspan="2" class="val-hi">α_avg = ${res.alpha.toFixed(3)} ${res.azeotropeX ? `([WARN] Azeotrope @ x≈${res.azeotropeX.toFixed(2)})` : '(NRTL Converged)'}</td>
+              <td class="ln">${lnC++}</td><td colspan="2"><b>Binary System (LK / HK) & α_avg</b></td><td colspan="3" class="val-hi">${res.lkBase.name} / ${res.hkBase.name} (α = ${res.alpha.toFixed(3)})</td>
+              <td colspan="2"><b>Process Flows (F / D / B)</b></td><td colspan="2" class="val-hi">F=${(res.D + res.B).toFixed(1)} / D=${res.D.toFixed(1)} / B=${res.B.toFixed(1)} kmol/h (xD ${res.xD.toFixed(3)}, xB ${res.xB.toFixed(4)})</td>
             </tr>
             <tr>
-              <td class="ln">3</td><td colspan="2"><b>Feed / Distillate / Bottoms Flow</b></td><td class="unit-c">kmol/h</td>
-              <td colspan="2" class="val-hi">F = ${(res.D + res.B).toFixed(1)} / D = ${res.D.toFixed(1)} / B = ${res.B.toFixed(1)}</td>
-              <td colspan="2"><b>Compositions (z_F / x_D / x_B)</b></td><td colspan="2" class="val-hi">${res.zF.toFixed(3)} / ${res.xD.toFixed(3)} / ${res.xB.toFixed(4)} (LK Rec: ${res.lk_recovery_pct.toFixed(1)}%)</td>
+              <td class="ln">${lnC++}</td><td colspan="2"><b>Temperatures & Reflux Ratio</b></td><td class="unit-c">°C / Ratio</td>
+              <td colspan="2" class="val-hi">${res.T_top_C.toFixed(1)} / ${res.T_feed_C.toFixed(1)} / ${res.T_bot_C.toFixed(1)} °C</td>
+              <td colspan="2"><b>R_op & Duties (Qc / Qr)</b></td><td colspan="2" class="val-hi">R=${res.R.toFixed(2)} (Rmin ${res.Rmin.toFixed(2)}) · Qc=${res.Qc_kW.toFixed(1)} / Qr=${res.Qr_kW.toFixed(1)} kW</td>
             </tr>
             <tr>
-              <td class="ln">4</td><td colspan="2"><b>Temperature Profile (Top / Feed / Bot)</b></td><td class="unit-c">°C</td>
-              <td colspan="2" class="val-hi">${res.T_top_C.toFixed(1)} °C / ${res.T_feed_C.toFixed(1)} °C / ${res.T_bot_C.toFixed(1)} °C</td>
-              <td colspan="2"><b>Activity Coeff. (γ₁ Top / γ₂ Bot)</b></td><td colspan="2" class="val">γ₁ = ${res.gamma1_top.toFixed(3)} / γ₂ = ${res.gamma2_bot.toFixed(3)}</td>
+              <td class="ln">${lnC++}</td><td colspan="2"><b>Shell ID × T/T Height × Skirt × O.A.L.</b></td><td class="unit-c">mm</td>
+              <td colspan="6" class="val-hi">ID Ø${vs.idMm || Math.round(res.D_col_m * 1000)} × H_T/T ${vs.hTangentMm || Math.round(res.H_tangent_m * 1000)} × Skirt ${vs.skirtHeightMm || 3200} × O.A.L. ${vs.oalElMm || Math.round((res.H_tangent_m + 3.8) * 1000)} mm (E_o = ${res.E_overall_pct.toFixed(1)}%)</td>
             </tr>
             <tr>
-              <td class="ln">5</td><td colspan="2"><b>Operating Reflux Ratio (R_op / R_min)</b></td><td class="unit-c">Ratio</td>
-              <td colspan="2" class="val-hi">R = ${res.R.toFixed(2)} (R_min = ${res.Rmin.toFixed(2)} · Underwood)</td>
-              <td colspan="2"><b>Internal Traffic (L_rect / V_rect)</b></td><td colspan="2" class="val">L = ${(res.R * res.D).toFixed(1)} / V = ${((res.R + 1) * res.D).toFixed(1)} kmol/h</td>
+              <td class="ln">${lnC++}</td><td colspan="2"><b>ASME Design P / T, Wall t & Sump Levels</b></td><td class="unit-c">barG / EL mm</td>
+              <td colspan="6" class="val">${vs.designP_barG || 3.5} barG / ${vs.designT_C || 140}°C · Shell ${vs.wallThicknessMm || 12}t / Head ${vs.headThicknessMm || 12}t · LLL +${vs.lllElMm || 3500} / NLL +${vs.nllElMm || 3950} / HLL +${vs.hllElMm || 4400} · Empty ${vs.emptyWeightKg?.toLocaleString() || '-'} / Oper ${vs.operWeightKg?.toLocaleString() || '-'} kg</td>
             </tr>
-            <tr>
-              <td class="ln">6</td><td colspan="2"><b>Condenser Duty (응축기 열부하 Qc)</b></td><td class="unit-c">kW</td>
-              <td colspan="2" class="val-hi">${res.Qc_kW.toFixed(1)} kW (${(res.Qc_kW * 0.85985).toFixed(1)} Mcal/h)</td>
-              <td colspan="2"><b>Reboiler Duty (리보일러 열부하 Qr)</b></td><td colspan="2" class="val-hi">${res.Qr_kW.toFixed(1)} kW (${(res.Qr_kW * 0.85985).toFixed(1)} Mcal/h)</td>
-            </tr>
-            <tr class="sec-hdr"><td class="ln">7</td><td colspan="9">SECTION II — STAGE DESIGN, INTERNALS (${isPacked ? 'PACKING GPDC' : 'FRI TRAY HYDRAULICS'}) & MECHANICAL CONSTRUCTION</td></tr>
-            <tr>
-              <td class="ln">8</td><td colspan="2"><b>Min Stages (N_min) / Theoretical (N_th)</b></td><td class="unit-c">Stages</td>
-              <td colspan="4" class="val">Fenske N_min = ${res.Nmin.toFixed(2)} / Gilliland N_th = ${res.N_theo.toFixed(1)} (Overall Eff E_o = ${res.E_overall_pct.toFixed(1)}%)</td>
-              <td colspan="2" rowspan="7" style="padding:4px;vertical-align:middle;background:#050b18;">${colSketchSvg}</td>
-            </tr>
-            <tr>
-              <td class="ln">9</td><td colspan="2"><b>${isPacked ? 'Packed Height & Bed Split' : 'Actual Trays (N_act) & Feed Stage'}</b></td><td class="unit-c">${isPacked ? 'm / Beds' : 'Trays'}</td>
-              <td colspan="4" class="val-hi" style="color:#34d399;">${isPacked ? `Total Packed Height = ${res.H_pack_total_m.toFixed(2)} m (${res.N_beds} Beds · HETP = ${res.HETP_m.toFixed(2)} m · ${res.N_beds - 1} Redistributors)` : `Total ${res.N_actual} Trays (${res.internalsSummary}) · Optimal Feed Tray: #${res.feed_stage_actual}`}</td>
-            </tr>
-            <tr>
-              <td class="ln">10</td><td colspan="2"><b>Column Inside Diameter × T/T Height</b></td><td class="unit-c">mm × m</td>
-              <td colspan="4" class="val-hi">ID Ø${(res.D_col_m * 1000).toFixed(0)} mm (${res.D_col_m.toFixed(2)} m) × Height ${res.H_tangent_m.toFixed(1)} m (HETP = ${res.HETP_m.toFixed(2)} m)</td>
-            </tr>
-            <tr>
-              <td class="ln">11</td><td colspan="2"><b>Vapor F-Factor / Superficial Velocity</b></td><td class="unit-c">Pa^0.5 / m/s</td>
-              <td colspan="4" class="val">F_s = ${res.F_factor.toFixed(2)} Pa^0.5 · u_op = ${res.u_op.toFixed(2)} m/s (Flood Velocity u_flood = ${res.u_flood.toFixed(2)} m/s)</td>
-            </tr>
-            <tr>
-              <td class="ln">12</td><td colspan="2"><b>${isPacked ? 'Packing Factor (Fp) & Surface (ap)' : '4-Zone Stability (Weep / Downcomer)'}</b></td><td class="unit-c">${isPacked ? 'm⁻¹ / m²/m³' : 'Ratio / %'}</td>
-              <td colspan="4" class="val-hi">${isPacked ? `Fp = ${res.packSpec.Fp} m⁻¹ · Surface Area a_p = ${res.packSpec.ap} m²/m³ · Void Fraction ε = ${res.packSpec.void_pct}%` : `Weep Safety Ratio = ${res.weep_ratio.toFixed(2)}x (≥1.15) · Downcomer Backup = ${res.dc_backup_pct.toFixed(1)}% (≤50%)`}</td>
-            </tr>
-            <tr>
-              <td class="ln">13</td><td colspan="2"><b>${isPacked ? 'Packing ΔP/m & Total Column ΔP' : 'Tray Pressure Drop & Total Column ΔP'}</b></td><td class="unit-c">mbar</td>
-              <td colspan="4" class="val-hi">${isPacked ? `Specific ΔP = ${res.dP_pack_mbar_m.toFixed(2)} mbar/m` : `ΔP/tray = ${res.dP_tray_mbar.toFixed(2)} mbar`} · Total Column ΔP = ${res.dP_total_mbar.toFixed(1)} mbar (${(res.dP_total_mbar / 1000).toFixed(3)} bar)</td>
-            </tr>
-            <tr>
-              <td class="ln">14</td><td colspan="2"><b>Shell Material / Internals Spec</b></td><td class="unit-c">Spec</td>
-              <td colspan="4" class="val">Shell: ASME SA-516 Gr.70 (CA 3.0mm) · Internals: ${res.internalsSummary}</td>
-            </tr>
+            ${part2Html}
+            <tr class="sec-hdr"><td class="ln">${lnC++}</td><td colspan="9">PART III — NOZZLE & MANHOLE ELEVATION SCHEDULE (노즐·맨홀 규격 및 EL 위치)</td></tr>
+            <tr><td class="ln">-</td><td><b>Tag</b></td><td colspan="2"><b>Service</b></td><td colspan="2"><b>Size & Rating</b></td><td><b>Orient</b></td><td colspan="2"><b>Elevation (Base EL 0)</b></td><td><b>Flow / Vel</b></td></tr>
+            ${nozHtmlDist}
           </tbody>
         </table>
       `;
