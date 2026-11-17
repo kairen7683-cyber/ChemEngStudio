@@ -49,4 +49,8 @@
 
 - **보류된 과제**:
   - `lib/calculations/rigorousDistillation.ts` (`solveInnerMeshColumn`, `runMeshAt`)에서 측류 인출(`SL[j]`, `SV[j]`) 활성 시 일부 단의 `sum(xRaw)` 이탈로 인한 조기 수렴 판정·프로브 오차 보정
+  - **타임아웃·에러 방지 설계 반영**:
+    - 물리적 가능 범위 사전 체크 (`D + S`가 피드·내부 L/V 트래픽 한계를 넘으면 솔버 진입 전 차단/경고)
+    - 외부 순도/회수율 역산 루프에서 직전 해(`T`, `x`, `V`) **Warm-Start** 재사용으로 반복 수 및 계산 시간 단축
+    - 시간 상한(Time Budget) 초과 시 에러 중단 대신 **최선 근접 수렴 해 + 안내 상태** 안전 반환
   - `scripts/validation/sideCutDistillationValidation.ts` 및 전체 회귀/수렴 테스트 통과 확인
