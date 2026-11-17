@@ -364,6 +364,10 @@ function scoreDistillResult(r: DistillSolveResult): number {
   };
   addSpecPen(r.spec1Status);
   addSpecPen(r.spec2Status);
+  if (r.sideCutSpecStatus && !r.sideCutSpecStatus.met) {
+    const relSc = r.sideCutSpecStatus.errorAbs / Math.max(1, Math.abs(r.sideCutSpecStatus.target));
+    pen += 90 + relSc * 350;
+  }
   if (r.actualRefluxRatio > 25) {
     pen += Math.min(400, (r.actualRefluxRatio - 25) * 10);
   }
@@ -442,6 +446,17 @@ function prepareDistillFixContext(
     initSlots.includes('top_spec') &&
     initSlots.includes('bot_spec');
   const steps: DistillCandidateStep[] = [];
+
+  // 0-sc) 사이드컷 목표 품질 미달 시 최적 인출단 자동탐색 활성화
+  if (initialParams.sideCut?.enabled && solvedBefore.sideCutSpecStatus && !solvedBefore.sideCutSpecStatus.met) {
+    steps.push({
+      label: '사이드컷(측류) 최적 인출단 자동탐색으로 측류 목표 품질 달성',
+      progressText: '사이드컷 피크 순도 인출단 자동탐색 중...',
+      buildPatch: (curP) => ({
+        sideCut: curP.sideCut ? { ...curP.sideCut, autoOptimizeStage: true } : curP.sideCut,
+      }),
+    });
+  }
 
   // 0) 2개 품질 스펙(탑정+탑저) 동시 지정 시 단수(N)·공급단(Nf)·환류비·유량 AI 다중후보 자동최적화 최우선 활성화
   if (isDualQualitySpec) {

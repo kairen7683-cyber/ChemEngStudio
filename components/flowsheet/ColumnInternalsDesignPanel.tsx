@@ -307,6 +307,18 @@ export default function ColumnInternalsDesignPanel({
                   <td style={tdV}>{designRes.estimatedDryWeightTon} / {(mech.operatingWeightKN / 9.80665).toFixed(1)} / {(mech.hydrotestWeightKN / 9.80665).toFixed(1)} t</td>
                   <td style={tdN}>앵커볼트 {mech.anchorBoltCount}×{mech.anchorBoltSize} · 총 설치비 {formatKrwReadable(cost.bareModuleKrw)}</td>
                 </tr>
+                {designRes.sideCutSummary && (
+                  <tr style={{ background: '#F5F3FF' }}>
+                    <td style={{ ...tdL, color: '#5B21B6' }}>Side-Cut Product (S · 측류 인출)</td>
+                    <td style={tdU}>kg/h</td>
+                    <td style={{ ...tdV, color: '#6D28D9' }}>
+                      {designRes.sideCutSummary.massKgH.toLocaleString(undefined, { maximumFractionDigits: 1 })} ({designRes.sideCutSummary.sOverFPct.toFixed(1)}% F)
+                    </td>
+                    <td style={{ ...tdN, color: '#5B21B6', fontWeight: 700 }}>
+                      Stage #{designRes.sideCutSummary.stage} · {designRes.sideCutSummary.phase === 'G' ? 'Vapor (기상)' : 'Liquid (액상)'} · T={designRes.sideCutSummary.tempC.toFixed(1)}°C · {designRes.sideCutSummary.nozzleTag} EL +{designRes.sideCutSummary.elevationMm} mm
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -402,6 +414,27 @@ export default function ColumnInternalsDesignPanel({
                     <td style={tdV}>Flood {sSec.maxFloodPct}% · DC {sSec.maxDcBackupPct}% · {sSec.avgTrayDpMbar} mbar</td>
                     <td style={tdN}>총 ΔP {designRes.totalInternalsDpMbar} mbar · 효율 {designRes.avgChanFairEffPct}%</td>
                   </tr>
+                  {designRes.sideCutSummary && (
+                    <tr style={{ background: '#F5F3FF' }}>
+                      <td style={{ ...tdL, color: '#5B21B6' }}>측류 침니 드로우오프 콜렉터 (Side-Cut Chimney Draw-Off)</td>
+                      <td style={tdU}>Stage / EL</td>
+                      <td style={tdV}>
+                        {designRes.sideCutSummary.stage < simResult.feedStageUsed
+                          ? `Stage #${designRes.sideCutSummary.stage} · EL +${designRes.sideCutSummary.elevationMm} mm`
+                          : '-'}
+                      </td>
+                      <td style={tdV}>
+                        {designRes.sideCutSummary.stage >= simResult.feedStageUsed
+                          ? `Stage #${designRes.sideCutSummary.stage} · EL +${designRes.sideCutSummary.elevationMm} mm`
+                          : '-'}
+                      </td>
+                      <td style={{ ...tdN, color: '#5B21B6', fontWeight: 700 }}>
+                        {designRes.sideCutSummary.phase === 'G'
+                          ? `기상 측류 배플 (${designRes.sideCutSummary.nozzleTag} @ 90°)`
+                          : `침니 트레이 섬프 (+600mm 여유 · ${designRes.sideCutSummary.nozzleTag} @ 90°)`}
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -482,6 +515,18 @@ export default function ColumnInternalsDesignPanel({
                     <td style={tdV}>{designRes.operatingLoadMinPct}% ~ {designRes.operatingLoadMaxPct}% (TD {designRes.minTurndownRatio}:1)</td>
                     <td style={tdN}>적심률 {rSec.avgWettingRateM3M2H}/{sSec.avgWettingRateM3M2H} (MWR {pk.minWettingM3M2H}) · B-S Flood {designRes.maxFloodPct}% · 총 ΔP {designRes.totalInternalsDpMbar} mbar</td>
                   </tr>
+                  {designRes.sideCutSummary && (
+                    <tr style={{ background: '#F5F3FF' }}>
+                      <td style={{ ...tdL, color: '#5B21B6' }}>측류 침니 드로우오프 콜렉터 (Side-Cut Chimney Draw-Off)</td>
+                      <td style={tdU}>Stage / EL</td>
+                      <td style={{ ...tdV, color: '#6D28D9' }}>
+                        Stage #{designRes.sideCutSummary.stage} · EL +{designRes.sideCutSummary.elevationMm} mm
+                      </td>
+                      <td style={{ ...tdN, color: '#5B21B6', fontWeight: 700 }}>
+                        {designRes.sideCutSummary.phase === 'G' ? '기상 측류 인출 배플' : '액상 침니 콜렉터 + 섬프'} · {designRes.sideCutSummary.nozzleTag} ({designRes.sideCutSummary.massKgH.toFixed(1)} kg/h, {designRes.sideCutSummary.phase})
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -537,8 +582,8 @@ export default function ColumnInternalsDesignPanel({
               </thead>
               <tbody>
                 {designRes.nozzles.map((nz) => (
-                  <tr key={nz.nozzleTag} style={{ borderBottom: '1px solid #E2E8F0' }}>
-                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, color: '#4338CA', fontFamily: MONO }}>{nz.nozzleTag}</td>
+                  <tr key={nz.nozzleTag} style={{ borderBottom: '1px solid #E2E8F0', background: nz.nozzleTag === 'N7' ? '#F5F3FF' : undefined }}>
+                    <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, color: nz.nozzleTag === 'N7' ? '#7C3AED' : '#4338CA', fontFamily: MONO }}>{nz.nozzleTag}</td>
                     <td style={{ padding: '4px 7px' }}>{nz.service}</td>
                     <td style={{ padding: '4px 7px', textAlign: 'center', fontWeight: 900, fontFamily: MONO }}>{nz.selectedDn}</td>
                     <td style={{ padding: '4px 7px', textAlign: 'center', fontFamily: MONO }}>{nz.flangeRating}</td>
@@ -611,6 +656,11 @@ export default function ColumnInternalsDesignPanel({
       { label: 'T.T.L.', mm: elMap.ttlElMm, color: '#1D4ED8' },
       { label: isTray ? 'Top Tray' : 'Bed #1 Top', mm: elMap.rectTopElMm, color: '#0F766E' },
       { label: 'Feed N3', mm: elMap.feedNozzleElMm, color: '#B91C1C' },
+      ...(designRes.sideCutSummary &&
+      elMap.sideCutNozzleElMm !== undefined &&
+      Math.abs(elMap.sideCutNozzleElMm - elMap.feedNozzleElMm) >= 350
+        ? [{ label: 'SIDE N7', mm: elMap.sideCutNozzleElMm, color: '#7C3AED' }]
+        : []),
       { label: isTray ? 'Bot Tray' : 'Strip Bot', mm: elMap.stripBotElMm, color: '#0F766E' },
       { label: 'HLL', mm: elMap.hllElMm, color: '#0369A1' },
       { label: 'B.T.L.', mm: elMap.btlElMm, color: '#1D4ED8' },
@@ -775,6 +825,26 @@ export default function ColumnInternalsDesignPanel({
           </>
         )}
 
+        {/* 측류 침니 드로우오프 콜렉터 (Side-Cut Chimney Draw-Off) */}
+        {designRes.sideCutSummary && elMap.sideCutNozzleElMm !== undefined && (() => {
+          const scEl = elMap.sideCutNozzleElMm!;
+          const scY = yPx(scEl);
+          const inRect = scEl >= elMap.rectBotElMm;
+          const scL = inRect ? rectLeft : stripLeft;
+          const scR = inRect ? rectRight : stripRight;
+          const scW = inRect ? rectPxW : stripPxW;
+          return (
+            <g>
+              <rect x={scL + 3} y={scY - 4} width={scW - 6} height={8} fill="#EDE9FE" stroke="#7C3AED" strokeWidth={1.3} />
+              <line x1={scL + 3} y1={scY + 4} x2={scR - 3} y2={scY + 4} stroke="#7C3AED" strokeWidth={1.8} />
+              <rect x={scL + scW * 0.24} y={scY - 10} width={5} height={10} fill="#7C3AED" />
+              <line x1={scL + scW * 0.24 - 2.5} y1={scY - 11.5} x2={scL + scW * 0.24 + 7.5} y2={scY - 11.5} stroke="#7C3AED" strokeWidth={1.5} />
+              <rect x={scL + scW * 0.56} y={scY - 10} width={5} height={10} fill="#7C3AED" />
+              <line x1={scL + scW * 0.56 - 2.5} y1={scY - 11.5} x2={scL + scW * 0.56 + 7.5} y2={scY - 11.5} stroke="#7C3AED" strokeWidth={1.5} />
+            </g>
+          );
+        })()}
+
         {/* 맨홀 M1..M3 */}
         {designRes.manholes.map((mh) => (
           <g key={mh.tag}>
@@ -811,7 +881,7 @@ export default function ColumnInternalsDesignPanel({
           const isLeft = nz.orientationDeg === 270;
           const xEdge = ny <= rectBotY ? (isLeft ? rectLeft : rectRight) : (isLeft ? stripLeft : stripRight);
           const xOut = isLeft ? xEdge - 24 : xEdge + 24;
-          const clr = nz.nozzleTag === 'N3' ? '#DC2626' : nz.nozzleTag === 'N2' ? '#059669' : '#B91C1C';
+          const clr = nz.nozzleTag === 'N7' ? '#7C3AED' : nz.nozzleTag === 'N3' ? '#DC2626' : nz.nozzleTag === 'N2' ? '#059669' : '#B91C1C';
           return (
             <g key={nz.nozzleTag}>
               <line x1={xEdge} y1={ny} x2={xOut} y2={ny} stroke={clr} strokeWidth={2.2} />
@@ -959,7 +1029,7 @@ export default function ColumnInternalsDesignPanel({
           • 공탑/운전/만수 중량: {designRes.estimatedDryWeightTon} / {(mech.operatingWeightKN / 9.80665).toFixed(1)} / {(mech.hydrotestWeightKN / 9.80665).toFixed(1)} ton
         </text>
         <text x={490} y={392} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
-          • 주요 노즐: N1 {nzByTag.N1?.selectedDn.split(' ')[0]} · N2 {nzByTag.N2?.selectedDn.split(' ')[0]} · N3 {nzByTag.N3?.selectedDn.split(' ')[0]} · N4 {nzByTag.N4?.selectedDn.split(' ')[0]}
+          • 주요 노즐: N1 {nzByTag.N1?.selectedDn.split(' ')[0]} · N2 {nzByTag.N2?.selectedDn.split(' ')[0]} · N3 {nzByTag.N3?.selectedDn.split(' ')[0]} · N4 {nzByTag.N4?.selectedDn.split(' ')[0]}{nzByTag.N7 ? ` · N7 ${nzByTag.N7.selectedDn.split(' ')[0]}` : ''}
         </text>
         <text x={490} y={409} fontSize={9.1} fontWeight={700} fill="#334155" fontFamily={MONO}>
           • 리보일러 노즐: N5 {nzByTag.N5?.selectedDn.split(' ')[0]} (+{nzByTag.N5?.elevationMm}) · N6 {nzByTag.N6?.selectedDn.split(' ')[0]} (+{nzByTag.N6?.elevationMm})

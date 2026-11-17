@@ -15,12 +15,15 @@ import {
   type DistillFeedInput,
   type DistillReboilerType,
   type DistillRefluxDesignMode,
+  type DistillSideCutConfig,
   type DistillSolveResult,
   type DistillSpecMetric,
   type DistillSplitSpecType,
   type DistillStageInputBasis,
   type DistillThermoModel,
   type DistillTopSpecType,
+  type SideCutPhase,
+  type SideCutSpecType,
 } from '@/lib/calculations/rigorousDistillation';
 import {
   COMP_META,
@@ -83,6 +86,45 @@ const DEFAULT_SPEC2: DistillDesignSpec = {
   varyMin: 0.5,
   varyMax: 15.0,
 };
+
+const SIDECUT_SPEC_OPTIONS: Array<{
+  value: SideCutSpecType;
+  label: string;
+  unit: string;
+  step: number;
+  min: number;
+  max: number;
+}> = [
+  { value: 'mass_kgh', label: '질량유량 지정 S (kg/h)', unit: 'kg/h', step: 10, min: 0.1, max: 1_000_000 },
+  { value: 's_over_f_mass', label: '공급 대비 질량분배비 S/F (wt/wt)', unit: 'wt/wt', step: 0.01, min: 0.005, max: 0.95 },
+  { value: 's_over_f_mole', label: '공급 대비 몰분배비 S/F (mol/mol)', unit: 'mol/mol', step: 0.01, min: 0.005, max: 0.95 },
+  { value: 'draw_ratio', label: '단 내부유량 대비 인출비 (Draw Ratio 0.01~0.85)', unit: 'ratio', step: 0.02, min: 0.01, max: 0.85 },
+  { value: 'purity_wt_pct', label: '측류 목표 성분순도 (wt%) 역산', unit: 'wt%', step: 0.1, min: 0.1, max: 99.999 },
+  { value: 'recovery_pct', label: '측류 목표 성분회수율 (%) 역산', unit: '%', step: 0.5, min: 1, max: 99.9 },
+  { value: 'impurity_ppm', label: '측류 불순물 한계 (ppm) 역산', unit: 'ppm', step: 25, min: 1, max: 200_000 },
+];
+
+const SIDECUT_SPEC_META = Object.fromEntries(
+  SIDECUT_SPEC_OPTIONS.map((opt) => [opt.value, opt])
+) as Record<SideCutSpecType, (typeof SIDECUT_SPEC_OPTIONS)[number]>;
+
+function defaultSideCutSpecValue(specType: SideCutSpecType, feedKgH: number): number {
+  switch (specType) {
+    case 'mass_kgh':
+      return feedKgH > 0 ? Number((feedKgH * 0.15).toFixed(1)) : 100;
+    case 's_over_f_mass':
+    case 's_over_f_mole':
+      return 0.15;
+    case 'draw_ratio':
+      return 0.25;
+    case 'purity_wt_pct':
+      return 95.0;
+    case 'recovery_pct':
+      return 85.0;
+    case 'impurity_ppm':
+      return 500;
+  }
+}
 
 // 차분한 엔지니어링 차트 팔레트 (정상 곡선에서 오류로 오인되는 적색 #DC2626 배제)
 const SERIES_COLORS = [
@@ -425,6 +467,429 @@ export default function DistillationWorkbenchModal({
     });
   };
 
+  const makeDefaultSideCut = (enabled: boolean): DistillSideCutConfig => {
+    const rawTotal = config.totalStages ?? 24;
+    return {
+      id: 'SC-1',
+      enabled,
+      label: '사이드컷 S',
+      stage: Math.max(2, Math.min(rawTotal - 2, Math.round(rawTotal * 0.3))),
+      autoOptimizeStage: false,
+      phase: 'liquid',
+      specType: 's_over_f_mass',
+      specValue: 0.15,
+      targetComp: activeComps[1] ?? activeComps[0],
+    };
+  };
+
+  const sideCutCfg: DistillSideCutConfig = config.sideCut
+    ? { ...makeDefaultSideCut(Boolean(config.sideCut.enabled)), ...config.sideCut }
+    : makeDefaultSideCut(false);
+  const sideCutEnabled = Boolean(config.sideCut?.enabled);
+
+  const toggleSideCutEnabled = () => {
+    if (!config.sideCut) {
+      onChangeConfig({ sideCut: makeDefaultSideCut(true) });
+      return;
+    }
+    onChangeConfig({ sideCut: { ...sideCutCfg, enabled: !sideCutEnabled } });
+  };
+
+  const updateSideCut = (patch: Partial<DistillSideCutConfig>) => {
+    const base = config.sideCut ? sideCutCfg : makeDefaultSideCut(true);
+    onChangeConfig({ sideCut: { ...base, ...patch } });
+  };
+
+  const renderSideCutCard = (mode: 'rigorous_specs' | 'design_stages') => {
+    const maxSideStage = Math.max(2, N - 1);
+    const clampedSideStage = Math.max(2, Math.min(maxSideStage, Math.round(sideCutCfg.stage || 2)));
+    const specMeta = SIDECUT_SPEC_META[sideCutCfg.specType] ?? SIDECUT_SPEC_META.s_over_f_mass;
+    const showTargetComp =
+      Boolean(sideCutCfg.autoOptimizeStage) ||
+      sideCutCfg.specType === 'purity_wt_pct' ||
+      sideCutCfg.specType === 'recovery_pct' ||
+      sideCutCfg.specType === 'impurity_ppm';
+    const scCompOptions =
+      sideCutCfg.targetComp && !activeComps.includes(sideCutCfg.targetComp)
+        ? [sideCutCfg.targetComp, ...activeComps]
+        : activeComps;
+    const effectiveTargetComp = sideCutCfg.targetComp ?? scCompOptions[0] ?? 'H2O';
+    const showSideResultBadge = Boolean(
+      result && (result.sideCutSpecStatus || (result.sideCutMassKgH ?? 0) > 0)
+    );
+
+    return (
+      <div
+        style={{
+          ...cardStyle,
+          border: sideCutEnabled ? '1.5px solid #7C3AED' : '1.5px dashed #C4B5FD',
+          background: sideCutEnabled ? '#FFFFFF' : '#FAF8FF',
+          boxShadow: sideCutEnabled ? '0 1px 4px rgba(124,58,237,0.10)' : undefined,
+        }}
+      >
+        {/* 카드 헤더 */}
+        <div
+          onClick={toggleSideCutEnabled}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            cursor: 'pointer',
+            marginBottom: sideCutEnabled ? 9 : 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: sideCutEnabled ? '#4C1D95' : '#334155' }}>
+              {mode === 'rigorous_specs'
+                ? '⑤ 사이드컷 (측류 인출 · Side-Cut) 변수 설정 [선택 자유도 +1]'
+                : '③ 사이드컷(측류) 동시 인출 옵션 (선택)'}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <label
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                fontSize: 10.8,
+                fontWeight: 800,
+                color: sideCutEnabled ? '#5B21B6' : '#475569',
+                cursor: 'pointer',
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: sideCutEnabled ? '#EDE9FE' : '#FFFFFF',
+                border: sideCutEnabled ? '1px solid #C4B5FD' : '1px solid #CBD5E1',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={sideCutEnabled}
+                onChange={toggleSideCutEnabled}
+                style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
+              />
+              <span>사이드컷(측류, Side-Cut) 인출 활성화</span>
+            </label>
+          </div>
+        </div>
+
+        {sideCutEnabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            {/* 공정 실무 빠른 프리셋 스트립 (정밀모사 탭 ①) */}
+            {mode === 'rigorous_specs' && (
+              <div
+                style={{
+                  padding: '7px 9px',
+                  borderRadius: 7,
+                  background: '#FAF5FF',
+                  border: '1px solid #E9D5FF',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 5,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>빠른 공정 프리셋:</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateSideCut({
+                        stage: Math.min(3, Math.max(2, (config.totalStages ?? 24) - 2)),
+                        autoOptimizeStage: false,
+                        phase: 'liquid',
+                        specType: 's_over_f_mass',
+                        specValue: 0.70,
+                      })
+                    }
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 5,
+                      border: '1px solid #C084FC',
+                      background: '#FFFFFF',
+                      color: '#5B21B6',
+                      fontSize: 10.3,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🧪 파스퇴르 정제품 측류 (상부 3단 액상)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sortedByBp = [...activeComps].sort(
+                        (a, b) => (COMP_CATALOG_META[a]?.tbC ?? 100) - (COMP_CATALOG_META[b]?.tbC ?? 100)
+                      );
+                      const midComp =
+                        sortedByBp.length >= 3
+                          ? sortedByBp[Math.floor(sortedByBp.length / 2)]
+                          : (activeComps[1] ?? activeComps[0]);
+                      const keepCurrent =
+                        sideCutCfg.targetComp &&
+                        sortedByBp.length >= 3 &&
+                        sideCutCfg.targetComp !== sortedByBp[0] &&
+                        sideCutCfg.targetComp !== sortedByBp[sortedByBp.length - 1];
+                      updateSideCut({
+                        autoOptimizeStage: true,
+                        phase: 'liquid',
+                        specType: 's_over_f_mass',
+                        specValue: 0.20,
+                        targetComp: keepCurrent ? sideCutCfg.targetComp : midComp,
+                      });
+                    }}
+                    style={{
+                      padding: '4px 8px',
+                      borderRadius: 5,
+                      border: '1px solid #C084FC',
+                      background: '#FFFFFF',
+                      color: '#5B21B6',
+                      fontSize: 10.3,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🎯 중간비점 농축 측류 (최적단 AI 자동탐색)
+                  </button>
+                </div>
+                <div style={{ fontSize: 10, color: '#6B21A8', lineHeight: 1.35 }}>
+                  💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.
+                </div>
+              </div>
+            )}
+
+            {/* 인출 상(Phase) + 인출 단(Stage) + 최적단 자동탐색 */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.05fr 0.95fr', gap: 8 }}>
+              <div>
+                <label style={labelStyle}>인출 상 (Phase)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+                  {(
+                    [
+                      { id: 'liquid', lbl: '💧 액상 (Liquid — 침니 트레이)' },
+                      { id: 'vapor', lbl: '💨 기상 (Vapor)' },
+                    ] as { id: SideCutPhase; lbl: string }[]
+                  ).map((ph) => {
+                    const active = sideCutCfg.phase === ph.id;
+                    return (
+                      <button
+                        key={ph.id}
+                        type="button"
+                        onClick={() => updateSideCut({ phase: ph.id })}
+                        style={{
+                          padding: '5px 6px',
+                          borderRadius: 6,
+                          border: active ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
+                          background: active ? '#F5F3FF' : '#FFFFFF',
+                          color: active ? '#5B21B6' : '#475569',
+                          fontSize: 10.2,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                        title={ph.lbl}
+                      >
+                        {ph.lbl}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 4 }}>
+                  <label style={{ ...labelStyle, marginBottom: 0 }}>
+                    인출 단번호 (2 ~ {maxSideStage}단)
+                  </label>
+                  {result?.sideCutStageUsed && (
+                    <span
+                      style={{
+                        fontSize: 9.8,
+                        fontWeight: 800,
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        background: '#EDE9FE',
+                        color: '#5B21B6',
+                        fontFamily: MONO,
+                      }}
+                    >
+                      실제 적용: {result.sideCutStageUsed}단
+                      {result.sideCutTempC !== undefined ? ` (${result.sideCutTempC.toFixed(1)}°C)` : ''}
+                    </span>
+                  )}
+                </div>
+                <BufferedNumberInput
+                  syncKey={`${unitTag}-scstage-${mode}-${sideCutCfg.autoOptimizeStage ? 'auto' : 'man'}`}
+                  min={2}
+                  max={maxSideStage}
+                  step={1}
+                  disabled={Boolean(sideCutCfg.autoOptimizeStage)}
+                  value={clampedSideStage}
+                  onValueChange={(v) =>
+                    updateSideCut({
+                      stage: Math.max(2, Math.min(maxSideStage, Math.round(v || 2))),
+                    })
+                  }
+                  onEnterRun={triggerRunSimulation}
+                  style={{
+                    ...inputBaseStyle,
+                    background: sideCutCfg.autoOptimizeStage ? '#F1F5F9' : '#FFFFFF',
+                    color: sideCutCfg.autoOptimizeStage ? '#64748B' : '#1A2F44',
+                    cursor: sideCutCfg.autoOptimizeStage ? 'not-allowed' : 'text',
+                  }}
+                />
+                <label
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    marginTop: 5,
+                    fontSize: 10.5,
+                    fontWeight: 800,
+                    color: '#5B21B6',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(sideCutCfg.autoOptimizeStage)}
+                    onChange={(e) => updateSideCut({ autoOptimizeStage: e.target.checked })}
+                    style={{ width: 13.5, height: 13.5, cursor: 'pointer', accentColor: '#7C3AED' }}
+                  />
+                  <span>✨ 최적 인출단 자동탐색 (피크 농도단)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* 제어 변수(specType) + 목표 수치(specValue) + 기준 성분(targetComp) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile
+                  ? '1fr'
+                  : showTargetComp
+                  ? '1.25fr 0.9fr 0.85fr'
+                  : '1.35fr 0.95fr',
+                gap: 8,
+              }}
+            >
+              <div>
+                <label style={labelStyle}>제어 변수 선택</label>
+                <select
+                  value={sideCutCfg.specType}
+                  onChange={(e) => {
+                    const nextType = e.target.value as SideCutSpecType;
+                    const prevType = sideCutCfg.specType;
+                    const keepVal =
+                      (prevType === 's_over_f_mass' && nextType === 's_over_f_mole') ||
+                      (prevType === 's_over_f_mole' && nextType === 's_over_f_mass');
+                    updateSideCut({
+                      specType: nextType,
+                      specValue: keepVal
+                        ? sideCutCfg.specValue
+                        : defaultSideCutSpecValue(nextType, totalFeedKgH),
+                    });
+                  }}
+                  style={selectBaseStyle}
+                >
+                  {SIDECUT_SPEC_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {showTargetComp && (
+                <div>
+                  <label style={labelStyle}>기준 성분 (Target)</label>
+                  <select
+                    value={effectiveTargetComp}
+                    onChange={(e) => updateSideCut({ targetComp: e.target.value as SimCompKey })}
+                    style={selectBaseStyle}
+                  >
+                    {scCompOptions.map((ck) => (
+                      <option key={ck} value={ck}>
+                        {formatCompOption(ck)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label style={labelStyle}>목표 수치 ({specMeta.unit})</label>
+                <BufferedNumberInput
+                  syncKey={`${unitTag}-scval-${mode}-${sideCutCfg.specType}`}
+                  step={specMeta.step}
+                  min={specMeta.min}
+                  max={specMeta.max}
+                  value={sideCutCfg.specValue}
+                  onValueChange={(v) => updateSideCut({ specValue: v })}
+                  onEnterRun={triggerRunSimulation}
+                  style={inputBaseStyle}
+                />
+                {sideCutCfg.specType === 's_over_f_mass' && totalFeedKgH > 0 && (
+                  <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, fontFamily: MONO }}>
+                    ≈ {(sideCutCfg.specValue * totalFeedKgH).toFixed(1)} kg/h ({(sideCutCfg.specValue * 100).toFixed(1)}%)
+                  </div>
+                )}
+                {sideCutCfg.specType === 's_over_f_mole' && (
+                  <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, fontFamily: MONO }}>
+                    몰분배 {(sideCutCfg.specValue * 100).toFixed(1)} mol%
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 계산 결과 배지 */}
+            {showSideResultBadge && result && (
+              <div
+                style={{
+                  padding: '6px 9px',
+                  borderRadius: 6,
+                  background: result.sideCutSpecStatus?.met === false ? '#FFFBEB' : '#F5F3FF',
+                  border: result.sideCutSpecStatus?.met === false ? '1px solid #FDE68A' : '1px solid #DDD6FE',
+                  color: result.sideCutSpecStatus?.met === false ? '#92400E' : '#5B21B6',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  fontFamily: MONO,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span>
+                  {result.sideCutSpecStatus?.label
+                    ? result.sideCutSpecStatus.label
+                    : `S = ${(result.sideCutMassKgH ?? 0).toFixed(1)} kg/h (S/F ${((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%)`}
+                </span>
+                {result.sideCutSpecStatus?.label &&
+                  (result.sideCutMassKgH ?? 0) > 0 &&
+                  !result.sideCutSpecStatus.label.includes('S=') && (
+                    <span style={{ color: '#475569', fontWeight: 700 }}>
+                      | S = {result.sideCutMassKgH!.toFixed(1)} kg/h (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%)
+                    </span>
+                  )}
+                {result.sideCutSpecStatus?.label &&
+                  result.sideCutSpecStatus.label.includes('S=') &&
+                  (result.sideCutMassKgH ?? 0) > 0 && (
+                    <span style={{ color: '#475569', fontWeight: 700 }}>
+                      (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%)
+                    </span>
+                  )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderProfileSvg = () => {
     if (!stages.length) {
       return (
@@ -459,6 +924,36 @@ export default function DistillationWorkbenchModal({
 
     const yOfStage = (stNum: number) =>
       padT + ((stNum - 1) / Math.max(1, stages.length - 1)) * plotH;
+
+    const renderSideCutSvgMarker = () => {
+      if (!result?.sideCutStageUsed || (result?.sideCutMassKgH ?? 0) <= 0) return null;
+      const scStage = Math.max(1, Math.min(stages.length, result.sideCutStageUsed));
+      const scY = yOfStage(scStage);
+      const labelY = scY < padT + 14 ? scY + 11 : scY - 4;
+      return (
+        <g>
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={scY}
+            y2={scY}
+            stroke="#7C3AED"
+            strokeWidth={1.6}
+            strokeDasharray="5 3"
+          />
+          <text
+            x={W - padR - 2}
+            y={labelY}
+            fontSize={9.5}
+            textAnchor="end"
+            fill="#7C3AED"
+            fontWeight={800}
+          >
+            {`◀ S 측류 (${result.sideCutStageUsed}단 · ${result.sideCutPhase === 'G' ? '기상' : '액상'} ${result.sideCutMassKgH!.toFixed(1)} kg/h)`}
+          </text>
+        </g>
+      );
+    };
 
     if (rightChart === 'temp') {
       const temps = stages.map((s) => s.tempC);
@@ -498,6 +993,7 @@ export default function DistillationWorkbenchModal({
               </text>
             </g>
           ))}
+          {renderSideCutSvgMarker()}
           <polyline fill="none" stroke="#0284C7" strokeWidth={2.4} points={pts} />
           {stages.map((s) => (
             <circle
@@ -567,6 +1063,7 @@ export default function DistillationWorkbenchModal({
               </text>
             </g>
           ))}
+          {renderSideCutSvgMarker()}
           <polyline fill="none" stroke="#2563EB" strokeWidth={2.3} points={ptsL} />
           <polyline fill="none" stroke="#EA580C" strokeWidth={2.3} strokeDasharray="5 3" points={ptsV} />
           {[0, 0.5, 1].map((f) => {
@@ -625,6 +1122,7 @@ export default function DistillationWorkbenchModal({
               </text>
             </g>
           ))}
+          {renderSideCutSvgMarker()}
 
           {activeComps.map((ck, idx) => {
             const maxStWt = Math.max(
@@ -733,6 +1231,7 @@ export default function DistillationWorkbenchModal({
     contextMode: 'design_stages' | 'dual_spec'
   ) => {
     if (!candidates || candidates.length === 0) return null;
+    const hasSideCutCols = candidates.some((c) => c.sideCutStage !== undefined);
     return (
       <div
         style={{
@@ -779,6 +1278,12 @@ export default function DistillationWorkbenchModal({
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>피드 Nf</th>
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>환류비 RR</th>
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑정 D (kg/h)</th>
+                {hasSideCutCols && (
+                  <>
+                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>측류단</th>
+                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>측류 S/F</th>
+                  </>
+                )}
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>Q_reb (kW)</th>
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑경 (m)</th>
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>상대 TAC</th>
@@ -832,6 +1337,18 @@ export default function DistillationWorkbenchModal({
                       <span style={{ fontSize: 9.2, color: '#64748B' }}>({c.rOverRmin}×)</span>
                     </td>
                     <td style={{ padding: '5px 6px' }}>{c.distillateKgH.toFixed(1)}</td>
+                    {hasSideCutCols && (
+                      <>
+                        <td style={{ padding: '5px 6px', color: '#6D28D9', fontWeight: 800 }}>
+                          {c.sideCutStage ? `${c.sideCutStage}단` : '-'}
+                        </td>
+                        <td style={{ padding: '5px 6px', color: '#6D28D9', fontWeight: 700 }}>
+                          {c.sOverFMass !== undefined
+                            ? `${(c.sOverFMass * 100).toFixed(1)}% (${c.sideCutPurityWtPct ?? '-'}%)`
+                            : '-'}
+                        </td>
+                      </>
+                    )}
                     <td style={{ padding: '5px 6px' }}>{c.reboilerDutyKW.toFixed(0)}</td>
                     <td style={{ padding: '5px 6px' }}>{c.estimatedDiameterM.toFixed(2)}</td>
                     <td
@@ -847,6 +1364,10 @@ export default function DistillationWorkbenchModal({
                       <button
                         type="button"
                         onClick={() => {
+                          const syncedSideCut =
+                            config.sideCut?.enabled && typeof c.sideCutStage === 'number'
+                              ? { sideCut: { ...config.sideCut, stage: c.sideCutStage } }
+                              : {};
                           if (contextMode === 'design_stages') {
                             onChangeConfig({
                               columnCalcMode: 'rigorous_mesh',
@@ -857,6 +1378,7 @@ export default function DistillationWorkbenchModal({
                               topSpecValue: Number(c.refluxRatio.toFixed(3)),
                               splitSpecType: 'd_over_f_mass',
                               splitSpecValue: Number(c.dOverFMass.toFixed(4)),
+                              ...syncedSideCut,
                             });
                           } else {
                             onChangeConfig({
@@ -867,6 +1389,7 @@ export default function DistillationWorkbenchModal({
                               splitSpecType: 'd_over_f_mass',
                               splitSpecValue: Number(c.dOverFMass.toFixed(4)),
                               autoOptimizeStagesOnDualSpec: false,
+                              ...syncedSideCut,
                             });
                           }
                           window.setTimeout(() => triggerRunSimulation(), 30);
@@ -1037,6 +1560,9 @@ export default function DistillationWorkbenchModal({
               {calcMode === 'design_stages' ? '자동산출 이론단 ' : '지정 이론단 '}
               <b>{N}단</b> (실제 약 {actualTrays}단) · 주 피드 {primaryFeedStage}단 · 권장 최적 공급단{' '}
               {recFeedStage}단 · 추정 탑경 Ø{(result?.estimatedDiameterM ?? 1.2).toFixed(2)} m
+              {result?.sideCutStageUsed && (result?.sideCutMassKgH ?? 0) > 1e-4
+                ? ` · 측류 S ${result.sideCutStageUsed}단 (${result.sideCutMassKgH!.toFixed(1)} kg/h)`
+                : ''}
               {lastRunStamp ? ` · 최근 실행 ${lastRunStamp}` : ''}
             </div>
           </div>
@@ -1501,7 +2027,7 @@ export default function DistillationWorkbenchModal({
               >
                 {(
                   [
-                    { id: 'specs', label: `① 운전·품질 조건 선택 (${selectedSlots.length}/2개)` },
+                    { id: 'specs', label: `① 운전·품질 조건 (${selectedSlots.length}/2${config.sideCut?.enabled ? '+측류' : ''})` },
                     { id: 'tower', label: `② 탑 단수·피드단 구성 (N=${N}단)` },
                     { id: 'pressure', label: '③ 압력·열역학·효율' },
                   ] as { id: LeftTabId; label: string }[]
@@ -2024,6 +2550,8 @@ export default function DistillationWorkbenchModal({
                       </div>
                     </div>
 
+                    {renderSideCutCard('design_stages')}
+
                     {/* 섹션 2: 운전 설정 */}
                     <div
                       style={{
@@ -2200,6 +2728,9 @@ export default function DistillationWorkbenchModal({
                                 topSpecValue: Number(result.actualRefluxRatio.toFixed(3)),
                                 splitSpecType: 'd_over_f_mass',
                                 splitSpecValue: Number(result.actualDOverFMass.toFixed(4)),
+                                ...(config.sideCut?.enabled && result.sideCutStageUsed
+                                  ? { sideCut: { ...config.sideCut, stage: result.sideCutStageUsed } }
+                                  : {}),
                               })
                             }
                             style={{
@@ -2264,6 +2795,25 @@ export default function DistillationWorkbenchModal({
                           </div>
                         </div>
 
+                        {(result.sideCutMassKgH ?? 0) > 1e-4 && (
+                          <div
+                            style={{
+                              marginTop: 7,
+                              padding: '5px 9px',
+                              borderRadius: 6,
+                              background: '#F5F3FF',
+                              border: '1px solid #DDD6FE',
+                              color: '#5B21B6',
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              fontFamily: MONO,
+                            }}
+                          >
+                            🟣 사이드컷 측류(S): {result.sideCutStageUsed ?? '-'}단 ({result.sideCutPhase === 'G' ? '기상' : '액상'}) · {result.sideCutMassKgH!.toFixed(1)} kg/h (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%)
+                            {result.sideCutSpecStatus?.label ? ` · ${result.sideCutSpecStatus.label}` : ''}
+                          </div>
+                        )}
+
                         {result.shortcutDesign.candidates && result.shortcutDesign.candidates.length > 0 &&
                           renderCandidateComparisonTable(result.shortcutDesign.candidates, 'design_stages')}
                       </div>
@@ -2293,6 +2843,14 @@ export default function DistillationWorkbenchModal({
                           onChangeConfig({
                             totalStages: nextN,
                             feedStage: Math.min(nextN - 1, Math.max(2, primaryFeedStage)),
+                            ...(config.sideCut
+                              ? {
+                                  sideCut: {
+                                    ...config.sideCut,
+                                    stage: Math.max(2, Math.min(nextN - 1, config.sideCut.stage)),
+                                  },
+                                }
+                              : {}),
                           });
                         }}
                         onEnterRun={triggerRunSimulation}
@@ -2349,6 +2907,156 @@ export default function DistillationWorkbenchModal({
                         조성 정합 기준 권장 공급단: <b>제 {recFeedStage} 단</b>
                       </div>
                     </div>
+                  </div>
+
+                  {/* 동기화된 사이드컷(측류) 단 위치 컴팩트 카드 */}
+                  <div
+                    style={{
+                      ...cardStyle,
+                      padding: '9px 12px',
+                      border: sideCutEnabled ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
+                      background: sideCutEnabled ? '#FAF5FF' : '#FFFFFF',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <label
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          cursor: 'pointer',
+                          fontSize: 11.5,
+                          fontWeight: 900,
+                          color: sideCutEnabled ? '#4C1D95' : '#334155',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={sideCutEnabled}
+                          onChange={toggleSideCutEnabled}
+                          style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
+                        />
+                        <span>사이드컷 (측류 인출 · Side-Cut) 단 위치</span>
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {sideCutEnabled && result?.sideCutStageUsed && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 800,
+                              padding: '1px 7px',
+                              borderRadius: 999,
+                              background: '#EDE9FE',
+                              color: '#5B21B6',
+                              fontFamily: MONO,
+                            }}
+                          >
+                            실제 {result.sideCutStageUsed}단 · {(result.sideCutMassKgH ?? 0).toFixed(1)} kg/h
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setLeftTab('specs')}
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 5,
+                            border: '1px solid #C4B5FD',
+                            background: '#FFFFFF',
+                            color: '#6D28D9',
+                            fontSize: 10,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          변수 상세설정 →
+                        </button>
+                      </div>
+                    </div>
+
+                    {sideCutEnabled && (
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: isMobile ? '1fr' : '1fr 0.85fr 1.15fr',
+                          gap: 8,
+                          marginTop: 8,
+                          alignItems: 'end',
+                        }}
+                      >
+                        <div>
+                          <label style={labelStyle}>인출 상 (Phase)</label>
+                          <select
+                            value={sideCutCfg.phase}
+                            onChange={(e) =>
+                              updateSideCut({ phase: e.target.value as SideCutPhase })
+                            }
+                            style={selectBaseStyle}
+                          >
+                            <option value="liquid">💧 액상 (Liquid)</option>
+                            <option value="vapor">💨 기상 (Vapor)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>인출 단 (2 ~ {Math.max(2, N - 1)})</label>
+                          <BufferedNumberInput
+                            syncKey={`${unitTag}-scstage-tower-${sideCutCfg.autoOptimizeStage ? 'auto' : 'man'}`}
+                            min={2}
+                            max={Math.max(2, N - 1)}
+                            step={1}
+                            disabled={Boolean(sideCutCfg.autoOptimizeStage)}
+                            value={Math.max(
+                              2,
+                              Math.min(Math.max(2, N - 1), Math.round(sideCutCfg.stage || 2))
+                            )}
+                            onValueChange={(v) =>
+                              updateSideCut({
+                                stage: Math.max(
+                                  2,
+                                  Math.min(Math.max(2, N - 1), Math.round(v || 2))
+                                ),
+                              })
+                            }
+                            onEnterRun={triggerRunSimulation}
+                            style={{
+                              ...inputBaseStyle,
+                              background: sideCutCfg.autoOptimizeStage ? '#F1F5F9' : '#FFFFFF',
+                              color: sideCutCfg.autoOptimizeStage ? '#64748B' : '#1A2F44',
+                            }}
+                          />
+                        </div>
+                        <div style={{ paddingBottom: 5 }}>
+                          <label
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              fontSize: 10.5,
+                              fontWeight: 800,
+                              color: '#5B21B6',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(sideCutCfg.autoOptimizeStage)}
+                              onChange={(e) =>
+                                updateSideCut({ autoOptimizeStage: e.target.checked })
+                              }
+                              style={{ width: 13.5, height: 13.5, cursor: 'pointer', accentColor: '#7C3AED' }}
+                            />
+                            <span>✨ 최적 인출단 자동탐색</span>
+                          </label>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
@@ -2952,6 +3660,9 @@ export default function DistillationWorkbenchModal({
                         )}
                       </div>
 
+                      {/* 후보 ⑤ (선택 자유도 +1): 사이드컷 (측류 인출 · Side-Cut) 변수 설정 */}
+                      {renderSideCutCard('rigorous_specs')}
+
                       {/* ③ 탑정 + ④ 탑저 2개 품질 스펙 동시 지정 시: AI 단수·공급단·환류비·유량 자동 동시최적화 및 후보 비교표 */}
                       {isTopSel && isBotSel && (() => {
                         const autoOptStages = config.autoOptimizeStagesOnDualSpec !== false;
@@ -3228,8 +3939,24 @@ export default function DistillationWorkbenchModal({
                 </div>
               )}
 
-              {/* 하단 고정 요약: 탑정 유출(D) vs 탑저 관출(B) 물질수지 및 순도 표 */}
-              {result && (
+              {/* 하단 고정 요약: 탑정 유출(D) vs 탑저 관출(B) (+ 사이드컷 S) 물질수지 및 순도 표 */}
+              {result && (() => {
+                const sideCutOutMass = result.sideCutMassKgH ?? 0;
+                const hasSideCutOut = sideCutOutMass > 1e-4 && Boolean(result.sideCutFlowsKgH);
+                const scFlows = result.sideCutFlowsKgH;
+                const scCompBreakdown = hasSideCutOut && scFlows
+                  ? [...SIM_COMPS]
+                      .map((ck) => ({
+                        ck,
+                        kgH: scFlows[ck] || 0,
+                        wtPct: sideCutOutMass > 0 ? ((scFlows[ck] || 0) / sideCutOutMass) * 100 : 0,
+                      }))
+                      .filter((item) => item.kgH > 1e-4)
+                      .sort((a, b) => b.kgH - a.kgH)
+                      .slice(0, 4)
+                  : [];
+
+                return (
                 <div style={cardStyle}>
                   <div
                     style={{
@@ -3242,55 +3969,138 @@ export default function DistillationWorkbenchModal({
                     }}
                   >
                     <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                      탑정 유출(D) vs 탑저 관출(B) 물질수지 및 순도 요약
+                      {hasSideCutOut
+                        ? '탑정(D) · 사이드컷(S) · 탑저(B) 물질수지 및 순도 요약'
+                        : '탑정 유출(D) vs 탑저 관출(B) 물질수지 및 순도 요약'}
                     </span>
                     <span style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A', fontFamily: MONO }}>
-                      D = {distTotalKgH.toFixed(1)} kg/h | B = {botTotalKgH.toFixed(1)} kg/h
+                      D = {distTotalKgH.toFixed(1)} kg/h
+                      {hasSideCutOut ? ` | S = ${sideCutOutMass.toFixed(1)} kg/h` : ''}
+                      {` | B = ${botTotalKgH.toFixed(1)} kg/h`}
                       {result.decanterWaterDrawKgH > 0.005
                         ? ` | 💧 디캔터 수분 W = ${result.decanterWaterDrawKgH.toFixed(2)} kg/h`
                         : ''}
                     </span>
                   </div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
-                    <thead>
-                      <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
-                        <th style={{ padding: '5px 8px', textAlign: 'left' }}>성분</th>
-                        <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 D (kg/h)</th>
-                        <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 농도</th>
-                        <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 B (kg/h)</th>
-                        <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 농도</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeComps.map((ck) => {
-                        const dKg = result.distillateFlowsKgH[ck] || 0;
-                        const bKg = result.bottomsFlowsKgH[ck] || 0;
-                        const dWt = distTotalKgH > 0 ? (dKg / distTotalKgH) * 100 : 0;
-                        const bWt = botTotalKgH > 0 ? (bKg / botTotalKgH) * 100 : 0;
-                        return (
-                          <tr key={ck} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                            <td style={{ padding: '5px 8px', fontWeight: 800, color: '#0F172A' }}>
-                              {COMP_META[ck]?.formula ?? ck}
-                            </td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
-                              {dKg.toFixed(2)}
-                            </td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#1D4ED8' }}>
-                              {fmtConc(dWt)}
-                            </td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
-                              {bKg.toFixed(2)}
-                            </td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#0F172A' }}>
-                              {fmtConc(bWt)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+
+                  {hasSideCutOut && (
+                    <div
+                      style={{
+                        marginBottom: 8,
+                        padding: '7px 10px',
+                        borderRadius: 7,
+                        background: '#FAF5FF',
+                        border: '1px solid #DDD6FE',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: 6,
+                        }}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 900, color: '#5B21B6' }}>
+                          🟣 사이드컷 측류 (S)
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: '#4C1D95', fontFamily: MONO }}>
+                          {sideCutOutMass.toFixed(1)} kg/h (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%) ·{' '}
+                          {result.sideCutStageUsed ?? '-'}단 ·{' '}
+                          {result.sideCutTempC !== undefined ? `${result.sideCutTempC.toFixed(1)}°C` : '-'} ·{' '}
+                          {result.sideCutPhase === 'G' ? '기상 (Vapor)' : '액상 (Liquid)'}
+                        </span>
+                      </div>
+                      {scCompBreakdown.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: '#6D28D9' }}>주요 조성:</span>
+                          {scCompBreakdown.map((item) => (
+                            <span
+                              key={item.ck}
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 800,
+                                fontFamily: MONO,
+                                padding: '1px 6px',
+                                borderRadius: 999,
+                                background: '#FFFFFF',
+                                border: '1px solid #E9D5FF',
+                                color: '#4C1D95',
+                              }}
+                            >
+                              {COMP_META[item.ck]?.formula ?? item.ck} {fmtConc(item.wtPct)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                      <thead>
+                        <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
+                          <th style={{ padding: '5px 8px', textAlign: 'left' }}>성분</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 D (kg/h)</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 농도</th>
+                          {hasSideCutOut && (
+                            <>
+                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 S (kg/h)</th>
+                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 농도</th>
+                            </>
+                          )}
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 B (kg/h)</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 농도</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeComps.map((ck) => {
+                          const dKg = result.distillateFlowsKgH[ck] || 0;
+                          const sKg = hasSideCutOut && scFlows ? (scFlows[ck] || 0) : 0;
+                          const bKg = result.bottomsFlowsKgH[ck] || 0;
+                          const dWt = distTotalKgH > 0 ? (dKg / distTotalKgH) * 100 : 0;
+                          const sWt = hasSideCutOut && sideCutOutMass > 0 ? (sKg / sideCutOutMass) * 100 : 0;
+                          const bWt = botTotalKgH > 0 ? (bKg / botTotalKgH) * 100 : 0;
+                          return (
+                            <tr key={ck} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '5px 8px', fontWeight: 800, color: '#0F172A' }}>
+                                {COMP_META[ck]?.formula ?? ck}
+                              </td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
+                                {dKg.toFixed(2)}
+                              </td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#1D4ED8' }}>
+                                {fmtConc(dWt)}
+                              </td>
+                              {hasSideCutOut && (
+                                <>
+                                  <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#5B21B6' }}>
+                                    {sKg.toFixed(2)}
+                                  </td>
+                                  <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#6D28D9' }}>
+                                    {fmtConc(sWt)}
+                                  </td>
+                                </>
+                              )}
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
+                                {bKg.toFixed(2)}
+                              </td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#0F172A' }}>
+                                {fmtConc(bWt)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              )}
+                );
+              })()}
             </div>
           </div>
           )}
@@ -3427,13 +4237,26 @@ export default function DistillationWorkbenchModal({
                     <tbody>
                       {stages.map((st) => {
                         const isFeed = st.stage === primaryFeedStage;
+                        const isSideCut = Boolean(st.isSideCutStage);
+                        const scLiq = st.sideCutLiqKgH ?? 0;
+                        const scVap = st.sideCutVapKgH ?? 0;
+                        const scTooltip = isSideCut
+                          ? `사이드컷 측류 인출: ${
+                              scVap > 0 && scLiq > 0
+                                ? `액상 ${scLiq.toFixed(1)} + 기상 ${scVap.toFixed(1)} kg/h`
+                                : scVap > 0
+                                ? `기상 ${scVap.toFixed(1)} kg/h`
+                                : `액상 ${scLiq.toFixed(1)} kg/h`
+                            }`
+                          : undefined;
                         return (
                           <tr
                             key={st.stage}
+                            title={scTooltip}
                             style={{
-                              background: isFeed ? '#FFFBEB' : 'transparent',
+                              background: isSideCut ? '#F5F3FF' : isFeed ? '#FFFBEB' : 'transparent',
                               borderBottom: '1px solid #F1F5F9',
-                              fontWeight: isFeed ? 800 : 500,
+                              fontWeight: isFeed || isSideCut ? 800 : 500,
                             }}
                           >
                             <td style={{ padding: '4px 7px' }}>
@@ -3445,6 +4268,24 @@ export default function DistillationWorkbenchModal({
                                   : isFeed
                                     ? ' ★F'
                                     : ''}
+                              {isSideCut && (
+                                <span
+                                  title={scTooltip}
+                                  style={{
+                                    marginLeft: 5,
+                                    padding: '1px 5px',
+                                    borderRadius: 999,
+                                    background: '#EDE9FE',
+                                    color: '#6D28D9',
+                                    border: '1px solid #C4B5FD',
+                                    fontSize: 9.2,
+                                    fontWeight: 900,
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  🟣 S측류
+                                </span>
+                              )}
                             </td>
                             <td style={{ padding: '4px 7px', textAlign: 'right' }}>{st.tempC.toFixed(1)}</td>
                             <td style={{ padding: '4px 7px', textAlign: 'right' }}>{st.pressBarA.toFixed(2)}</td>

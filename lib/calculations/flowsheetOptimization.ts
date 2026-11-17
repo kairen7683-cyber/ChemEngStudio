@@ -577,6 +577,9 @@ export type ManipulatedParamKey =
   | 'conversion'
   | 'refluxRatio'
   | 'distillateRateKgH'
+  | 'sideCutRateKgH'
+  | 'sideCutRatioSF'
+  | 'sideCutStage'
   | 'outletPressKgcm2g';
 
 export const DESIGN_SPEC_STREAM_METRIC_LABELS: Record<
@@ -615,6 +618,9 @@ export const MANIPULATED_PARAM_LABELS: Record<
   conversion: { labelKo: '반응 전화율 (0~1)', unit: '-', needsComp: false },
   refluxRatio: { labelKo: '증류 환류비 (Reflux Ratio)', unit: '-', needsComp: false },
   distillateRateKgH: { labelKo: '탑정 유출량 D (kg/h)', unit: 'kg/h', needsComp: false },
+  sideCutRateKgH: { labelKo: '증류 사이드컷 유량 S (kg/h)', unit: 'kg/h', needsComp: false },
+  sideCutRatioSF: { labelKo: '증류 사이드컷 분배비 S/F (0~0.85)', unit: '-', needsComp: false },
+  sideCutStage: { labelKo: '증류 사이드컷 인출단 N_sc (단)', unit: '단', needsComp: false },
   outletPressKgcm2g: { labelKo: '토출/감압 출구압력 (kgf/cm²G)', unit: 'kgf/cm²G', needsComp: false },
 };
 
@@ -837,6 +843,20 @@ export function readManipulatedParam(
       return p.distillConfig?.topSpecValue ?? 2.5;
     case 'distillateRateKgH':
       return p.distillConfig?.splitSpecValue ?? 500;
+    case 'sideCutRateKgH':
+      return p.distillConfig?.sideCut?.enabled && p.distillConfig.sideCut.specType === 'mass_kgh'
+        ? Math.max(0, p.distillConfig.sideCut.specValue ?? 0)
+        : 0;
+    case 'sideCutRatioSF':
+      return p.distillConfig?.sideCut?.enabled && p.distillConfig.sideCut.specType === 's_over_f_mass'
+        ? Math.min(0.85, Math.max(0, p.distillConfig.sideCut.specValue ?? 0))
+        : 0;
+    case 'sideCutStage': {
+      const nSt = Math.max(4, Math.round(p.distillConfig?.totalStages ?? 24));
+      return p.distillConfig?.sideCut?.stage
+        ? Math.max(2, Math.min(nSt - 1, Math.round(p.distillConfig.sideCut.stage)))
+        : Math.max(2, Math.min(nSt - 1, Math.round(nSt * 0.35)));
+    }
     case 'outletPressKgcm2g':
       return p.outletPressKgcm2g ?? 1.0;
     default:
@@ -850,7 +870,15 @@ function cloneNodeDef(n: FlowNodeDef): FlowNodeDef {
     params: {
       ...n.params,
       feedFlowsKgH: n.params.feedFlowsKgH ? { ...n.params.feedFlowsKgH } : undefined,
-      distillConfig: n.params.distillConfig ? { ...n.params.distillConfig } : undefined,
+      distillConfig: n.params.distillConfig
+        ? {
+            ...n.params.distillConfig,
+            sideCut: n.params.distillConfig.sideCut ? { ...n.params.distillConfig.sideCut } : undefined,
+            additionalSideCuts: n.params.distillConfig.additionalSideCuts
+              ? n.params.distillConfig.additionalSideCuts.map(sc => ({ ...sc }))
+              : undefined,
+          }
+        : undefined,
       hxDesignConfig: n.params.hxDesignConfig ? { ...n.params.hxDesignConfig } : undefined,
     },
   };
@@ -959,6 +987,67 @@ export function applyManipulatedParams(
           splitSpecType: 'distillate_kgh',
           splitSpecValue: Math.max(0.01, u),
           activeDofSlots: slots && !slots.includes('split') ? [slots[0] ?? 'rr', 'split'] : slots,
+        };
+        break;
+      }
+      case 'sideCutRateKgH': {
+        const prevCfg: DistillColumnParams = p.distillConfig ?? {};
+        const prevSc = prevCfg.sideCut;
+        const nStages = Math.max(4, Math.round(prevCfg.totalStages ?? 24));
+        const defaultStage = Math.max(2, Math.min(nStages - 1, Math.round(nStages * 0.35)));
+        p.distillConfig = {
+          ...prevCfg,
+          sideCut: {
+            id: prevSc?.id ?? 'SC-1',
+            label: prevSc?.label ?? '사이드컷 S',
+            ...prevSc,
+            enabled: u > 0,
+            stage: prevSc?.stage ?? defaultStage,
+            phase: prevSc?.phase ?? 'liquid',
+            specType: 'mass_kgh',
+            specValue: Math.max(0, u),
+          },
+        };
+        break;
+      }
+      case 'sideCutRatioSF': {
+        const prevCfg: DistillColumnParams = p.distillConfig ?? {};
+        const prevSc = prevCfg.sideCut;
+        const nStages = Math.max(4, Math.round(prevCfg.totalStages ?? 24));
+        const defaultStage = Math.max(2, Math.min(nStages - 1, Math.round(nStages * 0.35)));
+        p.distillConfig = {
+          ...prevCfg,
+          sideCut: {
+            id: prevSc?.id ?? 'SC-1',
+            label: prevSc?.label ?? '사이드컷 S',
+            ...prevSc,
+            enabled: u > 0,
+            stage: prevSc?.stage ?? defaultStage,
+            phase: prevSc?.phase ?? 'liquid',
+            specType: 's_over_f_mass',
+            specValue: Math.min(0.85, Math.max(0, u)),
+          },
+        };
+        break;
+      }
+      case 'sideCutStage': {
+        const prevCfg: DistillColumnParams = p.distillConfig ?? {};
+        const prevSc = prevCfg.sideCut;
+        const nStages = Math.max(4, Math.round(prevCfg.totalStages ?? 24));
+        const clampedStage = Math.max(2, Math.min(nStages - 1, Math.round(u)));
+        p.distillConfig = {
+          ...prevCfg,
+          sideCut: {
+            id: prevSc?.id ?? 'SC-1',
+            label: prevSc?.label ?? '사이드컷 S',
+            ...prevSc,
+            enabled: true,
+            autoOptimizeStage: false,
+            stage: clampedStage,
+            phase: prevSc?.phase ?? 'liquid',
+            specType: prevSc?.specType ?? 's_over_f_mass',
+            specValue: prevSc?.specValue ?? 0.15,
+          },
         };
         break;
       }

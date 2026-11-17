@@ -570,20 +570,105 @@ window.ChemEngSolvers = (function () {
     });
     ctx.stroke();
 
-    // Operating lines
+    // Operating lines (with intermediate segment when Side-Cut S > 0)
     const { zF, xD, xB, R } = res;
     const slopeR = R / (R + 1.0);
     const intR = xD / (R + 1.0);
     const x_int = zF;
     const y_int = slopeR * x_int + intR;
 
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(toX(xD), toY(xD));
-    ctx.lineTo(toX(x_int), toY(y_int));
-    ctx.lineTo(toX(xB), toY(xB));
-    ctx.stroke();
+    const hasSideCut = (res.S || 0) > 0;
+    let x_hi = x_int, y_hi = y_int;
+    let x_lo = x_int, y_lo = y_int;
+    let scMarkX = x_int, scMarkY = y_int;
+
+    if (hasSideCut) {
+      const xS = clamp(res.xS_mol ?? zF, Math.min(xB + 0.01, xD - 0.02), xD - 0.01);
+      const isAboveFeed =
+        (res.sideCutStage && res.feed_stage_actual && res.sideCutStage < res.feed_stage_actual) ||
+        xS >= x_int;
+
+      if (isAboveFeed) {
+        const x_sc = clamp(xS, x_int + 0.01, xD - 0.01);
+        const y_sc = clamp(slopeR * x_sc + intR, x_sc, 0.999);
+        const L_mid = res.sideCutPhase === 'vapor'
+          ? R * res.D
+          : Math.max(0.05 * res.D, R * res.D - res.S);
+        const V_mid = res.sideCutPhase === 'vapor'
+          ? (R + 1.0) * res.D + res.S
+          : (R + 1.0) * res.D;
+        const slopeMid = clamp(L_mid / Math.max(1e-4, V_mid), 0.05, slopeR);
+        const y_int_eff = clamp(y_sc - slopeMid * (x_sc - x_int), xB + 0.01, y_sc - 0.004);
+        x_hi = x_sc; y_hi = y_sc;
+        x_lo = x_int; y_lo = y_int_eff;
+        scMarkX = x_sc; scMarkY = y_sc;
+      } else {
+        const x_sc = clamp(xS, xB + 0.01, x_int - 0.01);
+        const y_int_eff = clamp(y_int, x_int + 0.005, 0.999);
+        const L_mid = R * res.D + (res.q ?? 1.0) * res.F;
+        const V_mid = Math.max(0.1 * res.F, (R + 1.0) * res.D - (1.0 - (res.q ?? 1.0)) * res.F);
+        const slopeMid = clamp(L_mid / Math.max(1e-4, V_mid), 1.0, 5.0);
+        const y_sc = clamp(y_int_eff - slopeMid * (x_int - x_sc), x_sc + 0.004, y_int_eff - 0.004);
+        x_hi = x_int; y_hi = y_int_eff;
+        x_lo = x_sc; y_lo = y_sc;
+        scMarkX = x_sc; scMarkY = y_sc;
+      }
+
+      // Upper Rectifying + Lower Stripping in amber
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(toX(xD), toY(xD));
+      ctx.lineTo(toX(x_hi), toY(y_hi));
+      ctx.moveTo(toX(x_lo), toY(y_lo));
+      ctx.lineTo(toX(xB), toY(xB));
+      ctx.stroke();
+
+      // Intermediate Operating Line Segment in violet
+      ctx.strokeStyle = '#a855f7';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(toX(x_hi), toY(y_hi));
+      ctx.lineTo(toX(x_lo), toY(y_lo));
+      ctx.stroke();
+
+      // Violet Side-Cut 'S' Marker
+      ctx.fillStyle = '#7c3aed';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(toX(scMarkX), toY(scMarkY), 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#c4b5fd';
+      ctx.font = 'bold 10px sans-serif';
+      const lblX = Math.min(toX(0.95) - 54, toX(scMarkX) + 7);
+      const lblY = Math.max(oy + 12, toY(scMarkY) + 12);
+      ctx.fillText(`S (xS=${scMarkX.toFixed(2)})`, lblX, lblY);
+    } else {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(toX(xD), toY(xD));
+      ctx.lineTo(toX(x_int), toY(y_int));
+      ctx.lineTo(toX(xB), toY(xB));
+      ctx.stroke();
+    }
+
+    const opLineY = (nx) => {
+      if (!hasSideCut) {
+        return nx >= x_int
+          ? (slopeR * nx + intR)
+          : (xB + ((y_int - xB) / Math.max(1e-4, x_int - xB)) * (nx - xB));
+      }
+      if (nx >= x_hi) {
+        return y_hi + ((xD - y_hi) / Math.max(1e-4, xD - x_hi)) * (nx - x_hi);
+      }
+      if (nx >= x_lo) {
+        return y_lo + ((y_hi - y_lo) / Math.max(1e-4, x_hi - x_lo)) * (nx - x_lo);
+      }
+      return xB + ((y_lo - xB) / Math.max(1e-4, x_lo - xB)) * (nx - xB);
+    };
 
     // McCabe-Thiele stages
     ctx.strokeStyle = 'rgba(16,185,129,0.85)';
@@ -595,7 +680,7 @@ window.ChemEngSolvers = (function () {
       const nx = cy / Math.max(0.01, res.alpha - (res.alpha - 1.0) * cy);
       ctx.lineTo(toX(nx), toY(cy));
       if (nx <= xB) { ctx.lineTo(toX(nx), toY(nx)); break; }
-      const ny = nx >= x_int ? (slopeR * nx + intR) : (xB + ((y_int - xB) / Math.max(1e-4, x_int - xB)) * (nx - xB));
+      const ny = opLineY(nx);
       ctx.lineTo(toX(nx), toY(ny));
       cx = nx; cy = ny;
     }
@@ -1366,10 +1451,11 @@ window.ChemEngSolvers = (function () {
           ctx.font = 'bold 8.5px monospace';
           ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]} (+${nz.elevationMm})`, tx - 112, ny - 4);
         } else {
-          ctx.strokeStyle = '#38bdf8';
+          const isSideNz = nz.tag === 'N7';
+          ctx.strokeStyle = isSideNz ? '#a855f7' : '#38bdf8';
           ctx.lineWidth = 2.0;
           ctx.beginPath(); ctx.moveTo(tx + tw, ny); ctx.lineTo(tx + tw + 22, ny); ctx.stroke();
-          ctx.fillStyle = '#7dd3fc';
+          ctx.fillStyle = isSideNz ? '#c4b5fd' : '#7dd3fc';
           ctx.font = 'bold 8.5px monospace';
           ctx.fillText(`${nz.tag} ${nz.selectedDn.split(' ')[0]} (+${nz.elevationMm})`, tx + tw + 26, ny + 3);
         }
@@ -2478,6 +2564,7 @@ window.ChemEngSolvers = (function () {
             <line x1="66" y1="102" x2="106" y2="102" stroke="#38bdf8" stroke-width="1"/>
           `}
           <line x1="28" y1="70" x2="64" y2="70" stroke="#f59e0b" stroke-width="2"/>
+          ${(res.S || 0) > 0 ? `<line x1="108" y1="56" x2="132" y2="56" stroke="#a855f7" stroke-width="2"/><text x="134" y="59" fill="#c4b5fd" font-size="8" font-weight="bold">N7 S</text>` : ''}
           <circle cx="185" cy="72" r="36" fill="none" stroke="#38bdf8" stroke-width="1.8"/>
           <line x1="162" y1="45" x2="162" y2="99" stroke="#10b981" stroke-width="1.5"/>
           <line x1="208" y1="45" x2="208" y2="99" stroke="#10b981" stroke-width="1.5"/>
@@ -2568,8 +2655,14 @@ window.ChemEngSolvers = (function () {
             <tr class="sec-hdr"><td class="ln">${lnC++}</td><td colspan="9">PART I — COLUMN VESSEL & PROCESS SHELL SPECIFICATION (본체 데이터시트 · ${isPacked ? 'PACKED' : 'TRAYED'})</td></tr>
             <tr>
               <td class="ln">${lnC++}</td><td colspan="2"><b>Binary System (LK / HK) & α_avg</b></td><td colspan="3" class="val-hi">${res.lkBase.name} / ${res.hkBase.name} (α = ${res.alpha.toFixed(3)})</td>
-              <td colspan="2"><b>Process Flows (F / D / B)</b></td><td colspan="2" class="val-hi">F=${(res.D + res.B).toFixed(1)} / D=${res.D.toFixed(1)} / B=${res.B.toFixed(1)} kmol/h (xD ${res.xD.toFixed(3)}, xB ${res.xB.toFixed(4)})</td>
+              <td colspan="2"><b>Process Flows (${res.S > 0 ? 'F / D / S / B' : 'F / D / B'})</b></td><td colspan="2" class="val-hi">F=${(res.F || (res.D + (res.S || 0) + res.B)).toFixed(1)} / D=${res.D.toFixed(1)}${res.S > 0 ? ` / S=${res.S.toFixed(1)}` : ''} / B=${res.B.toFixed(1)} kmol/h (xD ${res.xD.toFixed(3)}${res.S > 0 ? `, xS ${(res.xS_mol ?? 0).toFixed(3)}` : ''}, xB ${res.xB.toFixed(4)})</td>
             </tr>
+            ${res.S > 0 ? `
+            <tr>
+              <td class="ln">${lnC++}</td><td colspan="2"><b>Side-Cut Product Draw (S · 측류 인출)</b></td><td class="unit-c">kmol/h / mol</td>
+              <td colspan="6" class="val-hi" style="color:#c4b5fd;">S = ${res.S.toFixed(1)} kmol/h (S/F = ${((res.S / Math.max(1e-6, res.F)) * 100).toFixed(1)}%) · x_S = ${(res.xS_mol ?? 0).toFixed(3)} · Stage #${res.sideCutStage || '-'} (${res.sideCutPhase === 'vapor' ? 'Vapor' : 'Liquid'}) · T = ${(res.sideCutTempC ?? res.T_feed_C).toFixed(1)} °C</td>
+            </tr>
+            ` : ''}
             <tr>
               <td class="ln">${lnC++}</td><td colspan="2"><b>Temperatures & Reflux Ratio</b></td><td class="unit-c">°C / Ratio</td>
               <td colspan="2" class="val-hi">${res.T_top_C.toFixed(1)} / ${res.T_feed_C.toFixed(1)} / ${res.T_bot_C.toFixed(1)} °C</td>

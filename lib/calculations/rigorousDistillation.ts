@@ -86,6 +86,48 @@ export type DistillStageInputBasis = 'theoretical' | 'actual_murphree';
 export type DistillDofSlotId = 'rr' | 'split' | 'top_spec' | 'bot_spec';
 export type DistillEndpointBasis = 'purity_wt_pct' | 'impurity_wt_ppm' | 'recovery_pct';
 
+export type SideCutPhase = 'liquid' | 'vapor';
+export type SideCutSpecType =
+  | 'mass_kgh'
+  | 's_over_f_mass'
+  | 's_over_f_mole'
+  | 'draw_ratio'
+  | 'purity_wt_pct'
+  | 'impurity_ppm'
+  | 'recovery_pct';
+
+export interface DistillSideCutConfig {
+  id?: string;
+  enabled: boolean;
+  label?: string;
+  stage: number; // 1-based stage (2 .. N-1)
+  autoOptimizeStage?: boolean;
+  phase: SideCutPhase;
+  specType: SideCutSpecType;
+  specValue: number;
+  targetComp?: SimCompKey;
+}
+
+export interface DistillSideCutDetail {
+  id: string;
+  label: string;
+  stage: number;
+  phase: 'L' | 'G';
+  tempC: number;
+  pressKgcm2g: number;
+  flowsKgH: Record<SimCompKey, number>;
+  totalMassKgH: number;
+  totalMolesKmolH: number;
+}
+
+export interface DistillSideCutSpecStatus {
+  label: string;
+  target: number;
+  actual: number;
+  errorAbs: number;
+  met: boolean;
+}
+
 export interface DistillColumnParams {
   columnCalcMode?: DistillCalcMode;   // 'rigorous_mesh'(단수지정 정밀모사) | 'design_stages'(목표순도 기반 단수·유량 자동설계)
   thermoModel?: DistillThermoModel;
@@ -136,6 +178,9 @@ export interface DistillColumnParams {
   designFixedRR?: number;             // 운전 RR 직접 지정 값 (기본 2.8)
   /** 정밀모사(rigorous_mesh)에서 탑정+탑저 2개 품질스펙 동시 지정 시 단수(N)·공급단(Nf) 자동 동시최적화 허용 여부 (기본 true) */
   autoOptimizeStagesOnDualSpec?: boolean;
+  /** 사이드컷(측류 인출, Side-Cut) 1차 설정 및 추가 다중 측류 설정 */
+  sideCut?: DistillSideCutConfig;
+  additionalSideCuts?: DistillSideCutConfig[];
   // 내장 컬럼 사이징 & 인터널(트레이/충진물·섬프·노즐) 개념디자인 파라미터
   internalsConfig?: ColumnInternalsParams;
 }
@@ -165,6 +210,9 @@ export interface DistillDesignCandidate {
   converged: boolean;
   specsMet: boolean;
   recommended: boolean;
+  sideCutStage?: number;
+  sOverFMass?: number;
+  sideCutPurityWtPct?: number;
 }
 
 /** 기존 프리셋(spec1/spec2)과 신규 4중 택2(activeDofSlots) 간 완전 하위호환 슬롯 해석기 */
@@ -243,6 +291,9 @@ export interface DistillStageProfile {
   xWtPct: Record<SimCompKey, number>;
   yWtPct: Record<SimCompKey, number>;
   isFeedStage?: boolean;
+  isSideCutStage?: boolean;
+  sideCutLiqKgH?: number;
+  sideCutVapKgH?: number;
 }
 
 export interface DistillSpecStatus {
@@ -289,6 +340,17 @@ export interface DistillSolveResult {
   autoStageOptimized?: boolean;
   spec1Status?: DistillSpecStatus;
   spec2Status?: DistillSpecStatus;
+  sideCutFlowsKgH?: Record<SimCompKey, number>;
+  sideCutMassKgH?: number;
+  sideCutMolesKmolH?: number;
+  sideCutPhase?: 'L' | 'G';
+  sideCutTempC?: number;
+  sideCutPressKgcm2g?: number;
+  sideCutStageUsed?: number;
+  actualSOverFMass?: number;
+  actualSOverFMole?: number;
+  sideCutSpecStatus?: DistillSideCutSpecStatus;
+  sideCutDetails?: DistillSideCutDetail[];
   diagnostics: DistillDiagnosticReport;
   stages: DistillStageProfile[];
 }
@@ -1110,6 +1172,28 @@ export function detectBestDistillThermo(
   return rec.method;
 }
 
+interface InnerSideDrawSpec {
+  id: string;
+  label: string;
+  stageIdx: number; // 0-based (1 .. N-2)
+  phase: SideCutPhase;
+  targetMolesKmolH?: number;
+  drawRatio?: number;
+}
+
+interface InnerSideDrawOutput {
+  id: string;
+  label: string;
+  stage: number; // 1-based
+  phase: 'L' | 'G';
+  tempC: number;
+  pressKgcm2g: number;
+  kmolH: Record<SimCompKey, number>;
+  kgH: Record<SimCompKey, number>;
+  totalMassKgH: number;
+  totalMolesKmolH: number;
+}
+
 interface InnerMeshSolution {
   converged: boolean;
   iterations: number;
@@ -1127,6 +1211,8 @@ interface InnerMeshSolution {
   actualBoilupRatio: number;
   actualDOverFMass: number;
   actualDOverFMole: number;
+  sideDraws?: InnerSideDrawOutput[];
+  sideCutClamped?: boolean;
 }
 
 /**
@@ -1148,6 +1234,7 @@ function solveInnerMeshColumn(params: {
   meshMurphreeEff: number;
   refluxRatio: number;
   targetDistillateKmolH: number;
+  sideDraws?: InnerSideDrawSpec[];
   maxIterations?: number;
 }): InnerMeshSolution {
   const {
@@ -1171,7 +1258,6 @@ function solveInnerMeshColumn(params: {
   const maxPossibleDistMol = Math.max(1e-6, totalMolesIn - nonVolMolesIn - 1e-6);
 
   const D = clamp(params.targetDistillateKmolH, 1e-5, maxPossibleDistMol);
-  const B = Math.max(1e-5, totalMolesIn - D);
   const RR = clamp(params.refluxRatio, 0.05, 80.0);
 
   // 비반응 단별 엔탈피 수지용 성분 기준 엔탈피 hRef[c] (25°C 액상 기준):
@@ -1224,26 +1310,132 @@ function solveInnerMeshColumn(params: {
     cumFeedEnthFrom1[j] = runH1;
   }
 
-  // 초기 단별 내부 액상(L_j) / 기상(V_j) 트래픽 구성 (물질수지 V[j+1] - L[j] === D - cumFeedTot[j] 엄밀 만족)
-  const minFlowFloor = Math.max(1e-5, 0.015 * Math.min(D, B));
+  // 사이드컷(측류 인출) 내부 스펙 정규화 (N >= 3 인 경우 내부단 1..N-2 허용)
+  const activeDraws: InnerSideDrawSpec[] =
+    N >= 3 && params.sideDraws?.length
+      ? params.sideDraws
+          .filter(sd => sd.stageIdx >= 0 && ((sd.targetMolesKmolH ?? 0) > 1e-8 || (sd.drawRatio ?? 0) > 1e-5))
+          .map(sd => ({
+            ...sd,
+            stageIdx: clamp(Math.round(sd.stageIdx), 1, N - 2),
+          }))
+      : [];
+
+  const minFlowFloor = Math.max(1e-5, 0.015 * Math.min(D, Math.max(1e-5, totalMolesIn - D)));
+  const minBotFloor = Math.max(minFlowFloor, 0.002 * totalMolesIn);
+  const maxTotSideMol = Math.max(0, totalMolesIn - D - minBotFloor);
+  const SL = new Float64Array(N);
+  const SV = new Float64Array(N);
+  const cumSideDrawTot = new Float64Array(N);
+  const cumSideDrawEnthFrom1 = new Float64Array(N);
+  const drawMoles = new Float64Array(activeDraws.length);
+  let sideCutClamped = false;
+
   const L = new Float64Array(N); // j단에서 j+1단으로 내려가는 액상 (L[N-1] = B)
   const V = new Float64Array(N); // j단에서 j-1단으로 올라가는 기상 (V[0] = 부분응축 기상 D 또는 0)
+  let B = Math.max(minFlowFloor, totalMolesIn - D);
 
+  const rebuildSideDrawSums = (isInitial: boolean, ratioDamp = 0.35) => {
+    if (activeDraws.length === 0) {
+      B = Math.max(minFlowFloor, totalMolesIn - D);
+      L[N - 1] = B;
+      return;
+    }
+    let reqTot = 0;
+    for (let idx = 0; idx < activeDraws.length; idx++) {
+      const d = activeDraws[idx];
+      const j = d.stageIdx;
+      let dm: number;
+      if (d.drawRatio !== undefined) {
+        const r = clamp(d.drawRatio, 0.005, 0.85);
+        const totalOutPhase = d.phase === 'liquid'
+          ? Math.max(minFlowFloor, L[j] + SL[j])
+          : Math.max(minFlowFloor, V[j] + SV[j]);
+        const targetDm = r * totalOutPhase;
+        dm = isInitial ? targetDm : (1.0 - ratioDamp) * drawMoles[idx] + ratioDamp * targetDm;
+      } else {
+        dm = Math.max(0, d.targetMolesKmolH ?? 0);
+      }
+      drawMoles[idx] = Math.max(0, dm);
+      reqTot += drawMoles[idx];
+    }
+    if (reqTot > maxTotSideMol && reqTot > 1e-12) {
+      const sc = maxTotSideMol / reqTot;
+      for (let idx = 0; idx < activeDraws.length; idx++) drawMoles[idx] *= sc;
+      sideCutClamped = true;
+    }
+    SL.fill(0);
+    SV.fill(0);
+    for (let idx = 0; idx < activeDraws.length; idx++) {
+      const d = activeDraws[idx];
+      if (d.phase === 'vapor') SV[d.stageIdx] += drawMoles[idx];
+      else SL[d.stageIdx] += drawMoles[idx];
+    }
+    let runS = 0;
+    for (let j = 0; j < N; j++) {
+      runS += SL[j] + SV[j];
+      cumSideDrawTot[j] = runS;
+    }
+    B = Math.max(minFlowFloor, totalMolesIn - D - (N >= 2 ? cumSideDrawTot[N - 2] : 0));
+    L[N - 1] = B;
+  };
+
+  // 초기 단별 내부 액상(L_j) / 기상(V_j) 트래픽 구성 (물질수지 V[j+1] - L[j] === D + cumSideDrawTot[j] - cumFeedTot[j] 엄밀 만족)
   const L0 = RR * D;
   V[0] = condenserType === 'partial' ? D : 0;
   L[0] = Math.max(minFlowFloor, L0 + stageFeedLiq[0]);
   V[1] = Math.max(minFlowFloor, L[0] + D - cumFeedTot[0]);
 
-  for (let j = 1; j < N - 1; j++) {
-    const netUp = D - cumFeedTot[j];
-    const lGuess = Math.max(minFlowFloor, L[j - 1] + stageFeedLiq[j]);
-    const vGuess = Math.max(minFlowFloor, lGuess + netUp);
-    V[j + 1] = vGuess;
-    L[j] = Math.max(minFlowFloor, vGuess - netUp);
+  if (activeDraws.length > 0) {
+    // 1차 초기 추정: 고정 몰 인출 우선 적용 + drawRatio 단계적 초기치 계산
+    for (let j = 1; j < N - 1; j++) {
+      const lAvailEst = Math.max(minFlowFloor, L[j - 1] + stageFeedLiq[j]);
+      for (let idx = 0; idx < activeDraws.length; idx++) {
+        const d = activeDraws[idx];
+        if (d.stageIdx !== j) continue;
+        if (d.drawRatio !== undefined) {
+          const r = clamp(d.drawRatio, 0.005, 0.85);
+          if (d.phase === 'liquid') {
+            drawMoles[idx] = r * lAvailEst;
+            SL[j] += drawMoles[idx];
+          } else {
+            const vAvailEst = Math.max(minFlowFloor, V[j]);
+            drawMoles[idx] = r * vAvailEst;
+            SV[j] += drawMoles[idx];
+          }
+        } else {
+          drawMoles[idx] = Math.max(0, d.targetMolesKmolH ?? 0);
+          if (d.phase === 'vapor') SV[j] += drawMoles[idx];
+          else SL[j] += drawMoles[idx];
+        }
+      }
+      cumSideDrawTot[j] = cumSideDrawTot[j - 1] + SL[j] + SV[j];
+      const netUp = D + cumSideDrawTot[j] - cumFeedTot[j];
+      const lGuess = Math.max(minFlowFloor, L[j - 1] + stageFeedLiq[j] - SL[j]);
+      const vGuess = Math.max(minFlowFloor, lGuess + netUp);
+      V[j + 1] = vGuess;
+      L[j] = Math.max(minFlowFloor, vGuess - netUp);
+    }
+    rebuildSideDrawSums(true);
+    for (let j = 1; j < N - 1; j++) {
+      const netUp = D + cumSideDrawTot[j] - cumFeedTot[j];
+      const lGuess = Math.max(minFlowFloor, L[j - 1] + stageFeedLiq[j] - SL[j]);
+      const vGuess = Math.max(minFlowFloor, lGuess + netUp);
+      V[j + 1] = vGuess;
+      L[j] = Math.max(minFlowFloor, vGuess - netUp);
+    }
+  } else {
+    for (let j = 1; j < N - 1; j++) {
+      const netUp = D - cumFeedTot[j];
+      const lGuess = Math.max(minFlowFloor, L[j - 1] + stageFeedLiq[j]);
+      const vGuess = Math.max(minFlowFloor, lGuess + netUp);
+      V[j + 1] = vGuess;
+      L[j] = Math.max(minFlowFloor, vGuess - netUp);
+    }
   }
   L[N - 1] = B;
   if (reboilerType === 'live_steam' && N >= 2) {
-    const netUpBot = D - cumFeedTot[N - 2];
+    const netUpBot = D + cumSideDrawTot[N - 2] - cumFeedTot[N - 2];
     V[N - 1] = Math.max(0.05 * D, V[N - 1], netUpBot + minFlowFloor);
     L[N - 2] = Math.max(minFlowFloor, V[N - 1] - netUpBot);
   }
@@ -1298,6 +1490,8 @@ function solveInnerMeshColumn(params: {
   const hVapTilde = new Float64Array(N);
 
   const xRaw: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
+  const yRaw: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
+  const feedStageSet = new Set<number>(feeds.map(f => clamp(f.stageIdx, 0, N - 1)));
   const usedK0: Record<SimCompKey, number> = zeroCompRecord();
   const yStage: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
   const yEqBuf: Record<SimCompKey, number> = zeroCompRecord();
@@ -1453,11 +1647,18 @@ function solveInnerMeshColumn(params: {
     for (let ci = 0; ci < nActive; ci++) {
       const comp = activeComps[ci];
       if (NON_VOLATILE_SET.has(comp)) {
-        // 비휘발성 염·고비점 강산은 액상 유량을 따라 하부로 100% 이동
-        let cumSalt = 0;
+        // 비휘발성 염·고비점 강산은 액상 유량을 따라 하부 및 액상 측류로 분배 이동
+        let availSalt = 0;
         for (let j = 0; j < N; j++) {
-          cumSalt += stageFeedMol[j][comp];
-          xRaw[j][comp] = cumSalt / Math.max(1e-6, j === N - 1 ? B : L[j]);
+          availSalt += stageFeedMol[j][comp];
+          if (j < N - 1 && SL[j] > 0) {
+            const totLiqJ = Math.max(1e-6, L[j] + SL[j]);
+            xRaw[j][comp] = availSalt / totLiqJ;
+            availSalt = availSalt * (L[j] / totLiqJ);
+          } else {
+            xRaw[j][comp] = availSalt / Math.max(1e-6, j === N - 1 ? B : L[j]);
+          }
+          yRaw[j][comp] = 0;
         }
         usedK0[comp] = 0;
         continue;
@@ -1466,7 +1667,7 @@ function solveInnerMeshColumn(params: {
       // 행렬 내 Murphree 기상 단효율 변환:
       //   s_j = η_j K_j,  u_j = y_j / s_j (j >= 1),  u_0 = x_0
       //   y_j = η_j K_j x_j + (1 - η_j) y_{j+1}  <=>  x_j = u_j - β_j u_{j+1},  β_j = (1 - η_j) s_{j+1} / s_j
-      // 대입 시 엄밀 대각우세 M-행렬을 유지하면서 D*k0*x_0 + B*x_{N-1} === f_tot 를 기계정밀도로 보존한다.
+      // 대입 시 엄밀 대각우세 M-행렬을 유지하면서 D*k0*x_0 + Σ(SL_j*x_j + SV_j*y_j) + B*x_{N-1} === f_tot 를 기계정밀도로 보존한다.
       for (let j = 1; j < N; j++) {
         sStage[j] = Math.max(1e-12, etaStage[j] * Math.max(1e-12, K[j][comp]));
       }
@@ -1496,11 +1697,11 @@ function solveInnerMeshColumn(params: {
       cVec[0] = V[1] * sStage[1];
       dVec[0] = -stageFeedMol[0][comp];
 
-      // 내부 단 1 .. N-2
+      // 내부 단 1 .. N-2 (액상·기상 측류 SL[j], SV[j] 엄밀 반영)
       for (let j = 1; j < N - 1; j++) {
         aVec[j] = L[j - 1];
-        bVec[j] = -(L[j - 1] * betaStage[j - 1] + L[j] + V[j] * sStage[j]);
-        cVec[j] = L[j] * betaStage[j] + V[j + 1] * sStage[j + 1];
+        bVec[j] = -(L[j - 1] * betaStage[j - 1] + L[j] + SL[j] + (V[j] + SV[j]) * sStage[j]);
+        cVec[j] = (L[j] + SL[j]) * betaStage[j] + V[j + 1] * sStage[j + 1];
         dVec[j] = -stageFeedMol[j][comp];
       }
 
@@ -1512,10 +1713,13 @@ function solveInnerMeshColumn(params: {
 
       const uSol = solveTridiagonal(aVec, bVec, cVec, dVec, triCp, triDp, triSol);
       xRaw[0][comp] = Math.max(0, uSol[0]);
+      yRaw[0][comp] = usedK0[comp] * xRaw[0][comp];
       for (let j = 1; j < N - 1; j++) {
         xRaw[j][comp] = Math.max(0, uSol[j] - betaStage[j] * uSol[j + 1]);
+        yRaw[j][comp] = sStage[j] * Math.max(0, uSol[j]);
       }
       xRaw[N - 1][comp] = Math.max(0, uSol[N - 1]);
+      yRaw[N - 1][comp] = sStage[N - 1] * xRaw[N - 1][comp];
     }
 
     // 정규화 및 어닐링 완화 기포점 온도 갱신
@@ -1636,16 +1840,26 @@ function solveInnerMeshColumn(params: {
         hVapTilde[j] = vaporMolarEnthalpyKJkmol(yStage[j], activeComps, T[j]) - refV;
       }
 
+      if (activeDraws.length > 0) {
+        rebuildSideDrawSums(false, 0.35);
+        let runSDe = 0;
+        cumSideDrawEnthFrom1[0] = 0;
+        for (let j = 1; j < N - 1; j++) {
+          runSDe += SL[j] * hLiqTilde[j] + SV[j] * hVapTilde[j];
+          cumSideDrawEnthFrom1[j] = runSDe;
+        }
+      }
+
       const qTopFlux = V[1] * hVapTilde[1] - L[0] * hLiqTilde[0];
       const baseWV = iter > 90 * annScale ? 0.05 : iter >= 45 * annScale ? 0.09 : 0.34;
       const wV = Math.max(0.02, baseWV * dampFactor);
-      const vUpperCap = 5.0 * Math.max(V[1], totalMolesIn);
+      const vUpperCap = Math.max(5.0 * V[1], 8.0 * totalMolesIn);
 
       for (let j = 1; j < N - 1; j++) {
-        const netUp = D - cumFeedTot[j];
+        const netUp = D + cumSideDrawTot[j] - cumFeedTot[j];
         const vMin = Math.max(minFlowFloor, netUp + minFlowFloor);
         const denom = Math.max(8000.0, hVapTilde[j + 1] - hLiqTilde[j]);
-        const rhs = qTopFlux - cumFeedEnthFrom1[j] - netUp * hLiqTilde[j];
+        const rhs = qTopFlux - cumFeedEnthFrom1[j] + cumSideDrawEnthFrom1[j] - netUp * hLiqTilde[j];
         const vTarget = clamp(rhs / denom, vMin, Math.max(vMin + 1.0, vUpperCap));
         const vPrev = V[j + 1];
         const vNext = vPrev + wV * (vTarget - vPrev);
@@ -1729,29 +1943,65 @@ function solveInnerMeshColumn(params: {
     }
   }
 
-  // 최종 탑정(Distillate) / 탑저(Bottoms) 성분별 몰유량 엄밀 추출 및 100.000% 물질수지 마감
+  // 최종 탑정(Distillate) / 사이드컷(Side-Draws) / 탑저(Bottoms) 성분별 몰유량 엄밀 추출 및 100.000% 물질수지 마감
   const distMol = zeroCompRecord();
   const botMol = zeroCompRecord();
   const distKgH = zeroCompRecord();
   const botKgH = zeroCompRecord();
+  const sideMolArr: Array<Record<SimCompKey, number>> = activeDraws.map(() => zeroCompRecord());
 
   for (let ci = 0; ci < nActive; ci++) {
     const comp = activeComps[ci];
     const fTot = totalFeedMol[comp];
     if (fTot <= 0) continue;
-    if (NON_VOLATILE_SET.has(comp)) {
-      distMol[comp] = 0;
-      botMol[comp] = fTot;
-    } else {
-      const dRaw = D * usedK0[comp] * xRaw[0][comp];
-      const bRaw = B * xRaw[N - 1][comp];
-      const sumRaw = dRaw + bRaw;
-      if (sumRaw > 1e-15) {
-        distMol[comp] = fTot * (dRaw / sumRaw);
-        botMol[comp] = fTot * (bRaw / sumRaw);
+    if (activeDraws.length === 0) {
+      if (NON_VOLATILE_SET.has(comp)) {
+        distMol[comp] = 0;
+        botMol[comp] = fTot;
       } else {
-        distMol[comp] = fTot * (D / Math.max(1e-9, totalMolesIn));
-        botMol[comp] = Math.max(0, fTot - distMol[comp]);
+        const dRaw = D * usedK0[comp] * xRaw[0][comp];
+        const bRaw = B * xRaw[N - 1][comp];
+        const sumRaw = dRaw + bRaw;
+        if (sumRaw > 1e-15) {
+          distMol[comp] = fTot * (dRaw / sumRaw);
+          botMol[comp] = fTot * (bRaw / sumRaw);
+        } else {
+          distMol[comp] = fTot * (D / Math.max(1e-9, totalMolesIn));
+          botMol[comp] = Math.max(0, fTot - distMol[comp]);
+        }
+      }
+    } else {
+      const dRaw = NON_VOLATILE_SET.has(comp) ? 0 : D * usedK0[comp] * xRaw[0][comp];
+      let sumSD = 0;
+      const sRawList = new Float64Array(activeDraws.length);
+      for (let idx = 0; idx < activeDraws.length; idx++) {
+        const d = activeDraws[idx];
+        const dm = drawMoles[idx];
+        let sVal = 0;
+        if (NON_VOLATILE_SET.has(comp)) {
+          sVal = d.phase === 'liquid' ? dm * xRaw[d.stageIdx][comp] : 0;
+        } else {
+          sVal = dm * (d.phase === 'vapor' ? yRaw[d.stageIdx][comp] : xRaw[d.stageIdx][comp]);
+        }
+        sRawList[idx] = sVal;
+        sumSD += sVal;
+      }
+      const bRaw = B * xRaw[N - 1][comp];
+      const sumRaw = dRaw + sumSD + bRaw;
+      if (sumRaw > 1e-15) {
+        const scaleC = fTot / sumRaw;
+        distMol[comp] = dRaw * scaleC;
+        for (let idx = 0; idx < activeDraws.length; idx++) sideMolArr[idx][comp] = sRawList[idx] * scaleC;
+        botMol[comp] = bRaw * scaleC;
+      } else {
+        distMol[comp] = NON_VOLATILE_SET.has(comp) ? 0 : fTot * (D / Math.max(1e-9, totalMolesIn));
+        let accS = 0;
+        for (let idx = 0; idx < activeDraws.length; idx++) {
+          const share = NON_VOLATILE_SET.has(comp) ? 0 : fTot * (drawMoles[idx] / Math.max(1e-9, totalMolesIn));
+          sideMolArr[idx][comp] = share;
+          accS += share;
+        }
+        botMol[comp] = Math.max(0, fTot - distMol[comp] - accS);
       }
     }
   }
@@ -1764,6 +2014,43 @@ function solveInnerMeshColumn(params: {
     botKgH[comp] = botMol[comp] * COMP_MW[comp];
     distMassSum += distKgH[comp];
   }
+
+  const stageSideLiqKgH = new Float64Array(N);
+  const stageSideVapKgH = new Float64Array(N);
+  let hSideDrawsKcalH = 0;
+  const sideDrawsOut: InnerSideDrawOutput[] = activeDraws.map((d, idx) => {
+    const j = d.stageIdx;
+    const kgH = zeroCompRecord();
+    let mSum = 0;
+    let molSum = 0;
+    for (let ci = 0; ci < nActive; ci++) {
+      const c = activeComps[ci];
+      kgH[c] = sideMolArr[idx][c] * COMP_MW[c];
+      mSum += kgH[c];
+      molSum += sideMolArr[idx][c];
+    }
+    const pKg = topPressKgcm2g + j * stageDeltaP;
+    const ph: 'L' | 'G' = d.phase === 'vapor' ? 'G' : 'L';
+    if (ph === 'G') {
+      stageSideVapKgH[j] += mSum;
+      hSideDrawsKcalH += streamEnthalpyKcalH(kgH, {}, T[j], pKg);
+    } else {
+      stageSideLiqKgH[j] += mSum;
+      hSideDrawsKcalH += streamEnthalpyKcalH({}, kgH, T[j], pKg);
+    }
+    return {
+      id: d.id,
+      label: d.label,
+      stage: j + 1,
+      phase: ph,
+      tempC: T[j],
+      pressKgcm2g: pKg,
+      kmolH: sideMolArr[idx],
+      kgH,
+      totalMassKgH: mSum,
+      totalMolesKmolH: molSum,
+    };
+  });
 
   // 유수분리 디캔터(decanter_ech) 운전 시: MESH 루프 내 커플링된 T[0] 2액상 LLE 결과와 정합되게 수상 배출(decanterFlowsKgH) 및 유기상 유출(distKgH) 분배
   let decanterWaterDrawKgH = 0;
@@ -1827,6 +2114,7 @@ function solveInnerMeshColumn(params: {
 
     const liqKmol = j === N - 1 ? B : L[j];
     const vapKmol = j === 0 ? (condenserType === 'partial' ? D : V[1]) : V[j];
+    const hasSideCutHere = stageSideLiqKgH[j] > 1e-6 || stageSideVapKgH[j] > 1e-6;
     stages.push({
       stage: j + 1,
       tempC: T[j],
@@ -1839,6 +2127,14 @@ function solveInnerMeshColumn(params: {
       yMol,
       xWtPct,
       yWtPct,
+      isFeedStage: feedStageSet.has(j),
+      ...(hasSideCutHere
+        ? {
+            isSideCutStage: true,
+            sideCutLiqKgH: stageSideLiqKgH[j],
+            sideCutVapKgH: stageSideVapKgH[j],
+          }
+        : {}),
     });
   }
 
@@ -1882,8 +2178,8 @@ function solveInnerMeshColumn(params: {
   const hVap1KcalH = streamEnthalpyKcalH(vap1KgH, {}, t1Vap, pStage1Kgcm2g);
   const hReflux0KcalH = streamEnthalpyKcalH({}, reflux0KgH, T[0], topP);
 
-  // 전체 탑 총괄 엔탈피 수지: Q_reb + Q_cond === H_D + H_dec + H_B - H_F (에너지 잔차 0.00% 보장)
-  const qNetColumnKcalH = hDistKcalH + hDecKcalH + hBotKcalH - totalFeedEnthKcalH;
+  // 전체 탑 총괄 엔탈피 수지: Q_reb + Q_cond === H_D + H_dec + H_SideDraws + H_B - H_F (에너지 잔차 0.00% 보장)
+  const qNetColumnKcalH = hDistKcalH + hDecKcalH + hSideDrawsKcalH + hBotKcalH - totalFeedEnthKcalH;
   let condenserDutyKcalH: number;
   let reboilerDutyKcalH: number;
 
@@ -1920,6 +2216,8 @@ function solveInnerMeshColumn(params: {
     actualBoilupRatio: V[N - 1] / Math.max(1e-6, actualBotMoles),
     actualDOverFMass: distMassSum / Math.max(1e-6, totalFeedMassKgH),
     actualDOverFMole: actualDistMoles / Math.max(1e-6, totalMolesIn),
+    ...(sideDrawsOut.length > 0 ? { sideDraws: sideDrawsOut } : {}),
+    ...(sideCutClamped ? { sideCutClamped: true } : {}),
   };
 }
 
@@ -1951,6 +2249,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
   refluxRatio: number;
   reboilerDutyKcalH: number;
   topCoolerDutyKcalH: number;
+  sideDraws?: InnerSideDrawSpec[];
   maxIterations?: number;
 }): InnerMeshSolution {
   const {
@@ -2450,6 +2749,57 @@ function solveOpenOrSemiOpenMeshColumn(params: {
   const L = new Float64Array(N);
   const reboilerBoilupEst = hasReboiler ? qRebInputKJH / 38000.0 : 0.0;
 
+  // 개방·반개방 탑 사이드컷(측류 인출) 설정
+  const activeDraws: InnerSideDrawSpec[] =
+    N >= 3 && params.sideDraws?.length
+      ? params.sideDraws
+          .filter(sd => (sd.targetMolesKmolH ?? 0) > 1e-8 || (sd.drawRatio ?? 0) > 1e-5)
+          .map(sd => ({ ...sd, stageIdx: clamp(Math.round(sd.stageIdx), 1, N - 2) }))
+      : [];
+  const SL = new Float64Array(N);
+  const SV = new Float64Array(N);
+  const cumSideDrawTot = new Float64Array(N);
+  const drawMoles = new Float64Array(activeDraws.length);
+  let sideCutClamped = false;
+
+  const rebuildOpenSideDraws = (dCur: number, isInitial: boolean, ratioDamp = 0.35) => {
+    if (activeDraws.length === 0) return;
+    const maxTotSideMol = Math.max(0, totalMolesIn - dCur - FLOW_FLOOR * 10);
+    let reqTot = 0;
+    for (let idx = 0; idx < activeDraws.length; idx++) {
+      const d = activeDraws[idx];
+      const j = d.stageIdx;
+      let dm: number;
+      if (d.drawRatio !== undefined) {
+        const r = clamp(d.drawRatio, 0.005, 0.85);
+        const totOut = d.phase === 'vapor' ? Math.max(FLOW_FLOOR, V[j] + SV[j]) : Math.max(FLOW_FLOOR, L[j] + SL[j]);
+        const targetDm = r * totOut;
+        dm = isInitial ? targetDm : (1.0 - ratioDamp) * drawMoles[idx] + ratioDamp * targetDm;
+      } else {
+        dm = Math.max(0, d.targetMolesKmolH ?? 0);
+      }
+      drawMoles[idx] = Math.max(0, dm);
+      reqTot += drawMoles[idx];
+    }
+    if (reqTot > maxTotSideMol && reqTot > 1e-12) {
+      const sc = maxTotSideMol / reqTot;
+      for (let idx = 0; idx < activeDraws.length; idx++) drawMoles[idx] *= sc;
+      sideCutClamped = true;
+    }
+    SL.fill(0);
+    SV.fill(0);
+    for (let idx = 0; idx < activeDraws.length; idx++) {
+      const d = activeDraws[idx];
+      if (d.phase === 'vapor') SV[d.stageIdx] += drawMoles[idx];
+      else SL[d.stageIdx] += drawMoles[idx];
+    }
+    let runS = 0;
+    for (let j = 0; j < N; j++) {
+      runS += SL[j] + SV[j];
+      cumSideDrawTot[j] = runS;
+    }
+  };
+
   let cumVapBelow = 0;
   for (let j = N - 1; j >= 0; j--) {
     cumVapBelow += stageFeedVapTot[j] + (j === N - 1 ? reboilerBoilupEst : 0);
@@ -2477,6 +2827,14 @@ function solveOpenOrSemiOpenMeshColumn(params: {
     }
     L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr);
   }
+  if (activeDraws.length > 0) {
+    rebuildOpenSideDraws(D_curr, true);
+    const startJInit = hasCondenser ? 1 : 0;
+    for (let j = startJInit; j < N - 1; j++) {
+      L[j] = Math.max(FLOW_FLOOR, V[j + 1] + cumFeedMol[j] - D_curr - cumSideDrawTot[j]);
+    }
+    L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr - (N >= 2 ? cumSideDrawTot[N - 2] : 0));
+  }
 
   const decK0 = zeroCompRecord();
   for (let ci = 0; ci < nActive; ci++) decK0[activeComps[ci]] = 1.0;
@@ -2496,6 +2854,8 @@ function solveOpenOrSemiOpenMeshColumn(params: {
 
   const lStar: Record<SimCompKey, number>[] = Array.from({ length: N }, () => zeroCompRecord());
   const vStar: Record<SimCompKey, number>[] = Array.from({ length: N }, () => zeroCompRecord());
+  const sLiqStar: Record<SimCompKey, number>[] = Array.from({ length: N }, () => zeroCompRecord());
+  const sVapStar: Record<SimCompKey, number>[] = Array.from({ length: N }, () => zeroCompRecord());
   const distStar0 = zeroCompRecord();
 
   const runThomasComponentSolve = () => {
@@ -2515,23 +2875,33 @@ function solveOpenOrSemiOpenMeshColumn(params: {
         }
       } else {
         const vInBelow = V[j + 1];
+        const vOutTot = V[j] + SV[j];
         const bTr =
           vInBelow > 1e-12 && etaStage[j] < 0.999999
-            ? Math.min(V[j] * (1.0 - etaStage[j]), 0.999 * vInBelow)
+            ? Math.min(vOutTot * (1.0 - etaStage[j]), 0.999 * vInBelow)
             : 0.0;
-        etaEff[j] = V[j] > 1e-12 ? clamp(1.0 - bTr / V[j], 0.01, 1.0) : 1.0;
+        etaEff[j] = vOutTot > 1e-12 ? clamp(1.0 - bTr / vOutTot, 0.01, 1.0) : 1.0;
       }
     }
 
     for (let ci = 0; ci < nActive; ci++) {
       const comp = activeComps[ci];
       if (NON_VOLATILE_SET.has(comp)) {
-        let cumSalt = 0;
+        let availSalt = 0;
         distStar0[comp] = 0;
         for (let j = 0; j < N; j++) {
-          cumSalt += stageFeedMol[j][comp];
-          lStar[j][comp] = cumSalt;
+          availSalt += stageFeedMol[j][comp];
+          if (j < N - 1 && SL[j] > 0) {
+            const downFrac = L[j] / Math.max(1e-12, L[j] + SL[j]);
+            lStar[j][comp] = availSalt * downFrac;
+            sLiqStar[j][comp] = availSalt * (1.0 - downFrac);
+            availSalt = lStar[j][comp];
+          } else {
+            lStar[j][comp] = availSalt;
+            sLiqStar[j][comp] = 0;
+          }
           vStar[j][comp] = 0;
+          sVapStar[j][comp] = 0;
         }
         continue;
       }
@@ -2571,8 +2941,8 @@ function solveOpenOrSemiOpenMeshColumn(params: {
 
       for (let j = 1; j < N - 1; j++) {
         aVec[j] = L[j - 1];
-        bVec[j] = -(L[j - 1] * betaStage[j - 1] + L[j] + V[j] * sStage[j]);
-        cVec[j] = L[j] * betaStage[j] + V[j + 1] * sStage[j + 1];
+        bVec[j] = -(L[j - 1] * betaStage[j - 1] + L[j] + SL[j] + (V[j] + SV[j]) * sStage[j]);
+        cVec[j] = (L[j] + SL[j]) * betaStage[j] + V[j + 1] * sStage[j + 1];
         dVec[j] = -stageFeedMol[j][comp];
       }
 
@@ -2597,8 +2967,11 @@ function solveOpenOrSemiOpenMeshColumn(params: {
 
       for (let j = 1; j < N - 1; j++) {
         const xjRaw = Math.max(0, uSol[j] - betaStage[j] * uSol[j + 1]);
+        const yjRaw = sStage[j] * Math.max(0, uSol[j]);
         lStar[j][comp] = L[j] * xjRaw;
-        vStar[j][comp] = V[j] * sStage[j] * Math.max(0, uSol[j]);
+        vStar[j][comp] = V[j] * yjRaw;
+        sLiqStar[j][comp] = SL[j] * xjRaw;
+        sVapStar[j][comp] = SV[j] * yjRaw;
       }
 
       const xNRaw = Math.max(0, uSol[N - 1] - deltaBot);
@@ -2753,8 +3126,17 @@ function solveOpenOrSemiOpenMeshColumn(params: {
         (j === 0 && !hasCondenser ? -qTopCoolKJH : 0.0) + (j === N - 1 && hasReboiler ? qRebInputKJH : 0.0);
       const hTargetJ = hInLiq + hInVap + stageFeedEnthKJH[j] + qStage;
 
+      const lPlusS: Record<SimCompKey, number> = activeDraws.length > 0 ? zeroCompRecord() : lStar[j];
+      const vPlusS: Record<SimCompKey, number> = activeDraws.length > 0 ? zeroCompRecord() : vStar[j];
+      if (activeDraws.length > 0) {
+        for (let ci = 0; ci < nActive; ci++) {
+          const c = activeComps[ci];
+          lPlusS[c] = lStar[j][c] + sLiqStar[j][c];
+          vPlusS[c] = vStar[j][c] + sVapStar[j][c];
+        }
+      }
       const hOutCurr =
-        streamLiqEnthKJH(lStar[j], T[j], pStageKgcm2g[j]) + streamVapEnthKJH(vStar[j], T[j], pStageKgcm2g[j]);
+        streamLiqEnthKJH(lPlusS, T[j], pStageKgcm2g[j]) + streamVapEnthKJH(vPlusS, T[j], pStageKgcm2g[j]);
       const relH = Math.abs(hOutCurr - hTargetJ) / totalScaleKJH;
       if (relH > maxRelEnthErr) maxRelEnthErr = relH;
 
@@ -2764,7 +3146,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       let vInMol = 0;
       for (let ci = 0; ci < nActive; ci++) {
         const c = activeComps[ci];
-        const zc = lStar[j][c] + vStar[j][c];
+        const zc = lPlusS[c] + vPlusS[c];
         zFracJ[c] = zc;
         totStageMol += zc;
         const vcIn = (j < N - 1 ? vStar[j + 1][c] : 0.0) + (j === N - 1 && !hasReboiler ? stageFeedVapMol[N - 1][c] : 0.0);
@@ -2801,7 +3183,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       const stepDt = clamp(wT * rawDt, -maxStepTC, maxStepTC);
       tWork[j] = T[j] + stepDt;
 
-      const vPh = clamp(phRes.beta * totStageMol, FLOW_FLOOR, Math.max(FLOW_FLOOR * 2, totalMolesIn - nonVolMolesIn - FLOW_FLOOR));
+      const vPh = clamp(phRes.beta * totStageMol - SV[j], FLOW_FLOOR, Math.max(FLOW_FLOOR * 2, totalMolesIn - nonVolMolesIn - FLOW_FLOOR));
       vTarget[j] = vPh;
       const relDv = Math.abs(vPh - V[j]) / Math.max(1e-3, totalMolesIn);
       if (relDv > maxRelDeltaV) maxRelDeltaV = relDv;
@@ -2817,18 +3199,19 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       for (let j = 0; j < N; j++) {
         V[j] = Math.max(FLOW_FLOOR, (1.0 - wV) * V[j] + wV * vTarget[j]);
       }
-      let maxAllowedV0 = Math.max(FLOW_FLOOR, totalMolesIn - nonVolMolesIn - FLOW_FLOOR);
+      let maxAllowedV0 = Math.max(FLOW_FLOOR, totalMolesIn - nonVolMolesIn - (N >= 2 ? cumSideDrawTot[N - 2] : 0) - FLOW_FLOOR);
       for (let j = 0; j < N - 1; j++) {
-        if (cumFeedMol[j] > 1e-9) {
-          maxAllowedV0 = Math.min(maxAllowedV0, V[j + 1] + cumFeedMol[j] - FLOW_FLOOR);
+        if (cumFeedMol[j] > 1e-9 || cumSideDrawTot[j] > 1e-9) {
+          maxAllowedV0 = Math.min(maxAllowedV0, V[j + 1] + cumFeedMol[j] - cumSideDrawTot[j] - FLOW_FLOOR);
         }
       }
       V[0] = clamp(V[0], FLOW_FLOOR, Math.max(FLOW_FLOOR, maxAllowedV0));
       D_curr = V[0];
+      if (activeDraws.length > 0) rebuildOpenSideDraws(D_curr, false, 0.35);
       for (let j = 0; j < N - 1; j++) {
-        L[j] = Math.max(FLOW_FLOOR, V[j + 1] + cumFeedMol[j] - D_curr);
+        L[j] = Math.max(FLOW_FLOOR, V[j + 1] + cumFeedMol[j] - D_curr - cumSideDrawTot[j]);
       }
-      L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr);
+      L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr - (N >= 2 ? cumSideDrawTot[N - 2] : 0));
     } else {
       for (let j = 1; j < N; j++) {
         V[j] = Math.max(FLOW_FLOOR, (1.0 - wV) * V[j] + wV * vTarget[j]);
@@ -2839,17 +3222,18 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       const dTotTarget = clamp(
         dOrgTarget + aqDrawMol,
         FLOW_FLOOR,
-        Math.max(FLOW_FLOOR * 2, totalMolesIn - nonVolMolesIn - FLOW_FLOOR)
+        Math.max(FLOW_FLOOR * 2, totalMolesIn - nonVolMolesIn - (N >= 2 ? cumSideDrawTot[N - 2] : 0) - FLOW_FLOOR)
       );
       const relDd = Math.abs(dTotTarget - D_curr) / Math.max(1e-3, totalMolesIn);
       if (relDd > maxRelDeltaV) maxRelDeltaV = relDd;
       D_curr = (1.0 - wV) * D_curr + wV * dTotTarget;
       L[0] = Math.max(FLOW_FLOOR, RR * Math.max(FLOW_FLOOR, D_curr - aqDrawMol));
       V[0] = condenserType === 'partial' ? D_curr : 0.0;
+      if (activeDraws.length > 0) rebuildOpenSideDraws(D_curr, false, 0.35);
       for (let j = 1; j < N - 1; j++) {
-        L[j] = Math.max(FLOW_FLOOR, V[j + 1] + cumFeedMol[j] - D_curr);
+        L[j] = Math.max(FLOW_FLOOR, V[j + 1] + cumFeedMol[j] - D_curr - cumSideDrawTot[j]);
       }
-      L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr);
+      L[N - 1] = Math.max(FLOW_FLOOR, totalMolesIn - D_curr - (N >= 2 ? cumSideDrawTot[N - 2] : 0));
     }
 
     if (
@@ -2876,6 +3260,53 @@ function solveOpenOrSemiOpenMeshColumn(params: {
 
   // 최종 수렴 상태에서 1회 엄밀 Thomas 성분 수지 재해석으로 기계정밀도(1e-15) 성분 보존 확정
   runThomasComponentSolve();
+
+  const sideDrawsOut: InnerSideDrawOutput[] = activeDraws.map((d, idx) => {
+    const j = d.stageIdx;
+    const sameBucket = activeDraws.reduce(
+      (acc, sd, i2) => (sd.stageIdx === j && sd.phase === d.phase ? acc + drawMoles[i2] : acc),
+      0
+    );
+    const share = sameBucket > 1e-12 ? drawMoles[idx] / sameBucket : 1.0;
+    const molRec = zeroCompRecord();
+    const kgHRec = zeroCompRecord();
+    let mSum = 0;
+    let molSum = 0;
+    for (let ci = 0; ci < nActive; ci++) {
+      const c = activeComps[ci];
+      const mVal = (d.phase === 'vapor' ? sVapStar[j][c] : sLiqStar[j][c]) * share;
+      molRec[c] = mVal;
+      kgHRec[c] = mVal * COMP_MW[c];
+      mSum += kgHRec[c];
+      molSum += mVal;
+    }
+    return {
+      id: d.id,
+      label: d.label,
+      stage: j + 1,
+      phase: d.phase === 'vapor' ? ('G' as const) : ('L' as const),
+      tempC: T[j],
+      pressKgcm2g: pStageKgcm2g[j],
+      kmolH: molRec,
+      kgH: kgHRec,
+      totalMassKgH: mSum,
+      totalMolesKmolH: molSum,
+    };
+  });
+
+  const stageSideLiqKgH = new Float64Array(N);
+  const stageSideVapKgH = new Float64Array(N);
+  let hSideDrawsKcalH = 0;
+  for (const sd of sideDrawsOut) {
+    const jIdx = sd.stage - 1;
+    if (sd.phase === 'G') {
+      stageSideVapKgH[jIdx] += sd.totalMassKgH;
+      hSideDrawsKcalH += streamEnthalpyKcalH(sd.kgH, {}, T[jIdx], pStageKgcm2g[jIdx]);
+    } else {
+      stageSideLiqKgH[jIdx] += sd.totalMassKgH;
+      hSideDrawsKcalH += streamEnthalpyKcalH({}, sd.kgH, T[jIdx], pStageKgcm2g[jIdx]);
+    }
+  }
 
   const feedStageSet = new Set<number>(feeds.map(f => clamp(f.stageIdx, 0, N - 1)));
   const stages: DistillStageProfile[] = new Array(N);
@@ -2904,6 +3335,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       yWtPct[c] = vapMassKgH > 1e-12 ? ((vStar[j][c] * COMP_MW[c]) / vapMassKgH) * 100.0 : 0;
     }
 
+    const hasSideCutHere = stageSideLiqKgH[j] > 1e-6 || stageSideVapKgH[j] > 1e-6;
     stages[j] = {
       stage: j + 1,
       tempC: T[j],
@@ -2917,6 +3349,13 @@ function solveOpenOrSemiOpenMeshColumn(params: {
       xWtPct,
       yWtPct,
       isFeedStage: feedStageSet.has(j),
+      ...(hasSideCutHere
+        ? {
+            isSideCutStage: true,
+            sideCutLiqKgH: stageSideLiqKgH[j],
+            sideCutVapKgH: stageSideVapKgH[j],
+          }
+        : {}),
     };
   }
 
@@ -2952,7 +3391,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
 
   // 무응축기·무리보일러 개방탑 최종 출구 엔탈피 미소 잔차 정밀 보정 (총괄 열수지 오차 < 0.01 kcal/h 확정)
   if (!hasCondenser && !hasReboiler && actualBotMoles > 1e-8) {
-    const targetBotEnthKcalH = totalFeedEnthKJH / KJ_PER_KCAL - qTopCoolKcalH - hDistKcalH;
+    const targetBotEnthKcalH = totalFeedEnthKJH / KJ_PER_KCAL - qTopCoolKcalH - hDistKcalH - hSideDrawsKcalH;
     for (let pol = 0; pol < 2; pol++) {
       const hB0 = streamEnthalpyKcalH({}, botKgH, T[N - 1], pStageKgcm2g[N - 1]);
       const errKcal = targetBotEnthKcalH - hB0;
@@ -2969,7 +3408,7 @@ function solveOpenOrSemiOpenMeshColumn(params: {
   }
 
   const hBotKcalH = streamEnthalpyKcalH({}, botKgH, T[N - 1], pStageKgcm2g[N - 1]);
-  const qNetColumnKcalH = hDistKcalH + hDecKcalH + hBotKcalH - totalFeedEnthKJH / KJ_PER_KCAL;
+  const qNetColumnKcalH = hDistKcalH + hDecKcalH + hSideDrawsKcalH + hBotKcalH - totalFeedEnthKJH / KJ_PER_KCAL;
 
   let condenserDutyKcalH: number;
   let reboilerDutyKcalH: number;
@@ -3001,6 +3440,8 @@ function solveOpenOrSemiOpenMeshColumn(params: {
     actualBoilupRatio: stages[N - 1].vapFlowKmolH / Math.max(1e-6, actualBotMoles),
     actualDOverFMass: (distMassSum + decanterWaterDrawKgH) / Math.max(1e-6, totalFeedMassKgH),
     actualDOverFMole: actualDistMoles / totalMolesIn,
+    ...(sideDrawsOut.length > 0 ? { sideDraws: sideDrawsOut } : {}),
+    ...(sideCutClamped ? { sideCutClamped: true } : {}),
   };
 }
 
@@ -3448,11 +3889,79 @@ function solveRigorousDistillationUncached(
     return molAcc > 1e-6 ? molAcc : targetMassKgH / Math.max(2.0, avgFeedMW);
   };
 
+  // ── 사이드컷(측류 인출) 파라미터 준비 및 단별 질량-몰 변환 ──
+  const enabledSideCuts: DistillSideCutConfig[] = [
+    ...(colParams.sideCut?.enabled
+      ? [{ ...colParams.sideCut, id: colParams.sideCut.id || 'SC-1', label: colParams.sideCut.label || '사이드컷 S' }]
+      : []),
+    ...(colParams.additionalSideCuts ?? [])
+      .filter((s): s is DistillSideCutConfig => Boolean(s && s.enabled))
+      .map((s, idx) => ({ ...s, id: s.id || `SC-${idx + 2}`, label: s.label || `사이드컷 S${idx + 2}` })),
+  ];
+  const primarySideCut = enabledSideCuts[0];
+  const scOverrideBox: { val?: Partial<DistillSideCutConfig> } = {};
+
+  const sortedByMassForSc = [...poolDefault].sort((a, b) => (totalFeedKgH[b] || 0) - (totalFeedKgH[a] || 0));
+  const defaultSideCutComp: SimCompKey =
+    sortedByMassForSc.find(c => c !== activeComps[0] && c !== activeComps[activeComps.length - 1]) ??
+    sortedByMassForSc[0] ??
+    activeComps[0] ??
+    'H2O';
+
+  const getEffectiveSideCuts = (): DistillSideCutConfig[] =>
+    enabledSideCuts.map((sc, idx) => (idx === 0 && scOverrideBox.val ? { ...sc, ...scOverrideBox.val } : sc));
+
+  const estimateSideCutFrac = (): number => {
+    let frac = 0;
+    for (const sc of getEffectiveSideCuts()) {
+      if (sc.specType === 'mass_kgh') frac += clamp(sc.specValue / Math.max(1e-6, totalFeedMassKgH), 0, 0.90);
+      else if (sc.specType === 's_over_f_mass' || sc.specType === 's_over_f_mole') frac += clamp(sc.specValue, 0, 0.90);
+      else frac += 0.12;
+    }
+    return clamp(frac, 0, 0.90);
+  };
+  const sFracEst = estimateSideCutFrac();
+
+  const buildInnerSideDraws = (stageCount: number, stageMWMap?: Map<string, number>): InnerSideDrawSpec[] => {
+    if (stageCount < 3 || enabledSideCuts.length === 0) return [];
+    return getEffectiveSideCuts().map((sc, idx) => {
+      const id = sc.id || `SC-${idx + 1}`;
+      const label = sc.label || `사이드컷 S${idx === 0 ? '' : idx + 1}`;
+      const jIdx = clamp(Math.round(sc.stage || Math.round(stageCount * 0.35)) - 1, 1, stageCount - 2);
+      if (sc.specType === 'draw_ratio') {
+        return { id, label, stageIdx: jIdx, phase: sc.phase, drawRatio: clamp(sc.specValue, 0.005, 0.85) };
+      }
+      if (sc.specType === 's_over_f_mole') {
+        return { id, label, stageIdx: jIdx, phase: sc.phase, targetMolesKmolH: clamp(sc.specValue, 0.0002, 0.90) * totalMolesIn };
+      }
+      const fallbackScFrac = sc.specType === 'mass_kgh'
+        ? clamp(sc.specValue / Math.max(1e-6, totalFeedMassKgH), 0.0002, 0.90)
+        : (sc.specType === 'purity_wt_pct' || sc.specType === 'impurity_ppm' || sc.specType === 'recovery_pct')
+          ? 0.12
+          : clamp(sc.specValue, 0.0002, 0.90);
+      const targetMassKgH = sc.specType === 'mass_kgh'
+        ? clamp(sc.specValue, 0.01, totalFeedMassKgH * 0.92)
+        : fallbackScFrac * totalFeedMassKgH;
+      const mwGuess = stageMWMap?.get(id) ?? (sc.targetComp ? COMP_MW[sc.targetComp] : avgFeedMW) ?? avgFeedMW;
+      return { id, label, stageIdx: jIdx, phase: sc.phase, targetMolesKmolH: targetMassKgH / Math.max(2.0, mwGuess) };
+    });
+  };
+
   const runMeshAt = (rrVal: number, dfParam: number, dfIsMass: boolean, maxIterOverride?: number): InnerMeshSolution => {
-    let dMolTarget = clamp(dfParam, dfIsMass ? 0.001 : 0.0004, 0.9995) * totalMolesIn;
-    if (dfIsMass) {
-      const targetMass = clamp(dfParam, 0.001, 0.999) * totalFeedMassKgH;
-      const dMol0 = clamp(estInitDistMolesForMass(targetMass), 1e-5, totalMolesIn * 0.999);
+    const sideDrawsInit = buildInnerSideDraws(N);
+    const hasMassSideCut = getEffectiveSideCuts().some(
+      sc => sc.specType === 'mass_kgh' || sc.specType === 's_over_f_mass'
+    );
+    const totalSideMolEstInit = sideDrawsInit.reduce((s, d) => s + (d.targetMolesKmolH ?? 0), 0);
+    const maxAllowedDMol = Math.max(1e-5, totalMolesIn * 0.996 - totalSideMolEstInit);
+    let dMolTarget = clamp(dfParam * totalMolesIn, 0.0004 * totalMolesIn, maxAllowedDMol);
+    let finalSideDraws = sideDrawsInit;
+
+    if (dfIsMass || hasMassSideCut) {
+      const targetMass = clamp(dfParam, 0.001, 0.995) * totalFeedMassKgH;
+      const dMol0 = dfIsMass
+        ? clamp(estInitDistMolesForMass(targetMass), 1e-5, maxAllowedDMol)
+        : dMolTarget;
       const probe = solveInnerMeshColumn({
         model: chosenModel,
         N,
@@ -3468,23 +3977,37 @@ function solveRigorousDistillationUncached(
         meshMurphreeEff,
         refluxRatio: rrVal,
         targetDistillateKmolH: dMol0,
-        maxIterations: 20,
+        sideDraws: sideDrawsInit,
+        maxIterations: 22,
       });
-      const probeDistMass =
-        activeComps.reduce((s, c) => s + probe.distillateKgH[c], 0) +
-        probe.decanterWaterDrawKgH;
-      let splitMolWeightSum = 0;
-      let splitMolSum = 0;
-      for (const c of activeComps) {
-        if (NON_VOLATILE_SET.has(c) || totalFeedMol[c] <= 1e-9) continue;
-        const dCompMol = probe.distillateKmolH[c] + (probe.decanterFlowsKgH[c] || 0) / COMP_MW[c];
-        const rec = clamp(dCompMol / totalFeedMol[c], 0, 1);
-        const boundaryWeight = 0.015 + rec * (1.0 - rec);
-        splitMolWeightSum += boundaryWeight * totalFeedMol[c] * COMP_MW[c];
-        splitMolSum += boundaryWeight * totalFeedMol[c];
+      if (hasMassSideCut && probe.sideDraws && probe.sideDraws.length > 0) {
+        const mwMap = new Map<string, number>();
+        for (const sd of probe.sideDraws) {
+          if (sd.totalMolesKmolH > 1e-9) {
+            mwMap.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
+          }
+        }
+        finalSideDraws = buildInnerSideDraws(N, mwMap);
       }
-      const marginalMW = splitMolSum > 1e-9 ? splitMolWeightSum / splitMolSum : avgFeedMW;
-      dMolTarget = clamp(dMol0 + (targetMass - probeDistMass) / Math.max(2.0, marginalMW), 1e-5, totalMolesIn * 0.9995);
+      if (dfIsMass) {
+        const probeDistMass =
+          activeComps.reduce((s, c) => s + probe.distillateKgH[c], 0) +
+          probe.decanterWaterDrawKgH;
+        let splitMolWeightSum = 0;
+        let splitMolSum = 0;
+        for (const c of activeComps) {
+          if (NON_VOLATILE_SET.has(c) || totalFeedMol[c] <= 1e-9) continue;
+          const dCompMol = probe.distillateKmolH[c] + (probe.decanterFlowsKgH[c] || 0) / COMP_MW[c];
+          const rec = clamp(dCompMol / totalFeedMol[c], 0, 1);
+          const boundaryWeight = 0.015 + rec * (1.0 - rec);
+          splitMolWeightSum += boundaryWeight * totalFeedMol[c] * COMP_MW[c];
+          splitMolSum += boundaryWeight * totalFeedMol[c];
+        }
+        const marginalMW = splitMolSum > 1e-9 ? splitMolWeightSum / splitMolSum : avgFeedMW;
+        const estSideMolRef = finalSideDraws.reduce((s, d) => s + (d.targetMolesKmolH ?? 0), 0);
+        const capDRef = Math.max(1e-5, totalMolesIn * 0.996 - estSideMolRef);
+        dMolTarget = clamp(dMol0 + (targetMass - probeDistMass) / Math.max(2.0, marginalMW), 1e-5, capDRef);
+      }
     }
     return solveInnerMeshColumn({
       model: chosenModel,
@@ -3501,6 +4024,7 @@ function solveRigorousDistillationUncached(
       meshMurphreeEff,
       refluxRatio: rrVal,
       targetDistillateKmolH: dMolTarget,
+      sideDraws: finalSideDraws,
       maxIterations: maxIterOverride,
     });
   };
@@ -3555,8 +4079,11 @@ function solveRigorousDistillationUncached(
         colParams.botQualityTarget ??
         (botMetric === 'impurity_wt_ppm' ? 200 : 99.0);
 
+      const dfVaryUpperCap = primarySideCut ? Math.max(0.03, 0.985 - sFracEst) : 0.992;
+      const sideTag = primarySideCut ? ` + ⑤ 사이드컷(${primarySideCut.phase === 'vapor' ? '기상' : '액상'})` : '';
+
       if (hasRR && hasSplit) {
-        dofMessage = '🟢 운전조건 2/2 완료 (① 환류비 + ② 유출분배 지정)';
+        dofMessage = `🟢 운전조건 2/2 완료 (① 환류비 + ② 유출분배 지정)${sideTag}`;
       } else if (hasRR && hasTop) {
         s1 = {
           enabled: true,
@@ -3566,9 +4093,9 @@ function solveRigorousDistillationUncached(
           targetValue: topTarget,
           varyParam: 'd_over_f',
           varyMin: 0.005,
-          varyMax: 0.992,
+          varyMax: dfVaryUpperCap,
         };
-        dofMessage = '🟢 운전조건 2/2 완료 (① 환류비 + ③ 탑정 품질 → 유출량 자동역산)';
+        dofMessage = `🟢 운전조건 2/2 완료 (① 환류비 + ③ 탑정 품질 → 유출량 자동역산)${sideTag}`;
       } else if (hasRR && hasBot) {
         s1 = {
           enabled: true,
@@ -3578,9 +4105,9 @@ function solveRigorousDistillationUncached(
           targetValue: botTarget,
           varyParam: 'd_over_f',
           varyMin: 0.005,
-          varyMax: 0.992,
+          varyMax: dfVaryUpperCap,
         };
-        dofMessage = '🟢 운전조건 2/2 완료 (① 환류비 + ④ 탑저 품질 → 유출량 자동역산)';
+        dofMessage = `🟢 운전조건 2/2 완료 (① 환류비 + ④ 탑저 품질 → 유출량 자동역산)${sideTag}`;
       } else if (hasSplit && hasTop) {
         s1 = {
           enabled: true,
@@ -3592,7 +4119,7 @@ function solveRigorousDistillationUncached(
           varyMin: 0.15,
           varyMax: 45.0,
         };
-        dofMessage = '🟢 운전조건 2/2 완료 (② 유출분배 + ③ 탑정 품질 → 환류비 자동역산)';
+        dofMessage = `🟢 운전조건 2/2 완료 (② 유출분배 + ③ 탑정 품질 → 환류비 자동역산)${sideTag}`;
       } else if (hasSplit && hasBot) {
         s1 = {
           enabled: true,
@@ -3604,7 +4131,7 @@ function solveRigorousDistillationUncached(
           varyMin: 0.15,
           varyMax: 45.0,
         };
-        dofMessage = '🟢 운전조건 2/2 완료 (② 유출분배 + ④ 탑저 품질 → 환류비 자동역산)';
+        dofMessage = `🟢 운전조건 2/2 완료 (② 유출분배 + ④ 탑저 품질 → 환류비 자동역산)${sideTag}`;
       } else if (hasTop && hasBot) {
         isCoupledDualEndpoint = true;
         s1 = {
@@ -3615,7 +4142,7 @@ function solveRigorousDistillationUncached(
           targetValue: topTarget,
           varyParam: 'd_over_f',
           varyMin: 0.005,
-          varyMax: 0.992,
+          varyMax: dfVaryUpperCap,
         };
         s2 = {
           enabled: true,
@@ -3627,7 +4154,7 @@ function solveRigorousDistillationUncached(
           varyMin: 0.15,
           varyMax: 45.0,
         };
-        dofMessage = '🟢 운전조건 2/2 완료 (③ 탑정 품질 + ④ 탑저 품질 → RR·유출량 동시역산)';
+        dofMessage = `🟢 운전조건 2/2 완료 (③ 탑정 품질 + ④ 탑저 품질 → RR·유출량 동시역산)${sideTag}`;
       }
     }
   } else if (s1 && s2 && s1.varyParam === s2.varyParam) {
@@ -3651,7 +4178,7 @@ function solveRigorousDistillationUncached(
       ? Math.max(0.001, dfIsMassMode ? rawLo * (avgFeedMW / Math.max(2.0, maxCompMW)) * 0.85 : rawLo)
       : Math.max(0.15, rawLo);
     const hi = isDfVary
-      ? Math.min(0.996, dfIsMassMode ? rawHi * (avgFeedMW / Math.max(2.0, minCompMW)) * 1.15 : rawHi)
+      ? Math.min(primarySideCut ? Math.max(0.05, 0.995 - estimateSideCutFrac() * 0.92) : 0.996, dfIsMassMode ? rawHi * (avgFeedMW / Math.max(2.0, minCompMW)) * 1.15 : rawHi)
       : Math.min(65.0, rawHi);
     const toReportedParam = (pVal: number, sol: InnerMeshSolution): number => {
       if (!isDfVary || !dfIsMassMode) return pVal;
@@ -3888,10 +4415,45 @@ function solveRigorousDistillationUncached(
     return finalizeVary(bestX, bestSol, evals);
   };
 
-  let finalSol: InnerMeshSolution;
+  let finalSol!: InnerMeshSolution;
   let shortcutDesign: DistillShortcutDesignSummary | undefined;
   let dualSpecCandidates: DistillDesignCandidate[] | undefined;
   let autoStageOptimized = false;
+
+  let sideCutSpecStatus: DistillSideCutSpecStatus | undefined;
+
+  const pickBestSideCutStage = (
+    sol: InnerMeshSolution,
+    stageCount: number,
+    sc: DistillSideCutConfig
+  ): number => {
+    if (stageCount < 4) return clamp(sc.stage || 2, 2, Math.max(2, stageCount - 1));
+    const comp = sc.targetComp ?? defaultSideCutComp;
+    const isMinimize = sc.specType === 'impurity_ppm';
+    let bestSt = clamp(Math.round(sc.stage || Math.round(stageCount * 0.35)), 2, stageCount - 1);
+    let bestScore = isMinimize ? Infinity : -Infinity;
+    for (const st of sol.stages) {
+      if (st.stage <= 1 || st.stage >= stageCount) continue;
+      const pct = sc.phase === 'vapor' ? (st.yWtPct[comp] || 0) : (st.xWtPct[comp] || 0);
+      if (isMinimize ? pct < bestScore - 1e-4 : pct > bestScore + 1e-4) {
+        bestScore = pct;
+        bestSt = st.stage;
+      }
+    }
+    return clamp(bestSt, 2, stageCount - 1);
+  };
+
+  const evalSideCutMetric = (sol: InnerMeshSolution, sc: DistillSideCutConfig): number => {
+    const sd = sol.sideDraws?.[0];
+    if (!sd || sd.totalMassKgH <= 1e-9) return 0;
+    const comp = sc.targetComp ?? defaultSideCutComp;
+    if (sc.specType === 'impurity_ppm') return (sd.kgH[comp] / Math.max(1e-9, sd.totalMassKgH)) * 1e6;
+    if (sc.specType === 'recovery_pct') {
+      const fComp = totalFeedKgH[comp] || 0;
+      return fComp > 1e-9 ? (sd.kgH[comp] / fComp) * 100.0 : 0;
+    }
+    return (sd.kgH[comp] / Math.max(1e-9, sd.totalMassKgH)) * 100.0;
+  };
 
   const findBestFeedStageFromProfile = (
     sol: InnerMeshSolution,
@@ -4323,6 +4885,7 @@ function solveRigorousDistillationUncached(
     const botSign = botBasis === 'recovery_pct' ? 1 : -1;
     const isOppositeMonotonic = topSign * botSign < 0;
 
+    const dfCapMax = primarySideCut ? clamp(0.990 - estimateSideCutFrac() * 0.92, 0.05, 0.996) : 0.996;
     const evaluateBalancedDf = (
       rrNow: number,
       dfMoleCenter: number,
@@ -4330,7 +4893,7 @@ function solveRigorousDistillationUncached(
       tightSpan: boolean
     ): { bestDfMole: number; sol: InnerMeshSolution; metrics: ReturnType<typeof evalDesignMetrics>; evals: number } => {
       const meshIterLim = clamp(Math.round(68 + stageCountNow * 0.72), 95, 150);
-      const safeCenter = clamp(dfMoleCenter, minDfMolFloor, 0.996);
+      const safeCenter = clamp(dfMoleCenter, minDfMolFloor, dfCapMax);
       let ev = 0;
 
       const scoreEval = (xDf: number) => {
@@ -4368,7 +4931,7 @@ function solveRigorousDistillationUncached(
         let bPt: ReturnType<typeof scoreEval> | null = best.g > 0 ? best : null;
         const dir = best.g > 0 ? -1 : 1;
         for (const mult of mults) {
-          const xTry = clamp(safeCenter + dir * step0 * mult, minDfMolFloor, 0.996);
+          const xTry = clamp(safeCenter + dir * step0 * mult, minDfMolFloor, dfCapMax);
           if (Math.abs(xTry - safeCenter) < 1e-6) continue;
           const pt = scoreEval(xTry);
           consider(pt);
@@ -4380,7 +4943,7 @@ function solveRigorousDistillationUncached(
             if (pt.g >= 0) { bPt = pt; break; }
             else aPt = pt;
           }
-          if ((dir < 0 && xTry <= minDfMolFloor + 1e-6) || (dir > 0 && xTry >= 0.996 - 1e-6)) break;
+          if ((dir < 0 && xTry <= minDfMolFloor + 1e-6) || (dir > 0 && xTry >= dfCapMax - 1e-6)) break;
         }
 
         if (aPt && bPt && aPt.xDf < bPt.xDf - 1e-6) {
@@ -4517,9 +5080,19 @@ function solveRigorousDistillationUncached(
         : nTheoBase;
       const nCandInit = nCand;
       let nfCand = clamp(Math.round(1 + (nCand - 2) * learnedFeedFrac), 2, nCand - 1);
+      const sideRelPos =
+        primarySideCut && (colParams.totalStages ?? 24) >= 4
+          ? clamp((primarySideCut.stage - 1) / Math.max(1, (colParams.totalStages ?? 24) - 2), 0.08, 0.92)
+          : 0.30;
+      const syncSideStageForN = (sCount: number) => {
+        if (!primarySideCut) return;
+        const stCand = clamp(Math.round(1 + (sCount - 2) * sideRelPos), 2, Math.max(2, sCount - 1));
+        scOverrideBox.val = { ...scOverrideBox.val, stage: stCand };
+      };
 
       N = nCand;
       defaultFeedStage = nfCand;
+      syncSideStageForN(nCand);
       ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
 
       let rDesign = evaluateBalancedDf(opRR, rollingDfMole, nCand, candIdx > 0);
@@ -4565,6 +5138,7 @@ function solveRigorousDistillationUncached(
         }
         N = nCand;
         defaultFeedStage = nfCand;
+        syncSideStageForN(nCand);
         ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
         const escSeed = 0.5 * ((bestR.sol.converged ? bestR.bestDfMole : rDesign.bestDfMole) + initDfMole);
         const rNext = evaluateBalancedDf(opRR, escSeed, nCand, true);
@@ -4586,6 +5160,7 @@ function solveRigorousDistillationUncached(
         if (Math.abs(profNf - bestNf) >= Math.max(2, Math.round(0.06 * bestStageN))) {
           N = bestStageN;
           defaultFeedStage = profNf;
+          syncSideStageForN(bestStageN);
           ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
           const pol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true);
           totalEvals += pol.evals;
@@ -4593,6 +5168,19 @@ function solveRigorousDistillationUncached(
             bestR = pol;
             bestNf = profNf;
           }
+        }
+      }
+
+      if (primarySideCut?.autoOptimizeStage && bestR.sol.converged && bestStageN >= 5 && Date.now() - optStartMs < optBudgetMs - 150) {
+        const optSc = pickBestSideCutStage(bestR.sol, bestStageN, primarySideCut);
+        if (optSc !== (scOverrideBox.val?.stage ?? primarySideCut.stage)) {
+          N = bestStageN;
+          defaultFeedStage = bestNf;
+          scOverrideBox.val = { ...scOverrideBox.val, stage: optSc };
+          ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
+          const scPol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true);
+          totalEvals += scPol.evals;
+          if (scPol.sol.converged) bestR = scPol;
         }
       }
 
@@ -4696,6 +5284,17 @@ function solveRigorousDistillationUncached(
         converged: p.sol.converged,
         specsMet: p.specsMet,
         recommended: isRec,
+        ...(p.sol.sideDraws && p.sol.sideDraws.length > 0
+          ? {
+              sideCutStage: p.sol.sideDraws[0].stage,
+              sOverFMass: Number((p.sol.sideDraws[0].totalMassKgH / Math.max(1e-6, totalFeedMassKgH)).toFixed(4)),
+              sideCutPurityWtPct: (() => {
+                const sd0 = p.sol.sideDraws![0];
+                const scComp = primarySideCut?.targetComp ?? defaultSideCutComp;
+                return Number(((sd0.kgH[scComp] / Math.max(1e-9, sd0.totalMassKgH)) * 100.0).toFixed(2));
+              })(),
+            }
+          : {}),
       };
     });
 
@@ -4703,6 +5302,9 @@ function solveRigorousDistillationUncached(
     defaultFeedStage = chosenPack.feedStage;
     solvedRR = chosenPack.opRR;
     solvedDF = chosenPack.sol.actualDOverFMass;
+    if (chosenPack.sol.sideDraws && chosenPack.sol.sideDraws.length > 0 && primarySideCut) {
+      scOverrideBox.val = { ...scOverrideBox.val, stage: chosenPack.sol.sideDraws[0].stage };
+    }
     ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
     if (!chosenPack.sol.converged) {
       const fullSol = runMeshAt(chosenPack.opRR, chosenPack.dfMole, false);
@@ -4803,25 +5405,27 @@ function solveRigorousDistillationUncached(
     return { bestP, bestSol, evals };
   };
 
-  if (isOpenOrSemiOpen) {
-    const runOpenMesh = (rrVal: number, qRebKcalH: number): InnerMeshSolution =>
-      solveOpenOrSemiOpenMeshColumn({
-        model: chosenModel,
-        N,
-        feeds: preparedFeeds,
-        totalFeedMol,
-        totalFeedMassKgH,
-        activeComps,
-        condenserType,
-        reboilerType,
-        P_stageBarA,
-        topPressKgcm2g,
-        stageDeltaP,
-        meshMurphreeEff,
-        refluxRatio: rrVal,
-        reboilerDutyKcalH: qRebKcalH,
-        topCoolerDutyKcalH: colParams.topCoolerDutyKcalH ?? 0,
-      });
+  const executeMainModeSolve = (): InnerMeshSolution => {
+    if (isOpenOrSemiOpen) {
+      const runOpenMesh = (rrVal: number, qRebKcalH: number): InnerMeshSolution =>
+        solveOpenOrSemiOpenMeshColumn({
+          model: chosenModel,
+          N,
+          feeds: preparedFeeds,
+          totalFeedMol,
+          totalFeedMassKgH,
+          activeComps,
+          condenserType,
+          reboilerType,
+          P_stageBarA,
+          topPressKgcm2g,
+          stageDeltaP,
+          meshMurphreeEff,
+          refluxRatio: rrVal,
+          reboilerDutyKcalH: qRebKcalH,
+          topCoolerDutyKcalH: colParams.topCoolerDutyKcalH ?? 0,
+          sideDraws: buildInnerSideDraws(N),
+        });
 
     dofValid = true;
     s2 = undefined;
@@ -5104,10 +5708,11 @@ function solveRigorousDistillationUncached(
           ? (s2.metric === 'impurity_wt_ppm' ? s2.component : defaultTopComp)
           : s1.component;
       const lkFeedKg = totalFeedKgH[lkEstComp] || totalFeedKgH[defaultTopComp] || totalFeedMassKgH * 0.5;
+      const fixedDfCap = primarySideCut ? clamp(0.990 - estimateSideCutFrac() * 0.92, 0.05, 0.995) : 0.995;
       const dfMolSeed0 = clamp(
         estInitDistMolesForMass(lkFeedKg) / Math.max(1e-9, totalMolesIn),
         0.001,
-        0.994
+        Math.min(0.994, fixedDfCap)
       );
       let dfSeed = dfMolSeed0;
       let totalEv = 0;
@@ -5122,7 +5727,7 @@ function solveRigorousDistillationUncached(
           return { xDf, sol, d1, d2, w, g: d1 - d2 };
         };
 
-        let best = evalPt(clamp(centerDfMol, 0.001, 0.995));
+        let best = evalPt(clamp(centerDfMol, 0.001, fixedDfCap));
         const sign1 = s1!.metric === 'recovery_pct' ? -1 : 1;
         const sign2 = s2!.metric === 'recovery_pct' ? 1 : -1;
         if (sign1 * sign2 < 0 && best.sol.converged) {
@@ -5131,7 +5736,7 @@ function solveRigorousDistillationUncached(
           let aPt = best.g * sign1 <= 0 ? best : null;
           let bPt = best.g * sign1 > 0 ? best : null;
           for (const mult of [1, 3.5, 12.0, 35.0]) {
-            const xt = clamp(centerDfMol + dir * step0 * mult, 0.001, 0.995);
+            const xt = clamp(centerDfMol + dir * step0 * mult, 0.001, fixedDfCap);
             const pt = evalPt(xt);
             if (pt.w < best.w) best = pt;
             if (!pt.sol.converged) continue;
@@ -5244,6 +5849,152 @@ function solveRigorousDistillationUncached(
     finalSol = lastSol;
   } else {
     finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode);
+  }
+  return finalSol!;
+  };
+
+  finalSol = executeMainModeSolve();
+
+  // ── 사이드컷(측류) 자동 최적 인출단 탐색 & 품질/회수율 역산 ──
+  if (primarySideCut && N >= 3) {
+    const isQualityScSpec =
+      primarySideCut.specType === 'purity_wt_pct' ||
+      primarySideCut.specType === 'impurity_ppm' ||
+      primarySideCut.specType === 'recovery_pct';
+
+    if (primarySideCut.autoOptimizeStage && !autoStageOptimized && !isDesignStagesMode && finalSol.converged && N >= 5) {
+      const optSc = pickBestSideCutStage(finalSol, N, primarySideCut);
+      if (optSc !== (scOverrideBox.val?.stage ?? primarySideCut.stage)) {
+        scOverrideBox.val = { ...scOverrideBox.val, stage: optSc };
+        finalSol = executeMainModeSolve();
+      }
+    }
+
+    if (isQualityScSpec && finalSol.converged) {
+      const effScStage = scOverrideBox.val?.stage ?? primarySideCut.stage;
+      const compSc = primarySideCut.targetComp ?? defaultSideCutComp;
+      const curDFrac = clamp(finalSol.actualDOverFMass || baseDFMass, 0.002, 0.90);
+      const loS = 0.005;
+      const hiS = clamp(0.92 - (!s1 && !s2 && !isDesignStagesMode ? curDFrac : 0.05), 0.04, 0.85);
+      const hasOuterSpec = Boolean(s1 || s2 || isDesignStagesMode);
+      const evalAtSF = (sfVal: number): { val: number; err: number; sol: InnerMeshSolution } => {
+        scOverrideBox.val = { stage: effScStage, specType: 's_over_f_mass', specValue: sfVal };
+        if (hasOuterSpec && !isDesignStagesMode) {
+          finalSol = executeMainModeSolve();
+        } else {
+          finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode);
+        }
+        const val = evalSideCutMetric(finalSol, primarySideCut);
+        return { val, err: val - primarySideCut.specValue, sol: finalSol };
+      };
+      const initGuessSF = clamp(
+        primarySideCut.specType === 'recovery_pct'
+          ? ((totalFeedKgH[compSc] || totalFeedMassKgH * 0.15) * clamp(primarySideCut.specValue / 100, 0.05, 0.98)) /
+              Math.max(1e-6, totalFeedMassKgH)
+          : (totalFeedKgH[compSc] || totalFeedMassKgH * 0.15) / Math.max(1e-6, totalFeedMassKgH),
+        loS,
+        hiS
+      );
+      const tolSc =
+        primarySideCut.specType === 'impurity_ppm'
+          ? Math.max(2.0, primarySideCut.specValue * 0.03)
+          : primarySideCut.specType === 'recovery_pct'
+            ? 0.25
+            : 0.20;
+      const rInit = evalAtSF(initGuessSF);
+      let bestSF = initGuessSF;
+      let bestAbs = Math.abs(rInit.err);
+      let scEv = 1;
+      if (bestAbs > tolSc && Date.now() - solveStartMs < 3200) {
+        const rLo = evalAtSF(loS);
+        scEv++;
+        if (Math.abs(rLo.err) < bestAbs) { bestAbs = Math.abs(rLo.err); bestSF = loS; }
+        const rHi = evalAtSF(hiS);
+        scEv++;
+        if (Math.abs(rHi.err) < bestAbs) { bestAbs = Math.abs(rHi.err); bestSF = hiS; }
+
+        if (rLo.err * rHi.err <= 0) {
+          let a = loS, fa = rLo.err;
+          let b = hiS, fb = rHi.err;
+          for (let it = 0; it < 6; it++) {
+            if (Date.now() - solveStartMs > 3400 || bestAbs <= tolSc) break;
+            const sec = Math.abs(fb - fa) > 1e-9 ? a - (fa * (b - a)) / (fb - fa) : 0.5 * (a + b);
+            const m = 0.08 * (b - a);
+            const cx = it === 2 || sec <= a + m || sec >= b - m ? 0.5 * (a + b) : sec;
+            const rc = evalAtSF(cx);
+            scEv++;
+            if (Math.abs(rc.err) < bestAbs) { bestAbs = Math.abs(rc.err); bestSF = cx; }
+            if (bestAbs <= tolSc || b - a < 5e-4) break;
+            if (fa * rc.err <= 0) { b = cx; fb = rc.err; } else { a = cx; fa = rc.err; }
+          }
+        } else {
+          let gLo = loS, gHi = hiS;
+          for (let it = 0; it < 5; it++) {
+            if (Date.now() - solveStartMs > 3400 || bestAbs <= tolSc) break;
+            const m1 = gLo + 0.382 * (gHi - gLo);
+            const m2 = gLo + 0.618 * (gHi - gLo);
+            const p1 = evalAtSF(m1);
+            const p2 = evalAtSF(m2);
+            scEv += 2;
+            const e1 = Math.abs(p1.err);
+            const e2 = Math.abs(p2.err);
+            if (e1 < bestAbs) { bestAbs = e1; bestSF = m1; }
+            if (e2 < bestAbs) { bestAbs = e2; bestSF = m2; }
+            if (e1 <= e2) gHi = m2; else gLo = m1;
+            if (gHi - gLo < 5e-4) break;
+          }
+        }
+      }
+      scOverrideBox.val = { stage: effScStage, specType: 's_over_f_mass', specValue: bestSF };
+      if (hasOuterSpec) finalSol = executeMainModeSolve();
+      else finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode);
+      outerIters += scEv;
+
+      const actualVal = evalSideCutMetric(finalSol, primarySideCut);
+      const errAbs = Math.abs(actualVal - primarySideCut.specValue);
+      const met =
+        primarySideCut.specType === 'impurity_ppm'
+          ? actualVal <= primarySideCut.specValue + tolSc
+          : primarySideCut.specType === 'recovery_pct'
+            ? errAbs <= Math.max(0.5, tolSc * 2)
+            : actualVal >= primarySideCut.specValue - Math.max(0.35, tolSc * 2);
+      const unitLbl = primarySideCut.specType === 'impurity_ppm' ? 'ppm' : '%';
+      const metricName =
+        primarySideCut.specType === 'impurity_ppm'
+          ? `${compSc} 불순물`
+          : primarySideCut.specType === 'recovery_pct'
+            ? `${compSc} 회수율`
+            : `${compSc} 순도`;
+      sideCutSpecStatus = {
+        label: `측류 ${metricName} (${met ? '달성' : '근접'}: ${actualVal.toFixed(primarySideCut.specType === 'impurity_ppm' ? 1 : 2)} ${unitLbl})`,
+        target: primarySideCut.specValue,
+        actual: Number(actualVal.toFixed(2)),
+        errorAbs: Number(errAbs.toFixed(3)),
+        met,
+      };
+    } else if (finalSol.sideDraws && finalSol.sideDraws.length > 0) {
+      const sd0 = finalSol.sideDraws[0];
+      const compSc = primarySideCut.targetComp ?? defaultSideCutComp;
+      const purPct = (sd0.kgH[compSc] / Math.max(1e-9, sd0.totalMassKgH)) * 100;
+      const tgt = primarySideCut.specValue;
+      const act =
+        primarySideCut.specType === 'mass_kgh'
+          ? sd0.totalMassKgH
+          : primarySideCut.specType === 's_over_f_mass'
+            ? sd0.totalMassKgH / Math.max(1e-6, totalFeedMassKgH)
+            : primarySideCut.specType === 's_over_f_mole'
+              ? sd0.totalMolesKmolH / Math.max(1e-6, totalMolesIn)
+              : tgt;
+      const errAbs = Math.abs(act - tgt);
+      const met = !finalSol.sideCutClamped && (primarySideCut.specType === 'draw_ratio' || errAbs <= Math.max(0.5, 0.03 * Math.max(1e-3, tgt)));
+      sideCutSpecStatus = {
+        label: `측류 ${sd0.stage}단 ${sd0.phase === 'G' ? '기상' : '액상'} S=${sd0.totalMassKgH.toFixed(1)} kg/h (${compSc} ${purPct.toFixed(1)} wt%)${finalSol.sideCutClamped ? ' [유량상한 보정]' : ''}`,
+        target: tgt,
+        actual: Number(act.toFixed(4)),
+        errorAbs: Number(errAbs.toFixed(4)),
+        met,
+      };
+    }
   }
 
   const makeSpecStatus = (spec: DistillDesignSpec | undefined): DistillSpecStatus | undefined => {
@@ -5548,6 +6299,13 @@ function solveRigorousDistillationUncached(
           `AI 다중후보 ${dualSpecCandidates.length}안(${metCnt}안 스펙 달성) 동시 최적화 후 TAC 최소 조건 적용 (N=${N}단 · 피드 ${defaultFeedStage}단)`
         );
       }
+      if (finalSol.sideDraws && finalSol.sideDraws.length > 0) {
+        const sd0 = finalSol.sideDraws[0];
+        const sOverF = sd0.totalMassKgH / Math.max(1e-6, totalFeedMassKgH);
+        okDetails.push(
+          `사이드컷 측류 S (${sd0.stage}단 · ${sd0.phase === 'G' ? '기상' : '액상'}): ${sd0.totalMassKgH.toFixed(1)} kg/h (S/F ${(sOverF * 100).toFixed(1)}%, T=${sd0.tempC.toFixed(1)}°C)${sideCutSpecStatus ? ` — ${sideCutSpecStatus.label}` : ''}`
+        );
+      }
       if (okDetails.length === 0) {
         const totDistMass = ALL_KEYS.reduce((s, k) => s + finalSol.distillateKgH[k], 0);
         if (isOpenOrSemiOpen) {
@@ -5592,6 +6350,23 @@ function solveRigorousDistillationUncached(
     };
   };
 
+  const sideDraw0 = finalSol.sideDraws?.[0];
+  const sideCutFlowsKgH = sideDraw0
+    ? (() => {
+        const acc = zeroCompRecord();
+        for (const sd of finalSol.sideDraws!) {
+          for (const k of ALL_KEYS) acc[k] += sd.kgH[k] || 0;
+        }
+        return acc;
+      })()
+    : undefined;
+  const sideCutMassKgH = sideDraw0
+    ? finalSol.sideDraws!.reduce((s, d) => s + d.totalMassKgH, 0)
+    : 0;
+  const sideCutMolesKmolH = sideDraw0
+    ? finalSol.sideDraws!.reduce((s, d) => s + d.totalMolesKmolH, 0)
+    : 0;
+
   return {
     converged: finalSol.converged,
     innerIterations: finalSol.iterations,
@@ -5626,6 +6401,31 @@ function solveRigorousDistillationUncached(
     autoStageOptimized,
     spec1Status,
     spec2Status,
+    ...(sideDraw0
+      ? {
+          sideCutFlowsKgH,
+          sideCutMassKgH,
+          sideCutMolesKmolH,
+          sideCutPhase: sideDraw0.phase,
+          sideCutTempC: sideDraw0.tempC,
+          sideCutPressKgcm2g: sideDraw0.pressKgcm2g,
+          sideCutStageUsed: sideDraw0.stage,
+          actualSOverFMass: sideCutMassKgH / Math.max(1e-6, totalFeedMassKgH),
+          actualSOverFMole: sideCutMolesKmolH / Math.max(1e-6, totalMolesIn),
+          sideCutSpecStatus,
+          sideCutDetails: finalSol.sideDraws!.map(d => ({
+            id: d.id,
+            label: d.label,
+            stage: d.stage,
+            phase: d.phase,
+            tempC: d.tempC,
+            pressKgcm2g: d.pressKgcm2g,
+            flowsKgH: d.kgH,
+            totalMassKgH: d.totalMassKgH,
+            totalMolesKmolH: d.totalMolesKmolH,
+          })),
+        }
+      : {}),
     diagnostics: buildDiagnostics(),
     stages: finalSol.stages,
   };

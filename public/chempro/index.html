@@ -791,10 +791,19 @@
           <!-- Subpanel B: Binary Distillation Inputs -->
           <div id="col_dist_subpanel">
             <div class="section-sub-header">
-              <span>탑 물질수지 및 분리 순도 조건</span>
-              <span>FUG + McCabe-Thiele</span>
+              <span>탑 물질수지 및 운전변수 · 사이드컷 설정</span>
+              <span>FUG / NRTL MESH</span>
             </div>
-            <div class="form-grid cols-3">
+            <div class="form-grid cols-2" style="margin-bottom:8px;">
+              <div class="field" style="grid-column: span 2;">
+                <label>운전변수 지정 방식 (DOF Specification Mode)</label>
+                <select id="col_dof_mode" onchange="App.onColumnDofModeChange()">
+                  <option value="spec_purity" selected>탑정·탑저 순도 지정 (x_D, x_B, R/R_min → 단수·환류비 산출)</option>
+                  <option value="spec_n_rr">단수 N · 환류비 RR · D/F 직접 지정 (고정 단수·유출비 Rating → x_D, x_B 산출)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-grid cols-3" style="margin-bottom:8px;">
               <div class="field">
                 <label>원료 유량 (F) <span class="unit">kmol/h</span></label>
                 <input type="number" id="col_F" value="100" step="5" oninput="App.onModelInputEdited('column')" />
@@ -804,18 +813,6 @@
                 <input type="number" id="col_zF" value="0.45" step="0.02" min="0.05" max="0.95" oninput="App.onModelInputEdited('column')" />
               </div>
               <div class="field">
-                <label>탑상 순도 (x_D) <span class="unit">mol</span></label>
-                <input type="number" id="col_xD" value="0.97" step="0.01" min="0.50" max="0.999" oninput="App.onModelInputEdited('column')" />
-              </div>
-              <div class="field">
-                <label>탑저 불순물 (x_B) <span class="unit">mol</span></label>
-                <input type="number" id="col_xB" value="0.02" step="0.005" min="0.001" max="0.45" oninput="App.onModelInputEdited('column')" />
-              </div>
-              <div class="field">
-                <label>환류비 배수 (R/R_min)</label>
-                <input type="number" id="col_R_mult" value="1.25" step="0.05" min="1.05" max="3.0" oninput="App.onModelInputEdited('column')" />
-              </div>
-              <div class="field">
                 <label>원료 열상태 (q)</label>
                 <select id="col_q" onchange="App.onModelInputEdited('column')">
                   <option value="1.0" selected>q = 1.0 (포화 액체)</option>
@@ -823,6 +820,67 @@
                   <option value="0.0">q = 0.0 (포화 증기)</option>
                   <option value="1.2">q = 1.2 (과냉각 액체)</option>
                 </select>
+              </div>
+            </div>
+            <div id="col_spec_purity_box">
+              <div class="form-grid cols-3">
+                <div class="field">
+                  <label>탑상 순도 (x_D) <span class="unit">mol</span></label>
+                  <input type="number" id="col_xD" value="0.97" step="0.01" min="0.50" max="0.999" oninput="App.onModelInputEdited('column')" />
+                </div>
+                <div class="field">
+                  <label>탑저 불순물 (x_B) <span class="unit">mol</span></label>
+                  <input type="number" id="col_xB" value="0.02" step="0.005" min="0.001" max="0.45" oninput="App.onModelInputEdited('column')" />
+                </div>
+                <div class="field">
+                  <label>환류비 배수 (R/R_min)</label>
+                  <input type="number" id="col_R_mult" value="1.25" step="0.05" min="1.05" max="3.0" oninput="App.onModelInputEdited('column')" />
+                </div>
+              </div>
+            </div>
+            <div id="col_spec_nrr_box" style="display:none;">
+              <div class="form-grid cols-3">
+                <div class="field">
+                  <label>이론 단수 (N) <span class="unit">Stages</span></label>
+                  <input type="number" id="col_N_fixed" value="20" step="1" min="4" max="150" oninput="App.onModelInputEdited('column')" />
+                </div>
+                <div class="field">
+                  <label>운전 환류비 (RR = L/D)</label>
+                  <input type="number" id="col_RR_fixed" value="2.0" step="0.1" min="0.1" max="30" oninput="App.onModelInputEdited('column')" />
+                </div>
+                <div class="field">
+                  <label>유출비 (D/F) <span class="unit">mol/mol</span></label>
+                  <input type="number" id="col_DF_fixed" value="0.45" step="0.02" min="0.05" max="0.95" oninput="App.onModelInputEdited('column')" />
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:8px; padding:8px 10px; border-radius:8px; background:rgba(124,58,237,0.06); border:1px solid rgba(124,58,237,0.28);">
+              <label style="display:flex; align-items:center; gap:8px; font-size:11.5px; font-weight:800; color:#5B21B6; cursor:pointer;">
+                <input type="checkbox" id="col_sidecut_on" onchange="App.onColumnSideCutChange()" style="width:15px; height:15px; accent-color:#7C3AED; cursor:pointer;" />
+                <span>사이드컷(측류, Side-Cut) 인출 활성 (Chimney Draw-Off + N7 노즐)</span>
+              </label>
+              <div id="col_sidecut_box" style="display:none; margin-top:8px;">
+                <div class="form-grid cols-3">
+                  <div class="field">
+                    <label>측류 인출 상상태 <span class="unit">Phase</span></label>
+                    <select id="col_sc_phase" onchange="App.onModelInputEdited('column')">
+                      <option value="liquid" selected>Liquid (액상 · 침니 콜렉터)</option>
+                      <option value="vapor">Vapor (기상 · 측류 노즐)</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>측류 인출비 (S/F) <span class="unit">mol/mol</span></label>
+                    <input type="number" id="col_sc_sf" value="0.15" step="0.02" min="0.01" max="0.60" oninput="App.onModelInputEdited('column')" />
+                  </div>
+                  <div class="field">
+                    <label>인출단 위치 <span class="unit">Stage Ratio</span></label>
+                    <select id="col_sc_stage_ratio" onchange="App.onModelInputEdited('column')">
+                      <option value="0.25" selected>0.25 — 상부 정류부 (Rectifying)</option>
+                      <option value="0.45">0.45 — 중간단 (Mid-Column)</option>
+                      <option value="0.70">0.70 — 하부 탈거부 (Stripping)</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

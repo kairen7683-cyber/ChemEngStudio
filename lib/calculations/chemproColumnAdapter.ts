@@ -128,6 +128,14 @@ export interface ChemproColumnInput {
   pack_key?: string;
   bed_max_h_m?: number;
   flood_pct?: number;
+  dofMode?: 'spec_purity' | 'spec_n_rr' | string;
+  fixedN?: number;
+  fixedRR?: number;
+  fixedDF?: number;
+  sideCutEnabled?: boolean;
+  sideCutPhase?: 'liquid' | 'vapor' | string;
+  sideCutSF?: number;
+  sideCutStageRatio?: number;
 }
 
 export interface ChemproDistillationResult {
@@ -232,6 +240,12 @@ export interface ChemproDistillationResult {
   packingDetail: ChemproPackingDetail | null;
   nozzleSchedule: ChemproNozzleItem[];
   manholeSchedule: ChemproManholeItem[];
+  dofMode?: 'spec_purity' | 'spec_n_rr';
+  S?: number;
+  xS_mol?: number;
+  sideCutStage?: number;
+  sideCutPhase?: 'liquid' | 'vapor';
+  sideCutTempC?: number;
   status: 'ok' | 'warning' | 'error';
   iterations: ColumnIterationRow[];
   warnings: ColumnWarning[];
@@ -434,6 +448,10 @@ interface MeshSolveOutput {
   massErrPct: number;
   energyErrPct: number;
   degeneratePinch: boolean;
+  D_final: number;
+  B_final: number;
+  xS_mol: number;
+  sideCutTempC: number;
 }
 
 /**
@@ -459,6 +477,12 @@ function solveBinaryNrtlMesh(params: {
   a12: number;
   a21: number;
   nrtlAlpha: number;
+  S?: number;
+  sideCutIdx?: number;
+  sideCutPhase?: 'liquid' | 'vapor';
+  adjustDForSpecPurity?: boolean;
+  xD_spec?: number;
+  xB_spec?: number;
 }): MeshSolveOutput {
   const {
     N_eq,
@@ -480,6 +504,13 @@ function solveBinaryNrtlMesh(params: {
     a21,
     nrtlAlpha,
   } = params;
+
+  const S = Math.max(0, params.S ?? 0);
+  const hasSc = S > 1e-6 && params.sideCutIdx !== undefined && params.sideCutIdx >= 1 && params.sideCutIdx < N_eq;
+  const scIdx = hasSc ? clampNum(Math.round(params.sideCutIdx!), 1, N_eq - 1) : -1;
+  const scIsVap = params.sideCutPhase === 'vapor';
+  let D_cur = D;
+  let B_cur = B;
 
   const nStages = N_eq + 1; // 0 = Total Condenser, 1..N_eq-1 = equilibrium trays, N_eq = Partial Reboiler
   const lkId = lkBase.id;
@@ -514,10 +545,10 @@ function solveBinaryNrtlMesh(params: {
   const hL = new Array<number>(nStages);
   const hV = new Array<number>(nStages);
 
-  const V_rect0 = (R + 1.0) * D;
-  const L_rect0 = R * D;
-  const V_strip0 = Math.max(0.2 * D, V_rect0 - (1.0 - q) * F);
-  const L_strip0 = L_rect0 + q * F;
+  const V_rect0 = (R + 1.0) * D_cur;
+  const L_rect0 = R * D_cur;
+  const V_strip0 = Math.max(0.2 * D_cur, V_rect0 - (1.0 - q) * F + (hasSc && scIsVap ? S : 0));
+  const L_strip0 = Math.max(0.1 * D_cur, L_rect0 + q * F - (hasSc && !scIsVap ? S : 0));
 
   let gamma1_top = bpTop0.gamma1;
   let gamma2_bot = bpBot0.gamma2;
@@ -532,11 +563,22 @@ function solveBinaryNrtlMesh(params: {
     K1[j] = bp.K1;
     K2[j] = bp.K2;
     y1[j] = j === 0 ? xInit : bp.y1;
-    if (j < feedIdx) {
+    if (hasSc) {
+      const F_cum = j >= feedIdx ? F : 0;
+      const S_cum = j >= scIdx ? S : 0;
+      const vHere = j === 0
+        ? 0
+        : Math.max(0.15 * D_cur, V_rect0 - (j > feedIdx ? (1.0 - q) * F : 0) + (scIsVap && j > scIdx ? S : 0));
+      const vBelow = j < N_eq
+        ? Math.max(0.15 * D_cur, V_rect0 - (j + 1 > feedIdx ? (1.0 - q) * F : 0) + (scIsVap && j + 1 > scIdx ? S : 0))
+        : 0;
+      V_flow[j] = vHere;
+      L_flow[j] = j === N_eq ? B_cur : Math.max(0.05 * D_cur, vBelow - (D_cur + S_cum - F_cum));
+    } else if (j < feedIdx) {
       L_flow[j] = L_rect0;
       V_flow[j] = j === 0 ? 0 : V_rect0;
     } else {
-      L_flow[j] = j === N_eq ? B : L_strip0;
+      L_flow[j] = j === N_eq ? B_cur : L_strip0;
       V_flow[j] = V_strip0;
     }
     const mh = calcMixtureEnthalpies(
@@ -554,6 +596,7 @@ function solveBinaryNrtlMesh(params: {
 
   for (let it = 1; it <= 45; it++) {
     iters = it;
+    const prevD = D_cur;
 
     // 1. Thomas tridiagonal component mass balances for LK (i=1) and HK (i=2)
     const buildAndSolveComponent = (compIdx: 1 | 2): number[] => {
@@ -565,21 +608,23 @@ function solveBinaryNrtlMesh(params: {
       const zFeedComp = compIdx === 1 ? zF : 1.0 - zF;
 
       // Stage 0: Total Condenser V1*y1 - (L0 + D)*x0 = 0
-      b[0] = -(L_flow[0] + D);
+      b[0] = -(L_flow[0] + D_cur);
       c[0] = V_flow[1] * Karr[1];
       d[0] = 0;
 
-      // Stages 1 .. N_eq - 1: L_{j-1}*x_{j-1} - (L_j + V_j*K_j)*x_j + V_{j+1}*K_{j+1}*x_{j+1} = -F_j*z_F
+      // Stages 1 .. N_eq - 1: L_{j-1}*x_{j-1} - ((L_j + SL_j) + (V_j + SV_j)*K_j)*x_j + V_{j+1}*K_{j+1}*x_{j+1} = -F_j*z_F
       for (let j = 1; j < N_eq; j++) {
+        const SL_j = hasSc && !scIsVap && j === scIdx ? S : 0;
+        const SV_j = hasSc && scIsVap && j === scIdx ? S : 0;
         a[j] = L_flow[j - 1];
-        b[j] = -(L_flow[j] + V_flow[j] * Karr[j]);
+        b[j] = -(L_flow[j] + SL_j + (V_flow[j] + SV_j) * Karr[j]);
         c[j] = V_flow[j + 1] * Karr[j + 1];
         d[j] = j === feedIdx ? -F * zFeedComp : 0;
       }
 
       // Stage N_eq: Partial Reboiler L_{N-1}*x_{N-1} - (B + V_N*K_N)*x_N = 0
       a[N_eq] = L_flow[N_eq - 1];
-      b[N_eq] = -(B + V_flow[N_eq] * Karr[N_eq]);
+      b[N_eq] = -(B_cur + V_flow[N_eq] * Karr[N_eq]);
       c[N_eq] = 0;
       d[N_eq] = 0;
 
@@ -621,6 +666,22 @@ function solveBinaryNrtlMesh(params: {
     }
     y1[0] = y1[1]; // vapor rising into total condenser
 
+    // Update D & B iteratively in spec_purity mode when side-cut is active
+    if (hasSc && params.adjustDForSpecPurity && it >= 2) {
+      const xS_curr = scIsVap ? y1[scIdx] : x1[scIdx];
+      const xD_tgt = params.xD_spec ?? xD_init;
+      const xB_tgt = params.xB_spec ?? xB_init;
+      const D_min = 0.02 * F;
+      const D_max = Math.max(D_min, F - S - 0.02 * F);
+      const D_target = clampNum(
+        (F * (zF - xB_tgt) - S * (xS_curr - xB_tgt)) / Math.max(0.02, xD_tgt - xB_tgt),
+        D_min,
+        D_max
+      );
+      D_cur = 0.6 * D_cur + 0.4 * D_target;
+      B_cur = Math.max(0.02 * F, F - D_cur - S);
+    }
+
     // 3. Evaluate Stage Mixture Enthalpies & Top-Envelope Non-CMO Flow Update
     for (let j = 0; j < nStages; j++) {
       const mh = calcMixtureEnthalpies(
@@ -631,41 +692,54 @@ function solveBinaryNrtlMesh(params: {
       hV[j] = mh.hV;
     }
 
-    V_flow[1] = V_rect0;
-    L_flow[0] = L_rect0;
+    const V_rect_cur = (R + 1.0) * D_cur;
+    const L_rect_cur = R * D_cur;
+    V_flow[1] = V_rect_cur;
+    L_flow[0] = L_rect_cur;
     const Qc_kJh = Math.max(100.0, V_flow[1] * (hV[1] - hL[0]));
     Qc_kW = Qc_kJh / 3600.0;
 
-    const vLo = Math.max(0.25 * D, 0.35 * V_rect0);
-    const vHi = Math.max(V_rect0, V_strip0) * 2.2;
+    const hS_cur = hasSc ? (scIsVap ? hV[scIdx] : hL[scIdx]) : 0;
+    const vLo = Math.max(0.15 * D_cur, 0.25 * V_rect_cur);
+    const vHi = Math.max(V_rect_cur, V_strip0, V_rect_cur + S) * 2.5;
     for (let j = 2; j < nStages; j++) {
       const aboveFeed = j - 1 >= feedIdx;
+      const aboveSide = hasSc && j - 1 >= scIdx;
       const F_above = aboveFeed ? F : 0;
-      const M_net_above = D - F_above;
-      const rhs_kJh = Qc_kJh + D * hL[0] - F_above * hF - M_net_above * hL[j - 1];
+      const S_above = aboveSide ? S : 0;
+      const M_net_above = D_cur + S_above - F_above;
+      const rhs_kJh = Qc_kJh + D_cur * hL[0] + S_above * hS_cur - F_above * hF - M_net_above * hL[j - 1];
       const latSpan = Math.max(500.0, hV[j] - hL[j - 1]);
       const V_new = clampNum(rhs_kJh / latSpan, vLo, vHi);
       V_flow[j] = 0.5 * V_flow[j] + 0.5 * V_new;
     }
     for (let j = 1; j < N_eq; j++) {
       const F_cum = j >= feedIdx ? F : 0;
-      L_flow[j] = Math.max(0.05 * D, V_flow[j + 1] - (D - F_cum));
+      const S_cum = hasSc && j >= scIdx ? S : 0;
+      L_flow[j] = Math.max(0.02 * D_cur, V_flow[j + 1] - (D_cur + S_cum - F_cum));
     }
-    L_flow[N_eq] = B;
+    L_flow[N_eq] = B_cur;
 
-    const Qr_kJh = Qc_kJh + D * hL[0] + B * hL[N_eq] - F * hF;
+    const Qr_kJh = Qc_kJh + D_cur * hL[0] + (hasSc ? S * hS_cur : 0) + B_cur * hL[N_eq] - F * hF;
     Qr_kW = Math.max(10.0, Qr_kJh / 3600.0);
 
-    const massErrRel = Math.abs(D * x1[0] + B * x1[N_eq] - F * zF) / Math.max(1e-6, F * zF);
-    if (it >= 5 && maxDX < 2e-4 && maxDT < 0.05 && massErrRel < 2e-3) {
+    const xS_step = hasSc ? (scIsVap ? y1[scIdx] : x1[scIdx]) : 0;
+    const massOut = D_cur * x1[0] + (hasSc ? S * xS_step : 0) + B_cur * x1[N_eq];
+    const massErrRel = Math.abs(massOut - F * zF) / Math.max(1e-6, F * zF);
+    const dErrRel = Math.abs(D_cur - prevD) / Math.max(1e-6, F);
+    if (it >= 5 && maxDX < 2e-4 && maxDT < 0.05 && massErrRel < 2e-3 && dErrRel < 1e-3) {
       converged = true;
       break;
     }
   }
 
-  const massErrPct = (Math.abs(D * x1[0] + B * x1[N_eq] - F * zF) / Math.max(1e-6, F * zF)) * 100.0;
+  const xS_mol = hasSc ? (scIsVap ? y1[scIdx] : x1[scIdx]) : 0;
+  const hS_final = hasSc ? (scIsVap ? hV[scIdx] : hL[scIdx]) : 0;
+  const sideCutTempC = hasSc ? T_C[scIdx] : T_feed_bp_C;
+
+  const massErrPct = (Math.abs(D_cur * x1[0] + (hasSc ? S * xS_mol : 0) + B_cur * x1[N_eq] - F * zF) / Math.max(1e-6, F * zF)) * 100.0;
   const energyIn_kW = (F * hF) / 3600.0 + Qr_kW;
-  const energyOut_kW = (D * hL[0] + B * hL[N_eq]) / 3600.0 + Qc_kW;
+  const energyOut_kW = (D_cur * hL[0] + (hasSc ? S * hS_final : 0) + B_cur * hL[N_eq]) / 3600.0 + Qc_kW;
   const energyErrPct = (Math.abs(energyIn_kW - energyOut_kW) / Math.max(1.0, Math.abs(Qc_kW) + Math.abs(Qr_kW))) * 100.0;
   const degeneratePinch = Math.abs(T_C[N_eq] - T_C[0]) < 0.35 || T_C.some((t) => !Number.isFinite(t));
 
@@ -687,6 +761,10 @@ function solveBinaryNrtlMesh(params: {
     massErrPct,
     energyErrPct,
     degeneratePinch,
+    D_final: D_cur,
+    B_final: B_cur,
+    xS_mol,
+    sideCutTempC,
   };
 }
 
@@ -913,10 +991,32 @@ export function solveDistillationColumn(
 
   const F = Math.max(1.0, inp.F_kmolh || 100.0);
   const zF = clampNum(inp.zF || 0.45, 0.02, 0.98);
-  const xD = clampNum(inp.xD || 0.96, zF + 0.02, 0.999);
-  const xB = clampNum(inp.xB || 0.03, 0.001, zF - 0.02);
   const q = inp.q !== undefined ? inp.q : 1.0;
+  const dofMode: 'spec_purity' | 'spec_n_rr' =
+    inp.dofMode === 'spec_n_rr' ? 'spec_n_rr' : 'spec_purity';
+  const sideCutEnabled = Boolean(inp.sideCutEnabled);
+  const sideCutPhase: 'liquid' | 'vapor' =
+    inp.sideCutPhase === 'vapor' ? 'vapor' : 'liquid';
+  const sideCutStageRatio = clampNum(inp.sideCutStageRatio ?? 0.35, 0.1, 0.9);
+  const sideCutSF = sideCutEnabled ? clampNum(inp.sideCutSF ?? 0.15, 0.01, 0.70) : 0;
+  const S = sideCutEnabled ? clampNum(sideCutSF * F, 0.01 * F, 0.70 * F) : 0;
+
+  let xD = clampNum(inp.xD || 0.96, zF + 0.02, 0.999);
+  let xB = clampNum(inp.xB || 0.03, 0.001, zF - 0.02);
   const R_mult = Math.max(1.03, inp.R_mult || 1.25);
+
+  let D_init = 0;
+  let B_init = 0;
+  if (dofMode === 'spec_n_rr') {
+    const fixedDF = clampNum(inp.fixedDF ?? 0.45, 0.05, 0.95);
+    D_init = clampNum(fixedDF * F, 0.02 * F, Math.max(0.03 * F, F - S - 0.02 * F));
+    B_init = Math.max(0.02 * F, F - D_init - S);
+    xD = clampNum((F * zF) / Math.max(1e-3, D_init + 0.08 * B_init), Math.min(0.99, zF + 0.03), 0.995);
+    xB = clampNum((F * zF - D_init * xD - S * zF) / Math.max(1e-3, B_init), 0.002, Math.max(0.003, zF - 0.02));
+    if (xB >= zF - 0.01) {
+      xB = clampNum(zF * 0.25, 0.002, Math.max(0.003, zF - 0.01));
+    }
+  }
 
   const iterations: ColumnIterationRow[] = [];
 
@@ -927,7 +1027,9 @@ export function solveDistillationColumn(
 
   iterations.push({
     iter: 1,
-    param: `탑상 이슬/기포점 수렴 (x_D=${xD.toFixed(3)})`,
+    param: dofMode === 'spec_n_rr'
+      ? `탑상 기포점 초기 추정 (Rating N=${Math.round(clampNum(inp.fixedN ?? 20, 4, 150))})`
+      : `탑상 이슬/기포점 수렴 (x_D=${xD.toFixed(3)})`,
     assumed: `${lkBase.tb.toFixed(1)} °C`,
     calc: `T_top=${bpTop.T_C.toFixed(1)} °C (α_top=${bpTop.alpha_loc.toFixed(2)}, γ₁=${bpTop.gamma1.toFixed(2)})`,
     err: `< 0.02% (${bpTop.iters}회)`,
@@ -943,7 +1045,9 @@ export function solveDistillationColumn(
   });
   iterations.push({
     iter: 3,
-    param: `탑저 기포점 수렴 (x_B=${xB.toFixed(3)})`,
+    param: dofMode === 'spec_n_rr'
+      ? `탑저 기포점 초기 추정 (D/F=${(D_init / F).toFixed(2)})`
+      : `탑저 기포점 수렴 (x_B=${xB.toFixed(3)})`,
     assumed: `${hkBase.tb.toFixed(1)} °C`,
     calc: `T_bot=${bpBot.T_C.toFixed(1)} °C (α_bot=${bpBot.alpha_loc.toFixed(2)}, γ₂=${bpBot.gamma2.toFixed(2)})`,
     err: `< 0.02% (${bpBot.iters}회)`,
@@ -975,10 +1079,23 @@ export function solveDistillationColumn(
   );
   const alpha = inp.manualAlpha && inp.alpha && inp.alpha > 1.01 ? inp.alpha : Math.max(1.05, alpha_calc);
 
-  // Overall Component Balance & FUG Shortcut
-  const D = (F * (zF - xB)) / (xD - xB);
-  const B = F - D;
-  const lk_recovery_pct = ((D * xD) / (F * zF)) * 100.0;
+  // Overall Component Balance & FUG Shortcut (or Direct N, R, D/F Rating Mode)
+  let D: number;
+  let B: number;
+  if (dofMode === 'spec_n_rr') {
+    D = D_init;
+    B = B_init;
+  } else if (sideCutEnabled && S > 0) {
+    const xS_init = clampNum(xD - sideCutStageRatio * (xD - xB), xB + 0.01, xD - 0.01);
+    const D_min = 0.02 * F;
+    const D_max = Math.max(D_min, F - S - 0.02 * F);
+    D = clampNum((F * (zF - xB) - S * (xS_init - xB)) / Math.max(0.01, xD - xB), D_min, D_max);
+    B = Math.max(0.02 * F, F - D - S);
+  } else {
+    D = (F * (zF - xB)) / (xD - xB);
+    B = F - D;
+  }
+  let lk_recovery_pct = ((D * xD) / (F * zF)) * 100.0;
 
   const Nmin = Math.log((xD / (1.0 - xD)) * ((1.0 - xB) / xB)) / Math.log(alpha);
 
@@ -999,7 +1116,9 @@ export function solveDistillationColumn(
 
   const Rmin_plus_1 = (alpha * xD) / (alpha - theta) + (1.0 - xD) / (1.0 - theta);
   const Rmin = Math.max(0.15, Rmin_plus_1 - 1.0);
-  const R = Rmin * R_mult;
+  const R = dofMode === 'spec_n_rr'
+    ? clampNum(inp.fixedRR ?? 2.0, 0.1, 30.0)
+    : Rmin * R_mult;
 
   const X_g = (R - Rmin) / (R + 1.0);
   const Y_g =
@@ -1007,9 +1126,11 @@ export function solveDistillationColumn(
     Math.exp(
       ((1.0 + 54.4 * X_g) / (11.0 + 117.2 * X_g)) * ((X_g - 1.0) / Math.sqrt(Math.max(1e-4, X_g)))
     );
-  const N_theo = (Y_g + Nmin) / Math.max(0.01, 1.0 - Y_g);
+  const N_theo = dofMode === 'spec_n_rr'
+    ? clampNum(Math.round(inp.fixedN ?? 20), 4, 150)
+    : (Y_g + Nmin) / Math.max(0.01, 1.0 - Y_g);
 
-  const ratio_NF = Math.pow((B / D) * (zF / (1.0 - zF)) * Math.pow((1.0 - xD) / xB, 2.0), 0.206);
+  const ratio_NF = Math.pow((B / Math.max(1e-3, D)) * (zF / (1.0 - zF)) * Math.pow((1.0 - xD) / Math.max(1e-4, xB), 2.0), 0.206);
   const N_rect_theo = N_theo * (ratio_NF / (1.0 + ratio_NF));
 
   let T_top_C = bpTop.T_C;
@@ -1051,15 +1172,18 @@ export function solveDistillationColumn(
   // Shortcut Internal Molar Flows & Condenser/Reboiler Duties
   let L_rect = R * D;
   let V_rect = (R + 1.0) * D;
-  let L_strip = L_rect + q * F;
-  let V_strip = Math.max(0.2 * D, V_rect - (1.0 - q) * F);
+  let L_strip = Math.max(0.1 * D, L_rect + q * F - (sideCutEnabled && sideCutPhase === 'liquid' ? S : 0));
+  let V_strip = Math.max(0.2 * D, V_rect - (1.0 - q) * F + (sideCutEnabled && sideCutPhase === 'vapor' ? S : 0));
 
   let Qc_kW = (V_rect * hv_kJmol * 1000.0) / 3600.0;
   let Qr_kW = (V_strip * hv_kJmol * 1000.0) / 3600.0;
 
-  // 2. Rigorous Mode: Stage-by-Stage Binary NRTL MESH Solver
+  // 2. Rigorous Mode (or Direct N/R/D Rating Mode): Stage-by-Stage Binary NRTL MESH Solver
   const N_eq_mesh = Math.max(4, Math.min(200, Math.round(N_theo)));
   const feedIdx_mesh = clampNum(Math.round(N_rect_theo), 1, N_eq_mesh - 1);
+  const scIdx_mesh = sideCutEnabled
+    ? clampNum(Math.round((N_eq_mesh - 2) * sideCutStageRatio) + 1, 1, Math.max(1, N_eq_mesh - 2))
+    : -1;
   const dP_est_bar = internals === 'packed' ? 0.025 : Math.min(0.45, N_actual * 0.006);
 
   let x_profile: number[];
@@ -1073,13 +1197,15 @@ export function solveDistillationColumn(
 
   let xD_mesh = xD;
   let xB_mesh = xB;
+  let xS_mol = sideCutEnabled ? zF : 0;
+  let sideCutTempC = T_feed_C;
   let meshConverged = false;
   let meshIterations = 0;
   let meshFallbackUsed = false;
   let meshMassBalanceErrPct = 0;
   let meshEnergyBalanceErrPct = 0;
 
-  if (mode === 'rigorous') {
+  if (mode === 'rigorous' || dofMode === 'spec_n_rr') {
     const meshOut = solveBinaryNrtlMesh({
       N_eq: N_eq_mesh,
       feedIdx: feedIdx_mesh,
@@ -1099,6 +1225,12 @@ export function solveDistillationColumn(
       a12,
       a21,
       nrtlAlpha,
+      S: sideCutEnabled ? S : 0,
+      sideCutIdx: sideCutEnabled ? scIdx_mesh : undefined,
+      sideCutPhase: sideCutEnabled ? sideCutPhase : undefined,
+      adjustDForSpecPurity: sideCutEnabled && dofMode === 'spec_purity',
+      xD_spec: xD,
+      xB_spec: xB,
     });
 
     meshIterations = meshOut.iterations;
@@ -1118,6 +1250,17 @@ export function solveDistillationColumn(
       stage_pressures_bar = meshOut.stage_pressures_bar;
       xD_mesh = x_profile[0];
       xB_mesh = x_profile[N_eq_mesh];
+      D = meshOut.D_final;
+      B = meshOut.B_final;
+      if (dofMode === 'spec_n_rr') {
+        xD = xD_mesh;
+        xB = xB_mesh;
+      }
+      lk_recovery_pct = ((D * xD) / (F * zF)) * 100.0;
+      if (sideCutEnabled) {
+        xS_mol = meshOut.xS_mol;
+        sideCutTempC = meshOut.sideCutTempC;
+      }
       T_top_C = T_profile[0];
       T_bot_C = T_profile[N_eq_mesh];
       gamma1_top = meshOut.gamma1_top;
@@ -1132,9 +1275,11 @@ export function solveDistillationColumn(
 
       iterations.push({
         iter: 4,
-        param: `Rigorous NRTL MESH (${N_eq_mesh + 1}단 왕-헨케 Tridiagonal + 열수지)`,
-        assumed: `xD=${xD.toFixed(3)}, xB=${xB.toFixed(4)}`,
-        calc: `xD_mesh=${xD_mesh.toFixed(3)}, xB_mesh=${xB_mesh.toFixed(4)} (${meshIterations}회)`,
+        param: `Rigorous NRTL MESH (${N_eq_mesh + 1}단 왕-헨케 Tridiagonal + 열수지${sideCutEnabled ? ' + 측류' : ''})`,
+        assumed: dofMode === 'spec_n_rr'
+          ? `N=${N_eq_mesh}, R=${R.toFixed(2)}, D/F=${(D / F).toFixed(2)}`
+          : `xD=${xD.toFixed(3)}, xB=${xB.toFixed(4)}`,
+        calc: `xD_mesh=${xD_mesh.toFixed(3)}, xB_mesh=${xB_mesh.toFixed(4)}${sideCutEnabled ? `, xS=${xS_mol.toFixed(3)}` : ''} (${meshIterations}회)`,
         err: `Mass ${meshMassBalanceErrPct.toFixed(3)}% / Heat ${meshEnergyBalanceErrPct.toFixed(3)}%`,
         note: `Qc=${Qc_kW.toFixed(1)} kW, Qr=${Qr_kW.toFixed(1)} kW`,
       });
@@ -1153,6 +1298,10 @@ export function solveDistillationColumn(
       K1_profile = fb.K1_profile;
       K2_profile = fb.K2_profile;
       stage_pressures_bar = fb.stage_pressures_bar;
+      if (sideCutEnabled) {
+        xS_mol = sideCutPhase === 'vapor' ? y_profile[scIdx_mesh] : x_profile[scIdx_mesh];
+        sideCutTempC = T_profile[scIdx_mesh];
+      }
 
       iterations.push({
         iter: 4,
@@ -1176,6 +1325,10 @@ export function solveDistillationColumn(
     K1_profile = fb.K1_profile;
     K2_profile = fb.K2_profile;
     stage_pressures_bar = fb.stage_pressures_bar;
+    if (sideCutEnabled) {
+      xS_mol = sideCutPhase === 'vapor' ? y_profile[scIdx_mesh] : x_profile[scIdx_mesh];
+      sideCutTempC = T_profile[scIdx_mesh];
+    }
   }
 
   // Max column traffic for hydraulics (using MESH non-CMO peak when available)
@@ -1393,7 +1546,7 @@ export function solveDistillationColumn(
     dP_total_mbar = tRes.dpMbar * N_actual;
 
     HETP_m = traySpacing_m / Math.max(0.25, E_overall);
-    H_tangent_m = N_actual * traySpacing_m + 3.5;
+    H_tangent_m = N_actual * traySpacing_m + 3.5 + (sideCutEnabled && S > 0 && sideCutPhase === 'liquid' ? 0.6 : 0);
     const trayTypeLabel =
       trayType === 'valve' ? 'Valve Tray' : trayType === 'bubble_cap' ? 'Bubble-Cap Tray' : 'Sieve Tray';
     internalsSummary = `${trayTypeLabel} (${tRes.geom.passes}-Pass, d_h=${holeD_mm}mm, h_w=${weirH_mm}mm, 개공비 ${holeAreaPct}%)`;
@@ -1478,12 +1631,6 @@ export function solveDistillationColumn(
     }
   }
 
-  const status: 'ok' | 'warning' | 'error' = warnings.some((w) => w.level === 'danger')
-    ? 'error'
-    : warnings.some((w) => w.level === 'warn')
-      ? 'warning'
-      : 'ok';
-
   // ── EPC 본체 · 트레이/패킹 상세 · 노즐 EL 스케줄 구축 ──
   const vesselSpec = buildChemproVesselAndLevels({
     D_col_m,
@@ -1497,6 +1644,26 @@ export function solveDistillationColumn(
   const stripBotEl = vesselSpec.hllElMm + 900;
   const internalsSpanMm = Math.max(1200, vesselSpec.ttlElMm - stripBotEl - 950);
   const feedElMm = stripBotEl + Math.round(internalsSpanMm * (1 - clampNum(feed_stage_actual / Math.max(2, N_actual), 0.15, 0.85)));
+
+  const sideCutStage = sideCutEnabled && S > 0
+    ? clampNum(Math.round((N_actual - 2) * sideCutStageRatio) + 2, 2, Math.max(2, N_actual - 1))
+    : undefined;
+  const scElMm = sideCutStage !== undefined
+    ? stripBotEl + Math.round(internalsSpanMm * (1 - clampNum(sideCutStage / Math.max(2, N_actual), 0.12, 0.88)))
+    : undefined;
+
+  if (sideCutEnabled && S > 0 && sideCutStage !== undefined && scElMm !== undefined) {
+    warnings.push({
+      level: 'ok',
+      text: `사이드컷 측류 인출 활성: Stage #${sideCutStage} (${sideCutPhase === 'vapor' ? '기상' : '액상'}), S=${S.toFixed(1)} kmol/h (S/F=${((S / F) * 100).toFixed(1)}%), x_S=${xS_mol.toFixed(3)}, T=${sideCutTempC.toFixed(1)}°C (N7 @ EL +${scElMm}mm)`,
+    });
+  }
+
+  const status: 'ok' | 'warning' | 'error' = warnings.some((w) => w.level === 'danger')
+    ? 'error'
+    : warnings.some((w) => w.level === 'warn')
+      ? 'warning'
+      : 'ok';
 
   let trayDetail: ChemproTrayDetail | null = null;
   let packingDetail: ChemproPackingDetail | null = null;
@@ -1629,6 +1796,24 @@ export function solveDistillationColumn(
     { tag: 'N5', service: 'Reboiler Vapor Return', phase: 'Two-Phase', selectedDn: nz5.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Vw_kgh), velMS: nz5.velMS, elevationMm: Math.min(stripBotEl - 180, Math.round((vesselSpec.hllElMm + stripBotEl) * 0.5)), elevationFromBtlMm: Math.round((vesselSpec.hllElMm + stripBotEl) * 0.5) - vesselSpec.btlElMm, orientationDeg: 90 },
     { tag: 'N6', service: 'Reboiler Liquid Supply', phase: 'Liquid', selectedDn: nz6.selectedDn, flangeRating: vesselSpec.flangeRating, flowKgH: Math.round(Vw_kgh * 2.5), velMS: nz6.velMS, elevationMm: vesselSpec.lllElMm, elevationFromBtlMm: vesselSpec.lllElMm - vesselSpec.btlElMm, orientationDeg: 90 },
   ];
+  if (sideCutEnabled && S > 0 && sideCutStage !== undefined && scElMm !== undefined) {
+    const mwSide = xS_mol * lkAvg.mw + (1.0 - xS_mol) * hkAvg.mw;
+    const sKgH = S * mwSide;
+    const isVapSc = sideCutPhase === 'vapor';
+    const nz7 = pickChemproNozzleDn(sKgH, isVapSc ? rhoV : rhoL, isVapSc ? 18.0 : 1.2);
+    nozzleSchedule.push({
+      tag: 'N7',
+      service: isVapSc ? `Side-Cut Draw (Vapor, Stg #${sideCutStage})` : `Side-Cut Draw (Liquid, Stg #${sideCutStage})`,
+      phase: isVapSc ? 'Vapor' : 'Liquid',
+      selectedDn: nz7.selectedDn,
+      flangeRating: vesselSpec.flangeRating,
+      flowKgH: Math.round(sKgH),
+      velMS: nz7.velMS,
+      elevationMm: scElMm,
+      elevationFromBtlMm: scElMm - vesselSpec.btlElMm,
+      orientationDeg: 90,
+    });
+  }
   const mhSize = D_col_m >= 1.2 ? 'DN500 (20")' : 'DN450 (18")';
   const manholeSchedule: ChemproManholeItem[] = [
     { tag: 'M1', sizeDn: mhSize, flangeRating: vesselSpec.flangeRating, service: 'Top Internals Access Manway', elevationMm: vesselSpec.ttlElMm - 380, orientationDeg: 180 },
@@ -1737,6 +1922,16 @@ export function solveDistillationColumn(
     packingDetail,
     nozzleSchedule,
     manholeSchedule,
+    dofMode,
+    S: sideCutEnabled ? S : 0,
+    ...(sideCutEnabled && S > 0
+      ? {
+          xS_mol,
+          sideCutStage,
+          sideCutPhase,
+          sideCutTempC,
+        }
+      : {}),
     status,
     iterations,
     warnings,

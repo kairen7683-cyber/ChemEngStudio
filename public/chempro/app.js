@@ -530,6 +530,27 @@ window.App = (function () {
     recalc();
   }
 
+  function onColumnDofModeChange() {
+    const dofMode = document.getElementById('col_dof_mode')?.value || 'spec_purity';
+    const purityBox = document.getElementById('col_spec_purity_box');
+    const nrrBox = document.getElementById('col_spec_nrr_box');
+    if (purityBox) purityBox.style.display = dofMode === 'spec_purity' ? 'block' : 'none';
+    if (nrrBox) nrrBox.style.display = dofMode === 'spec_n_rr' ? 'block' : 'none';
+    syncCustomSelectTrigger('col_dof_mode');
+    markSolverPending('column');
+    recalc();
+  }
+
+  function onColumnSideCutChange() {
+    const on = Boolean(document.getElementById('col_sidecut_on')?.checked);
+    const box = document.getElementById('col_sidecut_box');
+    if (box) box.style.display = on ? 'block' : 'none';
+    syncCustomSelectTrigger('col_sc_phase');
+    syncCustomSelectTrigger('col_sc_stage_ratio');
+    markSolverPending('column');
+    recalc();
+  }
+
   function onModelInputEdited(eqType) {
     if (eqType === 'hx' || eqType === 'column') {
       markSolverPending(eqType);
@@ -925,6 +946,14 @@ window.App = (function () {
         xB: numVal('col_xB', 0.02),
         R_mult: numVal('col_R_mult', 1.25),
         q: numVal('col_q', 1.0),
+        dofMode: document.getElementById('col_dof_mode')?.value || 'spec_purity',
+        fixedN: numVal('col_N_fixed', 20),
+        fixedRR: numVal('col_RR_fixed', 2.0),
+        fixedDF: numVal('col_DF_fixed', 0.45),
+        sideCutEnabled: Boolean(document.getElementById('col_sidecut_on')?.checked),
+        sideCutPhase: document.getElementById('col_sc_phase')?.value || 'liquid',
+        sideCutSF: numVal('col_sc_sf', 0.15),
+        sideCutStageRatio: numVal('col_sc_stage_ratio', 0.35),
         internals: document.getElementById('col_internals')?.value || 'tray',
         tray_type: document.getElementById('col_tray_type')?.value || 'sieve',
         tray_passes: numVal('col_tray_passes', 1),
@@ -1338,7 +1367,7 @@ window.App = (function () {
         <div class="kpi-box">
           <div class="kpi-label">응축기(Qc) / 리보일러(Qr) 열부하</div>
           <div class="kpi-val">${colRes.Qc_kW.toFixed(0)} / ${colRes.Qr_kW.toFixed(0)}<span class="kpi-unit">kW</span></div>
-          <div class="kpi-sub">${isPacked ? `환류비 R=${colRes.R.toFixed(2)} (R_min ${colRes.Rmin.toFixed(2)}) · GPDC 수렴` : `Weep 안전비 ${colRes.weep_ratio.toFixed(2)}x · DC백업 ${colRes.dc_backup_pct.toFixed(1)}%`}</div>
+          <div class="kpi-sub">${isPacked ? `환류비 R=${colRes.R.toFixed(2)} (R_min ${colRes.Rmin.toFixed(2)}) · GPDC 수렴` : `Weep 안전비 ${colRes.weep_ratio.toFixed(2)}x · DC백업 ${colRes.dc_backup_pct.toFixed(1)}%`}${colRes.dofMode === 'spec_n_rr' ? ` · xD=${colRes.xD.toFixed(3)} / xB=${colRes.xB.toFixed(4)}` : ''}${colRes.S > 0 ? ` · 측류 S=${colRes.S.toFixed(1)} (xS=${(colRes.xS_mol ?? 0).toFixed(3)}, #${colRes.sideCutStage})` : ''}</div>
         </div>
       `;
     }
@@ -1963,6 +1992,9 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const pk = r.packingDetail || {};
       lines.push(`[PART I. 본체 사양 (Vessel & Shell Spec — ${isAbs ? 'PACKED ABSORBER' : isPacked ? 'PACKED COLUMN' : 'TRAYED COLUMN'})]`);
       lines.push(`- 유체: ${r.lkBase?.name} / ${r.hkBase?.name} | 압력 ${r.P_bar?.toFixed(2)} barA`);
+      if (!isAbs) {
+        lines.push(`- 물질수지: F=${r.F?.toFixed(1)} / D=${r.D?.toFixed(1)}${r.S > 0 ? ` / S=${r.S.toFixed(1)} (xS=${(r.xS_mol ?? 0).toFixed(3)}, Stg #${r.sideCutStage}, ${r.sideCutPhase})` : ''} / B=${r.B?.toFixed(1)} kmol/h | xD=${r.xD?.toFixed(3)}, xB=${r.xB?.toFixed(4)}`);
+      }
       lines.push(`- 동체 내경 × T/T × 스커트 × O.A.L.: ID Ø${vs.idMm || Math.round((r.D_col_m || 1) * 1000)}mm × ${vs.hTangentMm || Math.round((r.H_tangent_m || 10) * 1000)}mm × Skirt ${vs.skirtHeightMm || 3200}mm × O.A.L. ${vs.oalElMm || '-'}mm`);
       lines.push(`- ASME 설계 P/T 및 두께: ${vs.designP_barG || 3.5} barG / ${vs.designT_C || 140}°C | Shell ${vs.wallThicknessMm || 12}t / Head ${vs.headThicknessMm || 12}t (CA ${vs.corrAllowanceMm || 3}mm)`);
       lines.push(`- 섬프 액위 고도: LLL EL +${vs.lllElMm || '-'} / NLL +${vs.nllElMm || '-'} / HLL +${vs.hllElMm || '-'} mm | 중량 Empty ${vs.emptyWeightKg || '-'} / Oper ${vs.operWeightKg || '-'} kg`);
@@ -2802,7 +2834,18 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (c.R_mult !== undefined) setVal('col_R_mult', c.R_mult, 2);
       if (c.q !== undefined) setVal('col_q', c.q, 2);
       if (c.tray_eff_pct !== undefined) setVal('col_eff', c.tray_eff_pct, 0);
+      if (c.dofMode) setSelectSafe('col_dof_mode', c.dofMode);
+      if (c.fixedN !== undefined) setVal('col_N_fixed', c.fixedN, 0);
+      if (c.fixedRR !== undefined) setVal('col_RR_fixed', c.fixedRR, 2);
+      if (c.fixedDF !== undefined) setVal('col_DF_fixed', c.fixedDF, 2);
+      const scChk = document.getElementById('col_sidecut_on');
+      if (scChk) scChk.checked = Boolean(c.sideCutEnabled);
+      if (c.sideCutPhase) setSelectSafe('col_sc_phase', c.sideCutPhase);
+      if (c.sideCutSF !== undefined) setVal('col_sc_sf', c.sideCutSF, 2);
+      if (c.sideCutStageRatio !== undefined) setSelectSafe('col_sc_stage_ratio', String(c.sideCutStageRatio));
       onColumnModeChange();
+      onColumnDofModeChange();
+      onColumnSideCutChange();
       if (c.col_mode === 'distillation') {
         setSelectSafe('col_internals', c.internals || 'tray');
       }
@@ -2857,6 +2900,8 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     onHXPhaseModeChange,
     onColumnModeChange,
     onColumnInternalsChange,
+    onColumnDofModeChange,
+    onColumnSideCutChange,
     onModelInputEdited,
     runRigorousConvergence,
     onPumpFluidChange,

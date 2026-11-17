@@ -675,23 +675,42 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
             style={{ ...handleStyle, top: '26%', opacity: 0, pointerEvents: 'none' }}
           />
           <Handle
+            id="out"
+            type="source"
+            position={Position.Right}
+            style={{
+              ...handleStyle,
+              top: data.unitType === 'distillation' ? '39%' : '48%',
+              opacity: 0,
+              pointerEvents: 'none',
+            }}
+          />
+          {data.unitType === 'distillation' && (
+            <Handle
+              id="side_cut"
+              type="source"
+              position={Position.Right}
+              title="사이드컷 측류 출구 (Side-Cut S)"
+              style={{ ...handleStyle, top: '52%', borderColor: '#7C3AED' }}
+            />
+          )}
+          <Handle
             id="liquid"
             type="source"
             position={Position.Right}
             title="하부 / 액상 / 탑저 유출"
-            style={{ ...handleStyle, top: '70%' }}
+            style={{ ...handleStyle, top: data.unitType === 'distillation' ? '78%' : '70%' }}
           />
           <Handle
             id="bot"
             type="source"
             position={Position.Right}
-            style={{ ...handleStyle, top: '70%', opacity: 0, pointerEvents: 'none' }}
-          />
-          <Handle
-            id="out"
-            type="source"
-            position={Position.Right}
-            style={{ ...handleStyle, top: '48%', opacity: 0, pointerEvents: 'none' }}
+            style={{
+              ...handleStyle,
+              top: data.unitType === 'distillation' ? '78%' : '70%',
+              opacity: 0,
+              pointerEvents: 'none',
+            }}
           />
         </>
       ) : !isProduct ? (

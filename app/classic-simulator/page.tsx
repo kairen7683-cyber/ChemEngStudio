@@ -1895,7 +1895,18 @@ export default function ClassicSimulatorPage() {
                   <div style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 5, background: '#F8FAFC' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>Inlet / Outlet Streams</div>
                     <div style={{ fontSize: 11, color: '#334155' }}>In: {inEdges.map(e => e.streamNo).join(', ') || 'None'}</div>
-                    <div style={{ fontSize: 11, color: '#334155', marginTop: 3 }}>Out: {outEdges.map(e => e.streamNo).join(', ') || 'None'}</div>
+                    <div style={{ fontSize: 11, color: '#334155', marginTop: 3 }}>
+                      Out:{' '}
+                      {outEdges
+                        .map(e =>
+                          e.sourcePort === 'side_cut'
+                            ? `${e.streamNo}(측류 S)`
+                            : e.sourcePort === 'decanter'
+                              ? `${e.streamNo}(디캔터)`
+                              : e.streamNo
+                        )
+                        .join(', ') || 'None'}
+                    </div>
                   </div>
                   <div style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 5, background: '#F8FAFC' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>Block Results</div>
@@ -2185,6 +2196,7 @@ export default function ClassicSimulatorPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1D4ED8' }}>
                     Stream [{selectedEdge.streamNo}]
+                    {selectedEdge.sourcePort === 'side_cut' ? ' · 사이드컷 측류(S)' : ''}
                   </span>
                   <button
                     onClick={() => deleteEdge(selectedEdge.id)}
@@ -2267,6 +2279,14 @@ export default function ClassicSimulatorPage() {
                   >
                     <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: '#0F172A' }}>
                       계산된 스트림 결과
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Source Port</span>
+                      <b style={{ fontFamily: 'Inter, sans-serif', color: selectedEdge.sourcePort === 'side_cut' ? '#6D28D9' : '#0F172A' }}>
+                        {selectedEdge.sourcePort === 'side_cut'
+                          ? '사이드컷 측류(S)'
+                          : selectedStreamRes.portRole || '주배관'}
+                      </b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Phase</span>
@@ -2679,6 +2699,34 @@ export default function ClassicSimulatorPage() {
                         단수: {selectedBlockRes.distillResult.totalStagesUsed}단 (F:{selectedBlockRes.distillResult.feedStageUsed}단) · RR={selectedBlockRes.distillResult.actualRefluxRatio.toFixed(2)}
                       </div>
                     )}
+                    {selectedBlock.params.distillConfig?.sideCut?.enabled && (() => {
+                      const sc = selectedBlock.params.distillConfig!.sideCut!;
+                      const dr = selectedBlockRes?.distillResult;
+                      const scMass = dr?.sideCutMassKgH ?? 0;
+                      const scStage = dr?.sideCutStageUsed ?? sc.stage;
+                      const scPhase = dr?.sideCutPhase
+                        ? (dr.sideCutPhase === 'G' ? '기상' : '액상')
+                        : (sc.phase === 'vapor' ? '기상' : '액상');
+                      return (
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontFamily: 'JetBrains Mono, monospace',
+                            color: '#6D28D9',
+                            fontWeight: 700,
+                            background: '#F5F3FF',
+                            border: '1px solid #DDD6FE',
+                            borderRadius: 4,
+                            padding: '4px 6px',
+                          }}
+                        >
+                          사이드컷 측류 S: {scStage}단 ({scPhase})
+                          {scMass > 1e-4
+                            ? ` · ${scMass.toFixed(1)} kg/h (S/F ${((dr?.actualSOverFMass ?? 0) * 100).toFixed(1)}%)`
+                            : ` · ${sc.specType}=${sc.specValue}`}
+                        </div>
+                      );
+                    })()}
                     <button
                       onClick={() => setDistillModalNodeId(selectedBlock.id)}
                       style={{

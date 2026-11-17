@@ -553,7 +553,7 @@ export interface FlowNodeDef {
   params: FlowUnitParams;
 }
 
-export type SourcePortId = 'out' | 'vapor' | 'liquid' | 'anode_out' | 'cathode_out' | 'util_out' | 'out1' | 'out2' | 'decanter';
+export type SourcePortId = 'out' | 'vapor' | 'liquid' | 'side_cut' | 'anode_out' | 'cathode_out' | 'util_out' | 'out1' | 'out2' | 'decanter';
 export type TargetPortId = 'in' | 'anode_in' | 'cathode_in' | 'util_in' | 'liq_in' | 'solvent';
 
 export interface FlowEdgeDef {
@@ -1735,7 +1735,7 @@ export function solveFlowsheet(
   const unroutedByNode = new Map<string, BoundaryRaw[]>();
   const makeupByNode = new Map<string, BoundaryRaw[]>();
   const qExtByNode = new Map<string, number>();
-  const distillIterCache = new Map<string, { sig: string; totFlows: Record<SimCompKey, number>; totMass: number; totH: number; res: ReturnType<typeof solveRigorousDistillation> }>();
+  const distillIterCache = new Map<string, { sig: string; sideCutSig: string; totFlows: Record<SimCompKey, number>; totMass: number; totH: number; res: ReturnType<typeof solveRigorousDistillation> }>();
   const absorberIterCache = new Map<string, { sig: string; res: ReturnType<typeof solveRigorousAbsorberStripper> }>();
   const extractorIterCache = new Map<string, { sig: string; res: ReturnType<typeof solveMultistageExtractor> }>();
 
@@ -3445,8 +3445,12 @@ export function solveFlowsheet(
           };
         });
 
+        const sideCutSig = JSON.stringify({
+          sideCut: effCfg.sideCut ?? null,
+          additionalSideCuts: effCfg.additionalSideCuts ?? null,
+        });
         const feedSig =
-          `${effCfg.thermoModel ?? 'AUTO'}::` +
+          `${effCfg.thermoModel ?? 'AUTO'}::${sideCutSig}::` +
           feedsInput
             .map(f => {
               const cSig = SIM_COMPS.filter(k => (f.flowsKgH[k] || 0) > 1e-5)
@@ -3473,7 +3477,7 @@ export function solveFlowsheet(
           dRes = prevDist.res;
         } else {
           let canScalePrev = false;
-          if (prevDist && prevDist.totMass > 1e-3 && curTotMass > 1e-3) {
+          if (prevDist && prevDist.sideCutSig === sideCutSig && prevDist.totMass > 1e-3 && curTotMass > 1e-3) {
             let diffSum = 0;
             for (const k of SIM_COMPS) {
               diffSum += Math.abs(curTotFlows[k] - prevDist.totFlows[k]);
@@ -3488,6 +3492,7 @@ export function solveFlowsheet(
             const scaledDist = emptyFlows();
             const scaledBot = emptyFlows();
             const scaledDec = prevDist.res.decanterFlowsKgH ? emptyFlows() : undefined;
+            const scaledSideCut = prevDist.res.sideCutFlowsKgH ? emptyFlows() : undefined;
             for (const k of SIM_COMPS) {
               const oldIn = prevDist.totFlows[k];
               const newIn = curTotFlows[k];
@@ -3498,15 +3503,57 @@ export function solveFlowsheet(
                 if (scaledDec && prevDist.res.decanterFlowsKgH) {
                   scaledDec[k] = prevDist.res.decanterFlowsKgH[k] * ratio;
                 }
+                if (scaledSideCut && prevDist.res.sideCutFlowsKgH) {
+                  scaledSideCut[k] = prevDist.res.sideCutFlowsKgH[k] * ratio;
+                }
               }
             }
             const massScale = curTotMass / Math.max(1e-9, prevDist.totMass);
+            const scaledSideCutDetails = prevDist.res.sideCutDetails
+              ? prevDist.res.sideCutDetails.map(det => {
+                  const detFlows = emptyFlows();
+                  let detMoles = 0;
+                  for (const k of SIM_COMPS) {
+                    const oldIn = prevDist.totFlows[k];
+                    const newIn = curTotFlows[k];
+                    if (oldIn > 1e-9 && newIn > 0) {
+                      const val = (det.flowsKgH[k] || 0) * (newIn / oldIn);
+                      detFlows[k] = val;
+                      detMoles += val / COMP_META[k].mw;
+                    }
+                  }
+                  return {
+                    ...det,
+                    flowsKgH: detFlows,
+                    totalMassKgH: sumFlows(detFlows),
+                    totalMolesKmolH: detMoles,
+                  };
+                })
+              : undefined;
+            const scaledSideCutMass = scaledSideCut
+              ? sumFlows(scaledSideCut)
+              : prevDist.res.sideCutMassKgH !== undefined
+                ? prevDist.res.sideCutMassKgH * massScale
+                : undefined;
+            const scaledSideCutMoles = scaledSideCut
+              ? SIM_COMPS.reduce((s, k) => s + scaledSideCut[k] / COMP_META[k].mw, 0)
+              : prevDist.res.sideCutMolesKmolH !== undefined
+                ? prevDist.res.sideCutMolesKmolH * massScale
+                : undefined;
             dRes = {
               ...prevDist.res,
               distillateFlowsKgH: scaledDist,
               bottomsFlowsKgH: scaledBot,
               decanterFlowsKgH: scaledDec,
               decanterWaterDrawKgH: scaledDec ? scaledDec.H2O : prevDist.res.decanterWaterDrawKgH * massScale,
+              ...(scaledSideCut || prevDist.res.sideCutMassKgH !== undefined
+                ? {
+                    sideCutFlowsKgH: scaledSideCut,
+                    sideCutMassKgH: scaledSideCutMass,
+                    sideCutMolesKmolH: scaledSideCutMoles,
+                    sideCutDetails: scaledSideCutDetails,
+                  }
+                : {}),
               condenserDutyKcalH: prevDist.res.condenserDutyKcalH * massScale,
               reboilerDutyKcalH: prevDist.res.reboilerDutyKcalH * massScale,
             };
@@ -3514,6 +3561,7 @@ export function solveFlowsheet(
             dRes = solveRigorousDistillation(feedsInput, effCfg);
             distillIterCache.set(node.id, {
               sig: feedSig,
+              sideCutSig,
               totFlows: curTotFlows,
               totMass: curTotMass,
               totH: curTotH,
@@ -3544,11 +3592,38 @@ export function solveFlowsheet(
           decEdges.forEach(oe => assignEdge(oe, emptyFlows(), dRes.topTempC, dRes.topPressKgcm2g, 'L'));
         }
 
+        const sideCutEdges = outEdges.filter(e => e.sourcePort === 'side_cut');
+        const scTemp = dRes.sideCutTempC ?? dRes.topTempC;
+        const scPress = dRes.sideCutPressKgcm2g ?? dRes.topPressKgcm2g;
+        const scPhase: 'L' | 'G' = dRes.sideCutPhase ?? 'L';
+        const scMass = dRes.sideCutMassKgH ?? 0;
+        if (scMass > 0 && dRes.sideCutFlowsKgH) {
+          const scFlows = dRes.sideCutFlowsKgH;
+          if (sideCutEdges.length > 0) {
+            sideCutEdges.forEach(oe => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = scFlows[k] / sideCutEdges.length; });
+              assignEdge(oe, sf, scTemp, scPress, scPhase);
+            });
+          } else {
+            pushUnrouted(
+              'side_cut',
+              `사이드컷 측류 S (${dRes.sideCutStageUsed ?? '-'}단 미연결)`,
+              scFlows,
+              scTemp,
+              scPress,
+              scPhase
+            );
+          }
+        } else {
+          sideCutEdges.forEach(oe => assignEdge(oe, emptyFlows(), scTemp, scPress, scPhase));
+        }
+
         const topPhase: 'L' | 'G' = dRes.distillatePhase;
 
         const vapEdges = outEdges.filter(e => e.sourcePort === 'vapor' || e.sourcePort === 'out1');
         const liqEdges = outEdges.filter(e => e.sourcePort === 'liquid' || e.sourcePort === 'out2');
-        const nonDecEdges = outEdges.filter(e => e.sourcePort !== 'decanter');
+        const nonDecEdges = outEdges.filter(e => e.sourcePort !== 'decanter' && e.sourcePort !== 'side_cut');
 
         if (vapEdges.length > 0 || liqEdges.length > 0) {
           vapEdges.forEach(oe => {
@@ -3605,18 +3680,27 @@ export function solveFlowsheet(
               }
             : {}),
           '운전 압력 (탑정→탑저)': `${dRes.topPressKgcm2g.toFixed(2)} → ${dRes.bottomPressKgcm2g.toFixed(2)} kG`,
-          '실운전 환류비 · 분배비': `RR = ${dRes.actualRefluxRatio.toFixed(2)} | D/F = ${dRes.actualDOverFMass.toFixed(3)} (B/F = ${dRes.actualBOverFMass.toFixed(3)})`,
+          '실운전 환류비 · 분배비': `RR = ${dRes.actualRefluxRatio.toFixed(2)} | D/F = ${dRes.actualDOverFMass.toFixed(3)} (B/F = ${dRes.actualBOverFMass.toFixed(3)}${scMass > 1e-4 ? ` · S/F = ${(dRes.actualSOverFMass ?? 0).toFixed(3)}` : ''})`,
           '탑정 유출 (D↑)': `${distMass.toFixed(1)} kg/h @ ${dRes.topTempC.toFixed(1)}°C (${detectKeyConc(distFlows, topPhase)})`,
+          ...(scMass > 1e-4 && dRes.sideCutFlowsKgH
+            ? {
+                [`사이드컷 측류 (S ${dRes.sideCutStageUsed ?? '-'}단·${scPhase === 'G' ? '기상' : '액상'})`]:
+                  `${scMass.toFixed(1)} kg/h @ ${scTemp.toFixed(1)}°C (${detectKeyConc(dRes.sideCutFlowsKgH, scPhase)})`,
+              }
+            : {}),
           '탑저 관출 (B↓)': `${botMass.toFixed(1)} kg/h @ ${dRes.bottomTempC.toFixed(1)}°C (${detectKeyConc(botFlows, 'L')})`,
           '응축기 / 리보일러 열량': `Q_c ${(dRes.condenserDutyKcalH / 1000).toFixed(1)} / Q_r +${(dRes.reboilerDutyKcalH / 1000).toFixed(1)} Mcal/h`,
           '추정 탑경 (Souders-Brown)': `Ø ${dRes.estimatedDiameterM.toFixed(2)} m`,
           ...(dRes.decanterWaterDrawKgH > 0 ? { '공비 디캔터 수층 분리': `${dRes.decanterWaterDrawKgH.toFixed(1)} kg/h` } : {}),
+          ...(dRes.sideCutSpecStatus ? { '사이드컷 스펙': `${dRes.sideCutSpecStatus.label} (${dRes.sideCutSpecStatus.met ? '✓ 달성' : '⚠ 근접'})` } : {}),
           ...(dRes.spec1Status ? { '순도 스펙 1': dRes.spec1Status.summary } : {}),
           ...(dRes.spec2Status ? { '불순물 스펙 2': dRes.spec2Status.summary } : {}),
         };
 
         note = sumMassIn > 0.01
-          ? `[${dRes.thermoModelUsed} ${usedStages}단${sd ? '·자동설계' : ''}] D:${distMass.toFixed(0)}kg/h(${detectKeyConc(distFlows, topPhase)}) / B:${botMass.toFixed(0)}kg/h(${detectKeyConc(botFlows, 'L')}) · RR=${dRes.actualRefluxRatio.toFixed(2)}`
+          ? `[${dRes.thermoModelUsed} ${usedStages}단${sd ? '·자동설계' : ''}] D:${distMass.toFixed(0)}kg/h(${detectKeyConc(distFlows, topPhase)})` +
+            (scMass > 1e-4 && dRes.sideCutFlowsKgH ? ` / S:${scMass.toFixed(0)}kg/h(${dRes.sideCutStageUsed ?? '-'}단)` : '') +
+            ` / B:${botMass.toFixed(0)}kg/h(${detectKeyConc(botFlows, 'L')}) · RR=${dRes.actualRefluxRatio.toFixed(2)}`
           : `다단 정밀증류탑 대기중 — 좌측 포트에 Feed 배관을 연결하세요`;
       }
 
@@ -4127,6 +4211,7 @@ export function solveFlowsheet(
   const portLabelMap: Record<string, string> = {
     vapor: '상부 기상(G↑)',
     liquid: '하부 액상(L↓)',
+    side_cut: '사이드컷 측류(Side-Cut S)',
     decanter: '디캔터 수층(Decanter)',
     anode_out: '양극 출구(Anode)',
     cathode_out: '음극 출구(Cathode)',

@@ -393,6 +393,28 @@ export function buildColumnCadDxf(params: ColumnCadExportParams): string {
     );
   }
 
+  // Side-Cut Chimney Draw-Off Collector (if active)
+  if (design.sideCutSummary) {
+    const scEl = design.sideCutSummary.elevationMm;
+    const rSc = scEl >= el.rectBotElMm ? rRect : rStrip;
+    const xL = colCx - rSc + 40;
+    const xR = colCx + rSc - 40;
+    const wSc = xR - xL;
+    dxfRect(xL, scEl - 45, wSc, 90, 'HARDWARE');
+    dxfRect(colCx + rSc * 0.25, scEl - 140, rSc * 0.65, 95, 'HARDWARE');
+    dxfLine(colCx - rSc * 0.45, scEl + 45, colCx - rSc * 0.45, scEl + 185, 'HARDWARE');
+    dxfLine(colCx - rSc * 0.45 - 60, scEl + 195, colCx - rSc * 0.45 + 60, scEl + 195, 'HARDWARE');
+    dxfLine(colCx + rSc * 0.05, scEl + 45, colCx + rSc * 0.05, scEl + 185, 'HARDWARE');
+    dxfLine(colCx + rSc * 0.05 - 60, scEl + 195, colCx + rSc * 0.05 + 60, scEl + 195, 'HARDWARE');
+    dxfText(
+      colCx - wSc * 0.42,
+      scEl + 230,
+      smH * 0.68,
+      `CHIMNEY DRAW-OFF (STG #${design.sideCutSummary.stage})`,
+      'HARDWARE'
+    );
+  }
+
   // Nozzles N1..N6 at EXACT elevationMm & Orientation
   for (const nz of design.nozzles) {
     const isTopArea = nz.elevationMm >= el.rectBotElMm;
@@ -437,6 +459,9 @@ export function buildColumnCadDxf(params: ColumnCadExportParams): string {
     ['RECT TOP', el.rectTopElMm],
     ['RECT BOT', el.rectBotElMm],
     ['FEED N3', el.feedNozzleElMm],
+    ...(design.sideCutSummary && Math.abs(design.sideCutSummary.elevationMm - el.feedNozzleElMm) >= 450
+      ? [['SIDE N7', design.sideCutSummary.elevationMm] as [string, number]]
+      : []),
     ['STRIP TOP', el.stripTopElMm],
     ['STRIP BOT', el.stripBotElMm],
     ['HLL', el.hllElMm],

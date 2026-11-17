@@ -48,6 +48,200 @@ export interface FlowsheetOptimizationModalProps {
 
 const CHART_COLORS = ['#1D4ED8', '#059669', '#D97706', '#DC2626', '#7C3AED', '#0891B2'];
 
+function getAvailableParamsForNode(node?: FlowNodeDef): ManipulatedParamKey[] {
+  if (!node) return Object.keys(MANIPULATED_PARAM_LABELS) as ManipulatedParamKey[];
+  switch (node.unitType) {
+    case 'feed':
+      return ['feed_comp_kgh', 'feed_total_scale', 'operTempC', 'operPressKgcm2g'];
+    case 'distillation':
+      return ['refluxRatio', 'distillateRateKgH', 'sideCutRateKgH', 'sideCutRatioSF', 'sideCutStage'];
+    case 'splitter':
+      return ['splitRatioTop'];
+    case 'hex':
+    case 'cooler':
+    case 'liquefier':
+      return ['operTempC', 'specifiedDutyMcalH', 'operPressKgcm2g'];
+    case 'reactor':
+      return ['operTempC', 'operPressKgcm2g', 'conversion', 'specifiedDutyMcalH'];
+    case 'pump':
+    case 'compressor':
+    case 'valve':
+      return ['outletPressKgcm2g'];
+    case 'absorber':
+    case 'extractor':
+      return ['operTempC', 'operPressKgcm2g', 'makeupSolventKgH'];
+    case 'separator':
+    case 'evaporator':
+    case 'electrolyzer':
+    case 'saturator':
+    case 'chelate_tower':
+    case 'desiccant_dryer':
+      return ['operTempC', 'operPressKgcm2g'];
+    default:
+      return ['operTempC', 'operPressKgcm2g', 'outletPressKgcm2g'];
+  }
+}
+
+function getSmartParamDefaults(
+  node: FlowNodeDef | undefined,
+  paramKey: ManipulatedParamKey,
+  comp: SimCompKey | undefined,
+  currentResult: FlowsheetSolveResultCompat
+): {
+  minBound: number;
+  maxBound: number;
+  initialGuess: number;
+  steps: number;
+  secValuesText: string;
+} {
+  const curVal = node ? readManipulatedParam(node, paramKey, comp) : 0;
+  const unitRes = node ? currentResult.units.find(u => u.nodeId === node.id) : undefined;
+  const feedRef = unitRes && unitRes.inletMassKgH > 1 ? unitRes.inletMassKgH : 1000;
+
+  switch (paramKey) {
+    case 'sideCutRateKgH': {
+      const guess = curVal > 0 ? curVal : Number((feedRef * 0.15).toFixed(1));
+      const minB = curVal > 0 ? Number(Math.max(0, curVal * 0.2).toFixed(1)) : Number(Math.max(1, feedRef * 0.02).toFixed(1));
+      const upperCap = unitRes && unitRes.inletMassKgH > 1 ? Math.max(curVal * 1.25, unitRes.inletMassKgH * 0.82) : Math.max(curVal * 2.5, 800);
+      const maxB = curVal > 0 ? Number(Math.min(upperCap, Math.max(curVal * 2.2, feedRef * 0.6)).toFixed(1)) : Number((feedRef * 0.6).toFixed(1));
+      return {
+        minBound: minB,
+        maxBound: Math.max(minB + 1, maxB),
+        initialGuess: Number(guess.toFixed(2)),
+        steps: 10,
+        secValuesText: [0.08, 0.15, 0.25].map(f => Number((feedRef * f).toFixed(1))).join(', '),
+      };
+    }
+    case 'sideCutRatioSF': {
+      const guess = curVal > 0 ? curVal : 0.15;
+      const maxB = curVal > 0.5 ? Math.min(0.85, Number((curVal + 0.2).toFixed(2))) : 0.6;
+      return {
+        minBound: 0.02,
+        maxBound: maxB,
+        initialGuess: Number(guess.toFixed(3)),
+        steps: 10,
+        secValuesText: '0.05, 0.15, 0.30',
+      };
+    }
+    case 'sideCutStage': {
+      const totalStages = Math.max(4, Math.round(node?.params.distillConfig?.totalStages ?? 24));
+      const minB = 2;
+      const maxB = Math.max(3, totalStages - 1);
+      const steps = Math.max(2, Math.min(25, maxB - minB + 1));
+      const s1 = Math.max(minB, Math.round(totalStages * 0.25));
+      const s2 = Math.max(s1 + 1, Math.min(maxB, Math.round(totalStages * 0.45)));
+      const s3 = Math.max(s2 + 1, Math.min(maxB, Math.round(totalStages * 0.65)));
+      return {
+        minBound: minB,
+        maxBound: maxB,
+        initialGuess: Math.max(minB, Math.min(maxB, Math.round(curVal || totalStages * 0.35))),
+        steps,
+        secValuesText: Array.from(new Set([s1, s2, s3])).join(', '),
+      };
+    }
+    case 'refluxRatio': {
+      const guess = curVal > 0 ? curVal : 2.5;
+      return {
+        minBound: Math.max(0.2, Number((guess * 0.4).toFixed(2))),
+        maxBound: Number(Math.max(guess * 2.5, 6.0).toFixed(2)),
+        initialGuess: Number(guess.toFixed(3)),
+        steps: 10,
+        secValuesText: '1.5, 2.5, 4.0',
+      };
+    }
+    case 'distillateRateKgH': {
+      const isMassSpec = node?.params.distillConfig?.splitSpecType === 'distillate_kgh';
+      const guess = isMassSpec ? curVal : Number((feedRef * 0.5).toFixed(1));
+      const minB = Number(Math.max(1, guess * 0.3).toFixed(1));
+      const maxB = Number(Math.max(guess * 1.8, feedRef * 0.9).toFixed(1));
+      return {
+        minBound: minB,
+        maxBound: Math.max(minB + 1, maxB),
+        initialGuess: Number(guess.toFixed(2)),
+        steps: 10,
+        secValuesText: [0.3, 0.5, 0.7].map(f => Number((feedRef * f).toFixed(1))).join(', '),
+      };
+    }
+    case 'splitRatioTop':
+      return {
+        minBound: 0.05,
+        maxBound: 0.95,
+        initialGuess: Number(curVal.toFixed(3)),
+        steps: 10,
+        secValuesText: '0.2, 0.5, 0.8',
+      };
+    case 'feed_total_scale':
+      return {
+        minBound: 0.5,
+        maxBound: 1.5,
+        initialGuess: 1.0,
+        steps: 10,
+        secValuesText: '0.8, 1.0, 1.2',
+      };
+    case 'feed_comp_kgh': {
+      const minB = Number(Math.max(0, curVal * 0.2).toFixed(2));
+      const maxB = Number(Math.max(100, curVal * 2.5).toFixed(2));
+      return {
+        minBound: minB,
+        maxBound: maxB,
+        initialGuess: Number(curVal.toFixed(3)),
+        steps: 10,
+        secValuesText: [0.5, 1.0, 1.5].map(f => Number(Math.max(1, curVal * f).toFixed(1))).join(', '),
+      };
+    }
+    case 'conversion':
+      return {
+        minBound: 0.5,
+        maxBound: 0.999,
+        initialGuess: Number(curVal.toFixed(3)),
+        steps: 10,
+        secValuesText: '0.8, 0.9, 0.98',
+      };
+    case 'makeupSolventKgH': {
+      const maxB = Math.max(500, Number((curVal * 2.5).toFixed(1)));
+      return {
+        minBound: 0,
+        maxBound: maxB,
+        initialGuess: Number(curVal.toFixed(2)),
+        steps: 10,
+        secValuesText: '100, 300, 500',
+      };
+    }
+    case 'specifiedDutyMcalH':
+      return {
+        minBound: Number((curVal - 200).toFixed(1)),
+        maxBound: Number((curVal + 200).toFixed(1)),
+        initialGuess: Number(curVal.toFixed(2)),
+        steps: 10,
+        secValuesText: '-200, 0, 200',
+      };
+    case 'operPressKgcm2g':
+    case 'outletPressKgcm2g': {
+      const minB = Number(Math.max(-0.9, curVal - 1.5).toFixed(2));
+      const maxB = Number((curVal + 3.0).toFixed(2));
+      return {
+        minBound: minB,
+        maxBound: maxB,
+        initialGuess: Number(curVal.toFixed(3)),
+        steps: 10,
+        secValuesText: [minB, curVal, maxB].map(v => Number(v.toFixed(2))).join(', '),
+      };
+    }
+    case 'operTempC':
+    default: {
+      const minB = Math.round(curVal - 25);
+      const maxB = Math.round(curVal + 25);
+      return {
+        minBound: minB,
+        maxBound: maxB,
+        initialGuess: Number(curVal.toFixed(2)),
+        steps: 10,
+        secValuesText: `${Math.round(curVal - 15)}, ${Math.round(curVal)}, ${Math.round(curVal + 15)}`,
+      };
+    }
+  }
+}
+
 export default function FlowsheetOptimizationModal({
   open,
   onClose,
@@ -162,25 +356,24 @@ export default function FlowsheetOptimizationModal({
 
   // Initialize sensitivity defaults when nodes/edges become available
   useEffect(() => {
-    if (!sensPrimNodeId && defaultManipNode) {
+    const primMissing = !sensPrimNodeId || !nodes.some(n => n.id === sensPrimNodeId);
+    if (primMissing && defaultManipNode) {
       setSensPrimNodeId(defaultManipNode.id);
-      if (defaultManipNode.unitType === 'feed') {
-        setSensPrimParam('feed_total_scale');
-        setSensMin(0.5);
-        setSensMax(1.5);
-      } else if (defaultManipNode.unitType === 'splitter') {
-        setSensPrimParam('splitRatioTop');
-        setSensMin(0.05);
-        setSensMax(0.95);
-      } else {
-        const curT = readManipulatedParam(defaultManipNode, 'operTempC');
-        setSensPrimParam('operTempC');
-        setSensMin(Math.round(curT - 25));
-        setSensMax(Math.round(curT + 25));
-      }
+      const initParam = getAvailableParamsForNode(defaultManipNode)[0] ?? 'operTempC';
+      const smart = getSmartParamDefaults(defaultManipNode, initParam, defaultComp, currentResult);
+      setSensPrimParam(initParam);
+      setSensMin(smart.minBound);
+      setSensMax(smart.maxBound);
+      setSensSteps(smart.steps);
     }
-    if (!sensSecNodeId && defaultManipNode) {
+    const secMissing = !sensSecNodeId || !nodes.some(n => n.id === sensSecNodeId);
+    if (secMissing && defaultManipNode) {
       setSensSecNodeId(defaultManipNode.id);
+      const secAvail = getAvailableParamsForNode(defaultManipNode);
+      const initSecParam = secAvail[1] ?? secAvail[0] ?? 'operPressKgcm2g';
+      const smartSec = getSmartParamDefaults(defaultManipNode, initSecParam, defaultComp, currentResult);
+      setSensSecParam(initSecParam);
+      setSensSecValuesText(smartSec.secValuesText);
     }
     if (watchedOutputs.length === 0 && defaultEdge) {
       const initialWatched: SensitivityWatchedOutput[] = [
@@ -240,6 +433,7 @@ export default function FlowsheetOptimizationModal({
     const firstManip =
       nodes.find(
         n =>
+          n.unitType === 'distillation' ||
           n.unitType === 'splitter' ||
           n.unitType === 'hex' ||
           n.unitType === 'cooler' ||
@@ -249,24 +443,14 @@ export default function FlowsheetOptimizationModal({
     if (!firstManip) return;
 
     const defaultParam: ManipulatedParamKey =
-      firstManip.unitType === 'splitter'
-        ? 'splitRatioTop'
-        : firstManip.unitType === 'feed'
-          ? 'feed_comp_kgh'
-          : 'operTempC';
-    const curVal = readManipulatedParam(firstManip, defaultParam, defaultComp);
-    const minB =
-      defaultParam === 'splitRatioTop'
-        ? 0.01
-        : defaultParam === 'feed_comp_kgh'
-          ? Math.max(0, curVal * 0.1)
-          : curVal - 40;
-    const maxB =
-      defaultParam === 'splitRatioTop'
-        ? 0.99
-        : defaultParam === 'feed_comp_kgh'
-          ? Math.max(100, curVal * 3.0)
-          : curVal + 60;
+      firstManip.unitType === 'distillation'
+        ? 'refluxRatio'
+        : firstManip.unitType === 'splitter'
+          ? 'splitRatioTop'
+          : firstManip.unitType === 'feed'
+            ? 'feed_comp_kgh'
+            : 'operTempC';
+    const smart = getSmartParamDefaults(firstManip, defaultParam, defaultComp, currentResult);
 
     const nextSpec: DesignSpecDef = {
       id: `ds-${Date.now().toString(36)}`,
@@ -290,9 +474,9 @@ export default function FlowsheetOptimizationModal({
         nodeId: firstManip.id,
         paramKey: defaultParam,
         comp: defaultParam === 'feed_comp_kgh' ? defaultComp : undefined,
-        minBound: Number(minB.toFixed(3)),
-        maxBound: Number(maxB.toFixed(3)),
-        initialGuess: Number(curVal.toFixed(3)),
+        minBound: smart.minBound,
+        maxBound: smart.maxBound,
+        initialGuess: smart.initialGuess,
       },
     };
     onChangeDesignSpecs([...designSpecs, nextSpec]);
@@ -1121,11 +1305,28 @@ export default function FlowsheetOptimizationModal({
                                 <span style={labelStyle}>장치 (Node)</span>
                                 <select
                                   value={spec.manipulated.nodeId}
-                                  onChange={e =>
+                                  onChange={e => {
+                                    const nextNodeId = e.target.value;
+                                    const nextNode = nodes.find(n => n.id === nextNodeId);
+                                    const avail = getAvailableParamsForNode(nextNode);
+                                    const nextKey = avail.includes(mParam) ? mParam : (avail[0] ?? mParam);
+                                    const nextComp =
+                                      nextKey === 'feed_comp_kgh'
+                                        ? (spec.manipulated.comp ?? defaultComp)
+                                        : undefined;
+                                    const smart = getSmartParamDefaults(nextNode, nextKey, nextComp, currentResult);
                                     updateSpecAt(idx, {
-                                      manipulated: { ...spec.manipulated, nodeId: e.target.value },
-                                    })
-                                  }
+                                      manipulated: {
+                                        ...spec.manipulated,
+                                        nodeId: nextNodeId,
+                                        paramKey: nextKey,
+                                        comp: nextComp,
+                                        minBound: smart.minBound,
+                                        maxBound: smart.maxBound,
+                                        initialGuess: smart.initialGuess,
+                                      },
+                                    });
+                                  }}
                                   style={inputStyle}
                                 >
                                   {nodes.map(n => (
@@ -1141,24 +1342,35 @@ export default function FlowsheetOptimizationModal({
                                   value={mParam}
                                   onChange={e => {
                                     const nextKey = e.target.value as ManipulatedParamKey;
+                                    const manipNode = nodes.find(n => n.id === spec.manipulated.nodeId);
+                                    const nextComp =
+                                      nextKey === 'feed_comp_kgh'
+                                        ? (spec.manipulated.comp ?? defaultComp)
+                                        : undefined;
+                                    const smart = getSmartParamDefaults(manipNode, nextKey, nextComp, currentResult);
                                     updateSpecAt(idx, {
                                       manipulated: {
                                         ...spec.manipulated,
                                         paramKey: nextKey,
-                                        comp:
-                                          nextKey === 'feed_comp_kgh'
-                                            ? (spec.manipulated.comp ?? defaultComp)
-                                            : undefined,
+                                        comp: nextComp,
+                                        minBound: smart.minBound,
+                                        maxBound: smart.maxBound,
+                                        initialGuess: smart.initialGuess,
                                       },
                                     });
                                   }}
                                   style={inputStyle}
                                 >
-                                  {(Object.keys(MANIPULATED_PARAM_LABELS) as ManipulatedParamKey[]).map(pk => (
-                                    <option key={pk} value={pk}>
-                                      {MANIPULATED_PARAM_LABELS[pk].labelKo}
-                                    </option>
-                                  ))}
+                                  {(() => {
+                                    const manipNode = nodes.find(n => n.id === spec.manipulated.nodeId);
+                                    const avail = getAvailableParamsForNode(manipNode);
+                                    const choices = avail.includes(mParam) ? avail : [...avail, mParam];
+                                    return choices.map(pk => (
+                                      <option key={pk} value={pk}>
+                                        {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                                      </option>
+                                    ));
+                                  })()}
                                 </select>
                               </div>
 
@@ -1504,7 +1716,18 @@ export default function FlowsheetOptimizationModal({
                     <span style={labelStyle}>장치</span>
                     <select
                       value={sensPrimNodeId}
-                      onChange={e => setSensPrimNodeId(e.target.value)}
+                      onChange={e => {
+                        const nextId = e.target.value;
+                        const nextNode = nodes.find(n => n.id === nextId);
+                        const avail = getAvailableParamsForNode(nextNode);
+                        const nextParam = avail.includes(sensPrimParam) ? sensPrimParam : (avail[0] ?? sensPrimParam);
+                        const smart = getSmartParamDefaults(nextNode, nextParam, sensPrimComp, currentResult);
+                        setSensPrimNodeId(nextId);
+                        setSensPrimParam(nextParam);
+                        setSensMin(smart.minBound);
+                        setSensMax(smart.maxBound);
+                        setSensSteps(smart.steps);
+                      }}
                       style={inputStyle}
                     >
                       {nodes.map(n => (
@@ -1518,14 +1741,27 @@ export default function FlowsheetOptimizationModal({
                     <span style={labelStyle}>파라미터</span>
                     <select
                       value={sensPrimParam}
-                      onChange={e => setSensPrimParam(e.target.value as ManipulatedParamKey)}
+                      onChange={e => {
+                        const nextParam = e.target.value as ManipulatedParamKey;
+                        const primNode = nodes.find(n => n.id === sensPrimNodeId);
+                        const smart = getSmartParamDefaults(primNode, nextParam, sensPrimComp, currentResult);
+                        setSensPrimParam(nextParam);
+                        setSensMin(smart.minBound);
+                        setSensMax(smart.maxBound);
+                        setSensSteps(smart.steps);
+                      }}
                       style={inputStyle}
                     >
-                      {(Object.keys(MANIPULATED_PARAM_LABELS) as ManipulatedParamKey[]).map(pk => (
-                        <option key={pk} value={pk}>
-                          {MANIPULATED_PARAM_LABELS[pk].labelKo}
-                        </option>
-                      ))}
+                      {(() => {
+                        const primNode = nodes.find(n => n.id === sensPrimNodeId);
+                        const avail = getAvailableParamsForNode(primNode);
+                        const choices = avail.includes(sensPrimParam) ? avail : [...avail, sensPrimParam];
+                        return choices.map(pk => (
+                          <option key={pk} value={pk}>
+                            {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                          </option>
+                        ));
+                      })()}
                     </select>
                   </div>
                   {sensPrimParam === 'feed_comp_kgh' && (
@@ -1600,7 +1836,23 @@ export default function FlowsheetOptimizationModal({
                     <input
                       type="checkbox"
                       checked={sensSecEnabled}
-                      onChange={e => setSensSecEnabled(e.target.checked)}
+                      onChange={e => {
+                        const enabled = e.target.checked;
+                        setSensSecEnabled(enabled);
+                        if (enabled) {
+                          const secNode = nodes.find(n => n.id === sensSecNodeId);
+                          const avail = getAvailableParamsForNode(secNode);
+                          if (!avail.includes(sensSecParam)) {
+                            const nextSecParam =
+                              avail.find(pk => !(sensSecNodeId === sensPrimNodeId && pk === sensPrimParam)) ??
+                              avail[0] ??
+                              sensSecParam;
+                            const smart = getSmartParamDefaults(secNode, nextSecParam, sensSecComp, currentResult);
+                            setSensSecParam(nextSecParam);
+                            setSensSecValuesText(smart.secValuesText);
+                          }
+                        }
+                      }}
                     />
                     2차 변수 동시 스윕 (2D)
                   </label>
@@ -1617,7 +1869,18 @@ export default function FlowsheetOptimizationModal({
                         <span style={labelStyle}>2차 장치</span>
                         <select
                           value={sensSecNodeId}
-                          onChange={e => setSensSecNodeId(e.target.value)}
+                          onChange={e => {
+                            const nextId = e.target.value;
+                            const nextNode = nodes.find(n => n.id === nextId);
+                            const avail = getAvailableParamsForNode(nextNode);
+                            const nextParam = avail.includes(sensSecParam)
+                              ? sensSecParam
+                              : (avail.find(pk => !(nextId === sensPrimNodeId && pk === sensPrimParam)) ?? avail[0] ?? sensSecParam);
+                            const smart = getSmartParamDefaults(nextNode, nextParam, sensSecComp, currentResult);
+                            setSensSecNodeId(nextId);
+                            setSensSecParam(nextParam);
+                            setSensSecValuesText(smart.secValuesText);
+                          }}
                           style={inputStyle}
                         >
                           {nodes.map(n => (
@@ -1631,14 +1894,25 @@ export default function FlowsheetOptimizationModal({
                         <span style={labelStyle}>2차 파라미터</span>
                         <select
                           value={sensSecParam}
-                          onChange={e => setSensSecParam(e.target.value as ManipulatedParamKey)}
+                          onChange={e => {
+                            const nextParam = e.target.value as ManipulatedParamKey;
+                            const secNode = nodes.find(n => n.id === sensSecNodeId);
+                            const smart = getSmartParamDefaults(secNode, nextParam, sensSecComp, currentResult);
+                            setSensSecParam(nextParam);
+                            setSensSecValuesText(smart.secValuesText);
+                          }}
                           style={inputStyle}
                         >
-                          {(Object.keys(MANIPULATED_PARAM_LABELS) as ManipulatedParamKey[]).map(pk => (
-                            <option key={pk} value={pk}>
-                              {MANIPULATED_PARAM_LABELS[pk].labelKo}
-                            </option>
-                          ))}
+                          {(() => {
+                            const secNode = nodes.find(n => n.id === sensSecNodeId);
+                            const avail = getAvailableParamsForNode(secNode);
+                            const choices = avail.includes(sensSecParam) ? avail : [...avail, sensSecParam];
+                            return choices.map(pk => (
+                              <option key={pk} value={pk}>
+                                {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                              </option>
+                            ));
+                          })()}
                         </select>
                       </div>
                       {sensSecParam === 'feed_comp_kgh' && (

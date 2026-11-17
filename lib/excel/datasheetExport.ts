@@ -1148,6 +1148,15 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
   const procRows: Array<[string, string, string, string, string]> = [
     ['Total Feed Rate (원료 총 유량)', 'kg/h', nf(totalFeedKgH, 1), `Feed Stage #${simResult.feedStageUsed}`, `${feeds.length} Feed Stream(s)`],
     ['Overhead Distillate / Bottoms Draw', 'kg/h', `${nf(distKgH, 1)} / ${nf(botKgH, 1)}`, `D/F = ${(simResult.actualDOverFMass * 100).toFixed(1)}%`, 'Mass Balance Converged'],
+    ...(design.sideCutSummary
+      ? [[
+          'Side-Cut Product (측류 인출 S)',
+          'kg/h',
+          `${nf(design.sideCutSummary.massKgH, 1)} (${design.sideCutSummary.sOverFPct.toFixed(1)}% F)`,
+          `Stage #${design.sideCutSummary.stage} (${design.sideCutSummary.phase === 'G' ? 'Vapor' : 'Liquid'}) · T=${design.sideCutSummary.tempC.toFixed(1)}°C`,
+          `${design.sideCutSummary.nozzleTag} @ EL +${design.sideCutSummary.elevationMm} mm`,
+        ] as [string, string, string, string, string]]
+      : []),
     ['Operating Temperature (Top / Feed / Bot)', '°C', `${simResult.topTempC.toFixed(1)} / ${(simResult.stages[Math.max(0, simResult.feedStageUsed - 1)]?.tempC ?? simResult.topTempC).toFixed(1)} / ${simResult.bottomTempC.toFixed(1)}`, `ΔT = ${(simResult.bottomTempC - simResult.topTempC).toFixed(1)} °C`, simResult.thermoModelUsed],
     ['Operating Pressure (Top / Bottom)', 'kg/cm²G', `${(colConfig.topPressKgcm2g ?? 0.05).toFixed(3)} / ${simResult.bottomPressKgcm2g.toFixed(3)}`, `Int. ΔP = ${design.totalInternalsDpMbar} mbar`, design.vacuumStiffenerRequired ? 'Vacuum Service' : 'Atmospheric/Pressurized'],
     ['Reflux Ratio (R_op) & Reboiler Type', '-', `RR = ${simResult.actualRefluxRatio.toFixed(2)}`, `Boilup = ${simResult.actualBoilupRatio.toFixed(2)}`, `Reboiler: ${colConfig.reboilerType ?? 'kettle'}`],
@@ -1286,6 +1295,21 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
       ['Flow Passes (유로 패스 수)', 'Passes', `${rSec.flowPasses}-Pass`, `${sSec.flowPasses}-Pass`, `Flow Path Length: ${rSec.flowPathLengthM} / ${sSec.flowPathLengthM} m`],
       ['Tray Spacing (단간격)', 'mm', `${design.traySpacingMm}`, `${design.traySpacingMm}`, `Section Height: ${rSec.sectionHeightM} / ${sSec.sectionHeightM} m`],
       ['Tray Deck Thickness & Material', 'mm / Spec', `${rSec.deckThicknessMm} mm`, `${sSec.deckThicknessMm} mm`, design.recommendedMaterialLabel],
+      ...(design.sideCutSummary
+        ? [[
+            'Side-Cut Draw-Off Collector (측류 침니 콜렉터)',
+            'Stage / EL',
+            design.sideCutSummary.stage < simResult.feedStageUsed
+              ? `Stage #${design.sideCutSummary.stage} / EL +${design.sideCutSummary.elevationMm} mm`
+              : '-',
+            design.sideCutSummary.stage >= simResult.feedStageUsed
+              ? `Stage #${design.sideCutSummary.stage} / EL +${design.sideCutSummary.elevationMm} mm`
+              : '-',
+            design.sideCutSummary.phase === 'G'
+              ? `Vapor Draw (${design.sideCutSummary.nozzleTag} @ 90°)`
+              : `Chimney Sump +600mm (${design.sideCutSummary.nozzleTag} @ 90°)`,
+          ] as [string, string, string, string, string]]
+        : []),
     ], lnT);
 
     addTrayBanner('B. ACTIVE DECK, PERFORATION / HOLE & OPEN AREA (홀지름 · 피치 · 개공비)');
@@ -1430,6 +1454,18 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
         `${hw.demister.thicknessMm} mmt (${hw.demister.densityKgM3} kg/m³)`,
         `EL +${hw.demister.elevationMm} mm`,
       ],
+      ...(design.sideCutSummary
+        ? [[
+            design.sideCutSummary.nozzleTag,
+            `Side-Cut Draw-Off Collector (Stage #${design.sideCutSummary.stage})`,
+            '1 EA',
+            design.sideCutSummary.phase === 'G'
+              ? 'Vapor Side-Draw Collector Baffle'
+              : 'Chimney Tray Collector & Sump',
+            `${design.sideCutSummary.massKgH.toFixed(1)} kg/h (${design.sideCutSummary.phase === 'G' ? 'Vapor' : 'Liquid'})`,
+            `EL +${design.sideCutSummary.elevationMm} mm (90°)`,
+          ] as [string, string, string, string, string, string]]
+        : []),
     ];
     for (const [tag, name, qty, typeS, specS, elS] of hwRows) {
       ws2.getRow(r2).height = 14.5;

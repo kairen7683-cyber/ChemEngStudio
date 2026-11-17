@@ -365,6 +365,7 @@ export interface ColumnElevationMap {
   stripBotElMm: number;            // Bottom Tray or Bottom Bed Support Grid
   stripTopElMm: number;            // Top of Stripping Internals
   feedNozzleElMm: number;          // Feed Nozzle N3 Centerline
+  sideCutNozzleElMm?: number;      // Side-Cut Nozzle N7 Centerline (if active)
   rectBotElMm: number;             // Bottom of Rectifying Internals
   rectTopElMm: number;             // Top Tray #1 or Top of Bed #1
   demisterElMm: number;            // Mist Eliminator Centerline
@@ -525,6 +526,15 @@ export interface ColumnInternalsSolveResult {
   costEstimate: ColumnCostBreakdown;
   nozzles: ColumnNozzleSpec[];
   manholes: ColumnManholeSpec[];
+  sideCutSummary?: {
+    stage: number;
+    phase: 'L' | 'G';
+    massKgH: number;
+    tempC: number;
+    nozzleTag: string;
+    elevationMm: number;
+    sOverFPct: number;
+  };
   auxiliaries: ColumnAuxSummary;
   stageRows: StageHydraulicRow[];
   designWarnings: string[];
@@ -2300,6 +2310,17 @@ export function solveColumnInternalsDesign(
     shellSectionMode === 'swaged' && Math.abs(rectDiamM - stripDiamM) >= 0.12 ? 0.75 : 0;
   const feedFlashZoneHeightM = Number((Math.max(0.9, 0.45 * governingDiamM) + swageTransitionM).toFixed(2));
 
+  const hasSideCut =
+    (simResult.sideCutMassKgH ?? 0) > 1e-3 &&
+    (simResult.sideCutStageUsed ?? 0) >= 2 &&
+    Boolean(simResult.sideCutFlowsKgH);
+  const sideCutStage = clamp(simResult.sideCutStageUsed ?? feedStage, 2, Math.max(2, N - 1));
+  const sideCutChimneyAllowanceM =
+    hasSideCut && internalsKind === 'tray' && simResult.sideCutPhase !== 'G' ? 0.6 : 0;
+  const sideCutChimneyMm = Math.round(sideCutChimneyAllowanceM * 1000);
+  const sideCutInStrip = hasSideCut && sideCutStage >= feedStage;
+  const sideCutInRect = hasSideCut && sideCutStage < feedStage;
+
   const tangentToTangentHeightM = Number(
     (
       topDisengageHeightM +
@@ -2307,6 +2328,7 @@ export function solveColumnInternalsDesign(
       feedFlashZoneHeightM +
       stripHeightM +
       redistributorAllowanceM +
+      sideCutChimneyAllowanceM +
       sumpTotalHeightM
     ).toFixed(2)
   );
@@ -2324,7 +2346,10 @@ export function solveColumnInternalsDesign(
   const hllElMm = btlElMm + Math.max(nllElMm - btlElMm + 150, sumpLiqMm);
   const stripBotElMm = btlElMm + sumpTotMm;
   const stripInterBedCount = internalsKind === 'packed' ? Math.max(0, stripBeds - 1) : 0;
-  const stripSpanMm = Math.max(250, Math.round(stripHeightM * 1000) + stripInterBedCount * 850);
+  const stripSpanMm = Math.max(
+    250,
+    Math.round(stripHeightM * 1000) + stripInterBedCount * 850 + (sideCutInStrip ? sideCutChimneyMm : 0)
+  );
   const stripTopElMm = stripBotElMm + stripSpanMm;
   const feedFlashMm = Math.max(450, Math.round(feedFlashZoneHeightM * 1000));
   const feedNozzleElMm = stripTopElMm + Math.round(0.5 * feedFlashMm);
@@ -2334,12 +2359,29 @@ export function solveColumnInternalsDesign(
     250,
     Math.min(
       ttlElMm - rectBotElMm - 600,
-      Math.round(rectHeightM * 1000) + rectInterBedCount * 850
+      Math.round(rectHeightM * 1000) + rectInterBedCount * 850 + (sideCutInRect ? sideCutChimneyMm : 0)
     )
   );
   const rectTopElMm = rectBotElMm + rectSpanMm;
   const demisterElMm = rectTopElMm + Math.max(250, Math.round(0.62 * (ttlElMm - rectTopElMm)));
   const oalElMm = Math.max(ttlElMm + Math.round(0.25 * rectDiamM * 1000) + 350, Math.round(totalElevationM * 1000));
+
+  let sideCutNozzleElMm: number | undefined;
+  if (hasSideCut) {
+    let rawSideElMm: number;
+    if (sideCutStage < feedStage) {
+      const rStart = 2;
+      const rEnd = Math.max(2, feedStage - 1);
+      const frac = rEnd > rStart ? clamp((sideCutStage - rStart) / (rEnd - rStart), 0, 1) : 0.5;
+      rawSideElMm = rectTopElMm - frac * (rectTopElMm - rectBotElMm);
+    } else {
+      const sStart = feedStage;
+      const sEnd = Math.max(feedStage, N - 1);
+      const frac = sEnd > sStart ? clamp((sideCutStage - sStart) / (sEnd - sStart), 0, 1) : 0.5;
+      rawSideElMm = stripTopElMm - frac * (stripTopElMm - stripBotElMm);
+    }
+    sideCutNozzleElMm = Math.round(clamp(rawSideElMm, btlElMm + 300, ttlElMm - 300));
+  }
 
   const elevations: ColumnElevationMap = {
     baseElMm: 0,
@@ -2350,6 +2392,7 @@ export function solveColumnInternalsDesign(
     stripBotElMm,
     stripTopElMm,
     feedNozzleElMm,
+    ...(sideCutNozzleElMm !== undefined ? { sideCutNozzleElMm } : {}),
     rectBotElMm,
     rectTopElMm,
     demisterElMm,
@@ -2709,6 +2752,58 @@ export function solveColumnInternalsDesign(
     ),
   ];
 
+  let sideCutSummary: ColumnInternalsSolveResult['sideCutSummary'];
+  if (hasSideCut && sideCutNozzleElMm !== undefined) {
+    const scPhase: 'L' | 'G' = simResult.sideCutPhase === 'G' ? 'G' : 'L';
+    const isGasSc = scPhase === 'G';
+    const scMassKgH = Math.max(
+      1,
+      simResult.sideCutMassKgH ??
+        Object.values(simResult.sideCutFlowsKgH ?? {}).reduce((a, b) => a + (b || 0), 0)
+    );
+    const sideStageObj =
+      stages.find((s) => s.stage === sideCutStage) ??
+      stages[clamp(sideCutStage - 1, 0, stages.length - 1)] ??
+      feedStageObj;
+    const scTempC = simResult.sideCutTempC ?? sideStageObj?.tempC ?? feedStageObj?.tempC ?? 80;
+    const sideProps = sideStageObj
+      ? calcStageMixtureProps({
+          ...sideStageObj,
+          tempC: scTempC,
+        })
+      : feedProps;
+
+    nozzles.push(
+      buildNozzle(
+        'N7',
+        isGasSc ? 'Side-Cut Vapor Draw' : 'Side-Cut Liquid Draw (Chimney Sump)',
+        isGasSc ? 'Gas/Vapor' : 'Liquid',
+        scMassKgH,
+        sideProps.rhoLiqKgM3,
+        sideProps.rhoVapKgM3,
+        sideProps.viscLiqCp * 1e-3,
+        sideProps.viscVapPaS,
+        sideProps.surfTensMnM * 1e-3,
+        isGasSc ? 18.0 : 1.2,
+        sideCutNozzleElMm,
+        90
+      )
+    );
+
+    const sOverFPct = Number(
+      ((simResult.actualSOverFMass ?? scMassKgH / Math.max(1e-3, totalFeedKgH)) * 100.0).toFixed(1)
+    );
+    sideCutSummary = {
+      stage: sideCutStage,
+      phase: scPhase,
+      massKgH: Number(scMassKgH.toFixed(1)),
+      tempC: Number(scTempC.toFixed(1)),
+      nozzleTag: 'N7',
+      elevationMm: sideCutNozzleElMm,
+      sOverFPct,
+    };
+  }
+
   const mhRating = defaultFlangeRating.replace(' RFWN', ' RF');
   const mhSize = governingDiamM >= 1.2 ? 'DN500 (20")' : 'DN450 (18")';
   const manholes: ColumnManholeSpec[] = [
@@ -3007,6 +3102,7 @@ export function solveColumnInternalsDesign(
     costEstimate,
     nozzles,
     manholes,
+    ...(sideCutSummary ? { sideCutSummary } : {}),
     auxiliaries: {
       condenserDutyKw: Number(qCondKw.toFixed(1)),
       condenserEstAreaM2,

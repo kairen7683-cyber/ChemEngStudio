@@ -105,7 +105,7 @@ const BUILDER_SLOTS_SAVE_KEY = 'chemplant-newplant-builder-slots-v1';
 
 // ── 포트 방향 판별 (양방향 드래그 연결 시 자동 입·출구 정렬용) ──
 const INLET_PORT_SET = new Set<string>(['in', 'anode_in', 'cathode_in', 'liq_in', 'util_in', 'solvent']);
-const OUTLET_PORT_SET = new Set<string>(['out', 'vapor', 'liquid', 'decanter', 'anode_out', 'cathode_out', 'util_out', 'out1', 'out2']);
+const OUTLET_PORT_SET = new Set<string>(['out', 'vapor', 'liquid', 'side_cut', 'decanter', 'anode_out', 'cathode_out', 'util_out', 'out1', 'out2']);
 
 // ── 장치 카탈로그 메타데이터 ──────────────────────────────────
 interface UnitCatalogItem {
@@ -668,7 +668,9 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
             ? 138
             : hasSubSheet
               ? 120
-              : 96,
+              : unitType === 'distillation'
+                ? 112
+                : 96,
         background: selected ? 'rgba(239, 246, 255, 0.92)' : 'rgba(255, 255, 255, 0.92)',
         border: selected
           ? '1.5px dashed #1D4ED8'
@@ -960,11 +962,25 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
                   ? '상부 미응축 스니프 가스 출구 (Sniff Gas G↑)'
                   : '상부 정제가스/기상 출구 (Vapor G↑ — 압축기·후단 연결점)'
             }
-            style={{ ...portStyle('#0F766E'), right: -7, top: '30%' }}
+            style={{ ...portStyle('#0F766E'), right: -7, top: unitType === 'distillation' ? '26%' : '30%' }}
           />
-          <span style={{ position: 'absolute', right: 5, top: '22%', fontSize: 7.5, fontWeight: 900, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', right: 5, top: unitType === 'distillation' ? '18%' : '22%', fontSize: 7.5, fontWeight: 900, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
             {topPortLabel}
           </span>
+          {unitType === 'distillation' && (
+            <>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id="side_cut"
+                title="사이드컷 측류 출구 (Side-Cut S→ — 액상/기상 중간단 인출)"
+                style={{ ...portStyle('#7C3AED'), right: -7, top: '52%' }}
+              />
+              <span style={{ position: 'absolute', right: 5, top: '44%', fontSize: 7.2, fontWeight: 900, color: '#7C3AED', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+                측류S→
+              </span>
+            </>
+          )}
           <Handle
             type="source"
             position={Position.Right}
@@ -978,9 +994,9 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
                     ? '하부 액화염소/응축액 출구 (Liquid Cl₂ L↓)'
                     : '하부 액상/배출액 출구 (Liquid L↓)'
             }
-            style={{ ...portStyle('#0284C7'), right: -7, top: '74%' }}
+            style={{ ...portStyle('#0284C7'), right: -7, top: unitType === 'distillation' ? '78%' : '74%' }}
           />
-          <span style={{ position: 'absolute', right: 5, top: '66%', fontSize: 7.5, fontWeight: 900, color: '#0284C7', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ position: 'absolute', right: 5, top: unitType === 'distillation' ? '70%' : '66%', fontSize: 7.5, fontWeight: 900, color: '#0284C7', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
             {botPortLabel}
           </span>
         </>
@@ -4253,13 +4269,15 @@ export function FlowsheetWorkspace({
         const outName =
           originDef.unitType === 'distillation' && rawH === 'vapor'
             ? `${originDef.tag} 탑정 유출(D)`
-            : originDef.unitType === 'distillation' && rawH === 'liquid'
-              ? `${originDef.tag} 탑저 관출(B)`
-              : rawH === 'vapor'
-                ? `${originDef.tag} 상부 기상(G)`
-                : rawH === 'liquid'
-                  ? `${originDef.tag} 하부 액상(L)`
-                  : '유출 스트림';
+            : originDef.unitType === 'distillation' && rawH === 'side_cut'
+              ? `${originDef.tag} 사이드컷 측류(S)`
+              : originDef.unitType === 'distillation' && rawH === 'liquid'
+                ? `${originDef.tag} 탑저 관출(B)`
+                : rawH === 'vapor'
+                  ? `${originDef.tag} 상부 기상(G)`
+                  : rawH === 'liquid'
+                    ? `${originDef.tag} 하부 액상(L)`
+                    : '유출 스트림';
 
         const newOutDef: FlowNodeDef = {
           id: newNodeId,
@@ -4394,6 +4412,15 @@ export function FlowsheetWorkspace({
                   dy: -38,
                   label: targetDef.unitType === 'distillation' ? `${targetDef.tag} 탑정 유출(D)` : `${targetDef.tag} 상부 출구`,
                 },
+                ...(targetDef.unitType === 'distillation' && targetDef.params.distillConfig?.sideCut?.enabled
+                  ? [
+                      {
+                        port: 'side_cut' as SourcePortId,
+                        dy: 10,
+                        label: `${targetDef.tag} 사이드컷 측류(S)`,
+                      },
+                    ]
+                  : []),
                 {
                   port: 'liquid',
                   dy: 58,
@@ -7271,7 +7298,7 @@ export function FlowsheetWorkspace({
                   </div>
                 )}
                 <div style={{ fontWeight: 800, marginBottom: 4 }}>
-                  구간: {selectedStreamRes?.fromTag} → {selectedStreamRes?.toTag}
+                  구간: {selectedStreamRes?.fromTag} → {selectedStreamRes?.toTag}{selectedStreamRes?.portRole ? ` (${selectedStreamRes.portRole})` : ''}
                 </div>
                 <div style={{ color: '#475569', fontSize: 11 }}>
                   인식 유체: <b style={{ color: '#0369A1' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>
@@ -7305,6 +7332,7 @@ export function FlowsheetWorkspace({
                 >
                   <option value="out">주배관 (out)</option>
                   <option value="vapor">상부 기상/정제가스 출구 (vapor · G↑)</option>
+                  <option value="side_cut">증류탑 사이드컷 측류 출구 (side_cut · 측류 S)</option>
                   <option value="liquid">하부 액화액/배출액 출구 (liquid · L↓)</option>
                   <option value="decanter">증류탑 공비 디캔터 수층 출구 (decanter)</option>
                   <option value="anode_out">전해조 양극 출구 (anode_out)</option>
@@ -8353,6 +8381,29 @@ export function FlowsheetWorkspace({
                             <span>D: {distTotalKgH.toFixed(1)} kg/h</span>
                             <span>B: {botTotalKgH.toFixed(1)} kg/h</span>
                           </div>
+                          {(dRes.sideCutMassKgH ?? 0) > 1e-4 && (
+                            <div
+                              style={{
+                                fontSize: 9.6,
+                                fontFamily: 'JetBrains Mono, monospace',
+                                color: '#6D28D9',
+                                fontWeight: 800,
+                                background: '#F5F3FF',
+                                border: '1px solid #DDD6FE',
+                                borderRadius: 4,
+                                padding: '3px 6px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                gap: 4,
+                              }}
+                            >
+                              <span>
+                                🟣 측류 S ({dRes.sideCutStageUsed ?? '-'}단·{dRes.sideCutPhase === 'G' ? '기상' : '액상'}): {(dRes.sideCutMassKgH ?? 0).toFixed(1)} kg/h
+                              </span>
+                              <span>S/F {((dRes.actualSOverFMass ?? 0) * 100).toFixed(1)}%</span>
+                            </div>
+                          )}
                           {dRes.decanterWaterDrawKgH > 0.005 && (
                             <div style={{ fontSize: 9.6, fontFamily: 'JetBrains Mono, monospace', color: '#0369A1', fontWeight: 800 }}>
                               💧 탑정 디캔터 수층 분리 W: {dRes.decanterWaterDrawKgH.toFixed(2)} kg/h
