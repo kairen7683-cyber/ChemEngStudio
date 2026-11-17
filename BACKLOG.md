@@ -49,3 +49,23 @@
 - **보류된 과제 (추후 진행)**:
   - `lib/calculations/rigorousDistillation.ts` (`solveInnerMeshColumn`, `runMeshAt`)에서 측류 인출(`SL[j]`, `SV[j]`) 활성 시 일부 단의 `sum(xRaw)` 이탈로 인한 조기 수렴 판정·프로브 오차 보정 (`Multi-theta` 또는 `Kb`/온도 커플링 및 프로브 안정화)
   - `scripts/validation/sideCutDistillationValidation.ts`, `solveAllPlants.ts` 등 전체 회귀/수렴 테스트 실행 및 통과 확인
+
+---
+
+## 3. [Planned · High] 물성 DB(`/property-db`) 공장별 전 물질 전수 등재 및 동기화
+
+- **현황 / 이슈**: 물성 DB 화면(`/property-db`)에서 각 공장(Plant 01~04)에 실제로 사용되는 공정 물질 중 일부가 누락되어 조회되지 않는 항목이 있음.
+- **작업 내용**:
+  - Plant 01~04(전해 · 염산 · ECH · 염화메탄 등) 및 향후 추가될 Plant 05(MDI)의 PFD · 물질수지 · 시뮬레이터 프리셋(`SimCompKey` 전체)에서 사용되는 **모든 공정 물질을 전수 추출**
+  - 물성 DB(`app/property-db` 및 물성 데이터 카탈로그 · `thermoCore.ts`/`rigorousThermo.ts`)에 모든 물질의 기본 물성·상수(MW, Tb, Tc, Pc, omega, Cp, Antoine/DIPPR 증기압, 열전도도·점도 등)가 누락 없이 등재되도록 동기화
+  - 공장별 필터링/매핑 시 해당 공장의 모든 원료·중간체·제품·부생물·유틸리티 유체가 100% 표시되도록 검증
+
+---
+
+## 4. [Planned · High] 염화메탄(CMS) 공장 MCL 컬럼 탑저(Bottoms) 스트림 `CFM (CHCl3)` 누락 수정
+
+- **현황 / 이슈**: 염화메탄(Chloromethanes) 공장의 정제 계통 중 **MCL 컬럼**(탑정 `CH3Cl` / 염화메틸 분리)의 **탑저(Bottoms) 스트림 물질 목록에 `CFM (CHCl3, 클로로포름)`이 누락**되어 있음 (실제로는 `CH2Cl2`와 함께 `CHCl3`·`CCl4` 등 중·고비점 유분이 탑저로 회수되어 후단 MC / CFM 정제 컬럼으로 공급되어야 함).
+- **작업 내용**:
+  - CMS 공장 PFD · 물질수지 시트 및 Classic/Flowsheet 시뮬레이터 프리셋 데이터(`lib/data/` 등)의 **MCL 컬럼 탑저 스트림 및 후단 연결 피드 조성**에서 `CFM (CHCl3)` 포함 및 성분별 유량/분율 정합성 복원
+  - 염소-메탄 반응 및 다단 분별증류(MCL → MC → CFM) 전체 물질수지 Closure 재검증 및 `scripts/regression/solveAllPlants.ts` 통과 확인
+
