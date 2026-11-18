@@ -52,6 +52,16 @@ def api_call(method: str, path: str, body: dict | None = None, api_base: str = D
         raise RuntimeError(f"HTTP {err.code}: {detail}") from err
 
 
+def parse_plants_arg(raw: str) -> list[str] | None:
+    cleaned = raw.strip()
+    if cleaned.lower() in ("all", "*"):
+        return None
+    plants = [p.strip() for p in cleaned.split(",") if p.strip()]
+    if not plants:
+        raise ValueError("--plants requires at least one PlantId or 'all'")
+    return plants
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="ChemEng Studio Server Admin CLI")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -80,12 +90,14 @@ def main() -> int:
     p_cu.add_argument("--password", required=True)
     p_cu.add_argument("--name", default="")
     p_cu.add_argument("--role", choices=["user", "admin"], default="user")
+    p_cu.add_argument("--plants", default=None, help="Comma-separated PlantIds (e.g. mdi_plant) or 'all'")
 
     p_uu = sub.add_parser("update-user", help="Approve, disable, promote, reset password or workspace")
     p_uu.add_argument("user_id", type=int)
     p_uu.add_argument("--status", choices=["active", "pending", "disabled"], default=None)
     p_uu.add_argument("--role", choices=["user", "admin"], default=None)
     p_uu.add_argument("--password", default=None)
+    p_uu.add_argument("--plants", default=None, help="Comma-separated PlantIds (e.g. mdi_plant) or 'all'")
     p_uu.add_argument("--reset-workspace", action="store_true")
 
     p_du = sub.add_parser("delete-user", help="Delete a user and their workspaces")
@@ -122,16 +134,15 @@ def main() -> int:
             {"is_active": args.active == "true"},
         )
     elif args.cmd == "create-user":
-        out = api_call(
-            "POST",
-            "/api/admin/users",
-            {
-                "username": args.username,
-                "password": args.password,
-                "display_name": args.name or args.username,
-                "role": args.role,
-            },
-        )
+        body = {
+            "username": args.username,
+            "password": args.password,
+            "display_name": args.name or args.username,
+            "role": args.role,
+        }
+        if args.plants is not None:
+            body["allowed_plants"] = parse_plants_arg(args.plants)
+        out = api_call("POST", "/api/admin/users", body)
     elif args.cmd == "update-user":
         patch = {}
         if args.status:
@@ -140,6 +151,8 @@ def main() -> int:
             patch["role"] = args.role
         if args.password:
             patch["new_password"] = args.password
+        if args.plants is not None:
+            patch["allowed_plants"] = parse_plants_arg(args.plants)
         if args.reset_workspace:
             patch["reset_workspace"] = True
         out = api_call("PATCH", f"/api/admin/users/{args.user_id}", patch)
