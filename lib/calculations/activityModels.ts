@@ -682,6 +682,7 @@ export function clearNrtlBipForSlot(slot: SimCompKey): void {
 
 // UNIFAC Zero-Allocation 버퍼
 const _ufPsi = new Float64Array(N_SG * N_SG);
+const _ufPsiInvTK = new Float64Array(N_SG * N_SG).fill(-1);
 const _ufThetaMix = new Float64Array(N_SG);
 const _ufDenomMix = new Float64Array(N_SG);
 const _ufLnGkMix = new Float64Array(N_SG);
@@ -689,18 +690,21 @@ const _ufThetaPure = new Float64Array(N_SG);
 const _ufDenomPure = new Float64Array(N_SG);
 const _ufLnGkPure = new Float64Array(N_SG);
 const _ufActiveSg = new Int32Array(N_SG);
-let _ufCachedInvTK = -1;
 
-function _ensureUnifacPsi(invTK: number): void {
-  if (Math.abs(invTK - _ufCachedInvTK) <= 1e-12) return;
-  for (let m = 0; m < N_SG; m++) {
+function _ensureUnifacPsiActive(actSg: Int32Array, nSgAct: number, invTK: number): void {
+  for (let idx = 0; idx < nSgAct; idx++) {
+    const m = actSg[idx];
     const mm = SG_MAIN[m] * N_MAIN;
     const rowOff = m * N_SG;
-    for (let n = 0; n < N_SG; n++) {
-      _ufPsi[rowOff + n] = Math.exp(-UNIFAC_AMN_FLAT[mm + SG_MAIN[n]] * invTK);
+    for (let jdx = 0; jdx < nSgAct; jdx++) {
+      const n = actSg[jdx];
+      const cell = rowOff + n;
+      if (_ufPsiInvTK[cell] !== invTK) {
+        _ufPsi[cell] = Math.exp(-UNIFAC_AMN_FLAT[mm + SG_MAIN[n]] * invTK);
+        _ufPsiInvTK[cell] = invTK;
+      }
     }
   }
-  _ufCachedInvTK = invTK;
 }
 
 function _calcPureGroupLnGammaActive(
@@ -759,8 +763,6 @@ function _evalMultiCompUnifacLnGamma(
   invTK: number,
   lnGammaOut: Float64Array
 ): void {
-  _ensureUnifacPsi(invTK);
-
   let rBar = 0;
   let qBar = 0;
   for (let i = 0; i < nComp; i++) {
@@ -789,6 +791,8 @@ function _evalMultiCompUnifacLnGamma(
       _ufThetaMix[s] = qMixS / qBar;
     }
   }
+
+  _ensureUnifacPsiActive(_ufActiveSg, nSgAct, invTK);
 
   // Mixture group denominators Σ_n Θ_n Ψ_{n,m}
   for (let idx = 0; idx < nSgAct; idx++) {
@@ -908,12 +912,17 @@ function estimateUnifacTauPair(ci: number, cj: number, invTK: number): [number, 
 
 // Zero-Allocation 행렬 버퍼
 const _idxBuf = new Int32Array(N_ALL);
+const _nrtlSlotBuf = new Int32Array(N_ALL);
 const _xBuf = new Float64Array(N_ALL);
 const _lnGUnifacBuf = new Float64Array(N_ALL);
+const _gammaDenseBuf = new Float64Array(N_ALL);
 const _tauBuf = new Float64Array(N_ALL * N_ALL);
 const _gBuf = new Float64Array(N_ALL * N_ALL);
 const _sBuf = new Float64Array(N_ALL);
 const _qBuf = new Float64Array(N_ALL);
+let _nrtlLastInvTK = -1;
+let _nrtlLastN = -1;
+const _nrtlLastIdx = new Int32Array(N_ALL);
 
 export interface ActivityEvalDiagnostics {
   unifacPairs: string[];
@@ -990,38 +999,17 @@ const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
-export function calcExtendedNrtlGamma(
-  activeComps: readonly SimCompKey[],
-  xMol: Partial<Record<SimCompKey, number>>,
-  T_C: number,
+function _evalExtendedNrtlDenseCore(
+  n: number,
+  allHaveUnifac: boolean,
+  T_K: number,
+  invTK: number,
+  xH2O: number,
+  xSalt: number,
+  gammaDenseOut: Float64Array,
   diagOut?: ActivityEvalDiagnostics
-): Record<SimCompKey, number> {
-  const gamma: Record<SimCompKey, number> = { ...ONE_ACT_TEMPLATE };
-
-  const T_K = Math.max(220, Math.min(650, T_C + 273.15));
-  const invTK = 1.0 / T_K;
-
-  // 용존 전해질(NaCl, NaOH) 염석 효과(Sechenov salting-out) 몰랄농도 계산
-  const xH2O = Math.max(0, xMol.H2O || 0);
-  const xSalt = Math.max(0, (xMol.NaCl || 0) + (xMol.NaOH || 0));
+): void {
   const saltMolality = xH2O > 0.02 && xSalt > 1e-5 ? Math.min(8.0, (xSalt / xH2O) * 55.508) : 0;
-
-  let n = 0;
-  let xSum = 0;
-  let allHaveUnifac = true;
-  for (let idx = 0; idx < activeComps.length; idx++) {
-    const c = activeComps[idx];
-    if (PERMANENT_GAS_SET.has(c) || NON_VOLATILE_SET.has(c)) continue;
-    const xv = Math.max(0, xMol[c] || 0);
-    const ci = COMP_IDX[c];
-    _idxBuf[n] = ci;
-    _xBuf[n] = xv;
-    if (!COMP_HAS_UNIFAC[ci]) allHaveUnifac = false;
-    xSum += xv;
-    n++;
-  }
-  if (n <= 1 || xSum <= 1e-9) return gamma;
-  for (let i = 0; i < n; i++) _xBuf[i] /= xSum;
 
   let hasAnyCalibratedNrtl = false;
   for (let i = 0; i < n && !hasAnyCalibratedNrtl; i++) {
@@ -1049,7 +1037,6 @@ export function calcExtendedNrtlGamma(
     return Math.exp(Math.max(-12.0, Math.min(14.0, baseLnGamma + saltShift)));
   };
 
-  // Direct Multi-Component Hansen (1991) UNIFAC path when no pair has NRTL BIPs and all have UNIFAC groups
   if (!hasAnyCalibratedNrtl && allHaveUnifac) {
     if (diagOut) {
       for (let i = 0; i < n; i++) {
@@ -1061,45 +1048,59 @@ export function calcExtendedNrtlGamma(
     }
     _evalMultiCompUnifacLnGamma(_idxBuf, _xBuf, n, invTK, _lnGUnifacBuf);
     for (let i = 0; i < n; i++) {
-      const key = ALL_KEYS[_idxBuf[i]];
-      gamma[key] = applySaltingOut(key, _lnGUnifacBuf[i]);
+      gammaDenseOut[i] = applySaltingOut(ALL_KEYS[_idxBuf[i]], _lnGUnifacBuf[i]);
     }
-    return gamma;
+    return;
   }
 
-  for (let i = 0; i < n; i++) {
-    const ci = _idxBuf[i];
-    const rowOff = i * n;
-    _tauBuf[rowOff + i] = 0;
-    _gBuf[rowOff + i] = 1.0;
-    for (let j = i + 1; j < n; j++) {
-      const cj = _idxBuf[j];
-      const m12 = ci * N_ALL + cj;
-      const m21 = cj * N_ALL + ci;
-      let tau12 = 0;
-      let tau21 = 0;
-      let alpha = 0.30;
-
-      if (NRTL_HAS_MAT[m12]) {
-        tau12 = NRTL_A_MAT[m12] + NRTL_B_MAT[m12] * invTK;
-        tau21 = NRTL_A_MAT[m21] + NRTL_B_MAT[m21] * invTK;
-        alpha = NRTL_ALPHA_MAT[m12];
-      } else if (COMP_HAS_UNIFAC[ci] && COMP_HAS_UNIFAC[cj]) {
-        [tau12, tau21] = estimateUnifacTauPair(ci, cj, invTK);
-        if (diagOut) {
-          const label = `${ALL_KEYS[ci]}-${ALL_KEYS[cj]}`;
-          if (!diagOut.unifacPairs.includes(label)) diagOut.unifacPairs.push(label);
-        }
-      } else if (diagOut && _xBuf[i] > 1e-4 && _xBuf[j] > 1e-4) {
-        const label = `${ALL_KEYS[ci]}-${ALL_KEYS[cj]}`;
-        if (!diagOut.idealFallbackPairs.includes(label)) diagOut.idealFallbackPairs.push(label);
+  let sameAsLastT = !diagOut && _nrtlLastInvTK === invTK && _nrtlLastN === n;
+  if (sameAsLastT) {
+    for (let i = 0; i < n; i++) {
+      if (_idxBuf[i] !== _nrtlLastIdx[i]) {
+        sameAsLastT = false;
+        break;
       }
-
-      _tauBuf[rowOff + j] = tau12;
-      _gBuf[rowOff + j] = Math.exp(Math.max(-30, Math.min(30, -alpha * tau12)));
-      _tauBuf[j * n + i] = tau21;
-      _gBuf[j * n + i] = Math.exp(Math.max(-30, Math.min(30, -alpha * tau21)));
     }
+  }
+
+  if (!sameAsLastT) {
+    for (let i = 0; i < n; i++) {
+      const ci = _idxBuf[i];
+      const rowOff = i * n;
+      _tauBuf[rowOff + i] = 0;
+      _gBuf[rowOff + i] = 1.0;
+      for (let j = i + 1; j < n; j++) {
+        const cj = _idxBuf[j];
+        const m12 = ci * N_ALL + cj;
+        const m21 = cj * N_ALL + ci;
+        let tau12 = 0;
+        let tau21 = 0;
+        let alpha = 0.30;
+
+        if (NRTL_HAS_MAT[m12]) {
+          tau12 = NRTL_A_MAT[m12] + NRTL_B_MAT[m12] * invTK;
+          tau21 = NRTL_A_MAT[m21] + NRTL_B_MAT[m21] * invTK;
+          alpha = NRTL_ALPHA_MAT[m12];
+        } else if (COMP_HAS_UNIFAC[ci] && COMP_HAS_UNIFAC[cj]) {
+          [tau12, tau21] = estimateUnifacTauPair(ci, cj, invTK);
+          if (diagOut) {
+            const label = `${ALL_KEYS[ci]}-${ALL_KEYS[cj]}`;
+            if (!diagOut.unifacPairs.includes(label)) diagOut.unifacPairs.push(label);
+          }
+        } else if (diagOut && _xBuf[i] > 1e-4 && _xBuf[j] > 1e-4) {
+          const label = `${ALL_KEYS[ci]}-${ALL_KEYS[cj]}`;
+          if (!diagOut.idealFallbackPairs.includes(label)) diagOut.idealFallbackPairs.push(label);
+        }
+
+        _tauBuf[rowOff + j] = tau12;
+        _gBuf[rowOff + j] = Math.exp(Math.max(-30, Math.min(30, -alpha * tau12)));
+        _tauBuf[j * n + i] = tau21;
+        _gBuf[j * n + i] = Math.exp(Math.max(-30, Math.min(30, -alpha * tau21)));
+      }
+    }
+    _nrtlLastInvTK = invTK;
+    _nrtlLastN = n;
+    for (let i = 0; i < n; i++) _nrtlLastIdx[i] = _idxBuf[i];
   }
 
   for (let j = 0; j < n; j++) {
@@ -1124,8 +1125,95 @@ export function calcExtendedNrtlGamma(
       const sj = _sBuf[j];
       term2 += ((_xBuf[j] * _gBuf[iOff + j]) / sj) * (_tauBuf[iOff + j] - _qBuf[j] / sj);
     }
-    const key = ALL_KEYS[_idxBuf[i]];
-    gamma[key] = applySaltingOut(key, term1 + term2);
+    gammaDenseOut[i] = applySaltingOut(ALL_KEYS[_idxBuf[i]], term1 + term2);
+  }
+}
+
+/**
+ * Zero-allocation dense Extended NRTL + UNIFAC fallback activity coefficient evaluator.
+ * Writes gamma[slot] aligned 1:1 with comps[0..nComps-1].
+ */
+export function calcExtendedNrtlGammaInto(
+  comps: readonly SimCompKey[],
+  xArr: ArrayLike<number>,
+  nComps: number,
+  T_C: number,
+  gammaOut: Float64Array,
+  diagOut?: ActivityEvalDiagnostics,
+  xH2OOverride?: number,
+  xSaltOverride?: number
+): void {
+  const T_K = Math.max(220, Math.min(650, T_C + 273.15));
+  const invTK = 1.0 / T_K;
+
+  let n = 0;
+  let xSum = 0;
+  let allHaveUnifac = true;
+  let xH2O = xH2OOverride ?? 0;
+  let xSalt = xSaltOverride ?? 0;
+  const readAqFromArr = xH2OOverride === undefined;
+
+  for (let slot = 0; slot < nComps; slot++) {
+    gammaOut[slot] = 1.0;
+    const c = comps[slot];
+    const xv = Math.max(0, xArr[slot] || 0);
+    if (readAqFromArr) {
+      if (c === 'H2O') xH2O = xv;
+      else if (c === 'NaCl' || c === 'NaOH') xSalt += xv;
+    }
+    if (PERMANENT_GAS_SET.has(c) || NON_VOLATILE_SET.has(c)) continue;
+    const ci = COMP_IDX[c];
+    _idxBuf[n] = ci;
+    _nrtlSlotBuf[n] = slot;
+    _xBuf[n] = xv;
+    if (!COMP_HAS_UNIFAC[ci]) allHaveUnifac = false;
+    xSum += xv;
+    n++;
+  }
+  if (n <= 1 || xSum <= 1e-9) return;
+  for (let i = 0; i < n; i++) _xBuf[i] /= xSum;
+
+  _evalExtendedNrtlDenseCore(n, allHaveUnifac, T_K, invTK, xH2O, xSalt, _gammaDenseBuf, diagOut);
+  for (let i = 0; i < n; i++) {
+    gammaOut[_nrtlSlotBuf[i]] = _gammaDenseBuf[i];
+  }
+}
+
+export function calcExtendedNrtlGamma(
+  activeComps: readonly SimCompKey[],
+  xMol: Partial<Record<SimCompKey, number>>,
+  T_C: number,
+  diagOut?: ActivityEvalDiagnostics
+): Record<SimCompKey, number> {
+  const gamma: Record<SimCompKey, number> = { ...ONE_ACT_TEMPLATE };
+
+  const T_K = Math.max(220, Math.min(650, T_C + 273.15));
+  const invTK = 1.0 / T_K;
+
+  // 용존 전해질(NaCl, NaOH) 염석 효과(Sechenov salting-out) 몰랄농도 계산
+  const xH2O = Math.max(0, xMol.H2O || 0);
+  const xSalt = Math.max(0, (xMol.NaCl || 0) + (xMol.NaOH || 0));
+
+  let n = 0;
+  let xSum = 0;
+  let allHaveUnifac = true;
+  for (let idx = 0; idx < activeComps.length; idx++) {
+    const c = activeComps[idx];
+    if (PERMANENT_GAS_SET.has(c) || NON_VOLATILE_SET.has(c)) continue;
+    const xv = Math.max(0, xMol[c] || 0);
+    const ci = COMP_IDX[c];
+    _idxBuf[n] = ci;
+    _xBuf[n] = xv;
+    if (!COMP_HAS_UNIFAC[ci]) allHaveUnifac = false;
+    xSum += xv;
+    n++;
+  }
+  if (n <= 1 || xSum <= 1e-9) return gamma;
+  for (let i = 0; i < n; i++) _xBuf[i] /= xSum;
+
+  _evalExtendedNrtlDenseCore(n, allHaveUnifac, T_K, invTK, xH2O, xSalt, _gammaDenseBuf, diagOut);
+  for (let i = 0; i < n; i++) {
+    gamma[ALL_KEYS[_idxBuf[i]]] = _gammaDenseBuf[i];
   }
   return gamma;
 }
@@ -1133,6 +1221,12 @@ export function calcExtendedNrtlGamma(
 // ----------------------------------------------------------------------------
 // 3. Michelsen Tangent-Plane Stability + Rigorous 2-Liquid LLE Decanter Solver
 // ----------------------------------------------------------------------------
+export interface LLETieWarmStart {
+  beta: number;
+  xOrg: Partial<Record<SimCompKey, number>>;
+  xAq: Partial<Record<SimCompKey, number>>;
+}
+
 export interface LLEDecanterResult {
   phaseSplit: boolean;
   tpdMin: number;
@@ -1142,35 +1236,62 @@ export interface LLEDecanterResult {
   orgInAqWtPct: number;
   iterations: number;
   diagnostics: ActivityEvalDiagnostics;
+  tieState?: LLETieWarmStart;
 }
+
+const _lleComps: SimCompKey[] = new Array<SimCompKey>(N_ALL);
+const _lleIsNonVol = new Uint8Array(N_ALL);
+const _lleIsPermGas = new Uint8Array(N_ALL);
+const _lleIsHydro = new Uint8Array(N_ALL);
+const _lleFeedMass = new Float64Array(N_ALL);
+const _lleFeedMol = new Float64Array(N_ALL);
+const _lleZ = new Float64Array(N_ALL);
+const _lleGFeed = new Float64Array(N_ALL);
+const _lleW = new Float64Array(N_ALL);
+const _lleGw = new Float64Array(N_ALL);
+const _lleXOrg = new Float64Array(N_ALL);
+const _lleXAq = new Float64Array(N_ALL);
+const _lleKLL = new Float64Array(N_ALL);
+const _lleGOrg = new Float64Array(N_ALL);
+const _lleGAq = new Float64Array(N_ALL);
 
 export function solveRigorousLLEDecanter(
   feedLiqKgH: Record<SimCompKey, number>,
-  T_C: number
+  T_C: number,
+  initTie?: LLETieWarmStart
 ): LLEDecanterResult {
   const emptyRec = (): Record<SimCompKey, number> => ({ ...ZERO_ACT_TEMPLATE });
 
   const diag: ActivityEvalDiagnostics = { unifacPairs: [], idealFallbackPairs: [] };
-  const activeComps: SimCompKey[] = [];
-  const feedMol = emptyRec();
+  let nAct = 0;
   let volatileLiqMol = 0;
   let saltMol = 0;
   let hydroOrgKg = 0;
   const h2oKg = Math.max(0, feedLiqKgH.H2O || 0);
+  let h2oSlot = -1;
 
   for (let idx = 0; idx < N_ALL; idx++) {
     const k = ALL_KEYS[idx];
     const m = Math.max(0, feedLiqKgH[k] || 0);
     if (m <= 1e-12) continue;
-    activeComps.push(k);
+    const isNv = NON_VOLATILE_SET.has(k) ? 1 : 0;
+    const isPg = PERMANENT_GAS_SET.has(k) ? 1 : 0;
+    const isHy = HYDROPHOBIC_ORGS.has(k) ? 1 : 0;
+    _lleComps[nAct] = k;
+    _lleIsNonVol[nAct] = isNv;
+    _lleIsPermGas[nAct] = isPg;
+    _lleIsHydro[nAct] = isHy;
+    _lleFeedMass[nAct] = m;
     const mol = m / COMP_MW[k];
-    feedMol[k] = mol;
-    if (NON_VOLATILE_SET.has(k)) {
+    _lleFeedMol[nAct] = mol;
+    if (k === 'H2O') h2oSlot = nAct;
+    if (isNv) {
       saltMol += mol;
-    } else if (!PERMANENT_GAS_SET.has(k)) {
+    } else if (!isPg) {
       volatileLiqMol += mol;
     }
-    if (HYDROPHOBIC_ORGS.has(k)) hydroOrgKg += m;
+    if (isHy) hydroOrgKg += m;
+    nAct++;
   }
 
   if (hydroOrgKg < 1e-3 || h2oKg < 1e-3 || volatileLiqMol < 1e-6) {
@@ -1186,63 +1307,89 @@ export function solveRigorousLLEDecanter(
     };
   }
 
-  const zMol = emptyRec();
   const totMolAll = volatileLiqMol + saltMol;
-  for (const k of activeComps) zMol[k] = feedMol[k] / totMolAll;
-  const gammaFeed = calcExtendedNrtlGamma(activeComps, zMol, T_C, diag);
+  let zH2O = 0;
+  let zSalt = 0;
+  for (let i = 0; i < nAct; i++) {
+    const zVal = _lleFeedMol[i] / totMolAll;
+    _lleZ[i] = zVal;
+    if (i === h2oSlot) zH2O = zVal;
+    else if (_lleComps[i] === 'NaCl' || _lleComps[i] === 'NaOH') zSalt += zVal;
+  }
+  calcExtendedNrtlGammaInto(_lleComps, _lleZ, nAct, T_C, _lleGFeed, diag, zH2O, zSalt);
 
   const evalTPD = (trialOrgRich: boolean): number => {
-    const w = emptyRec();
     let wSum = 0;
-    for (const k of activeComps) {
-      if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) {
+        _lleW[i] = 0;
+        continue;
+      }
       let wk: number;
       if (trialOrgRich) {
-        wk = HYDROPHOBIC_ORGS.has(k) ? Math.max(1e-5, feedMol[k]) : k === 'H2O' ? 0.04 * volatileLiqMol : 0.2 * feedMol[k];
+        wk = _lleIsHydro[i] ? Math.max(1e-5, _lleFeedMol[i]) : i === h2oSlot ? 0.04 * volatileLiqMol : 0.2 * _lleFeedMol[i];
       } else {
-        wk = k === 'H2O' ? Math.max(1e-5, feedMol[k]) : HYDROPHOBIC_ORGS.has(k) ? 0.008 * feedMol[k] : 0.8 * feedMol[k];
+        wk = i === h2oSlot ? Math.max(1e-5, _lleFeedMol[i]) : _lleIsHydro[i] ? 0.008 * _lleFeedMol[i] : 0.8 * _lleFeedMol[i];
       }
-      w[k] = wk;
+      _lleW[i] = wk;
       wSum += wk;
     }
     if (!trialOrgRich && saltMol > 0) {
-      for (const k of activeComps) {
-        if (NON_VOLATILE_SET.has(k)) { w[k] = feedMol[k]; wSum += feedMol[k]; }
+      for (let i = 0; i < nAct; i++) {
+        if (_lleIsNonVol[i]) {
+          _lleW[i] = _lleFeedMol[i];
+          wSum += _lleFeedMol[i];
+        }
       }
     }
     if (wSum <= 1e-12) return 0;
-    for (const k of activeComps) w[k] /= wSum;
+    for (let i = 0; i < nAct; i++) _lleW[i] /= wSum;
 
     for (let st = 0; st < 3; st++) {
-      const gw = calcExtendedNrtlGamma(activeComps, w, T_C);
+      let wH2O = h2oSlot >= 0 ? _lleW[h2oSlot] : 0;
+      let wSalt = 0;
+      for (let i = 0; i < nAct; i++) {
+        if (_lleComps[i] === 'NaCl' || _lleComps[i] === 'NaOH') wSalt += _lleW[i];
+      }
+      calcExtendedNrtlGammaInto(_lleComps, _lleW, nAct, T_C, _lleGw, undefined, wH2O, wSalt);
       let nextSum = 0;
-      for (const k of activeComps) {
-        if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-        const zi = Math.max(1e-12, feedMol[k] / volatileLiqMol);
-        w[k] = (zi * gammaFeed[k]) / Math.max(0.05, gw[k]);
-        nextSum += w[k];
+      for (let i = 0; i < nAct; i++) {
+        if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+        const zi = Math.max(1e-12, _lleFeedMol[i] / volatileLiqMol);
+        _lleW[i] = (zi * _lleGFeed[i]) / Math.max(0.05, _lleGw[i]);
+        nextSum += _lleW[i];
       }
       if (!trialOrgRich && saltMol > 0) {
         const scaleSalt = saltMol / Math.max(1e-6, volatileLiqMol);
-        for (const k of activeComps) {
-          if (NON_VOLATILE_SET.has(k)) { w[k] = (feedMol[k] / Math.max(1e-9, saltMol)) * scaleSalt; nextSum += w[k]; }
+        for (let i = 0; i < nAct; i++) {
+          if (_lleIsNonVol[i]) {
+            _lleW[i] = (_lleFeedMol[i] / Math.max(1e-9, saltMol)) * scaleSalt;
+            nextSum += _lleW[i];
+          }
         }
       }
-      for (const k of activeComps) w[k] /= Math.max(1e-12, nextSum);
+      const invS = 1.0 / Math.max(1e-12, nextSum);
+      for (let i = 0; i < nAct; i++) _lleW[i] *= invS;
     }
 
-    const gwFinal = calcExtendedNrtlGamma(activeComps, w, T_C);
+    let wH2Of = h2oSlot >= 0 ? _lleW[h2oSlot] : 0;
+    let wSaltf = 0;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleComps[i] === 'NaCl' || _lleComps[i] === 'NaOH') wSaltf += _lleW[i];
+    }
+    calcExtendedNrtlGammaInto(_lleComps, _lleW, nAct, T_C, _lleGw, undefined, wH2Of, wSaltf);
+
     let tpd = 0;
     let volWSum = 0;
-    for (const k of activeComps) {
-      if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-      volWSum += w[k];
+    for (let i = 0; i < nAct; i++) {
+      if (!_lleIsNonVol[i] && !_lleIsPermGas[i]) volWSum += _lleW[i];
     }
-    for (const k of activeComps) {
-      if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-      const wi = Math.max(1e-12, w[k] / Math.max(1e-12, volWSum));
-      const zi = Math.max(1e-12, feedMol[k] / volatileLiqMol);
-      tpd += wi * (Math.log(wi) + Math.log(gwFinal[k]) - Math.log(zi) - Math.log(gammaFeed[k]));
+    const invVol = 1.0 / Math.max(1e-12, volWSum);
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+      const wi = Math.max(1e-12, _lleW[i] * invVol);
+      const zi = Math.max(1e-12, _lleFeedMol[i] / volatileLiqMol);
+      tpd += wi * (Math.log(wi) + Math.log(_lleGw[i]) - Math.log(zi) - Math.log(_lleGFeed[i]));
     }
     return tpd;
   };
@@ -1262,62 +1409,94 @@ export function solveRigorousLLEDecanter(
     };
   }
 
-  const xOrg = emptyRec();
-  const xAq = emptyRec();
   let orgInitMol = 0;
-  for (const k of activeComps) {
-    if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-    const isHydro = HYDROPHOBIC_ORGS.has(k);
-    xOrg[k] = isHydro ? Math.max(1e-6, feedMol[k] * 0.96) : k === 'H2O' ? feedMol[k] * 0.02 : feedMol[k] * 0.15;
-    xAq[k] = feedMol[k] - xOrg[k];
-    orgInitMol += xOrg[k];
+  let warmValid = Boolean(initTie && initTie.beta > 0.002 && initTie.beta < 0.998);
+  if (warmValid) {
+    let warmOrgSum = 0;
+    let warmAqSum = 0;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+      const k = _lleComps[i];
+      const xo = Math.max(0, initTie!.xOrg[k] || 0);
+      const xa = Math.max(0, initTie!.xAq[k] || 0);
+      _lleXOrg[i] = xo;
+      _lleXAq[i] = xa;
+      warmOrgSum += xo;
+      warmAqSum += xa;
+    }
+    if (warmOrgSum <= 0.1 || warmAqSum <= 0.1) warmValid = false;
   }
-  const normalizePhase = (ph: Record<SimCompKey, number>, includeSalt: boolean) => {
-    let s = 0;
-    for (const k of activeComps) {
-      if (PERMANENT_GAS_SET.has(k)) { ph[k] = 0; continue; }
-      if (NON_VOLATILE_SET.has(k)) {
-        ph[k] = includeSalt ? feedMol[k] : 0;
+  if (!warmValid) {
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) {
+        _lleXOrg[i] = 0;
+        _lleXAq[i] = 0;
+        continue;
       }
-      s += ph[k];
+      _lleXOrg[i] = _lleIsHydro[i]
+        ? Math.max(1e-6, _lleFeedMol[i] * 0.96)
+        : i === h2oSlot
+          ? _lleFeedMol[i] * 0.02
+          : _lleFeedMol[i] * 0.15;
+      _lleXAq[i] = _lleFeedMol[i] - _lleXOrg[i];
+      orgInitMol += _lleXOrg[i];
+    }
+  }
+  const normalizePhaseArr = (ph: Float64Array, includeSalt: boolean) => {
+    let s = 0;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsPermGas[i]) { ph[i] = 0; continue; }
+      if (_lleIsNonVol[i]) ph[i] = includeSalt ? _lleFeedMol[i] : 0;
+      s += ph[i];
     }
     if (s > 1e-12) {
-      for (const k of activeComps) ph[k] /= s;
+      const invS = 1.0 / s;
+      for (let i = 0; i < nAct; i++) ph[i] *= invS;
     }
   };
-  normalizePhase(xOrg, false);
-  normalizePhase(xAq, true);
+  normalizePhaseArr(_lleXOrg, false);
+  normalizePhaseArr(_lleXAq, true);
 
-  let beta = Math.max(0.002, Math.min(0.998, orgInitMol / volatileLiqMol));
+  let beta = warmValid
+    ? initTie!.beta
+    : Math.max(0.002, Math.min(0.998, orgInitMol / volatileLiqMol));
   let iterUsed = 0;
-  const K_LL = emptyRec();
+  for (let i = 0; i < nAct; i++) _lleKLL[i] = 0;
+
+  const rrFunc = (b: number): number => {
+    let f = 0;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+      const zi = _lleFeedMol[i] / volatileLiqMol;
+      const km1 = _lleKLL[i] - 1.0;
+      f += (zi * km1) / Math.max(1e-9, 1.0 + b * km1);
+    }
+    return f;
+  };
 
   for (let it = 0; it < 35; it++) {
     iterUsed = it + 1;
-    const gOrg = calcExtendedNrtlGamma(activeComps, xOrg, T_C);
-    const gAq = calcExtendedNrtlGamma(activeComps, xAq, T_C);
+    const orgH2O = h2oSlot >= 0 ? _lleXOrg[h2oSlot] : 0;
+    const aqH2O = h2oSlot >= 0 ? _lleXAq[h2oSlot] : 0;
+    let aqSalt = 0;
+    if (saltMol > 0) {
+      for (let i = 0; i < nAct; i++) {
+        if (_lleComps[i] === 'NaCl' || _lleComps[i] === 'NaOH') aqSalt += _lleXAq[i];
+      }
+    }
+    calcExtendedNrtlGammaInto(_lleComps, _lleXOrg, nAct, T_C, _lleGOrg, undefined, orgH2O, 0);
+    calcExtendedNrtlGammaInto(_lleComps, _lleXAq, nAct, T_C, _lleGAq, undefined, aqH2O, aqSalt);
 
     let maxRelK = 0;
-    for (const k of activeComps) {
-      if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-      const kNew = Math.max(1e-7, Math.min(1e7, gAq[k] / Math.max(1e-6, gOrg[k])));
-      const prev = K_LL[k] > 0 ? K_LL[k] : kNew;
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+      const kNew = Math.max(1e-7, Math.min(1e7, _lleGAq[i] / Math.max(1e-6, _lleGOrg[i])));
+      const prev = _lleKLL[i] > 0 ? _lleKLL[i] : kNew;
       const damped = it === 0 ? kNew : Math.exp(0.65 * Math.log(kNew) + 0.35 * Math.log(prev));
       const rel = Math.abs(damped - prev) / Math.max(1e-6, prev);
       if (rel > maxRelK) maxRelK = rel;
-      K_LL[k] = damped;
+      _lleKLL[i] = damped;
     }
-
-    const rrFunc = (b: number): number => {
-      let f = 0;
-      for (const k of activeComps) {
-        if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-        const zi = feedMol[k] / volatileLiqMol;
-        const km1 = K_LL[k] - 1.0;
-        f += (zi * km1) / Math.max(1e-9, 1.0 + b * km1);
-      }
-      return f;
-    };
 
     const f0 = rrFunc(1e-6);
     const f1 = rrFunc(1.0 - 1e-6);
@@ -1337,17 +1516,16 @@ export function solveRigorousLLEDecanter(
       beta = 0.5 * (lo + hi);
     }
 
-    for (const k of activeComps) {
-      if (NON_VOLATILE_SET.has(k) || PERMANENT_GAS_SET.has(k)) continue;
-      const zi = feedMol[k] / volatileLiqMol;
-      const denom = Math.max(1e-9, 1.0 + beta * (K_LL[k] - 1.0));
+    for (let i = 0; i < nAct; i++) {
+      if (_lleIsNonVol[i] || _lleIsPermGas[i]) continue;
+      const zi = _lleFeedMol[i] / volatileLiqMol;
+      const denom = Math.max(1e-9, 1.0 + beta * (_lleKLL[i] - 1.0));
       const xAqVol = zi / denom;
-      const xOrgVol = K_LL[k] * xAqVol;
-      xOrg[k] = xOrgVol;
-      xAq[k] = xAqVol * (1.0 - beta) * volatileLiqMol;
+      _lleXOrg[i] = _lleKLL[i] * xAqVol;
+      _lleXAq[i] = xAqVol * (1.0 - beta) * volatileLiqMol;
     }
-    normalizePhase(xOrg, false);
-    normalizePhase(xAq, true);
+    normalizePhaseArr(_lleXOrg, false);
+    normalizePhaseArr(_lleXAq, true);
 
     if (it >= 3 && maxRelK < 5e-4) break;
   }
@@ -1368,28 +1546,33 @@ export function solveRigorousLLEDecanter(
 
   const organicKgH = emptyRec();
   const aqueousKgH = emptyRec();
+  const tieXOrg: Partial<Record<SimCompKey, number>> = {};
+  const tieXAq: Partial<Record<SimCompKey, number>> = {};
   let orgTotKg = 0;
   let aqTotKg = 0;
   let hydroInAqKg = 0;
 
-  for (const k of activeComps) {
-    const totKg = Math.max(0, feedLiqKgH[k] || 0);
-    if (NON_VOLATILE_SET.has(k)) {
+  for (let i = 0; i < nAct; i++) {
+    const k = _lleComps[i];
+    const totKg = _lleFeedMass[i];
+    tieXOrg[k] = _lleXOrg[i];
+    tieXAq[k] = _lleXAq[i];
+    if (_lleIsNonVol[i]) {
       organicKgH[k] = 0;
       aqueousKgH[k] = totKg;
       aqTotKg += totKg;
-    } else if (PERMANENT_GAS_SET.has(k)) {
+    } else if (_lleIsPermGas[i]) {
       organicKgH[k] = totKg;
       aqueousKgH[k] = 0;
       orgTotKg += totKg;
     } else {
-      const denom = Math.max(1e-9, 1.0 + beta * (K_LL[k] - 1.0));
-      const fracOrg = Math.max(0, Math.min(1, (beta * K_LL[k]) / denom));
+      const denom = Math.max(1e-9, 1.0 + beta * (_lleKLL[i] - 1.0));
+      const fracOrg = Math.max(0, Math.min(1, (beta * _lleKLL[i]) / denom));
       organicKgH[k] = totKg * fracOrg;
       aqueousKgH[k] = totKg - organicKgH[k];
       orgTotKg += organicKgH[k];
       aqTotKg += aqueousKgH[k];
-      if (HYDROPHOBIC_ORGS.has(k)) hydroInAqKg += aqueousKgH[k];
+      if (_lleIsHydro[i]) hydroInAqKg += aqueousKgH[k];
     }
   }
 
@@ -1402,5 +1585,6 @@ export function solveRigorousLLEDecanter(
     orgInAqWtPct: aqTotKg > 1e-6 ? (hydroInAqKg / aqTotKg) * 100 : 0,
     iterations: iterUsed,
     diagnostics: diag,
+    tieState: { beta, xOrg: tieXOrg, xAq: tieXAq },
   };
 }

@@ -505,6 +505,7 @@ const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
 };
 
 const _eosActKeys: SimCompKey[] = new Array<SimCompKey>(N_RIG);
+const _eosActSlot = new Int32Array(N_RIG);
 const _eosActIdx = new Int32Array(N_RIG);
 const _eosYNorm = new Float64Array(N_RIG);
 const _eosSqrtAi = new Float64Array(N_RIG);
@@ -1002,6 +1003,149 @@ export function calcSoaveRedlichKwongMixture(
     phi_liq,
     phi_stable,
   };
+}
+
+/**
+ * Zero-allocation dense mixture fugacity coefficient evaluator for PR / SRK.
+ * Writes fugacity coefficients indexed by active component slot [0..nComps-1].
+ */
+export function calcCubicMixtureDenseInto(
+  method: 'PR' | 'SRK',
+  comps: readonly SimCompKey[],
+  xArr: ArrayLike<number>,
+  nComps: number,
+  T_C: number,
+  P_barA: number,
+  phiVapOut: Float64Array,
+  phiLiqOut?: Float64Array | null,
+  vapOnly = false
+): { Z_vap: number; Z_liq: number; rootCount: number; B: number } {
+  const T_K = Math.max(60, Math.min(1200, T_C + 273.15));
+  const P_bar = Math.max(1e-5, P_barA);
+  const isSRK = method === 'SRK';
+  const kijMat = isSRK ? SRK_KIJ_MAT : PR_KIJ_MAT;
+
+  let nAct = 0;
+  let ySum = 0;
+  for (let slot = 0; slot < nComps; slot++) {
+    const k = comps[slot];
+    const isNv = NON_VOLATILE_RIG_SET.has(k);
+    phiVapOut[slot] = isNv ? 1e-12 : 1.0;
+    if (phiLiqOut) phiLiqOut[slot] = isNv ? 1e-12 : 1.0;
+    if (isNv) continue;
+    const v = xArr[slot] || 0;
+    if (v > 1e-15) {
+      _eosActKeys[nAct] = k;
+      _eosActSlot[nAct] = slot;
+      nAct++;
+      ySum += v;
+    }
+  }
+  let hasDummyFallback = false;
+  if (nAct === 0) {
+    _eosActKeys[0] = 'H2O';
+    _eosActSlot[0] = -1;
+    nAct = 1;
+    ySum = 1.0;
+    hasDummyFallback = true;
+  }
+
+  const sqrtTK = Math.sqrt(T_K);
+  for (let i = 0; i < nAct; i++) {
+    const k = _eosActKeys[i];
+    const slot = _eosActSlot[i];
+    _eosActIdx[i] = RIG_COMP_IDX[k];
+    _eosYNorm[i] = hasDummyFallback ? 1.0 : ySum > 1e-14 ? Math.max(0, xArr[slot] || 0) / ySum : 1.0 / nAct;
+    const c = RIGOROUS_CRIT[k];
+    if (isSRK) {
+      let alpha: number;
+      if (k === 'H2') {
+        alpha = 1.202 * Math.exp(-0.30228 * (T_K / c.Tc_K));
+      } else {
+        const mSrk = 0.480 + 1.574 * c.omega - 0.176 * c.omega * c.omega;
+        const rt = Math.max(0.05, 1.0 + mSrk * (1.0 - sqrtTK / Math.sqrt(c.Tc_K)));
+        alpha = rt * rt;
+      }
+      const aVal = (0.42748023 * R_GAS_BAR * R_GAS_BAR * c.Tc_K * c.Tc_K * alpha) / c.Pc_bar;
+      _eosSqrtAi[i] = Math.sqrt(Math.max(0, aVal));
+      _eosBi[i] = (0.08664035 * R_GAS_BAR * c.Tc_K) / c.Pc_bar;
+    } else {
+      const sqrtTr = sqrtTK / Math.sqrt(c.Tc_K);
+      const kappa =
+        c.omega > 0.491
+          ? 0.379642 + 1.48503 * c.omega - 0.164423 * c.omega * c.omega + 0.016666 * c.omega * c.omega * c.omega
+          : 0.37464 + 1.54226 * c.omega - 0.26992 * c.omega * c.omega;
+      const rootTerm = Math.max(0.05, 1.0 + kappa * (1.0 - sqrtTr));
+      const aVal = (0.45723553 * R_GAS_BAR * R_GAS_BAR * c.Tc_K * c.Tc_K * rootTerm * rootTerm) / c.Pc_bar;
+      _eosSqrtAi[i] = Math.sqrt(Math.max(0, aVal));
+      _eosBi[i] = (0.07779607 * R_GAS_BAR * c.Tc_K) / c.Pc_bar;
+    }
+  }
+
+  let a_mix = 0;
+  let b_mix = 0;
+  for (let i = 0; i < nAct; i++) {
+    const ii = _eosActIdx[i] * N_RIG;
+    const yi = _eosYNorm[i];
+    const sai = _eosSqrtAi[i];
+    b_mix += yi * _eosBi[i];
+    let rowSum = 0;
+    for (let j = 0; j < nAct; j++) {
+      const aij = sai * _eosSqrtAi[j] * (1.0 - kijMat[ii + _eosActIdx[j]]);
+      rowSum += _eosYNorm[j] * aij;
+      a_mix += yi * _eosYNorm[j] * aij;
+    }
+    _eosSumAij[i] = rowSum;
+  }
+  b_mix = Math.max(1e-9, b_mix);
+
+  const A = (a_mix * P_bar) / (R_GAS_BAR * R_GAS_BAR * T_K * T_K);
+  const B = (b_mix * P_bar) / (R_GAS_BAR * T_K);
+
+  const c2 = isSRK ? -1.0 : -(1.0 - B);
+  const c1 = isSRK ? A - B - B * B : A - 3.0 * B * B - 2.0 * B;
+  const c0 = isSRK ? -A * B : -(A * B - B * B - B * B * B);
+
+  solveCubicMinMaxAbove(c2, c1, c0, B + 1e-9, _cubicOutBuf);
+  const Z_liq = _cubicOutBuf[0];
+  const Z_vap = _cubicOutBuf[1];
+  const rootCount = _cubicOutBuf[2];
+
+  const writePhi = (Z: number, outArr: Float64Array) => {
+    const logTerm = isSRK
+      ? Math.log(Math.max(1e-15, 1.0 + B / Math.max(1e-15, Z)))
+      : Math.log(
+          Math.max(1e-15, (Z + (1.0 + Math.SQRT2) * B) / Math.max(1e-15, Z + (1.0 - Math.SQRT2) * B))
+        );
+    const invAMix = 1.0 / Math.max(1e-15, a_mix);
+    const factor = isSRK ? A / Math.max(1e-15, B) : A / (2.0 * Math.SQRT2 * Math.max(1e-15, B));
+    const lnZMinusB = Math.log(Math.max(1e-15, Z - B));
+    for (let i = 0; i < nAct; i++) {
+      const slot = _eosActSlot[i];
+      if (slot < 0) continue;
+      const Bi_ratio = _eosBi[i] / b_mix;
+      const lnPhi =
+        Bi_ratio * (Z - 1.0) -
+        lnZMinusB -
+        factor * (2.0 * _eosSumAij[i] * invAMix - Bi_ratio) * logTerm;
+      outArr[slot] = Math.exp(Math.max(-40, Math.min(40, lnPhi)));
+    }
+  };
+
+  if (vapOnly) {
+    writePhi(Z_vap, phiVapOut);
+  } else {
+    if (phiLiqOut) writePhi(Z_liq, phiLiqOut);
+    if (rootCount > 1) {
+      writePhi(Z_vap, phiVapOut);
+    } else if (phiLiqOut) {
+      for (let slot = 0; slot < nComps; slot++) phiVapOut[slot] = phiLiqOut[slot];
+    } else {
+      writePhi(Z_liq, phiVapOut);
+    }
+  }
+
+  return { Z_vap, Z_liq, rootCount, B };
 }
 
 function evalCubicEosBar(

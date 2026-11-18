@@ -108,31 +108,73 @@ export function invalidateDepartureKijCache(): void {
   _srkKijMat = null;
 }
 
-function solveCubicRoots(c2: number, c1: number, c0: number): number[] {
+const _depCubicOut = new Float64Array(3);
+
+/** Zero-alloc cubic root finder for roots > minBound. Stores [zMin, zMax, count] in _depCubicOut. */
+function solveCubicMinMaxAbove(c2: number, c1: number, c0: number, minBound: number): void {
   const p = c1 - (c2 * c2) / 3.0;
   const q = (2.0 * c2 * c2 * c2) / 27.0 - (c2 * c1) / 3.0 + c0;
   const disc = (q * q) / 4.0 + (p * p * p) / 27.0;
+  const shift = c2 / 3.0;
+
+  let zMin = Infinity;
+  let zMax = -Infinity;
+  let count = 0;
 
   if (disc > 1e-12) {
     const sqrtD = Math.sqrt(disc);
-    const u = Math.cbrt(-q / 2.0 + sqrtD);
-    const v = Math.cbrt(-q / 2.0 - sqrtD);
-    return [u + v - c2 / 3.0];
-  }
-  if (Math.abs(disc) <= 1e-12) {
+    const r = Math.cbrt(-q / 2.0 + sqrtD) + Math.cbrt(-q / 2.0 - sqrtD) - shift;
+    if (r > minBound) {
+      zMin = zMax = r;
+      count = 1;
+    }
+  } else if (Math.abs(disc) <= 1e-12) {
     const u = Math.cbrt(-q / 2.0);
-    return [2.0 * u - c2 / 3.0, -u - c2 / 3.0];
+    const r1 = 2.0 * u - shift;
+    const r2 = -u - shift;
+    if (r1 > minBound) { zMin = zMax = r1; count = 1; }
+    if (r2 > minBound) {
+      if (count === 0) { zMin = zMax = r2; count = 1; }
+      else { if (r2 < zMin) zMin = r2; if (r2 > zMax) zMax = r2; if (Math.abs(r2 - r1) > 1e-12) count = 2; }
+    }
+  } else {
+    const r = Math.sqrt(Math.max(1e-18, -(p * p * p) / 27.0));
+    const cosPhi = Math.max(-1.0, Math.min(1.0, -q / (2.0 * r)));
+    const phi = Math.acos(cosPhi);
+    const m = 2.0 * Math.cbrt(r);
+    const r0 = m * Math.cos(phi / 3.0) - shift;
+    const r1 = m * Math.cos((phi + 2.0 * Math.PI) / 3.0) - shift;
+    const r2 = m * Math.cos((phi + 4.0 * Math.PI) / 3.0) - shift;
+    if (r0 > minBound) { zMin = zMax = r0; count = 1; }
+    if (r1 > minBound) {
+      if (count === 0) { zMin = zMax = r1; count = 1; }
+      else { if (r1 < zMin) zMin = r1; if (r1 > zMax) zMax = r1; count++; }
+    }
+    if (r2 > minBound) {
+      if (count === 0) { zMin = zMax = r2; count = 1; }
+      else { if (r2 < zMin) zMin = r2; if (r2 > zMax) zMax = r2; count++; }
+    }
   }
-  const r = Math.sqrt(Math.max(1e-18, -(p * p * p) / 27.0));
-  const cosPhi = Math.max(-1.0, Math.min(1.0, -q / (2.0 * r)));
-  const phi = Math.acos(cosPhi);
-  const m = 2.0 * Math.cbrt(r);
-  return [
-    m * Math.cos(phi / 3.0) - c2 / 3.0,
-    m * Math.cos((phi + 2.0 * Math.PI) / 3.0) - c2 / 3.0,
-    m * Math.cos((phi + 4.0 * Math.PI) / 3.0) - c2 / 3.0,
-  ];
+
+  if (count === 0) {
+    _depCubicOut[0] = minBound + 1e-7;
+    _depCubicOut[1] = minBound + 1e-7;
+    _depCubicOut[2] = 1;
+  } else {
+    _depCubicOut[0] = zMin;
+    _depCubicOut[1] = zMax;
+    _depCubicOut[2] = count;
+  }
 }
+
+const _depActKeys: SimCompKey[] = new Array(128);
+const _depActZRaw = new Float64Array(128);
+const _depZArr = new Float64Array(128);
+const _depIdxArr = new Int32Array(128);
+const _depSArr = new Float64Array(128);
+const _depS1Arr = new Float64Array(128);
+const _depS2Arr = new Float64Array(128);
+const _depBArr = new Float64Array(128);
 
 export interface CubicDepartureProps {
   method: 'PR' | 'SRK';
@@ -194,30 +236,33 @@ export function calcCubicDepartureProps(
   const pBar = Math.max(1e-6, P_barA);
   const P = pBar * 1e5; // Pa
 
-  const actKeys: SimCompKey[] = [];
+  let nAct = 0;
   let zSum = 0;
   for (let i = 0; i < nTotal; i++) {
     const k = keys[i];
     if (NON_VOLATILE_EOS_SET.has(k)) continue;
     const v = moleFrac[k] ?? 0;
     if (v > 1e-15) {
-      actKeys.push(k);
+      _depActKeys[nAct] = k;
+      _depActZRaw[nAct] = v;
+      nAct++;
       zSum += v;
     }
   }
-  if (actKeys.length === 0) {
-    actKeys.push('N2');
+  if (nAct === 0) {
+    _depActKeys[0] = 'N2';
+    _depActZRaw[0] = 1.0;
+    nAct = 1;
     zSum = 1.0;
   }
 
-  const nAct = actKeys.length;
-  const zArr = new Float64Array(nAct);
-  const cIdxArr = new Int32Array(nAct);
+  const zArr = _depZArr;
+  const cIdxArr = _depIdxArr;
   // s_i = sqrt(a_i), s1_i = ds_i/dT, s2_i = d²s_i/dT²
-  const sArr = new Float64Array(nAct);
-  const s1Arr = new Float64Array(nAct);
-  const s2Arr = new Float64Array(nAct);
-  const bArr = new Float64Array(nAct);
+  const sArr = _depSArr;
+  const s1Arr = _depS1Arr;
+  const s2Arr = _depS2Arr;
+  const bArr = _depBArr;
 
   const isSRK = method === 'SRK';
   const omegaA = isSRK ? 0.42748023354 : 0.457235528921;
@@ -234,8 +279,8 @@ export function calcCubicDepartureProps(
   const T_cp = Math.max(150.0, Math.min(1500.0, T));
 
   for (let i = 0; i < nAct; i++) {
-    const k = actKeys[i];
-    const zi = zSum > 1e-14 ? Math.max(0, moleFrac[k] ?? 0) / zSum : 1.0 / nAct;
+    const k = _depActKeys[i];
+    const zi = zSum > 1e-14 ? _depActZRaw[i] / zSum : 1.0 / nAct;
     zArr[i] = zi;
     cIdxArr[i] = idxMap[k];
 
@@ -323,13 +368,10 @@ export function calcCubicDepartureProps(
   const c1 = A + deltaProd * B * B - deltaSum * B - deltaSum * B * B;
   const c0 = -(A * B + deltaProd * B * B + deltaProd * B * B * B);
 
-  const roots = solveCubicRoots(c2, c1, c0)
-    .filter(r => r > B + 1e-11)
-    .sort((a, b) => a - b);
-  if (roots.length === 0) roots.push(B + 1e-7);
-
-  const Z_liq = roots[0];
-  const Z_vap = roots[roots.length - 1];
+  solveCubicMinMaxAbove(c2, c1, c0, B + 1e-11);
+  const Z_liq = _depCubicOut[0];
+  const Z_vap = _depCubicOut[1];
+  const rootCount = _depCubicOut[2];
 
   const logRatioForZ = (Z: number): number => {
     const num = Z + delta1 * B;
@@ -348,7 +390,7 @@ export function calcCubicDepartureProps(
   };
 
   let Z_stable = Z_vap;
-  if (roots.length > 1) {
+  if (rootCount > 1) {
     if (gibbsOverRT(Z_liq) <= gibbsOverRT(Z_vap)) {
       Z_stable = Z_liq;
     }
@@ -359,7 +401,7 @@ export function calcCubicDepartureProps(
   else if (phaseHint === 'liq') Z = Z_liq;
 
   const isSubcriticalLiquidOnly =
-    roots.length === 1 && T < 0.96 * tcPseudo && Z < 0.30 && Z / Math.max(1e-12, B) < 3.5;
+    rootCount === 1 && T < 0.96 * tcPseudo && Z < 0.30 && Z / Math.max(1e-12, B) < 3.5;
 
   const v = (Z * R_SI * T) / P; // m³/mol
   const vMinusB = Math.max(1e-15, v - bMix);
@@ -405,7 +447,7 @@ export function calcCubicDepartureProps(
     Z_vap,
     Z_liq,
     Z_stable,
-    rootCount: roots.length,
+    rootCount,
     tcMixPseudo_K: tcPseudo,
     isSubcriticalLiquidOnly,
     v_m3_mol: v,

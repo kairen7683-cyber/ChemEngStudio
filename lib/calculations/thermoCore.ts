@@ -456,20 +456,16 @@ export function vaporMixtureEnthalpyKJH(vapKgH: Partial<CompFlows>, T_C: number,
   return total;
 }
 
-/**
- * 다단 증류 MESH 내부 루프용 무할당(Zero-Allocation) 액상 혼합 몰엔탈피, kJ/kmol
- * - liquidMixtureEnthalpy 와 100% 동일한 생성열·적분용해열·용해도 수식을 활성 성분(activeComps)만 순회하여 고속 산출
- */
-export function liquidMolarEnthalpyKJkmol(
-  xMol: Partial<Record<SimCompKey, number>>,
+function _liquidMolarEnthalpyCore(
   activeComps: readonly SimCompKey[],
+  getMoles: (slot: number, k: SimCompKey) => number,
+  nW: number,
   T_C: number
 ): number {
-  const nW = Math.max(0, xMol.H2O ?? 0);
   let total = 0;
   for (let i = 0; i < activeComps.length; i++) {
     const k = activeComps[i];
-    const n = Math.max(0, xMol[k] ?? 0);
+    const n = Math.max(0, getMoles(i, k));
     if (n <= 0) continue;
     if (k === 'NaCl') {
       const dissolvableKg = naclSolubilityKgPerKgWater(T_C) * (nW * MW.H2O);
@@ -507,11 +503,28 @@ export function liquidMolarEnthalpyKJkmol(
 }
 
 /**
- * 다단 증류 MESH 내부 루프용 무할당(Zero-Allocation) 기상 혼합 몰엔탈피, kJ/kmol
+ * 다단 증류 MESH 내부 루프용 무할당(Zero-Allocation) 액상 혼합 몰엔탈피, kJ/kmol
  */
-export function vaporMolarEnthalpyKJkmol(
-  yMol: Partial<Record<SimCompKey, number>>,
+export function liquidMolarEnthalpyKJkmol(
+  xMol: Partial<Record<SimCompKey, number>>,
   activeComps: readonly SimCompKey[],
+  T_C: number
+): number {
+  return _liquidMolarEnthalpyCore(activeComps, (_i, k) => xMol[k] ?? 0, Math.max(0, xMol.H2O ?? 0), T_C);
+}
+
+export function liquidMolarEnthalpyDenseKJkmol(
+  xArr: ArrayLike<number>,
+  activeComps: readonly SimCompKey[],
+  h2oSlot: number,
+  T_C: number
+): number {
+  return _liquidMolarEnthalpyCore(activeComps, i => xArr[i] || 0, h2oSlot >= 0 ? Math.max(0, xArr[h2oSlot] || 0) : 0, T_C);
+}
+
+function _vaporMolarEnthalpyCore(
+  activeComps: readonly SimCompKey[],
+  getMoles: (slot: number, k: SimCompKey) => number,
   T_C: number
 ): number {
   const T_K = T_C + 273.15;
@@ -519,11 +532,30 @@ export function vaporMolarEnthalpyKJkmol(
   for (let i = 0; i < activeComps.length; i++) {
     const k = activeComps[i];
     if (NONVOLATILE.has(k)) continue;
-    const n = Math.max(0, yMol[k] ?? 0);
+    const n = Math.max(0, getMoles(i, k));
     if (n <= 0) continue;
     total += n * idealGasEnthalpyKJkmol(k, T_K);
   }
   return total;
+}
+
+/**
+ * 다단 증류 MESH 내부 루프용 무할당(Zero-Allocation) 기상 혼합 몰엔탈피, kJ/kmol
+ */
+export function vaporMolarEnthalpyKJkmol(
+  yMol: Partial<Record<SimCompKey, number>>,
+  activeComps: readonly SimCompKey[],
+  T_C: number
+): number {
+  return _vaporMolarEnthalpyCore(activeComps, (_i, k) => yMol[k] ?? 0, T_C);
+}
+
+export function vaporMolarEnthalpyDenseKJkmol(
+  yArr: ArrayLike<number>,
+  activeComps: readonly SimCompKey[],
+  T_C: number
+): number {
+  return _vaporMolarEnthalpyCore(activeComps, i => yArr[i] || 0, T_C);
 }
 
 export interface StreamEnthalpyResult {

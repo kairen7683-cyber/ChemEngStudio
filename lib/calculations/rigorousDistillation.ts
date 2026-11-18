@@ -11,6 +11,7 @@
 import { MW } from './constants';
 import {
   RIGOROUS_CRIT,
+  calcCubicMixtureDenseInto,
   calcElectrolyteWaterActivity,
   calcHclWaterEquilibriumBar,
   calcPengRobinsonMixture,
@@ -25,14 +26,18 @@ import { henryWaterBar } from './data/pureComponentDatabank';
 import {
   KJ_PER_KCAL,
   componentMolarEnthalpy,
+  liquidMolarEnthalpyDenseKJkmol,
   liquidMolarEnthalpyKJkmol,
+  vaporMolarEnthalpyDenseKJkmol,
   vaporMolarEnthalpyKJkmol,
   streamEnthalpyKcalH,
 } from './thermoCore';
 import {
   calcExtendedNrtlGamma,
+  calcExtendedNrtlGammaInto,
   solveRigorousLLEDecanter,
   type ActivityEvalDiagnostics,
+  type LLETieWarmStart,
 } from './activityModels';
 import { COMP_CATALOG_META, recommendPropertyMethod, type SimPropertyMethod } from './componentCatalog';
 import type { SimCompKey } from './flowsheetSolver';
@@ -308,6 +313,20 @@ export interface DistillSpecStatus {
   summary: string;
 }
 
+export interface DistillWarmStartState {
+  totalStages: number;
+  feedStage: number;
+  actualRR: number;
+  actualDFMole: number;
+  activeComps: SimCompKey[];
+  T: Float64Array;
+  xDense: Float64Array;
+}
+
+export interface DistillSolveRuntimeOptions {
+  warmStartState?: DistillWarmStartState;
+}
+
 export interface DistillSolveResult {
   converged: boolean;
   innerIterations: number;
@@ -355,6 +374,7 @@ export interface DistillSolveResult {
   sideCutDetails?: DistillSideCutDetail[];
   diagnostics: DistillDiagnosticReport;
   stages: DistillStageProfile[];
+  warmState?: DistillWarmStartState;
 }
 
 const mwOf = (k: string, fallback: number): number =>
@@ -600,24 +620,70 @@ interface VlleScaleCapture {
   scale: Record<SimCompKey, number> | null;
 }
 
-function calcStageKValues(
+interface VlleDenseCapture {
+  hasSplit: boolean;
+  tieState?: LLETieWarmStart;
+}
+
+// Pre-allocated dense work buffers for zero-allocation K-value and bubble-point calls
+const _kWorkPhiV = new Float64Array(N_ALL);
+const _kWorkPhiL = new Float64Array(N_ALL);
+const _kWorkPhiLSub = new Float64Array(N_ALL);
+const _kWorkPhiVDummy = new Float64Array(N_ALL);
+const _kWorkY = new Float64Array(N_ALL);
+const _kWorkGamma = new Float64Array(N_ALL);
+const _kWorkGammaEff = new Float64Array(N_ALL);
+const _kWorkXOrg = new Float64Array(N_ALL);
+const _kWorkXAq = new Float64Array(N_ALL);
+const _kWorkGOrg = new Float64Array(N_ALL);
+const _kWorkGAq = new Float64Array(N_ALL);
+const _kWorkTrayMassKg = zeroCompRecord();
+const _kWorkElecRec = zeroCompRecord();
+
+const _wrapX = new Float64Array(N_ALL);
+const _wrapY = new Float64Array(N_ALL);
+const _wrapK = new Float64Array(N_ALL);
+const _wrapVlleTie = new Float64Array(N_ALL);
+const _wrapVlleCap: VlleDenseCapture = { hasSplit: false };
+
+const _bubEvalComps: SimCompKey[] = [];
+const _bubEvalIdx = new Int32Array(N_ALL);
+const _bubXEff = new Float64Array(N_ALL);
+const _bubYEff = new Float64Array(N_ALL);
+const _bubKOut = new Float64Array(N_ALL);
+const _bubVlleTie = new Float64Array(N_ALL);
+const _bubVlleCap: VlleDenseCapture = { hasSplit: false };
+const _bubWrapX = new Float64Array(N_ALL);
+const _bubWrapY = new Float64Array(N_ALL);
+const _bubWrapHint = new Float64Array(N_ALL);
+const _bubWrapOut = new Float64Array(N_ALL);
+const _bubWrapVlle: VlleDenseCapture = { hasSplit: false };
+
+function calcStageKValuesDense(
   model: ResolvedDistillThermoModel,
-  activeComps: SimCompKey[],
-  xMol: Record<SimCompKey, number>,
+  comps: readonly SimCompKey[],
+  nComps: number,
+  xArr: ArrayLike<number>,
   T_C: number,
   P_barA: number,
-  yMol?: Record<SimCompKey, number>,
+  yArr: ArrayLike<number> | null,
+  kOut: Float64Array,
   maxGasKCap = 8000,
-  vlleScaleHint?: Record<SimCompKey, number> | null,
-  vlleScaleOut?: VlleScaleCapture
-): Record<SimCompKey, number> {
-  const K = zeroCompRecord();
+  vlleMode: 0 | 1 | 2 = 0, // 0 = auto detect VLLE split, 1 = apply vlleTieArr hint, 2 = explicit null hint (no split)
+  vlleTieArr?: Float64Array | null,
+  vlleCapOut?: VlleDenseCapture | null
+): void {
   const P = Math.max(0.03, P_barA);
   const T_K = Math.max(60.0, T_C + 273.15);
 
   if (model === 'ELEC_HCL_AZEO') {
-    const xHCl = Math.max(0, xMol.HCl || 0);
-    const xH2O = Math.max(0, xMol.H2O || 0);
+    let xHCl = 0;
+    let xH2O = 0;
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
+      if (c === 'HCl') xHCl = Math.max(0, xArr[i] || 0);
+      else if (c === 'H2O') xH2O = Math.max(0, xArr[i] || 0);
+    }
     const sumAq = xHCl + xH2O;
 
     const wAzeo = getHclAzeotropeWtFrac(P);
@@ -648,230 +714,241 @@ function calcStageKValues(
     const kWater = clamp(pTotalEff / (P * denomFactor), 1e-7, 800);
     const kHcl = clamp(kWater * alphaHclOverWater, 1e-7, 3500);
 
-    for (const c of activeComps) {
-      if (c === 'H2O') K[c] = kWater;
-      else if (c === 'HCl') K[c] = kHcl;
-      else if (NON_VOLATILE_SET.has(c)) K[c] = 1e-11;
-      else K[c] = clamp(pureSatPressBarA(c, T_C) / P, 1e-7, 5000);
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
+      if (c === 'H2O') kOut[i] = kWater;
+      else if (c === 'HCl') kOut[i] = kHcl;
+      else if (NON_VOLATILE_SET.has(c)) kOut[i] = 1e-11;
+      else kOut[i] = clamp(pureSatPressBarA(c, T_C) / P, 1e-7, 5000);
     }
-    return K;
+    return;
   }
 
   // Pure φ-φ Cubic EOS Mode (PR / SRK / PENG_ROB — zero Raoult blending)
   if (model === 'PENG_ROB' || model === 'PR' || model === 'SRK') {
     const eosMethod: 'PR' | 'SRK' = model === 'SRK' ? 'SRK' : 'PR';
-    const evalEos = (compFrac: Record<SimCompKey, number>, pBar: number, vapOnlyFlag?: boolean) =>
-      eosMethod === 'SRK'
-        ? calcSoaveRedlichKwongMixture(compFrac, T_C, 0, pBar, activeComps, vapOnlyFlag)
-        : calcPengRobinsonMixture(compFrac, T_C, 0, pBar, activeComps, vapOnlyFlag);
-
-    const yEval = zeroCompRecord();
     let yInSum = 0;
-    if (yMol) {
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (!NON_VOLATILE_SET.has(c)) yInSum += Math.max(0, yMol[c] || 0);
+    if (yArr) {
+      for (let i = 0; i < nComps; i++) {
+        if (!NON_VOLATILE_SET.has(comps[i])) yInSum += Math.max(0, yArr[i] || 0);
       }
     }
-    if (yMol && yInSum > 0.5) {
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (!NON_VOLATILE_SET.has(c)) yEval[c] = Math.max(0, yMol[c] || 0) / yInSum;
+    if (yArr && yInSum > 0.5) {
+      for (let i = 0; i < nComps; i++) {
+        _kWorkY[i] = NON_VOLATILE_SET.has(comps[i]) ? 0 : Math.max(0, yArr[i] || 0) / yInSum;
       }
     } else {
       let yTrialSum = 0;
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (NON_VOLATILE_SET.has(c)) continue;
+      for (let i = 0; i < nComps; i++) {
+        const c = comps[i];
+        if (NON_VOLATILE_SET.has(c)) {
+          _kWorkY[i] = 0;
+          continue;
+        }
         const cr = RIGOROUS_CRIT[c];
         const kWil = (cr.Pc_bar / P) * Math.exp(5.373 * (1.0 + cr.omega) * (1.0 - cr.Tc_K / T_K));
-        yEval[c] = Math.max(0, xMol[c] || 0) * clamp(kWil, 1e-8, 1e5);
-        yTrialSum += yEval[c];
+        const yv = Math.max(0, xArr[i] || 0) * clamp(kWil, 1e-8, 1e5);
+        _kWorkY[i] = yv;
+        yTrialSum += yv;
       }
       if (yTrialSum > 1e-15) {
-        for (let i = 0; i < activeComps.length; i++) yEval[activeComps[i]] /= yTrialSum;
+        const inv = 1.0 / yTrialSum;
+        for (let i = 0; i < nComps; i++) _kWorkY[i] *= inv;
       } else {
-        for (let i = 0; i < activeComps.length; i++) yEval[activeComps[i]] = xMol[activeComps[i]] || 0;
+        for (let i = 0; i < nComps; i++) _kWorkY[i] = xArr[i] || 0;
       }
     }
 
-    const eosL = evalEos(xMol, P, false);
-    const eosV = evalEos(yEval, P, true);
+    const eosL = calcCubicMixtureDenseInto(eosMethod, comps, xArr, nComps, T_C, P, _kWorkPhiVDummy, _kWorkPhiL, false);
+    calcCubicMixtureDenseInto(eosMethod, comps, _kWorkY, nComps, T_C, P, _kWorkPhiV, null, true);
     const zCritRatio = eosMethod === 'SRK' ? 3.84732 : 3.95136;
     const hasLiquidRoot = eosL.rootCount >= 2 || eosL.Z_liq / Math.max(1e-12, eosL.B) <= zCritRatio;
 
     if (hasLiquidRoot) {
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (NON_VOLATILE_SET.has(c)) {
-          K[c] = 1e-11;
+      for (let i = 0; i < nComps; i++) {
+        if (NON_VOLATILE_SET.has(comps[i])) {
+          kOut[i] = 1e-11;
         } else {
-          const phiL = Math.max(1e-15, eosL.phi_liq[c]);
-          const phiV = Math.max(1e-15, eosV.phi_vap[c]);
-          K[c] = clamp(phiL / phiV, 1e-9, maxGasKCap);
+          const phiL = Math.max(1e-15, _kWorkPhiL[i]);
+          const phiV = Math.max(1e-15, _kWorkPhiV[i]);
+          kOut[i] = clamp(phiL / phiV, 1e-9, maxGasKCap);
         }
       }
-      return K;
+      return;
     }
 
     // Above liquid spinodal during outer bracket search: evaluate subcooled EOS liquid fugacity + Poynting
     let pIdealSum = 0;
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
       if (!NON_VOLATILE_SET.has(c)) {
-        pIdealSum += Math.max(0, xMol[c] || 0) * pureSatPressBarA(c, T_C);
+        pIdealSum += Math.max(0, xArr[i] || 0) * pureSatPressBarA(c, T_C);
       }
     }
     const pSub = Math.max(P * 1.25, pIdealSum * 1.15);
-    const eosLSub = evalEos(xMol, pSub);
+    const eosLSub = calcCubicMixtureDenseInto(eosMethod, comps, xArr, nComps, T_C, pSub, _kWorkPhiVDummy, _kWorkPhiLSub, false);
     const subHasLiq = eosLSub.rootCount >= 2 || eosLSub.Z_liq / Math.max(1e-12, eosLSub.B) <= zCritRatio;
 
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
       if (NON_VOLATILE_SET.has(c)) {
-        K[c] = 1e-11;
+        kOut[i] = 1e-11;
       } else if (subHasLiq) {
         const vL = liquidMolarVolumeLPerMol(c);
         const poynt = Math.exp(Math.max(-3.0, Math.min(3.0, (vL * (P - pSub)) / (0.083144626 * T_K))));
-        const fLiqOverP = eosLSub.phi_liq[c] * (pSub / P) * poynt;
-        K[c] = clamp(fLiqOverP / Math.max(1e-15, eosV.phi_vap[c]), 1e-9, maxGasKCap);
+        const fLiqOverP = _kWorkPhiLSub[i] * (pSub / P) * poynt;
+        kOut[i] = clamp(fLiqOverP / Math.max(1e-15, _kWorkPhiV[i]), 1e-9, maxGasKCap);
       } else {
         const cr = RIGOROUS_CRIT[c];
         const kWil = (cr.Pc_bar / P) * Math.exp(5.373 * (1.0 + cr.omega) * (1.0 - cr.Tc_K / T_K));
-        K[c] = clamp(kWil, 1e-9, maxGasKCap);
+        kOut[i] = clamp(kWil, 1e-9, maxGasKCap);
       }
     }
-    return K;
+    return;
   }
 
   // Rigorous γ-φ Mode (NRTL / ENRTL): DIPPR-101 P_sat + Poynting + PR φ_sat/φ_V + True 2-Liquid VLLE Tie-Line
-  const gamma = calcNrtlGamma(activeComps, xMol, T_C);
-  const gammaEff: Record<SimCompKey, number> = { ...gamma };
+  calcExtendedNrtlGammaInto(comps, xArr, nComps, T_C, _kWorkGamma);
+  for (let i = 0; i < nComps; i++) _kWorkGammaEff[i] = _kWorkGamma[i];
+
+  let xWater = 0;
+  let xHCl = 0;
+  for (let i = 0; i < nComps; i++) {
+    const c = comps[i];
+    if (c === 'H2O') xWater = Math.max(0, xArr[i] || 0);
+    else if (c === 'HCl') xHCl = Math.max(0, xArr[i] || 0);
+  }
 
   // Check for true 2-liquid phase split on heterogeneous aqueous-organic trays
-  const xWater = Math.max(0, xMol.H2O || 0);
-  if (vlleScaleHint !== undefined) {
-    if (vlleScaleHint !== null && xWater > 1e-3) {
+  if (vlleMode === 1) {
+    if (vlleTieArr && xWater > 1e-3) {
       let xLleOrg = 0;
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (TRAY_LLE_ORG_SET.has(c)) xLleOrg += Math.max(0, xMol[c] || 0);
+      for (let i = 0; i < nComps; i++) {
+        if (TRAY_LLE_ORG_SET.has(comps[i])) xLleOrg += Math.max(0, xArr[i] || 0);
       }
       if (xLleOrg > 1e-3) {
-        for (let i = 0; i < activeComps.length; i++) {
-          const c = activeComps[i];
-          const aTie = vlleScaleHint[c];
-          const xc = Math.max(0, xMol[c] || 0);
-          if (aTie > 0 && xc > 1e-12 && !NON_VOLATILE_SET.has(c)) {
+        for (let i = 0; i < nComps; i++) {
+          const aTie = vlleTieArr[i];
+          const xc = Math.max(0, xArr[i] || 0);
+          if (aTie > 0 && xc > 1e-12 && !NON_VOLATILE_SET.has(comps[i])) {
             const gTie = aTie / xc;
-            gammaEff[c] = 0.85 * gTie + 0.15 * (gamma[c] || 1.0);
+            _kWorkGammaEff[i] = 0.85 * gTie + 0.15 * (_kWorkGamma[i] || 1.0);
           }
         }
       }
     }
-  } else {
-    if (vlleScaleOut) vlleScaleOut.scale = null;
+  } else if (vlleMode === 0) {
+    if (vlleCapOut) vlleCapOut.hasSplit = false;
     let xLleOrg = 0;
-    let maxImmActivity = xWater * (gamma.H2O || 1.0);
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
-      if (TRAY_LLE_ORG_SET.has(c)) {
-        const xc = Math.max(0, xMol[c] || 0);
+    let maxImmActivity = 0;
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
+      if (c === 'H2O') {
+        const wAct = xWater * (_kWorkGamma[i] || 1.0);
+        if (wAct > maxImmActivity) maxImmActivity = wAct;
+      } else if (TRAY_LLE_ORG_SET.has(c)) {
+        const xc = Math.max(0, xArr[i] || 0);
         xLleOrg += xc;
-        const act = xc * (gamma[c] || 1.0);
+        const act = xc * (_kWorkGamma[i] || 1.0);
         if (act > maxImmActivity) maxImmActivity = act;
       }
     }
     if (xWater > 1e-3 && xLleOrg > 1e-3 && maxImmActivity >= 0.78) {
-      const trayMassKg = zeroCompRecord();
-      for (let i = 0; i < activeComps.length; i++) {
-        const c = activeComps[i];
-        if (!NON_VOLATILE_SET.has(c)) {
-          trayMassKg[c] = Math.max(0, xMol[c] || 0) * COMP_MW[c] * 100.0;
-        }
+      for (let i = 0; i < nComps; i++) {
+        const c = comps[i];
+        _kWorkTrayMassKg[c] = NON_VOLATILE_SET.has(c) ? 0 : Math.max(0, xArr[i] || 0) * COMP_MW[c] * 100.0;
       }
-      const lle = solveRigorousLLEDecanter(trayMassKg, T_C);
+      const lle = solveRigorousLLEDecanter(_kWorkTrayMassKg, T_C, vlleCapOut?.tieState);
+      for (let i = 0; i < nComps; i++) _kWorkTrayMassKg[comps[i]] = 0;
       if (lle.phaseSplit) {
-        const xOrg = zeroCompRecord();
-        const xAq = zeroCompRecord();
         let nOrg = 0;
         let nAq = 0;
-        for (let i = 0; i < activeComps.length; i++) {
-          const c = activeComps[i];
+        for (let i = 0; i < nComps; i++) {
+          const c = comps[i];
           const mo = (lle.organicKgH[c] || 0) / COMP_MW[c];
           const ma = (lle.aqueousKgH[c] || 0) / COMP_MW[c];
-          xOrg[c] = mo;
-          xAq[c] = ma;
+          _kWorkXOrg[i] = mo;
+          _kWorkXAq[i] = ma;
           nOrg += mo;
           nAq += ma;
         }
         if (nOrg > 1e-12 && nAq > 1e-12) {
-          for (let i = 0; i < activeComps.length; i++) {
-            const c = activeComps[i];
-            xOrg[c] /= nOrg;
-            xAq[c] /= nAq;
+          const invOrg = 1.0 / nOrg;
+          const invAq = 1.0 / nAq;
+          for (let i = 0; i < nComps; i++) {
+            _kWorkXOrg[i] *= invOrg;
+            _kWorkXAq[i] *= invAq;
           }
-          const gOrg = calcNrtlGamma(activeComps, xOrg, T_C);
-          const gAq = calcNrtlGamma(activeComps, xAq, T_C);
-          const capTie = vlleScaleOut ? zeroCompRecord() : null;
-          for (let i = 0; i < activeComps.length; i++) {
-            const c = activeComps[i];
-            const xc = Math.max(0, xMol[c] || 0);
+          calcExtendedNrtlGammaInto(comps, _kWorkXOrg, nComps, T_C, _kWorkGOrg);
+          calcExtendedNrtlGammaInto(comps, _kWorkXAq, nComps, T_C, _kWorkGAq);
+          if (vlleTieArr) {
+            for (let i = 0; i < nComps; i++) vlleTieArr[i] = 0;
+          }
+          for (let i = 0; i < nComps; i++) {
+            const c = comps[i];
+            const xc = Math.max(0, xArr[i] || 0);
             if (xc > 1e-12 && !NON_VOLATILE_SET.has(c)) {
               const aTie =
-                xOrg[c] >= xAq[c]
-                  ? xOrg[c] * (gOrg[c] || 1.0)
-                  : xAq[c] * (gAq[c] || 1.0);
+                _kWorkXOrg[i] >= _kWorkXAq[i]
+                  ? _kWorkXOrg[i] * (_kWorkGOrg[i] || 1.0)
+                  : _kWorkXAq[i] * (_kWorkGAq[i] || 1.0);
               if (aTie > 0) {
                 const gTie = aTie / xc;
-                gammaEff[c] = 0.85 * gTie + 0.15 * (gamma[c] || 1.0);
-                if (capTie) capTie[c] = aTie;
+                _kWorkGammaEff[i] = 0.85 * gTie + 0.15 * (_kWorkGamma[i] || 1.0);
+                if (vlleTieArr) vlleTieArr[i] = aTie;
               }
             }
           }
-          if (vlleScaleOut && capTie) vlleScaleOut.scale = capTie;
+          if (vlleCapOut) {
+            vlleCapOut.hasSplit = true;
+            vlleCapOut.tieState = lle.tieState;
+          }
         }
       }
     }
   }
 
   // Vapor composition estimate for vapor-phase PR fugacity φ_i^V(y, T, P)
-  const yVapEst = zeroCompRecord();
   let ySum = 0;
-  if (yMol) {
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
-      if (!NON_VOLATILE_SET.has(c)) ySum += Math.max(0, yMol[c] || 0);
+  if (yArr) {
+    for (let i = 0; i < nComps; i++) {
+      if (!NON_VOLATILE_SET.has(comps[i])) ySum += Math.max(0, yArr[i] || 0);
     }
   }
-  if (yMol && ySum > 0.5) {
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
-      if (!NON_VOLATILE_SET.has(c)) yVapEst[c] = Math.max(0, yMol[c] || 0) / ySum;
+  if (yArr && ySum > 0.5) {
+    const invY = 1.0 / ySum;
+    for (let i = 0; i < nComps; i++) {
+      _kWorkY[i] = NON_VOLATILE_SET.has(comps[i]) ? 0 : Math.max(0, yArr[i] || 0) * invY;
     }
   } else {
     let yInitSum = 0;
-    for (let i = 0; i < activeComps.length; i++) {
-      const c = activeComps[i];
-      if (NON_VOLATILE_SET.has(c)) continue;
-      yVapEst[c] = Math.max(0, xMol[c] || 0) * (gammaEff[c] || 1.0) * (pureSatPressBarA(c, T_C) / P);
-      yInitSum += yVapEst[c];
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
+      if (NON_VOLATILE_SET.has(c)) {
+        _kWorkY[i] = 0;
+        continue;
+      }
+      const yv = Math.max(0, xArr[i] || 0) * (_kWorkGammaEff[i] || 1.0) * (pureSatPressBarA(c, T_C) / P);
+      _kWorkY[i] = yv;
+      yInitSum += yv;
     }
     if (yInitSum > 1e-15) {
-      for (let i = 0; i < activeComps.length; i++) yVapEst[activeComps[i]] /= yInitSum;
+      const invInit = 1.0 / yInitSum;
+      for (let i = 0; i < nComps; i++) _kWorkY[i] *= invInit;
     } else {
-      for (let i = 0; i < activeComps.length; i++) yVapEst[activeComps[i]] = xMol[activeComps[i]] || 0;
+      for (let i = 0; i < nComps; i++) _kWorkY[i] = xArr[i] || 0;
     }
   }
-  const eosVap = calcPengRobinsonMixture(yVapEst, T_C, 0, P, activeComps, true);
+  calcCubicMixtureDenseInto('PR', comps, _kWorkY, nComps, T_C, P, _kWorkPhiV, null, true);
 
-  const molElec =
-    model === 'ENRTL'
-      ? computeElectrolyteMolalitiesFromWaterKg(xMol, Math.max(1e-9, xWater * (MW.H2O * 1e-3)), true)
-      : null;
+  let molElec: ReturnType<typeof computeElectrolyteMolalitiesFromWaterKg> | null = null;
+  if (model === 'ENRTL') {
+    for (let i = 0; i < nComps; i++) _kWorkElecRec[comps[i]] = xArr[i] || 0;
+    molElec = computeElectrolyteMolalitiesFromWaterKg(_kWorkElecRec, Math.max(1e-9, xWater * (MW.H2O * 1e-3)), true);
+    for (let i = 0; i < nComps; i++) _kWorkElecRec[comps[i]] = 0;
+  }
   const awSalt = molElec ? calcElectrolyteWaterActivity(molElec, T_C) : 1.0;
 
-  const xHCl = Math.max(0, xMol.HCl || 0);
   const useHclDissoc = model === 'ENRTL' && xHCl > 1e-8 && xWater > 1e-5;
   const extraClMolality = molElec
     ? molElec.mNaCl + molElec.mNaOCl + 2.0 * molElec.mFeCl2 + 3.0 * molElec.mFeCl3 + 2.0 * molElec.mPAC
@@ -881,13 +958,13 @@ function calcStageKValues(
     : 0;
   const hclEq = useHclDissoc ? calcHclWaterEquilibriumBar(wHClAq, T_C, extraClMolality) : null;
 
-  for (let i = 0; i < activeComps.length; i++) {
-    const c = activeComps[i];
+  for (let i = 0; i < nComps; i++) {
+    const c = comps[i];
     if (NON_VOLATILE_SET.has(c)) {
-      K[c] = 1e-11;
+      kOut[i] = 1e-11;
       continue;
     }
-    const phiV = Math.max(0.05, eosVap.phi_vap[c] || 1.0);
+    const phiV = Math.max(0.05, _kWorkPhiV[i] || 1.0);
     const sech = molElec ? calcSechenovSaltingOutMultiplier(c, molElec, T_K) : 1.0;
 
     if (PERMANENT_GAS_SET.has(c)) {
@@ -896,9 +973,9 @@ function calcStageKValues(
         const kAq = (hBar * sech) / (phiV * P);
         const kOrg = pureSatPressBarA(c, T_C) / (phiV * P);
         const wAq = clamp((xWater - 0.02) / 0.25, 0, 1);
-        K[c] = clamp(wAq * kAq + (1.0 - wAq) * kOrg, 0.05, maxGasKCap);
+        kOut[i] = clamp(wAq * kAq + (1.0 - wAq) * kOrg, 0.05, maxGasKCap);
       } else {
-        K[c] = clamp((pureSatPressBarA(c, T_C) * sech) / (phiV * P), 0.05, maxGasKCap);
+        kOut[i] = clamp((pureSatPressBarA(c, T_C) * sech) / (phiV * P), 0.05, maxGasKCap);
       }
       continue;
     }
@@ -906,7 +983,7 @@ function calcStageKValues(
     if (c === 'HCl' && hclEq && xHCl > 1e-12) {
       const xAqSum = xHCl + xWater;
       const pHClEff = hclEq.pHCl_bar * xAqSum;
-      K[c] = clamp(pHClEff / (xHCl * phiV * P), 1e-9, maxGasKCap);
+      kOut[i] = clamp(pHClEff / (xHCl * phiV * P), 1e-9, maxGasKCap);
       continue;
     }
 
@@ -916,14 +993,14 @@ function calcStageKValues(
         const pSat = pureSatPressBarA(c, T_C);
         const phiSat = pureSatFugacityCoeffPR(c, T_C, pSat);
         const kAq = (hBar * sech) / (phiV * P);
-        const kCond = ((gammaEff[c] || 1.0) * pSat * phiSat) / (phiV * P);
+        const kCond = ((_kWorkGammaEff[i] || 1.0) * pSat * phiSat) / (phiV * P);
         const wAq = clamp((xWater - 0.10) / 0.35, 0, 1);
-        K[c] = clamp(wAq * kAq + (1.0 - wAq) * kCond, 1e-8, maxGasKCap);
+        kOut[i] = clamp(wAq * kAq + (1.0 - wAq) * kCond, 1e-8, maxGasKCap);
         continue;
       }
     }
 
-    let g = gammaEff[c] || 1.0;
+    let g = _kWorkGammaEff[i] || 1.0;
     if (model === 'ENRTL') {
       if (c === 'H2O') {
         g *= awSalt * (hclEq ? hclEq.aw_hcl : 1.0);
@@ -934,7 +1011,7 @@ function calcStageKValues(
     if (c === 'NH3' && xWater > 0.25) {
       const hNh3 = safeHenryWaterBar('NH3', T_K);
       if (hNh3 !== null) {
-        K[c] = clamp((hNh3 * sech) / (phiV * P), 1e-8, maxGasKCap);
+        kOut[i] = clamp((hNh3 * sech) / (phiV * P), 1e-8, maxGasKCap);
         continue;
       }
     }
@@ -943,9 +1020,290 @@ function calcStageKValues(
     const phiSat = pureSatFugacityCoeffPR(c, T_C, pSat);
     const vL = liquidMolarVolumeLPerMol(c);
     const poynt = Math.exp(Math.max(-2.0, Math.min(2.0, (vL * (P - pSat)) / (0.083144626 * T_K))));
-    K[c] = clamp((g * pSat * phiSat * poynt) / (phiV * P), 1e-9, maxGasKCap);
+    kOut[i] = clamp((g * pSat * phiSat * poynt) / (phiV * P), 1e-9, maxGasKCap);
   }
+}
+
+function calcStageKValues(
+  model: ResolvedDistillThermoModel,
+  activeComps: SimCompKey[],
+  xMol: Record<SimCompKey, number>,
+  T_C: number,
+  P_barA: number,
+  yMol?: Record<SimCompKey, number>,
+  maxGasKCap = 8000,
+  vlleScaleHint?: Record<SimCompKey, number> | null,
+  vlleScaleOut?: VlleScaleCapture
+): Record<SimCompKey, number> {
+  const nComps = activeComps.length;
+  for (let i = 0; i < nComps; i++) {
+    const c = activeComps[i];
+    _wrapX[i] = xMol[c] || 0;
+    if (yMol) _wrapY[i] = yMol[c] || 0;
+  }
+  let vlleMode: 0 | 1 | 2 = 0;
+  if (vlleScaleHint !== undefined) {
+    if (vlleScaleHint !== null) {
+      vlleMode = 1;
+      for (let i = 0; i < nComps; i++) _wrapVlleTie[i] = vlleScaleHint[activeComps[i]] || 0;
+    } else {
+      vlleMode = 2;
+    }
+  } else if (vlleScaleOut) {
+    _wrapVlleCap.hasSplit = false;
+    _wrapVlleCap.tieState = undefined;
+  }
+  calcStageKValuesDense(
+    model,
+    activeComps,
+    nComps,
+    _wrapX,
+    T_C,
+    P_barA,
+    yMol ? _wrapY : null,
+    _wrapK,
+    maxGasKCap,
+    vlleMode,
+    vlleMode === 1 || (vlleMode === 0 && vlleScaleOut) ? _wrapVlleTie : null,
+    vlleScaleOut ? _wrapVlleCap : null
+  );
+  if (vlleScaleOut && vlleScaleHint === undefined) {
+    if (_wrapVlleCap.hasSplit) {
+      const cap = zeroCompRecord();
+      for (let i = 0; i < nComps; i++) cap[activeComps[i]] = _wrapVlleTie[i];
+      vlleScaleOut.scale = cap;
+    } else {
+      vlleScaleOut.scale = null;
+    }
+  }
+  const K = zeroCompRecord();
+  for (let i = 0; i < nComps; i++) K[activeComps[i]] = _wrapK[i];
   return K;
+}
+
+/** 주어진 액상 조성 xArr 과 압력 P_barA 에서의 기포점 온도(Bubble-Point Temperature, °C) Zero-Alloc 고속 해법 */
+function solveStageBubbleTempCDense(
+  model: ResolvedDistillThermoModel,
+  activeComps: readonly SimCompKey[],
+  nActive: number,
+  xArr: ArrayLike<number>,
+  P_barA: number,
+  initTempC: number,
+  yArr?: ArrayLike<number> | null,
+  kOut?: Float64Array | null,
+  vlleOut?: { hasSplit: boolean; tieState?: LLETieWarmStart } | null,
+  vlleOutArr?: Float64Array | null,
+  vlleHasHint = false,
+  vlleHintArr?: Float64Array | null,
+  slopeHint = 0.036,
+  slopeOut?: { val: number } | null
+): { tempC: number; canReuseK: boolean } {
+  _bubEvalComps.length = 0;
+  let condSum = 0;
+  let gasSum = 0;
+  let lightHcSum = 0;
+  let hasNv = false;
+  for (let i = 0; i < nActive; i++) {
+    const c = activeComps[i];
+    if (NON_VOLATILE_SET.has(c)) {
+      hasNv = true;
+      continue;
+    }
+    const k = _bubEvalComps.length;
+    _bubEvalComps.push(c);
+    _bubEvalIdx[k] = i;
+    const xv = Math.max(0, xArr[i] || 0);
+    if (PERMANENT_GAS_SET.has(c)) {
+      gasSum += xv;
+    } else {
+      condSum += xv;
+      if (c === 'C2H4' || c === 'C2H6' || c === 'C3H6' || c === 'C3H8' || c === 'CO2') {
+        lightHcSum += xv;
+      }
+    }
+  }
+  const nEval = _bubEvalComps.length;
+  if (condSum <= 1e-8) {
+    if (slopeOut) slopeOut.val = slopeHint;
+    return { tempC: initTempC, canReuseK: false };
+  }
+
+  // 용존 초임계 가스(O2/H2/N2/CH4/CO)는 실제 액상 용해도 한계(최대 4 mol% 상당)까지 기포점 강하에 반영
+  const cappedGasSum = Math.min(gasSum, 0.04);
+  const gasScale = gasSum > 1e-12 ? cappedGasSum / gasSum : 0;
+  const condScale = Math.max(0.96, 1.0 - cappedGasSum) / condSum;
+  for (let k = 0; k < nEval; k++) {
+    const i = _bubEvalIdx[k];
+    const xv = Math.max(0, xArr[i] || 0);
+    _bubXEff[k] = PERMANENT_GAS_SET.has(_bubEvalComps[k]) ? xv * gasScale : xv * condScale;
+    if (yArr) _bubYEff[k] = yArr[i] || 0;
+    if (vlleHasHint && vlleHintArr) _bubVlleTie[k] = vlleHintArr[i];
+  }
+
+  const isExactX = !hasNv && gasSum <= 1e-12 && Math.abs(condSum - 1.0) <= 1e-9;
+  const yPass = yArr ? _bubYEff : null;
+  const tLoBound = lightHcSum / condSum > 0.05 ? -135.0 : -95.0;
+  const t0 = clamp(initTempC, tLoBound + 1.0, 309.0);
+
+  let fastVlleMode: 1 | 2 = vlleHasHint ? (vlleHintArr ? 1 : 2) : 2;
+  let lastEvalTemp = NaN;
+
+  const finishTemp = (tRet: number): { tempC: number; canReuseK: boolean } => {
+    const canReuseK = Boolean(
+      isExactX && kOut && Math.abs(lastEvalTemp - tRet) <= 1e-12
+    );
+    if (canReuseK && kOut) {
+      for (let k = 0; k < nEval; k++) kOut[_bubEvalIdx[k]] = _bubKOut[k];
+    }
+    return { tempC: tRet, canReuseK };
+  };
+
+  const evalFirstSumKx = (t: number): number => {
+    lastEvalTemp = t;
+    if (vlleHasHint) {
+      const m: 1 | 2 = vlleHintArr ? 1 : 2;
+      calcStageKValuesDense(model, _bubEvalComps, nEval, _bubXEff, t, P_barA, yPass, _bubKOut, 8000, m, m === 1 ? _bubVlleTie : null);
+      fastVlleMode = m;
+    } else {
+      _bubVlleCap.hasSplit = false;
+      _bubVlleCap.tieState = vlleOut?.tieState;
+      calcStageKValuesDense(model, _bubEvalComps, nEval, _bubXEff, t, P_barA, yPass, _bubKOut, 8000, 0, _bubVlleTie, _bubVlleCap);
+      if (vlleOut) {
+        vlleOut.hasSplit = _bubVlleCap.hasSplit;
+        vlleOut.tieState = _bubVlleCap.tieState;
+      }
+      if (_bubVlleCap.hasSplit) {
+        fastVlleMode = 1;
+        if (vlleOutArr) {
+          for (let i = 0; i < nActive; i++) vlleOutArr[i] = 0;
+          for (let k = 0; k < nEval; k++) vlleOutArr[_bubEvalIdx[k]] = _bubVlleTie[k];
+        }
+      } else {
+        fastVlleMode = 2;
+      }
+    }
+    let s = 0;
+    for (let k = 0; k < nEval; k++) s += _bubKOut[k] * _bubXEff[k];
+    return s;
+  };
+
+  const evalFastSumKx = (t: number): number => {
+    lastEvalTemp = t;
+    calcStageKValuesDense(
+      model,
+      _bubEvalComps,
+      nEval,
+      _bubXEff,
+      t,
+      P_barA,
+      yPass,
+      _bubKOut,
+      8000,
+      fastVlleMode,
+      fastVlleMode === 1 ? _bubVlleTie : null
+    );
+    let s = 0;
+    for (let k = 0; k < nEval; k++) s += _bubKOut[k] * _bubXEff[k];
+    return s;
+  };
+
+  const s0 = evalFirstSumKx(t0);
+  const f0 = s0 - 1.0;
+  if (Math.abs(f0) < 1.5e-4) {
+    if (slopeOut) slopeOut.val = slopeHint;
+    return finishTemp(t0);
+  }
+
+  // Clausius-Clapeyron 학습형 비례 초기 스텝 추정
+  const g0 = Math.log(Math.max(1e-8, s0));
+  const effSlope = clamp(slopeHint, 0.015, 0.09);
+  const rawStep = -g0 / effSlope;
+  const stepDir = f0 > 0 ? -1.0 : 1.0;
+  const stepMag = clamp(Math.abs(rawStep), 0.35, 12.0);
+  const tProbe = clamp(t0 + stepDir * stepMag, tLoBound, 310.0);
+  const sProbe = evalFastSumKx(tProbe);
+  const fProbe = sProbe - 1.0;
+  const gProbe = Math.log(Math.max(1e-8, sProbe));
+  if (slopeOut) {
+    if (Math.abs(tProbe - t0) > 0.05) {
+      const mSlope = (gProbe - g0) / (tProbe - t0);
+      slopeOut.val = Number.isFinite(mSlope) && mSlope > 0.008 && mSlope < 0.14 ? mSlope : slopeHint;
+    } else {
+      slopeOut.val = slopeHint;
+    }
+  }
+  if (Math.abs(fProbe) < 1.5e-4) return finishTemp(tProbe);
+
+  let lo: number, hi: number, gLo: number, gHi: number;
+  if (f0 > 0) {
+    hi = t0;
+    gHi = g0;
+    if (fProbe <= 0) {
+      lo = tProbe;
+      gLo = gProbe;
+    } else {
+      hi = tProbe;
+      gHi = gProbe;
+      const tProbe2 = Math.max(tLoBound, tProbe - 28.0);
+      const sProbe2 = tProbe2 < tProbe - 0.1 ? evalFastSumKx(tProbe2) : 0.5;
+      if (sProbe2 <= 1.0) {
+        lo = tProbe2;
+        gLo = Math.log(Math.max(1e-8, sProbe2));
+      } else {
+        lo = tLoBound;
+        gLo = Math.log(Math.max(1e-8, evalFastSumKx(tLoBound)));
+        if (gLo >= 0) return finishTemp(tLoBound);
+      }
+    }
+  } else {
+    lo = t0;
+    gLo = g0;
+    if (fProbe >= 0) {
+      hi = tProbe;
+      gHi = gProbe;
+    } else {
+      lo = tProbe;
+      gLo = gProbe;
+      const tProbe2 = Math.min(310.0, tProbe + 28.0);
+      const sProbe2 = tProbe2 > tProbe + 0.1 ? evalFastSumKx(tProbe2) : 2.0;
+      if (sProbe2 >= 1.0) {
+        hi = tProbe2;
+        gHi = Math.log(Math.max(1e-8, sProbe2));
+      } else {
+        hi = 310.0;
+        gHi = Math.log(Math.max(1e-8, evalFastSumKx(310.0)));
+        if (gHi <= 0) return finishTemp(310.0);
+      }
+    }
+  }
+
+  // Safeguarded Illinois Log-Linear Secant-Bisection (2~4회 내 수렴 보장)
+  for (let it = 0; it < 12; it++) {
+    if (hi - lo < 0.004) return finishTemp(0.5 * (lo + hi));
+    const denom = gHi - gLo;
+    let nextT: number;
+    if (it % 4 !== 3 && Math.abs(denom) > 1e-12) {
+      const sec = lo - (gLo * (hi - lo)) / denom;
+      const margin = 0.08 * (hi - lo);
+      nextT = sec > lo + margin && sec < hi - margin ? sec : 0.5 * (lo + hi);
+    } else {
+      nextT = 0.5 * (lo + hi);
+    }
+    const sm = evalFastSumKx(nextT);
+    const fm = sm - 1.0;
+    if (Math.abs(fm) < 1.5e-4) return finishTemp(nextT);
+    const gm = Math.log(Math.max(1e-8, sm));
+    if (fm > 0) {
+      hi = nextT;
+      gHi = gm;
+      gLo *= 0.5;
+    } else {
+      lo = nextT;
+      gLo = gm;
+      gHi *= 0.5;
+    }
+  }
+  return finishTemp(0.5 * (lo + hi));
 }
 
 /** 주어진 액상 조성 xMol 과 압력 P_barA 에서의 기포점 온도(Bubble-Point Temperature, °C) Warm-Start 고속 해법 */
@@ -959,151 +1317,46 @@ function solveStageBubbleTempC(
   vlleOut?: VlleScaleCapture,
   vlleHint?: Record<SimCompKey, number> | null
 ): number {
-  const evalComps: SimCompKey[] = [];
-  let condSum = 0;
-  let gasSum = 0;
-  let lightHcSum = 0;
-  for (let i = 0; i < activeComps.length; i++) {
+  const nActive = activeComps.length;
+  for (let i = 0; i < nActive; i++) {
     const c = activeComps[i];
-    if (NON_VOLATILE_SET.has(c)) continue;
-    evalComps.push(c);
-    const xv = Math.max(0, xMol[c] || 0);
-    if (PERMANENT_GAS_SET.has(c)) {
-      gasSum += xv;
+    _bubWrapX[i] = xMol[c] || 0;
+    if (yMol) _bubWrapY[i] = yMol[c] || 0;
+  }
+  const hasHint = vlleHint !== undefined;
+  let hintArr: Float64Array | null = null;
+  if (hasHint && vlleHint !== null) {
+    for (let i = 0; i < nActive; i++) _bubWrapHint[i] = vlleHint[activeComps[i]] || 0;
+    hintArr = _bubWrapHint;
+  }
+  if (!hasHint && vlleOut) {
+    _bubWrapVlle.hasSplit = false;
+    _bubWrapVlle.tieState = undefined;
+  }
+  const res = solveStageBubbleTempCDense(
+    model,
+    activeComps,
+    nActive,
+    _bubWrapX,
+    P_barA,
+    initTempC,
+    yMol ? _bubWrapY : null,
+    null,
+    !hasHint && vlleOut ? _bubWrapVlle : null,
+    !hasHint && vlleOut ? _bubWrapOut : null,
+    hasHint,
+    hintArr
+  );
+  if (!hasHint && vlleOut) {
+    if (_bubWrapVlle.hasSplit) {
+      const cap = zeroCompRecord();
+      for (let i = 0; i < nActive; i++) cap[activeComps[i]] = _bubWrapOut[i];
+      vlleOut.scale = cap;
     } else {
-      condSum += xv;
-      if (c === 'C2H4' || c === 'C2H6' || c === 'C3H6' || c === 'C3H8' || c === 'CO2') {
-        lightHcSum += xv;
-      }
+      vlleOut.scale = null;
     }
   }
-  if (condSum <= 1e-8) return initTempC;
-
-  // 용존 초임계 가스(O2/H2/N2/CH4/CO)는 실제 액상 용해도 한계(최대 4 mol% 상당)까지 기포점 강하에 반영
-  const xEff = zeroCompRecord();
-  const cappedGasSum = Math.min(gasSum, 0.04);
-  const gasScale = gasSum > 1e-12 ? cappedGasSum / gasSum : 0;
-  const condScale = Math.max(0.96, 1.0 - cappedGasSum) / condSum;
-  for (let i = 0; i < evalComps.length; i++) {
-    const c = evalComps[i];
-    const xv = Math.max(0, xMol[c] || 0);
-    xEff[c] = PERMANENT_GAS_SET.has(c) ? xv * gasScale : xv * condScale;
-  }
-
-  const tLoBound = lightHcSum / condSum > 0.05 ? -135.0 : -95.0;
-  const t0 = clamp(initTempC, tLoBound + 1.0, 309.0);
-  const vlleCap: VlleScaleCapture = vlleOut ?? { scale: null };
-  if (vlleHint !== undefined) {
-    vlleCap.scale = vlleHint;
-  }
-
-  const evalFirstSumKx = (t: number): number => {
-    const K =
-      vlleHint !== undefined
-        ? calcStageKValues(model, evalComps, xEff, t, P_barA, yMol, 8000, vlleHint)
-        : calcStageKValues(model, evalComps, xEff, t, P_barA, yMol, 8000, undefined, vlleCap);
-    let s = 0;
-    for (let i = 0; i < evalComps.length; i++) {
-      const c = evalComps[i];
-      s += K[c] * xEff[c];
-    }
-    return s;
-  };
-
-  const evalFastSumKx = (t: number): number => {
-    const K = calcStageKValues(model, evalComps, xEff, t, P_barA, yMol, 8000, vlleCap.scale);
-    let s = 0;
-    for (let i = 0; i < evalComps.length; i++) {
-      const c = evalComps[i];
-      s += K[c] * xEff[c];
-    }
-    return s;
-  };
-
-  const s0 = evalFirstSumKx(t0);
-  const f0 = s0 - 1.0;
-  if (Math.abs(f0) < 1.5e-4) return t0;
-
-  // Clausius-Clapeyron 비례 초기 스텝 추정 (d ln(sumKx)/dT ≈ 0.036 K^-1)
-  const g0 = Math.log(Math.max(1e-8, s0));
-  const rawStep = -g0 / 0.036;
-  const stepDir = f0 > 0 ? -1.0 : 1.0;
-  const stepMag = clamp(Math.abs(rawStep), 0.35, 12.0);
-  const tProbe = clamp(t0 + stepDir * stepMag, tLoBound, 310.0);
-  const sProbe = evalFastSumKx(tProbe);
-  const fProbe = sProbe - 1.0;
-  if (Math.abs(fProbe) < 1.5e-4) return tProbe;
-
-  let lo: number, hi: number, gLo: number, gHi: number;
-  if (f0 > 0) {
-    hi = t0;
-    gHi = g0;
-    if (fProbe <= 0) {
-      lo = tProbe;
-      gLo = Math.log(Math.max(1e-8, sProbe));
-    } else {
-      hi = tProbe;
-      gHi = Math.log(Math.max(1e-8, sProbe));
-      const tProbe2 = Math.max(tLoBound, tProbe - 28.0);
-      const sProbe2 = tProbe2 < tProbe - 0.1 ? evalFastSumKx(tProbe2) : 0.5;
-      if (sProbe2 <= 1.0) {
-        lo = tProbe2;
-        gLo = Math.log(Math.max(1e-8, sProbe2));
-      } else {
-        lo = tLoBound;
-        gLo = Math.log(Math.max(1e-8, evalFastSumKx(tLoBound)));
-        if (gLo >= 0) return tLoBound;
-      }
-    }
-  } else {
-    lo = t0;
-    gLo = g0;
-    if (fProbe >= 0) {
-      hi = tProbe;
-      gHi = Math.log(Math.max(1e-8, sProbe));
-    } else {
-      lo = tProbe;
-      gLo = Math.log(Math.max(1e-8, sProbe));
-      const tProbe2 = Math.min(310.0, tProbe + 28.0);
-      const sProbe2 = tProbe2 > tProbe + 0.1 ? evalFastSumKx(tProbe2) : 2.0;
-      if (sProbe2 >= 1.0) {
-        hi = tProbe2;
-        gHi = Math.log(Math.max(1e-8, sProbe2));
-      } else {
-        hi = 310.0;
-        gHi = Math.log(Math.max(1e-8, evalFastSumKx(310.0)));
-        if (gHi <= 0) return 310.0;
-      }
-    }
-  }
-
-  // Safeguarded Illinois Log-Linear Secant-Bisection (2~4회 내 수렴 보장)
-  for (let it = 0; it < 12; it++) {
-    if (hi - lo < 0.004) return 0.5 * (lo + hi);
-    const denom = gHi - gLo;
-    let nextT: number;
-    if (it % 4 !== 3 && Math.abs(denom) > 1e-12) {
-      const sec = lo - (gLo * (hi - lo)) / denom;
-      const margin = 0.08 * (hi - lo);
-      nextT = sec > lo + margin && sec < hi - margin ? sec : 0.5 * (lo + hi);
-    } else {
-      nextT = 0.5 * (lo + hi);
-    }
-    const sm = evalFastSumKx(nextT);
-    const fm = sm - 1.0;
-    if (Math.abs(fm) < 1.5e-4) return nextT;
-    const gm = Math.log(Math.max(1e-8, sm));
-    if (fm > 0) {
-      hi = nextT;
-      gHi = gm;
-      gLo *= 0.5;
-    } else {
-      lo = nextT;
-      gLo = gm;
-      gHi *= 0.5;
-    }
-  }
-  return 0.5 * (lo + hi);
+  return res.tempC;
 }
 
 /** Thomas 삼중대각행렬(Tridiagonal Matrix) O(N) 직접 해법: a[j]*x[j-1] + b[j]*x[j] + c[j]*x[j+1] = d[j] */
@@ -1223,6 +1476,10 @@ interface InnerMeshSolution {
   actualDOverFMole: number;
   sideDraws?: InnerSideDrawOutput[];
   sideCutClamped?: boolean;
+  rawT?: Float64Array;
+  rawXDense?: Float64Array;
+  rawNActive?: number;
+  materializeStages?: () => DistillStageProfile[];
 }
 
 /**
@@ -1244,9 +1501,10 @@ function solveInnerMeshColumn(params: {
   meshMurphreeEff: number;
   refluxRatio: number;
   targetDistillateKmolH: number;
+  skipStageProfiles?: boolean;
   sideDraws?: InnerSideDrawSpec[];
   maxIterations?: number;
-  initialState?: { T: ArrayLike<number>; x: Array<Record<SimCompKey, number>> };
+  initialState?: { T: ArrayLike<number>; x?: Array<Record<SimCompKey, number>>; xDense?: ArrayLike<number> };
 }): InnerMeshSolution {
   const {
     model,
@@ -1264,28 +1522,40 @@ function solveInnerMeshColumn(params: {
   } = params;
 
   const nActive = activeComps.length;
-  const totalMolesIn = activeComps.reduce((s, c) => s + totalFeedMol[c], 0);
-  const nonVolMolesIn = activeComps.reduce((s, c) => s + (NON_VOLATILE_SET.has(c) ? totalFeedMol[c] : 0), 0);
+  const compNonVol = new Uint8Array(nActive);
+  const compMW = new Float64Array(nActive);
+  const totalFeedMolDense = new Float64Array(nActive);
+  const hRefDense = new Float64Array(nActive);
+  let h2oSlot = -1;
+  let totalMolesIn = 0;
+  let nonVolMolesIn = 0;
+  const feedWaterMol = totalFeedMol.H2O || 0;
+
+  for (let ci = 0; ci < nActive; ci++) {
+    const c = activeComps[ci];
+    const isNv = NON_VOLATILE_SET.has(c) ? 1 : 0;
+    compNonVol[ci] = isNv;
+    compMW[ci] = COMP_MW[c];
+    const fMolC = totalFeedMol[c] || 0;
+    totalFeedMolDense[ci] = fMolC;
+    totalMolesIn += fMolC;
+    if (isNv) nonVolMolesIn += fMolC;
+    if (c === 'H2O') h2oSlot = ci;
+    const isAqElectrolyte =
+      (c === 'HCl' || c === 'NaOH' || c === 'H2SO4' || c === 'NaCl') &&
+      feedWaterMol > 0.25 * fMolC;
+    hRefDense[ci] = componentMolarEnthalpy(c, 25.0, isAqElectrolyte ? 'AQ' : 'L');
+  }
   const maxPossibleDistMol = Math.max(1e-6, totalMolesIn - nonVolMolesIn - 1e-6);
 
   const D = clamp(params.targetDistillateKmolH, 1e-5, maxPossibleDistMol);
   const RR = clamp(params.refluxRatio, 0.05, 80.0);
 
-  // 비반응 단별 엔탈피 수지용 성분 기준 엔탈피 hRef[c] (25°C 액상 기준):
-  // 모든 단에서 성분 몰수지가 보존되므로 H_tilde = H - Σ n_c hRef_c 는 생성열 ΔHf° 스케일 노이즈를 제거하여
-  // H_V_tilde(y_{j+1}) - h_L_tilde(x_j) > 0 양정치성을 항상 보장하며 수렴 시 원래 총엔탈피 수지와 100% 항등 일치함.
-  const hRef = zeroCompRecord();
-  const feedWaterMol = totalFeedMol.H2O || 0;
-  for (let ci = 0; ci < nActive; ci++) {
-    const c = activeComps[ci];
-    const isAqElectrolyte =
-      (c === 'HCl' || c === 'NaOH' || c === 'H2SO4' || c === 'NaCl') &&
-      feedWaterMol > 0.25 * (totalFeedMol[c] || 0);
-    hRef[c] = componentMolarEnthalpy(c, 25.0, isAqElectrolyte ? 'AQ' : 'L');
-  }
-
-  // 단별 피드 몰수·열상태·총엔탈피 합산
-  const stageFeedMol: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
+  // 단별 피드 몰수·열상태·총엔탈피 합산 (Contiguous Dense TypedArrays)
+  const stageFeedMolDense = new Float64Array(N * nActive);
+  const stageFeedMolRows: Float64Array[] = Array.from({ length: N }, (_, j) =>
+    stageFeedMolDense.subarray(j * nActive, (j + 1) * nActive)
+  );
   const stageFeedTot = new Float64Array(N);
   const stageFeedLiq = new Float64Array(N);
   const stageFeedEnthTilde = new Float64Array(N);
@@ -1294,14 +1564,14 @@ function solveInnerMeshColumn(params: {
 
   for (const f of feeds) {
     const j = clamp(f.stageIdx, 0, N - 1);
+    const fRow = stageFeedMolRows[j];
     let fSum = 0;
     let fRefH = 0;
     for (let ci = 0; ci < nActive; ci++) {
-      const c = activeComps[ci];
-      const m = f.mol[c];
-      stageFeedMol[j][c] += m;
+      const m = f.mol[activeComps[ci]];
+      fRow[ci] += m;
       fSum += m;
-      fRefH += m * hRef[c];
+      fRefH += m * hRefDense[ci];
     }
     stageFeedTot[j] += fSum;
     stageFeedLiq[j] += fSum * clamp(f.qThermal, -0.2, 1.3);
@@ -1392,9 +1662,8 @@ function solveInnerMeshColumn(params: {
   };
 
   // 초기 단별 내부 액상(L_j) / 기상(V_j) 트래픽 구성 (물질수지 V[j+1] - L[j] === D + cumSideDrawTot[j] - cumFeedTot[j] 엄밀 만족)
-  const L0 = RR * D;
   V[0] = condenserType === 'partial' ? D : 0;
-  L[0] = Math.max(minFlowFloor, L0 + stageFeedLiq[0]);
+  L[0] = Math.max(minFlowFloor, RR * D + stageFeedLiq[0]);
   V[1] = Math.max(minFlowFloor, L[0] + D - cumFeedTot[0]);
 
   if (activeDraws.length > 0) {
@@ -1458,48 +1727,88 @@ function solveInnerMeshColumn(params: {
   for (let j = 1; j < N - 1; j++) etaStage[j] = effInternal;
   etaStage[N - 1] = 1.0;
 
-  // 초기 온도·조성 프로파일 설정
-  const zFeed = zeroCompRecord();
-  for (let ci = 0; ci < nActive; ci++) {
-    const c = activeComps[ci];
-    zFeed[c] = totalFeedMol[c] / Math.max(1e-9, totalMolesIn);
-  }
+  // 초기 온도·조성 프로파일 설정 (Dense Float64Array)
+  const zFeedDense = new Float64Array(nActive);
+  const invTotFeedMoles = 1.0 / Math.max(1e-9, totalMolesIn);
+  for (let ci = 0; ci < nActive; ci++) zFeedDense[ci] = totalFeedMolDense[ci] * invTotFeedMoles;
 
-  const hasWarmStart =
-    Boolean(params.initialState) &&
-    params.initialState!.T.length === N &&
-    params.initialState!.x.length === N;
+  const initDenseSrc = params.initialState?.xDense;
+  const initRecSrc = params.initialState?.x;
+  const hasWarmStart = Boolean(
+    params.initialState &&
+    params.initialState.T.length === N &&
+    ((initDenseSrc && initDenseSrc.length === N * nActive) || (initRecSrc && initRecSrc.length === N))
+  );
+
   const T = new Float64Array(N);
-  const tTopInit = solveStageBubbleTempC(model, activeComps, zFeed, P_stageBarA[0], 60) - 8;
-  const tBotInit = solveStageBubbleTempC(model, activeComps, zFeed, P_stageBarA[N - 1], 95) + 12;
+  let tTopInitLazy = NaN;
+  let tBotInitLazy = NaN;
   for (let j = 0; j < N; j++) {
     const tWarm = hasWarmStart ? params.initialState!.T[j] : NaN;
-    T[j] = Number.isFinite(tWarm)
-      ? tWarm
-      : tTopInit + ((tBotInit - tTopInit) * j) / Math.max(1, N - 1);
+    if (Number.isFinite(tWarm)) {
+      T[j] = tWarm;
+    } else {
+      if (Number.isNaN(tTopInitLazy)) {
+        tTopInitLazy = solveStageBubbleTempCDense(model, activeComps, nActive, zFeedDense, P_stageBarA[0], 60).tempC - 8;
+        tBotInitLazy = solveStageBubbleTempCDense(model, activeComps, nActive, zFeedDense, P_stageBarA[N - 1], 95).tempC + 12;
+      }
+      T[j] = tTopInitLazy + ((tBotInitLazy - tTopInitLazy) * j) / Math.max(1, N - 1);
+    }
   }
 
-  const x: Array<Record<SimCompKey, number>> = Array.from({ length: N }, (_, j) => {
+  const xDense = new Float64Array(N * nActive);
+  const xRows: Float64Array[] = new Array(N);
+  const kDense = new Float64Array(N * nActive);
+  const kRows: Float64Array[] = new Array(N);
+  const xRawDense = new Float64Array(N * nActive);
+  const xRawRows: Float64Array[] = new Array(N);
+  const yRawDense = new Float64Array(N * nActive);
+  const yRawRows: Float64Array[] = new Array(N);
+  const yStageDense = new Float64Array(N * nActive);
+  const yStageRows: Float64Array[] = new Array(N);
+  const stageVlleTieDense = new Float64Array(N * nActive);
+  const stageVlleTieRows: Float64Array[] = new Array(N);
+  const stageVlleState = new Uint8Array(N); // 0 = uninitialized, 1 = hasSplit, 2 = noSplit
+  const stageLleCap: Array<VlleDenseCapture> = new Array(N);
+
+  for (let j = 0; j < N; j++) {
+    const off = j * nActive;
+    const end = off + nActive;
+    const xRow = xDense.subarray(off, end);
+    xRows[j] = xRow;
+    kRows[j] = kDense.subarray(off, end);
+    xRawRows[j] = xRawDense.subarray(off, end);
+    yRawRows[j] = yRawDense.subarray(off, end);
+    yStageRows[j] = yStageDense.subarray(off, end);
+    stageVlleTieRows[j] = stageVlleTieDense.subarray(off, end);
+    stageLleCap[j] = { hasSplit: false };
+
+    let loadedWarm = false;
     if (hasWarmStart) {
-      const src = params.initialState!.x[j];
-      const row = zeroCompRecord();
       let s = 0;
-      for (let ci = 0; ci < nActive; ci++) {
-        const c = activeComps[ci];
-        const v = Math.max(0, src?.[c] || 0);
-        row[c] = v;
-        s += v;
+      if (initDenseSrc && initDenseSrc.length === N * nActive) {
+        for (let ci = 0; ci < nActive; ci++) {
+          const v = Math.max(0, initDenseSrc[off + ci] || 0);
+          xRow[ci] = v;
+          s += v;
+        }
+      } else if (initRecSrc) {
+        const src = initRecSrc[j];
+        for (let ci = 0; ci < nActive; ci++) {
+          const v = Math.max(0, src?.[activeComps[ci]] || 0);
+          xRow[ci] = v;
+          s += v;
+        }
       }
       if (s > 1e-12) {
-        for (let ci = 0; ci < nActive; ci++) row[activeComps[ci]] /= s;
-        return row;
+        const invS = 1.0 / s;
+        for (let ci = 0; ci < nActive; ci++) xRow[ci] *= invS;
+        loadedWarm = true;
       }
     }
-    return { ...zFeed };
-  });
-  const K: Array<Record<SimCompKey, number>> = Array.from({ length: N }, (_, j) =>
-    calcStageKValues(model, activeComps, x[j], T[j], P_stageBarA[j])
-  );
+    if (!loadedWarm) xRow.set(zFeedDense);
+    calcStageKValuesDense(model, activeComps, nActive, xRow, T[j], P_stageBarA[j], null, kRows[j]);
+  }
 
   let converged = false;
   let iterUsed = 0;
@@ -1523,256 +1832,290 @@ function solveInnerMeshColumn(params: {
   const betaStage = new Float64Array(N);
   const hLiqTilde = new Float64Array(N);
   const hVapTilde = new Float64Array(N);
+  const wStageRow = new Float64Array(nActive);
+  const bubPostKWork = new Float64Array(nActive);
+  const yEqBufDense = new Float64Array(nActive);
+  const usedK0Dense = new Float64Array(nActive);
+  const decK0Dense = new Float64Array(nActive).fill(1.0);
+  const decAqDrawShareDense = new Float64Array(nActive);
+  const decCondMassKgH = zeroCompRecord();
+  const decNAqDense = new Float64Array(nActive);
+  const decNOrgDense = new Float64Array(nActive);
+  const prevDecY1Dense = new Float64Array(nActive);
+  let prevDecT0 = -999;
+  let cachedLle0: ReturnType<typeof solveRigorousLLEDecanter> | null = null;
+  let decLleTieState: LLETieWarmStart | undefined = undefined;
+  let lastDecanterPhaseSplit = false;
 
-  const xRaw: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
-  const yRaw: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
   const feedStageSet = new Set<number>(feeds.map(f => clamp(f.stageIdx, 0, N - 1)));
-  const usedK0: Record<SimCompKey, number> = zeroCompRecord();
-  const yStage: Array<Record<SimCompKey, number>> = Array.from({ length: N }, () => zeroCompRecord());
-  const yEqBuf: Record<SimCompKey, number> = zeroCompRecord();
-  const stageVlleTie: Array<Record<SimCompKey, number> | null | undefined> = new Array(N).fill(undefined);
   const stageVlleTemp = new Float64Array(N).fill(-999);
+  const stageBubbleSlope = new Float64Array(N).fill(0.036);
+  const slopeOutBuf = { val: 0.036 };
 
-  // 단별 실제 기상 몰분율 yStage[0..N-1] 갱신 (하부 리보일러 η=1.0 에서 상부로 Murphree 점화식 y_j = η_j y_j* + (1-η_j) y_{j+1} 계산)
+  // 단별 실제 기상 몰분율 yStageRows[0..N-1] 갱신 (하부 리보일러 η=1.0 에서 상부로 Murphree 점화식 계산)
   const updateStageVapors = () => {
+    const xBot = xRows[N - 1];
+    const kBot = kRows[N - 1];
+    const yBot = yStageRows[N - 1];
     let ySumBot = 0;
     for (let ci = 0; ci < nActive; ci++) {
-      const comp = activeComps[ci];
-      const v = NON_VOLATILE_SET.has(comp) ? 0 : Math.max(1e-12, K[N - 1][comp]) * x[N - 1][comp];
-      yStage[N - 1][comp] = v;
+      const v = compNonVol[ci] ? 0 : Math.max(1e-12, kBot[ci]) * xBot[ci];
+      yBot[ci] = v;
       ySumBot += v;
     }
     if (ySumBot > 1e-12) {
-      for (let ci = 0; ci < nActive; ci++) yStage[N - 1][activeComps[ci]] /= ySumBot;
+      const invBot = 1.0 / ySumBot;
+      for (let ci = 0; ci < nActive; ci++) yBot[ci] *= invBot;
     }
 
     for (let j = N - 2; j >= 1; j--) {
+      const xJ = xRows[j];
+      const kJ = kRows[j];
+      const yJ = yStageRows[j];
+      const yNext = yStageRows[j + 1];
       let yEqSum = 0;
       for (let ci = 0; ci < nActive; ci++) {
-        const comp = activeComps[ci];
-        const v = NON_VOLATILE_SET.has(comp) ? 0 : Math.max(1e-12, K[j][comp]) * x[j][comp];
-        yEqBuf[comp] = v;
+        const v = compNonVol[ci] ? 0 : Math.max(1e-12, kJ[ci]) * xJ[ci];
+        yEqBufDense[ci] = v;
         yEqSum += v;
       }
       const eta = etaStage[j];
       const oneMinusEta = 1.0 - eta;
+      const invEq = yEqSum > 1e-12 ? 1.0 / yEqSum : 0;
       let yJoinSum = 0;
       for (let ci = 0; ci < nActive; ci++) {
-        const comp = activeComps[ci];
-        const yStar = yEqSum > 1e-12 ? yEqBuf[comp] / yEqSum : 0;
-        const yAct = eta * yStar + oneMinusEta * yStage[j + 1][comp];
-        yStage[j][comp] = yAct;
+        const yStar = yEqBufDense[ci] * invEq;
+        const yAct = eta * yStar + oneMinusEta * yNext[ci];
+        yJ[ci] = yAct;
         yJoinSum += yAct;
       }
       if (yJoinSum > 1e-12) {
-        for (let ci = 0; ci < nActive; ci++) yStage[j][activeComps[ci]] /= yJoinSum;
+        const invJoin = 1.0 / yJoinSum;
+        for (let ci = 0; ci < nActive; ci++) yJ[ci] *= invJoin;
       }
     }
 
+    const y0 = yStageRows[0];
     if (condenserType === 'partial') {
+      const x0 = xRows[0];
+      const k0 = kRows[0];
       let y0Sum = 0;
       for (let ci = 0; ci < nActive; ci++) {
-        const comp = activeComps[ci];
-        const v = NON_VOLATILE_SET.has(comp) ? 0 : Math.max(1e-12, K[0][comp]) * x[0][comp];
-        yStage[0][comp] = v;
+        const v = compNonVol[ci] ? 0 : Math.max(1e-12, k0[ci]) * x0[ci];
+        y0[ci] = v;
         y0Sum += v;
       }
       if (y0Sum > 1e-12) {
-        for (let ci = 0; ci < nActive; ci++) yStage[0][activeComps[ci]] /= y0Sum;
+        const inv0 = 1.0 / y0Sum;
+        for (let ci = 0; ci < nActive; ci++) y0[ci] *= inv0;
       }
     } else {
-      for (let ci = 0; ci < nActive; ci++) {
-        const comp = activeComps[ci];
-        yStage[0][comp] = N > 1 ? yStage[1][comp] : x[0][comp];
-      }
+      if (N > 1) y0.set(yStageRows[1]);
+      else y0.set(xRows[0]);
     }
   };
 
-  const decK0: Record<SimCompKey, number> = zeroCompRecord();
-  const decAqDrawShare: Record<SimCompKey, number> = zeroCompRecord();
-  for (let ci = 0; ci < nActive; ci++) {
-    decK0[activeComps[ci]] = 1.0;
-    decAqDrawShare[activeComps[ci]] = 0.0;
-  }
-  let lastDecanterPhaseSplit = false;
-
   // ── 다중 측류(Multi-θ) 수렴 가속·물질분배 엄밀 보정기 (activeDraws.length > 0 전용) ──
-  const nVolMulti = activeComps.reduce((cnt, c) => cnt + (!NON_VOLATILE_SET.has(c) && totalFeedMol[c] > 0 ? 1 : 0), 0);
-  const volCompsList: SimCompKey[] = activeComps.filter(c => !NON_VOLATILE_SET.has(c) && totalFeedMol[c] > 0);
-  const volFeedTot = volCompsList.reduce((s, c) => s + totalFeedMol[c], 0);
+  const volCompIndicesList: number[] = [];
+  let volFeedTot = 0;
+  for (let ci = 0; ci < nActive; ci++) {
+    if (!compNonVol[ci] && totalFeedMolDense[ci] > 0) {
+      volCompIndicesList.push(ci);
+      volFeedTot += totalFeedMolDense[ci];
+    }
+  }
+  const volCompIndices = Int32Array.from(volCompIndicesList);
+  const nVolMulti = volCompIndices.length;
   const thetaEtaState = new Float64Array(activeDraws.length + 1); // [0]=D, [1..M]=S_m (ref B=0)
 
-  const solveSideCutMultiTheta = () => {
+  const thetaNumOut = activeDraws.length + 2;
+  const thetaHasComp = new Uint8Array(nActive);
+  for (let vi = 0; vi < nVolMulti; vi++) thetaHasComp[volCompIndices[vi]] = 1;
+  const thetaOutFlat = new Float64Array(nActive * thetaNumOut);
+  const thetaShiftArr = new Float64Array(nActive);
+  const thetaPBaseArr = new Float64Array(nActive);
+  const thetaRawShares = new Float64Array(nVolMulti * thetaNumOut);
+  const thetaOutArr = new Float64Array(thetaNumOut);
+  const thetaTSideReq = new Float64Array(activeDraws.length);
+  const thetaSums = new Float64Array(thetaNumOut);
+  const thetaPTmp = new Float64Array(thetaNumOut);
+  const thetaFreeList = new Int32Array(activeDraws.length + 1);
+  const thetaGVec = new Float64Array(activeDraws.length + 1);
+  const thetaRhs = new Float64Array(activeDraws.length + 1);
+  const thetaDelta = new Float64Array(activeDraws.length + 1);
+  const thetaCandEta = new Float64Array(thetaEtaState.length);
+  const thetaJac: Float64Array[] = Array.from({ length: activeDraws.length + 1 }, () => new Float64Array(activeDraws.length + 1));
+  const thetaMat: Float64Array[] = Array.from({ length: activeDraws.length + 1 }, () => new Float64Array(activeDraws.length + 1));
+
+  const solveSideCutMultiTheta = (): boolean => {
     const M = activeDraws.length;
-    const numOut = M + 2;
-    const tOut = new Float64Array(numOut);
-    const outByComp = new Map<SimCompKey, Float64Array>();
-    const shiftByComp = new Map<SimCompKey, number>();
-    const pBaseByComp = new Map<SimCompKey, number>();
+    if (M === 0 || nVolMulti === 0 || volFeedTot <= 1e-12) return false;
 
-    if (M === 0 || nVolMulti === 0 || volFeedTot <= 1e-12) {
-      return { tOut, outByComp, shiftByComp, pBaseByComp, maxAbsEta: 0 };
-    }
-
-    const tSideReq = new Float64Array(M);
     let sumSideReq = 0;
     for (let idx = 0; idx < M; idx++) {
       const d = activeDraws[idx];
       let nvDraw = 0;
       if (d.phase === 'liquid') {
+        const xDrawRow = xRawRows[d.stageIdx];
         for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          if (NON_VOLATILE_SET.has(c)) nvDraw += drawMoles[idx] * (xRaw[d.stageIdx][c] || 0);
+          if (compNonVol[ci]) nvDraw += drawMoles[idx] * (xDrawRow[ci] || 0);
         }
       }
-      tSideReq[idx] = Math.max(0, drawMoles[idx] - nvDraw);
-      sumSideReq += tSideReq[idx];
+      thetaTSideReq[idx] = Math.max(0, drawMoles[idx] - nvDraw);
+      sumSideReq += thetaTSideReq[idx];
     }
-    tOut[0] = clamp(D, 1e-8, Math.max(1e-8, volFeedTot - 1e-8));
-    const remVol = Math.max(0, volFeedTot - tOut[0]);
+    thetaOutArr[0] = clamp(D, 1e-8, Math.max(1e-8, volFeedTot - 1e-8));
+    const remVol = Math.max(0, volFeedTot - thetaOutArr[0]);
     if (sumSideReq > remVol - 1e-8 && sumSideReq > 1e-15) {
       const scSide = Math.max(0, (remVol - 1e-8) / sumSideReq);
-      for (let idx = 0; idx < M; idx++) tSideReq[idx] *= scSide;
+      for (let idx = 0; idx < M; idx++) thetaTSideReq[idx] *= scSide;
     }
     let accSide = 0;
     for (let idx = 0; idx < M; idx++) {
-      tOut[1 + idx] = tSideReq[idx];
-      accSide += tSideReq[idx];
+      thetaOutArr[1 + idx] = thetaTSideReq[idx];
+      accSide += thetaTSideReq[idx];
     }
-    tOut[M + 1] = Math.max(0, volFeedTot - tOut[0] - accSide);
+    thetaOutArr[M + 1] = Math.max(0, volFeedTot - thetaOutArr[0] - accSide);
 
-    const rawShares: Float64Array[] = [];
-    for (let vi = 0; vi < volCompsList.length; vi++) {
-      const c = volCompsList[vi];
-      const fC = totalFeedMol[c];
-      const r = new Float64Array(numOut);
-      r[0] = D * usedK0[c] * Math.max(0, xRaw[0][c] || 0);
-      let rSum = r[0];
+    const x0Raw = xRawRows[0];
+    const xBotRaw = xRawRows[N - 1];
+    for (let vi = 0; vi < nVolMulti; vi++) {
+      const ci = volCompIndices[vi];
+      const fC = totalFeedMolDense[ci];
+      const rOff = vi * thetaNumOut;
+      const r0 = D * usedK0Dense[ci] * Math.max(0, x0Raw[ci] || 0);
+      thetaRawShares[rOff] = r0;
+      let rSum = r0;
       for (let idx = 0; idx < M; idx++) {
         const d = activeDraws[idx];
-        const val = drawMoles[idx] * Math.max(0, d.phase === 'vapor' ? (yRaw[d.stageIdx][c] || 0) : (xRaw[d.stageIdx][c] || 0));
-        r[1 + idx] = val;
+        const phaseRow = d.phase === 'vapor' ? yRawRows[d.stageIdx] : xRawRows[d.stageIdx];
+        const val = drawMoles[idx] * Math.max(0, phaseRow[ci] || 0);
+        thetaRawShares[rOff + 1 + idx] = val;
         rSum += val;
       }
-      r[M + 1] = B * Math.max(0, xRaw[N - 1][c] || 0);
-      rSum += r[M + 1];
+      const rBot = B * Math.max(0, xBotRaw[ci] || 0);
+      thetaRawShares[rOff + M + 1] = rBot;
+      rSum += rBot;
       if (rSum <= 1e-18) {
-        for (let k = 0; k < numOut; k++) r[k] = fC * (tOut[k] / volFeedTot);
+        const invVf = 1.0 / volFeedTot;
+        for (let k = 0; k < thetaNumOut; k++) thetaRawShares[rOff + k] = fC * (thetaOutArr[k] * invVf);
       }
-      rawShares.push(r);
     }
 
-    const freeList: number[] = [];
+    let nFree = 0;
     for (let k = 0; k <= M; k++) {
-      if (tOut[k] > 1e-9 && tOut[M + 1] > 1e-9) {
-        freeList.push(k);
-      } else if (tOut[k] <= 1e-9) {
+      if (thetaOutArr[k] > 1e-9 && thetaOutArr[M + 1] > 1e-9) {
+        thetaFreeList[nFree++] = k;
+      } else if (thetaOutArr[k] <= 1e-9) {
         thetaEtaState[k] = -25;
       }
     }
 
-    const nFree = freeList.length;
-    const evalThetaObj = (etaVec: Float64Array, computeJac: boolean) => {
-      const sums = new Float64Array(numOut);
-      const jac = computeJac ? Array.from({ length: nFree }, () => new Float64Array(nFree)) : [];
-      const pTmp = new Float64Array(numOut);
-      for (let vi = 0; vi < volCompsList.length; vi++) {
-        const fC = totalFeedMol[volCompsList[vi]];
-        const r = rawShares[vi];
+    const evalThetaObj = (etaVec: Float64Array, computeJac: boolean): number => {
+      thetaSums.fill(0);
+      if (computeJac) {
+        for (let a = 0; a < nFree; a++) {
+          thetaJac[a].fill(0, 0, nFree);
+        }
+      }
+      for (let vi = 0; vi < nVolMulti; vi++) {
+        const fC = totalFeedMolDense[volCompIndices[vi]];
+        const rOff = vi * thetaNumOut;
         let sh = -Infinity;
-        for (let k = 0; k < numOut; k++) {
-          if (r[k] > 0) {
+        for (let k = 0; k < thetaNumOut; k++) {
+          if (thetaRawShares[rOff + k] > 0) {
             const ek = k <= M ? etaVec[k] : 0;
             if (ek > sh) sh = ek;
           }
         }
         if (!Number.isFinite(sh)) sh = 0;
         let wSum = 0;
-        for (let k = 0; k < numOut; k++) {
+        for (let k = 0; k < thetaNumOut; k++) {
+          const rv = thetaRawShares[rOff + k];
           const ek = k <= M ? etaVec[k] : 0;
-          const w = r[k] > 0 ? r[k] * Math.exp(clamp(ek - sh, -45, 45)) : 0;
-          pTmp[k] = w;
+          const w = rv > 0 ? rv * Math.exp(clamp(ek - sh, -45, 45)) : 0;
+          thetaPTmp[k] = w;
           wSum += w;
         }
         const invW = wSum > 1e-24 ? 1.0 / wSum : 0;
-        for (let k = 0; k < numOut; k++) pTmp[k] *= invW;
-        for (let k = 0; k < numOut; k++) sums[k] += fC * pTmp[k];
+        for (let k = 0; k < thetaNumOut; k++) {
+          thetaPTmp[k] *= invW;
+          thetaSums[k] += fC * thetaPTmp[k];
+        }
         if (computeJac) {
           for (let a = 0; a < nFree; a++) {
-            const ka = freeList[a];
-            const pa = pTmp[ka];
-            jac[a][a] += fC * pa * (1.0 - pa);
+            const ka = thetaFreeList[a];
+            const pa = thetaPTmp[ka];
+            thetaJac[a][a] += fC * pa * (1.0 - pa);
             for (let b = a + 1; b < nFree; b++) {
-              const kb = freeList[b];
-              const off = -fC * pa * pTmp[kb];
-              jac[a][b] += off;
-              jac[b][a] += off;
+              const kb = thetaFreeList[b];
+              const offVal = -fC * pa * thetaPTmp[kb];
+              thetaJac[a][b] += offVal;
+              thetaJac[b][a] += offVal;
             }
           }
         }
       }
       let resSq = 0;
-      const gVec = new Float64Array(nFree);
+      const invVf = 1.0 / volFeedTot;
       for (let a = 0; a < nFree; a++) {
-        const ka = freeList[a];
-        const g = sums[ka] - tOut[ka];
-        gVec[a] = g;
-        resSq += (g / volFeedTot) * (g / volFeedTot);
+        const ka = thetaFreeList[a];
+        const g = thetaSums[ka] - thetaOutArr[ka];
+        thetaGVec[a] = g;
+        const gs = g * invVf;
+        resSq += gs * gs;
       }
-      return { sums, jac, gVec, resSq };
+      return resSq;
     };
 
     if (nFree > 0) {
-      const candEta = new Float64Array(thetaEtaState.length);
       for (let nt = 0; nt < 16; nt++) {
-        const cur = evalThetaObj(thetaEtaState, true);
-        if (Math.sqrt(cur.resSq) < 1e-9) break;
+        const curResSq = evalThetaObj(thetaEtaState, true);
+        if (Math.sqrt(curResSq) < 1e-9) break;
         const reg = 1e-10 * volFeedTot;
-        const mat = cur.jac.map((row, a) => {
-          const r2 = Float64Array.from(row);
-          r2[a] += reg;
-          return r2;
-        });
-        const rhs = new Float64Array(nFree);
-        for (let a = 0; a < nFree; a++) rhs[a] = -cur.gVec[a];
+        for (let a = 0; a < nFree; a++) {
+          thetaMat[a].set(thetaJac[a].subarray(0, nFree));
+          thetaMat[a][a] += reg;
+          thetaRhs[a] = -thetaGVec[a];
+        }
         // Partial-pivot Gaussian elimination (nFree x nFree)
         for (let p = 0; p < nFree; p++) {
           let piv = p;
-          let maxV = Math.abs(mat[p][p]);
+          let maxV = Math.abs(thetaMat[p][p]);
           for (let r = p + 1; r < nFree; r++) {
-            if (Math.abs(mat[r][p]) > maxV) {
-              maxV = Math.abs(mat[r][p]);
+            const av = Math.abs(thetaMat[r][p]);
+            if (av > maxV) {
+              maxV = av;
               piv = r;
             }
           }
           if (piv !== p) {
-            const tr = mat[p]; mat[p] = mat[piv]; mat[piv] = tr;
-            const tb = rhs[p]; rhs[p] = rhs[piv]; rhs[piv] = tb;
+            const tr = thetaMat[p]; thetaMat[p] = thetaMat[piv]; thetaMat[piv] = tr;
+            const tb = thetaRhs[p]; thetaRhs[p] = thetaRhs[piv]; thetaRhs[piv] = tb;
           }
-          const diag = Math.abs(mat[p][p]) > 1e-24 ? mat[p][p] : 1e-24;
+          const diag = Math.abs(thetaMat[p][p]) > 1e-24 ? thetaMat[p][p] : 1e-24;
           for (let r = p + 1; r < nFree; r++) {
-            const f = mat[r][p] / diag;
-            for (let c = p; c < nFree; c++) mat[r][c] -= f * mat[p][c];
-            rhs[r] -= f * rhs[p];
+            const f = thetaMat[r][p] / diag;
+            for (let c = p; c < nFree; c++) thetaMat[r][c] -= f * thetaMat[p][c];
+            thetaRhs[r] -= f * thetaRhs[p];
           }
         }
-        const delta = new Float64Array(nFree);
         for (let p = nFree - 1; p >= 0; p--) {
-          let acc = rhs[p];
-          for (let c = p + 1; c < nFree; c++) acc -= mat[p][c] * delta[c];
-          delta[p] = clamp(acc / (Math.abs(mat[p][p]) > 1e-24 ? mat[p][p] : 1e-24), -8.0, 8.0);
+          let acc = thetaRhs[p];
+          for (let c = p + 1; c < nFree; c++) acc -= thetaMat[p][c] * thetaDelta[c];
+          thetaDelta[p] = clamp(acc / (Math.abs(thetaMat[p][p]) > 1e-24 ? thetaMat[p][p] : 1e-24), -8.0, 8.0);
         }
         let accepted = false;
         let stepAlpha = 1.0;
         for (let ls = 0; ls < 7; ls++) {
-          candEta.set(thetaEtaState);
+          thetaCandEta.set(thetaEtaState);
           for (let a = 0; a < nFree; a++) {
-            const ka = freeList[a];
-            candEta[ka] = clamp(thetaEtaState[ka] + stepAlpha * delta[a], -25, 25);
+            const ka = thetaFreeList[a];
+            thetaCandEta[ka] = clamp(thetaEtaState[ka] + stepAlpha * thetaDelta[a], -25, 25);
           }
-          const nextObj = evalThetaObj(candEta, false);
-          if (nextObj.resSq < cur.resSq) {
-            thetaEtaState.set(candEta);
+          const nextResSq = evalThetaObj(thetaCandEta, false);
+          if (nextResSq < curResSq) {
+            thetaEtaState.set(thetaCandEta);
             accepted = true;
             break;
           }
@@ -1782,151 +2125,171 @@ function solveInnerMeshColumn(params: {
       }
     }
 
-    let maxAbsEta = 0;
-    for (let a = 0; a < nFree; a++) {
-      maxAbsEta = Math.max(maxAbsEta, Math.abs(thetaEtaState[freeList[a]]));
-    }
-
-    for (let vi = 0; vi < volCompsList.length; vi++) {
-      const c = volCompsList[vi];
-      const fC = totalFeedMol[c];
-      const r = rawShares[vi];
+    for (let vi = 0; vi < nVolMulti; vi++) {
+      const ci = volCompIndices[vi];
+      const fC = totalFeedMolDense[ci];
+      const rOff = vi * thetaNumOut;
       let sh = -Infinity;
-      for (let k = 0; k < numOut; k++) {
-        if (r[k] > 0) {
+      for (let k = 0; k < thetaNumOut; k++) {
+        if (thetaRawShares[rOff + k] > 0) {
           const ek = k <= M ? thetaEtaState[k] : 0;
           if (ek > sh) sh = ek;
         }
       }
       if (!Number.isFinite(sh)) sh = 0;
       let wSum = 0;
-      const wArr = new Float64Array(numOut);
-      for (let k = 0; k < numOut; k++) {
+      for (let k = 0; k < thetaNumOut; k++) {
+        const rv = thetaRawShares[rOff + k];
         const ek = k <= M ? thetaEtaState[k] : 0;
-        const w = r[k] > 0 ? r[k] * Math.exp(clamp(ek - sh, -45, 45)) : 0;
-        wArr[k] = w;
+        const w = rv > 0 ? rv * Math.exp(clamp(ek - sh, -45, 45)) : 0;
+        thetaPTmp[k] = w;
         wSum += w;
       }
-      const outs = new Float64Array(numOut);
       const pBase = wSum > 1e-24 ? fC / wSum : 0;
-      for (let k = 0; k < numOut; k++) outs[k] = wArr[k] * pBase;
-      outByComp.set(c, outs);
-      shiftByComp.set(c, sh);
-      pBaseByComp.set(c, pBase);
+      const outOff = ci * thetaNumOut;
+      for (let k = 0; k < thetaNumOut; k++) thetaOutFlat[outOff + k] = thetaPTmp[k] * pBase;
+      thetaShiftArr[ci] = sh;
+      thetaPBaseArr[ci] = pBase;
+    }
+    return true;
+  };
+
+  let thetaMaxAbsEta = 0;
+  let evaluatedDecThisIter = false;
+  const updateDecanterCoupling = (curIter: number, forceEval: boolean): number => {
+    let maxRelDelta = 0.0;
+    if (!(condenserType === 'decanter_ech' && N > 1 && D > 1e-9 && L[0] > 1e-9)) return 0.0;
+
+    const y1Row = yStageRows[1];
+    const f0Row = stageFeedMolRows[0];
+    let maxY1Diff = 0;
+    for (let ci = 0; ci < nActive; ci++) {
+      const yd = Math.abs(y1Row[ci] - prevDecY1Dense[ci]);
+      if (yd > maxY1Diff) maxY1Diff = yd;
     }
 
-    return { tOut, outByComp, shiftByComp, pBaseByComp, maxAbsEta };
+    const needEval =
+      forceEval ||
+      !cachedLle0 ||
+      curIter <= 5 ||
+      curIter % 4 === 0 ||
+      Math.abs(T[0] - prevDecT0) > 0.35 ||
+      maxY1Diff > 0.004;
+
+    if (needEval) {
+      for (let ci = 0; ci < nActive; ci++) {
+        const c = activeComps[ci];
+        decCondMassKgH[c] = compNonVol[ci] ? 0 : (V[1] * Math.max(0, y1Row[ci]) + f0Row[ci]) * compMW[ci];
+      }
+      cachedLle0 = solveRigorousLLEDecanter(decCondMassKgH, T[0], decLleTieState);
+      decLleTieState = cachedLle0.tieState;
+      prevDecT0 = T[0];
+      prevDecY1Dense.set(y1Row);
+      evaluatedDecThisIter = true;
+    } else {
+      evaluatedDecThisIter = false;
+    }
+
+    const lle0 = cachedLle0!;
+    lastDecanterPhaseSplit = lle0.phaseSplit;
+    if (lle0.phaseSplit) {
+      let sumAq = 0;
+      let sumOrg = 0;
+      for (let ci = 0; ci < nActive; ci++) {
+        if (compNonVol[ci]) continue;
+        const c = activeComps[ci];
+        const aqM = Math.max(0, lle0.aqueousKgH[c] || 0) / compMW[ci];
+        const orgM = Math.max(0, lle0.organicKgH[c] || 0) / compMW[ci];
+        decNAqDense[ci] = aqM;
+        decNOrgDense[ci] = orgM;
+        sumAq += aqM;
+        sumOrg += orgM;
+      }
+      const totCondTarget = L[0] + D;
+      const scaleCond = totCondTarget / Math.max(1e-12, sumAq + sumOrg);
+      sumAq *= scaleCond;
+      sumOrg *= scaleCond;
+      for (let ci = 0; ci < nActive; ci++) {
+        decNAqDense[ci] *= scaleCond;
+        decNOrgDense[ci] *= scaleCond;
+      }
+      const wDec = curIter === 1 ? 0.85 : curIter > 45 ? 0.25 : 0.45;
+      const orgRefluxTotal = sumOrg > 1e-12 ? Math.min(L[0], sumOrg) : 0;
+      const aqRefluxTotal = Math.max(0, L[0] - orgRefluxTotal);
+      const orgToDistTotal = Math.max(0, sumOrg - orgRefluxTotal);
+      const aqToDistTotal = Math.max(0, D - orgToDistTotal);
+      const invSumAq = sumAq > 1e-12 ? 1.0 / sumAq : 0;
+      const invSumOrg = sumOrg > 1e-12 ? 1.0 / sumOrg : 0;
+      const invD = 1.0 / D;
+      const invL0 = 1.0 / L[0];
+      for (let ci = 0; ci < nActive; ci++) {
+        if (compNonVol[ci]) continue;
+        const aqFrac = decNAqDense[ci] * invSumAq;
+        const orgFrac = decNOrgDense[ci] * invSumOrg;
+        const dAq = aqToDistTotal * aqFrac;
+        const dOrg = orgToDistTotal * orgFrac;
+        const l0c = orgRefluxTotal * orgFrac + aqRefluxTotal * aqFrac;
+        const dc = dAq + dOrg;
+        decAqDrawShareDense[ci] = dc > 1e-15 ? clamp(dAq / dc, 0, 1) : 0;
+        const xDc = dc * invD;
+        const x0c = l0c * invL0;
+        const k0Target =
+          dc + l0c > 1e-14 ? clamp(xDc / Math.max(1e-8, x0c), 1e-4, 250.0) : 1.0;
+        const prevK0 = Math.max(1e-6, decK0Dense[ci]);
+        const nextK0 = Math.exp(wDec * Math.log(k0Target) + (1.0 - wDec) * Math.log(prevK0));
+        if (dc + l0c > 1e-3 * totCondTarget) {
+          const relDiff = Math.abs(k0Target - prevK0) / Math.max(0.05, prevK0);
+          if (relDiff > maxRelDelta) maxRelDelta = relDiff;
+        }
+        decK0Dense[ci] = nextK0;
+      }
+    } else {
+      const wDec = curIter === 1 ? 1.0 : 0.4;
+      for (let ci = 0; ci < nActive; ci++) {
+        decAqDrawShareDense[ci] = 0;
+        const prevK0 = Math.max(1e-6, decK0Dense[ci]);
+        const relDiff = Math.abs(1.0 - prevK0) / Math.max(0.05, prevK0);
+        if (relDiff > maxRelDelta) maxRelDelta = relDiff;
+        decK0Dense[ci] = Math.exp((1.0 - wDec) * Math.log(prevK0));
+      }
+    }
+    return maxRelDelta;
   };
 
   // 결합 MESH(M·E·S·H) 반복 루프: Thomas 삼중대각 조성 + 기포점 온도 + Wang-Henke 비등몰 엔탈피 트래픽 + Multi-θ 보정 + 디캔터 동시 수렴
+  const stageEtaArr = activeDraws.length > 0 ? new Float64Array(N) : null;
+  const thetaAnchors: Array<{ st: number; eta: number; cnt: number }> = [];
+
   for (let iter = 1; iter <= maxMeshIter; iter++) {
     iterUsed = iter;
     updateStageVapors();
 
-    // 불균일 공비 디캔터(decanter_ech) 응축기 운전 시:
-    // Stage 1 상부 증기 V_1*y_1 + F_0 를 T_0 에서 응축시켜 solveRigorousLLEDecanter 로 엄밀 2액상 분율을 직접 해법
-    let maxRelDeltaDecK0 = 0.0;
-    if (condenserType === 'decanter_ech' && N > 1 && D > 1e-9 && L[0] > 1e-9) {
-      const condMassKgH = zeroCompRecord();
-      for (let ci = 0; ci < nActive; ci++) {
-        const c = activeComps[ci];
-        if (!NON_VOLATILE_SET.has(c)) {
-          const molIn = V[1] * Math.max(0, yStage[1][c]) + stageFeedMol[0][c];
-          condMassKgH[c] = molIn * COMP_MW[c];
-        }
-      }
-      const lle0 = solveRigorousLLEDecanter(condMassKgH, T[0]);
-      lastDecanterPhaseSplit = lle0.phaseSplit;
-
-      if (lle0.phaseSplit) {
-        const nAq = zeroCompRecord();
-        const nOrg = zeroCompRecord();
-        let sumAq = 0;
-        let sumOrg = 0;
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          if (NON_VOLATILE_SET.has(c)) continue;
-          nAq[c] = Math.max(0, lle0.aqueousKgH[c] || 0) / COMP_MW[c];
-          nOrg[c] = Math.max(0, lle0.organicKgH[c] || 0) / COMP_MW[c];
-          sumAq += nAq[c];
-          sumOrg += nOrg[c];
-        }
-        const totCondTarget = L[0] + D;
-        const scaleCond = totCondTarget / Math.max(1e-12, sumAq + sumOrg);
-        sumAq *= scaleCond;
-        sumOrg *= scaleCond;
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          nAq[c] *= scaleCond;
-          nOrg[c] *= scaleCond;
-        }
-
-        const wDec = iter === 1 ? 0.85 : iter > 45 ? 0.25 : 0.45;
-        const orgRefluxTotal = sumOrg > 1e-12 ? Math.min(L[0], sumOrg) : 0;
-        const aqRefluxTotal = Math.max(0, L[0] - orgRefluxTotal);
-        const orgToDistTotal = Math.max(0, sumOrg - orgRefluxTotal);
-        const aqToDistTotal = Math.max(0, D - orgToDistTotal);
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          if (NON_VOLATILE_SET.has(c)) continue;
-          const aqFrac = sumAq > 1e-12 ? nAq[c] / sumAq : 0;
-          const orgFrac = sumOrg > 1e-12 ? nOrg[c] / sumOrg : 0;
-          const dAq = aqToDistTotal * aqFrac;
-          const dOrg = orgToDistTotal * orgFrac;
-          const l0c = orgRefluxTotal * orgFrac + aqRefluxTotal * aqFrac;
-          const dc = dAq + dOrg;
-          decAqDrawShare[c] = dc > 1e-15 ? clamp(dAq / dc, 0, 1) : 0;
-          const xDc = dc / D;
-          const x0c = l0c / L[0];
-          const k0Target =
-            dc + l0c > 1e-14 ? clamp(xDc / Math.max(1e-8, x0c), 1e-4, 250.0) : 1.0;
-          const prevK0 = Math.max(1e-6, decK0[c]);
-          const nextK0 = Math.exp(wDec * Math.log(k0Target) + (1.0 - wDec) * Math.log(prevK0));
-          if (dc + l0c > 1e-3 * totCondTarget) {
-            const relDiff = Math.abs(k0Target - prevK0) / Math.max(0.05, prevK0);
-            if (relDiff > maxRelDeltaDecK0) maxRelDeltaDecK0 = relDiff;
-          }
-          decK0[c] = nextK0;
-        }
-      } else {
-        const wDec = iter === 1 ? 1.0 : 0.4;
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          decAqDrawShare[c] = 0;
-          const prevK0 = Math.max(1e-6, decK0[c]);
-          const relDiff = Math.abs(1.0 - prevK0) / Math.max(0.05, prevK0);
-          if (relDiff > maxRelDeltaDecK0) maxRelDeltaDecK0 = relDiff;
-          decK0[c] = Math.exp((1.0 - wDec) * Math.log(prevK0));
-        }
-      }
-    }
+    // 불균일 공비 디캔터(decanter_ech) 응축기 운전 시 (Adaptive 주기 평가)
+    evaluatedDecThisIter = false;
+    let maxRelDeltaDecK0 = updateDecanterCoupling(iter, false);
 
     for (let ci = 0; ci < nActive; ci++) {
-      const comp = activeComps[ci];
-      if (NON_VOLATILE_SET.has(comp)) {
+      if (compNonVol[ci]) {
         // 비휘발성 염·고비점 강산은 액상 유량을 따라 하부 및 액상 측류로 분배 이동
         let availSalt = 0;
         for (let j = 0; j < N; j++) {
-          availSalt += stageFeedMol[j][comp];
+          availSalt += stageFeedMolRows[j][ci];
           if (j < N - 1 && SL[j] > 0) {
             const totLiqJ = Math.max(1e-6, L[j] + SL[j]);
-            xRaw[j][comp] = availSalt / totLiqJ;
+            xRawRows[j][ci] = availSalt / totLiqJ;
             availSalt = availSalt * (L[j] / totLiqJ);
           } else {
-            xRaw[j][comp] = availSalt / Math.max(1e-6, j === N - 1 ? B : L[j]);
+            xRawRows[j][ci] = availSalt / Math.max(1e-6, j === N - 1 ? B : L[j]);
           }
-          yRaw[j][comp] = 0;
+          yRawRows[j][ci] = 0;
         }
-        usedK0[comp] = 0;
+        usedK0Dense[ci] = 0;
         continue;
       }
 
-      // 행렬 내 Murphree 기상 단효율 변환:
-      //   s_j = η_j K_j,  u_j = y_j / s_j (j >= 1),  u_0 = x_0
-      //   y_j = η_j K_j x_j + (1 - η_j) y_{j+1}  <=>  x_j = u_j - β_j u_{j+1},  β_j = (1 - η_j) s_{j+1} / s_j
-      // 대입 시 엄밀 대각우세 M-행렬을 유지하면서 D*k0*x_0 + Σ(SL_j*x_j + SV_j*y_j) + B*x_{N-1} === f_tot 를 기계정밀도로 보존한다.
+      // 행렬 내 Murphree 기상 단효율 변환
       for (let j = 1; j < N; j++) {
-        sStage[j] = Math.max(1e-12, etaStage[j] * Math.max(1e-12, K[j][comp]));
+        sStage[j] = Math.max(1e-12, etaStage[j] * Math.max(1e-12, kRows[j][ci]));
       }
       betaStage[0] = 0;
       betaStage[N - 1] = 0;
@@ -1940,75 +2303,90 @@ function solveInnerMeshColumn(params: {
       // Stage 0 (응축기 / 디캔터)
       aVec[0] = 0;
       if (condenserType === 'partial') {
-        const k0 = Math.max(1e-12, K[0][comp]);
-        usedK0[comp] = k0;
+        const k0 = Math.max(1e-12, kRows[0][ci]);
+        usedK0Dense[ci] = k0;
         bVec[0] = -(L[0] + D * k0);
       } else if (condenserType === 'decanter_ech') {
-        const k0 = Math.max(1e-6, decK0[comp]);
-        usedK0[comp] = k0;
+        const k0 = Math.max(1e-6, decK0Dense[ci]);
+        usedK0Dense[ci] = k0;
         bVec[0] = -(L[0] + D * k0);
       } else {
-        usedK0[comp] = 1.0;
+        usedK0Dense[ci] = 1.0;
         bVec[0] = -(L[0] + D);
       }
       cVec[0] = V[1] * sStage[1];
-      dVec[0] = -stageFeedMol[0][comp];
+      dVec[0] = -stageFeedMolRows[0][ci];
 
       // 내부 단 1 .. N-2 (액상·기상 측류 SL[j], SV[j] 엄밀 반영)
       for (let j = 1; j < N - 1; j++) {
         aVec[j] = L[j - 1];
         bVec[j] = -(L[j - 1] * betaStage[j - 1] + L[j] + SL[j] + (V[j] + SV[j]) * sStage[j]);
         cVec[j] = (L[j] + SL[j]) * betaStage[j] + V[j + 1] * sStage[j + 1];
-        dVec[j] = -stageFeedMol[j][comp];
+        dVec[j] = -stageFeedMolRows[j][ci];
       }
 
       // 최하단 N-1 (리보일러 / 하부 스트리핑단, β_{N-1} = 0)
       aVec[N - 1] = L[N - 2];
       bVec[N - 1] = -(L[N - 2] * betaStage[N - 2] + B + V[N - 1] * sStage[N - 1]);
       cVec[N - 1] = 0;
-      dVec[N - 1] = -stageFeedMol[N - 1][comp];
+      dVec[N - 1] = -stageFeedMolRows[N - 1][ci];
 
       const uSol = solveTridiagonal(aVec, bVec, cVec, dVec, triCp, triDp, triSol);
-      xRaw[0][comp] = Math.max(0, uSol[0]);
-      yRaw[0][comp] = usedK0[comp] * xRaw[0][comp];
+      const u0 = Math.max(0, uSol[0]);
+      xRawRows[0][ci] = u0;
+      yRawRows[0][ci] = usedK0Dense[ci] * u0;
       for (let j = 1; j < N - 1; j++) {
-        xRaw[j][comp] = Math.max(0, uSol[j] - betaStage[j] * uSol[j + 1]);
-        yRaw[j][comp] = sStage[j] * Math.max(0, uSol[j]);
+        const xjRaw = Math.max(0, uSol[j] - betaStage[j] * uSol[j + 1]);
+        xRawRows[j][ci] = xjRaw;
+        yRawRows[j][ci] = sStage[j] * Math.max(0, uSol[j]);
       }
-      xRaw[N - 1][comp] = Math.max(0, uSol[N - 1]);
-      yRaw[N - 1][comp] = sStage[N - 1] * xRaw[N - 1][comp];
+      const xBot = Math.max(0, uSol[N - 1]);
+      xRawRows[N - 1][ci] = xBot;
+      yRawRows[N - 1][ci] = sStage[N - 1] * xBot;
     }
 
     // Multi-θ 보정 + 정규화 + 어닐링 완화 기포점 온도 갱신
-    const thetaIter = activeDraws.length > 0 ? solveSideCutMultiTheta() : null;
-    let stageEtaArr: Float64Array | null = null;
-    if (thetaIter) {
-      stageEtaArr = new Float64Array(N);
-      const anchors: Array<{ st: number; eta: number; cnt: number }> = [{ st: 0, eta: thetaEtaState[0], cnt: 1 }];
+    const hasThetaIter = activeDraws.length > 0 && solveSideCutMultiTheta();
+    thetaMaxAbsEta = 0;
+    if (hasThetaIter && stageEtaArr) {
+      for (let idx = 0; idx <= activeDraws.length; idx++) {
+        if (idx === 0 || activeDraws[idx - 1]) {
+          const ae = Math.abs(thetaEtaState[idx]);
+          if (ae > thetaMaxAbsEta && ae < 24.5) thetaMaxAbsEta = ae;
+        }
+      }
+      thetaAnchors.length = 0;
+      thetaAnchors.push({ st: 0, eta: thetaEtaState[0], cnt: 1 });
       for (let idx = 0; idx < activeDraws.length; idx++) {
         const stIdx = activeDraws[idx].stageIdx;
-        const found = anchors.find(a => a.st === stIdx);
+        let found: { st: number; eta: number; cnt: number } | undefined;
+        for (let ai = 0; ai < thetaAnchors.length; ai++) {
+          if (thetaAnchors[ai].st === stIdx) {
+            found = thetaAnchors[ai];
+            break;
+          }
+        }
         if (found) {
           found.eta += thetaEtaState[1 + idx];
           found.cnt += 1;
         } else {
-          anchors.push({ st: stIdx, eta: thetaEtaState[1 + idx], cnt: 1 });
+          thetaAnchors.push({ st: stIdx, eta: thetaEtaState[1 + idx], cnt: 1 });
         }
       }
-      if (!anchors.some(a => a.st === N - 1)) {
-        anchors.push({ st: N - 1, eta: 0, cnt: 1 });
+      if (!thetaAnchors.some(a => a.st === N - 1)) {
+        thetaAnchors.push({ st: N - 1, eta: 0, cnt: 1 });
       }
-      anchors.sort((a, b) => a.st - b.st);
-      for (const a of anchors) a.eta /= a.cnt;
+      thetaAnchors.sort((a, b) => a.st - b.st);
+      for (let ai = 0; ai < thetaAnchors.length; ai++) thetaAnchors[ai].eta /= thetaAnchors[ai].cnt;
       for (let j = 0; j < N; j++) {
-        if (j <= anchors[0].st) {
-          stageEtaArr[j] = anchors[0].eta;
-        } else if (j >= anchors[anchors.length - 1].st) {
-          stageEtaArr[j] = anchors[anchors.length - 1].eta;
+        if (j <= thetaAnchors[0].st) {
+          stageEtaArr[j] = thetaAnchors[0].eta;
+        } else if (j >= thetaAnchors[thetaAnchors.length - 1].st) {
+          stageEtaArr[j] = thetaAnchors[thetaAnchors.length - 1].eta;
         } else {
-          for (let ai = 0; ai < anchors.length - 1; ai++) {
-            const a0 = anchors[ai];
-            const a1 = anchors[ai + 1];
+          for (let ai = 0; ai < thetaAnchors.length - 1; ai++) {
+            const a0 = thetaAnchors[ai];
+            const a1 = thetaAnchors[ai + 1];
             if (j >= a0.st && j <= a1.st) {
               const frac = a1.st > a0.st ? (j - a0.st) / (a1.st - a0.st) : 0;
               stageEtaArr[j] = a0.eta + frac * (a1.eta - a0.eta);
@@ -2036,18 +2414,18 @@ function solveInnerMeshColumn(params: {
     const wT = Math.max(0.03, baseWT * dampFactor);
     const maxStageStepC = iter > 30 ? 5.0 : 10.0;
     const minStageDampFloor = hasSC ? 0.25 : 0.15;
-    const wStageRow = new Float64Array(nActive);
 
     for (let j = 0; j < N; j++) {
+      const xRawRow = xRawRows[j];
+      const xRow = xRows[j];
       let sumXj = 0;
       let wSumJ = 0;
       for (let ci = 0; ci < nActive; ci++) {
-        const comp = activeComps[ci];
-        const xRawVal = Math.max(0, xRaw[j][comp] || 0);
+        const xRawVal = Math.max(0, xRawRow[ci] || 0);
         sumXj += xRawVal;
-        if (thetaIter && stageEtaArr && !NON_VOLATILE_SET.has(comp) && thetaIter.pBaseByComp.has(comp)) {
-          const shC = thetaIter.shiftByComp.get(comp)!;
-          const pBaseC = thetaIter.pBaseByComp.get(comp)!;
+        if (hasThetaIter && stageEtaArr && !compNonVol[ci] && thetaHasComp[ci]) {
+          const shC = thetaShiftArr[ci];
+          const pBaseC = thetaPBaseArr[ci];
           wStageRow[ci] = xRawVal * pBaseC * Math.exp(clamp(stageEtaArr[j] - shC, -40, 40));
         } else {
           wStageRow[ci] = xRawVal;
@@ -2059,10 +2437,10 @@ function solveInnerMeshColumn(params: {
         if (rawSumErr > maxSumXErr) maxSumXErr = rawSumErr;
       }
       if (wSumJ > 1e-18) {
+        const invWSum = 1.0 / wSumJ;
         let domDx = 0;
         for (let ci = 0; ci < nActive; ci++) {
-          const comp = activeComps[ci];
-          const rdx = wStageRow[ci] / wSumJ - x[j][comp];
+          const rdx = wStageRow[ci] * invWSum - xRow[ci];
           if (Math.abs(rdx) > Math.abs(domDx)) domDx = rdx;
         }
         if (iter >= 45 && Math.abs(domDx) > 1e-5) {
@@ -2075,46 +2453,52 @@ function solveInnerMeshColumn(params: {
         prevRawDx[j] = domDx;
         const wXj = wX * stageDampX[j];
         for (let ci = 0; ci < nActive; ci++) {
-          const comp = activeComps[ci];
-          const xNew = wStageRow[ci] / wSumJ;
-          const stepDx = wXj * (xNew - x[j][comp]);
+          const xNew = wStageRow[ci] * invWSum;
+          const stepDx = wXj * (xNew - xRow[ci]);
           const absDx = Math.abs(stepDx);
           if (absDx > maxDeltaX) maxDeltaX = absDx;
-          x[j][comp] = Math.max(0, x[j][comp] + stepDx);
+          xRow[ci] = Math.max(0, xRow[ci] + stepDx);
         }
       }
       // 재정규화
       let normS = 0;
-      for (let ci = 0; ci < nActive; ci++) normS += x[j][activeComps[ci]];
+      for (let ci = 0; ci < nActive; ci++) normS += xRow[ci];
       if (normS > 1e-12) {
-        for (let ci = 0; ci < nActive; ci++) x[j][activeComps[ci]] /= normS;
+        const invNorm = 1.0 / normS;
+        for (let ci = 0; ci < nActive; ci++) xRow[ci] *= invNorm;
       }
     }
 
     for (let j = 0; j < N; j++) {
       const tPrev = T[j];
       const refreshTie =
-        stageVlleTie[j] === undefined ||
+        stageVlleState[j] === 0 ||
         iter <= 4 ||
         (iter <= 36 && iter % 6 === 0) ||
         (maxDeltaX > 0.015 && iter <= 100 && iter % 6 === 0) ||
         Math.abs(tPrev - stageVlleTemp[j]) > 2.5;
-      const stageVlleCap: VlleScaleCapture = { scale: null };
-      const tBubble = solveStageBubbleTempC(
+      const bubRes = solveStageBubbleTempCDense(
         model,
         activeComps,
-        x[j],
+        nActive,
+        xRows[j],
         P_stageBarA[j],
         tPrev,
-        yStage[j],
-        stageVlleCap,
-        refreshTie ? undefined : stageVlleTie[j]
+        yStageRows[j],
+        bubPostKWork,
+        refreshTie ? stageLleCap[j] : null,
+        refreshTie ? stageVlleTieRows[j] : null,
+        !refreshTie,
+        !refreshTie ? (stageVlleState[j] === 1 ? stageVlleTieRows[j] : null) : null,
+        stageBubbleSlope[j],
+        slopeOutBuf
       );
+      stageBubbleSlope[j] = slopeOutBuf.val;
       if (refreshTie) {
-        stageVlleTie[j] = stageVlleCap.scale;
+        stageVlleState[j] = stageLleCap[j].hasSplit ? 1 : 2;
         stageVlleTemp[j] = tPrev;
       }
-      const errT = tBubble - tPrev;
+      const errT = bubRes.tempC - tPrev;
       if (Math.abs(errT) > maxRawErrT) maxRawErrT = Math.abs(errT);
       if (iter >= 45 && Math.abs(errT) > 0.02) {
         if (errT * prevRawDt[j] < 0) {
@@ -2130,16 +2514,26 @@ function solveInnerMeshColumn(params: {
       const absDt = Math.abs(clampedStepT);
       if (absDt > maxDeltaT) maxDeltaT = absDt;
       T[j] = tNext;
-      K[j] = calcStageKValues(
-        model,
-        activeComps,
-        x[j],
-        T[j],
-        P_stageBarA[j],
-        yStage[j],
-        8000,
-        absDt < 2.5 ? stageVlleTie[j] : undefined
-      );
+      if (bubRes.canReuseK && Math.abs(tNext - bubRes.tempC) <= 5e-4 && iter > 1) {
+        kRows[j].set(bubPostKWork);
+      } else {
+        const kVlleMode: 0 | 1 | 2 =
+          absDt < 2.5 ? (stageVlleState[j] === 1 ? 1 : stageVlleState[j] === 2 ? 2 : 0) : 0;
+        calcStageKValuesDense(
+          model,
+          activeComps,
+          nActive,
+          xRows[j],
+          tNext,
+          P_stageBarA[j],
+          yStageRows[j],
+          kRows[j],
+          8000,
+          kVlleMode,
+          kVlleMode === 1 ? stageVlleTieRows[j] : null,
+          null
+        );
+      }
     }
 
     // ── Wang-Henke / Inside-Out 단별 엔탈피 수지(H-equation) 기반 비등몰 V_j, L_j 연속 갱신 ──
@@ -2148,19 +2542,15 @@ function solveInnerMeshColumn(params: {
       updateStageVapors();
       for (let j = 0; j <= N - 2; j++) {
         let refL = 0;
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          refL += x[j][c] * hRef[c];
-        }
-        hLiqTilde[j] = liquidMolarEnthalpyKJkmol(x[j], activeComps, T[j]) - refL;
+        const xRow = xRows[j];
+        for (let ci = 0; ci < nActive; ci++) refL += xRow[ci] * hRefDense[ci];
+        hLiqTilde[j] = liquidMolarEnthalpyDenseKJkmol(xRow, activeComps, h2oSlot, T[j]) - refL;
       }
       for (let j = 1; j <= N - 1; j++) {
         let refV = 0;
-        for (let ci = 0; ci < nActive; ci++) {
-          const c = activeComps[ci];
-          refV += yStage[j][c] * hRef[c];
-        }
-        hVapTilde[j] = vaporMolarEnthalpyKJkmol(yStage[j], activeComps, T[j]) - refV;
+        const yRow = yStageRows[j];
+        for (let ci = 0; ci < nActive; ci++) refV += yRow[ci] * hRefDense[ci];
+        hVapTilde[j] = vaporMolarEnthalpyDenseKJkmol(yRow, activeComps, T[j]) - refV;
       }
 
       if (activeDraws.length > 0) {
@@ -2204,46 +2594,60 @@ function solveInnerMeshColumn(params: {
     }
     prevMaxDeltaT = maxDeltaT;
 
-    const thetaReadyStrict = !hasSC || (maxRawErrT < 0.08 && maxSumXErr < 5e-3 && (thetaIter?.maxAbsEta ?? 0) < 0.05);
-    const thetaReadyRel = !hasSC || (maxRawErrT < 0.15 && maxSumXErr < 8e-3 && (thetaIter?.maxAbsEta ?? 0) < 0.08);
-    if (
+    const thetaReadyStrict = !hasSC || (maxRawErrT < 0.08 && maxSumXErr < 5e-3 && thetaMaxAbsEta < 0.05);
+    const thetaReadyRel = !hasSC || (maxRawErrT < 0.15 && maxSumXErr < 8e-3 && thetaMaxAbsEta < 0.08);
+    const passStrict =
       iter >= 6 &&
       thetaReadyStrict &&
       maxDeltaT < 0.015 &&
       maxDeltaX < 1e-4 &&
       maxRelDeltaV < 5e-4 &&
-      maxRelDeltaDecK0 < 5e-3
-    ) {
-      converged = true;
-      break;
-    }
+      maxRelDeltaDecK0 < 5e-3;
     const colSpanC = Math.abs(T[N - 1] - T[0]);
     const relTolT = Math.max(0.08, 0.004 * colSpanC);
     const relTolX = colSpanC > 80 ? 2.5e-3 : 5e-4;
-    if (
+    const passRel =
+      !passStrict &&
       iter >= 50 &&
       thetaReadyRel &&
       maxDeltaT < relTolT &&
       maxDeltaX < relTolX &&
       maxRelDeltaV < 4e-3 &&
-      maxRelDeltaDecK0 < 1.5e-2
-    ) {
-      converged = true;
-      break;
+      maxRelDeltaDecK0 < 1.5e-2;
+
+    if (passStrict || passRel) {
+      let okToBreak = true;
+      if (condenserType === 'decanter_ech' && N > 1 && D > 1e-9 && L[0] > 1e-9 && !evaluatedDecThisIter) {
+        updateStageVapors();
+        const verRel = updateDecanterCoupling(iter, true);
+        const decTol = passStrict ? 5e-3 : 1.5e-2;
+        if (verRel >= decTol) {
+          okToBreak = false;
+        }
+      }
+      if (okToBreak) {
+        converged = true;
+        break;
+      }
     }
   }
 
   if (!converged && N >= 5) {
+    const prevXSnapDense = new Float64Array(N * nActive);
+    const prevTSnap = new Float64Array(N);
     for (let pass = 0; pass < 3; pass++) {
-      const prevXSnap = x.map(row => ({ ...row }));
-      const prevTSnap = [...T];
+      prevXSnapDense.set(xDense);
+      prevTSnap.set(T);
       for (let j = 1; j < N - 1; j++) {
         if (stageFeedTot[j] > 1e-9 || SL[j] > 1e-9 || SV[j] > 1e-9) continue;
+        const off = j * nActive;
+        const offPrev = (j - 1) * nActive;
+        const offNext = (j + 1) * nActive;
+        const xRow = xRows[j];
         let xOsc = false;
         for (let ci = 0; ci < nActive; ci++) {
-          const ck = activeComps[ci];
-          const dp = prevXSnap[j][ck] - prevXSnap[j - 1][ck];
-          const dn = prevXSnap[j][ck] - prevXSnap[j + 1][ck];
+          const dp = prevXSnapDense[off + ci] - prevXSnapDense[offPrev + ci];
+          const dn = prevXSnapDense[off + ci] - prevXSnapDense[offNext + ci];
           if (dp * dn > 1e-5) {
             xOsc = true;
             break;
@@ -2252,13 +2656,13 @@ function solveInnerMeshColumn(params: {
         if (xOsc) {
           let sNorm = 0;
           for (let ci = 0; ci < nActive; ci++) {
-            const ck = activeComps[ci];
-            const sm = Math.max(0, 0.5 * prevXSnap[j][ck] + 0.25 * (prevXSnap[j - 1][ck] + prevXSnap[j + 1][ck]));
-            x[j][ck] = sm;
+            const sm = Math.max(0, 0.5 * prevXSnapDense[off + ci] + 0.25 * (prevXSnapDense[offPrev + ci] + prevXSnapDense[offNext + ci]));
+            xRow[ci] = sm;
             sNorm += sm;
           }
           if (sNorm > 1e-12) {
-            for (let ci = 0; ci < nActive; ci++) x[j][activeComps[ci]] /= sNorm;
+            const invNorm = 1.0 / sNorm;
+            for (let ci = 0; ci < nActive; ci++) xRow[ci] *= invNorm;
           }
         }
         const dtP = prevTSnap[j] - prevTSnap[j - 1];
@@ -2276,63 +2680,67 @@ function solveInnerMeshColumn(params: {
   const distKgH = zeroCompRecord();
   const botKgH = zeroCompRecord();
   const sideMolArr: Array<Record<SimCompKey, number>> = activeDraws.map(() => zeroCompRecord());
-  const finalTheta = activeDraws.length > 0 ? solveSideCutMultiTheta() : null;
+  const finalHasTheta = activeDraws.length > 0 && solveSideCutMultiTheta();
+  const x0RawFinal = xRawRows[0];
+  const xBotRawFinal = xRawRows[N - 1];
+  const MDraws = activeDraws.length;
+  const sRawFinal = new Float64Array(MDraws);
 
   for (let ci = 0; ci < nActive; ci++) {
     const comp = activeComps[ci];
-    const fTot = totalFeedMol[comp];
+    const fTot = totalFeedMolDense[ci];
     if (fTot <= 0) continue;
-    if (activeDraws.length === 0) {
-      if (NON_VOLATILE_SET.has(comp)) {
+    if (MDraws === 0) {
+      if (compNonVol[ci]) {
         distMol[comp] = 0;
         botMol[comp] = fTot;
       } else {
-        const dRaw = D * usedK0[comp] * xRaw[0][comp];
-        const bRaw = B * xRaw[N - 1][comp];
+        const dRaw = D * usedK0Dense[ci] * x0RawFinal[ci];
+        const bRaw = B * xBotRawFinal[ci];
         const sumRaw = dRaw + bRaw;
         if (sumRaw > 1e-15) {
           distMol[comp] = fTot * (dRaw / sumRaw);
           botMol[comp] = fTot * (bRaw / sumRaw);
         } else {
-          distMol[comp] = fTot * (D / Math.max(1e-9, totalMolesIn));
+          distMol[comp] = fTot * (D * invTotFeedMoles);
           botMol[comp] = Math.max(0, fTot - distMol[comp]);
         }
       }
-    } else if (!NON_VOLATILE_SET.has(comp) && finalTheta?.outByComp.has(comp)) {
-      const outs = finalTheta.outByComp.get(comp)!;
-      distMol[comp] = outs[0];
-      for (let idx = 0; idx < activeDraws.length; idx++) {
-        sideMolArr[idx][comp] = outs[1 + idx];
+    } else if (!compNonVol[ci] && finalHasTheta && thetaHasComp[ci]) {
+      const outOff = ci * thetaNumOut;
+      distMol[comp] = thetaOutFlat[outOff];
+      for (let idx = 0; idx < MDraws; idx++) {
+        sideMolArr[idx][comp] = thetaOutFlat[outOff + 1 + idx];
       }
-      botMol[comp] = outs[activeDraws.length + 1];
+      botMol[comp] = thetaOutFlat[outOff + MDraws + 1];
     } else {
-      const dRaw = NON_VOLATILE_SET.has(comp) ? 0 : D * usedK0[comp] * xRaw[0][comp];
+      const dRaw = compNonVol[ci] ? 0 : D * usedK0Dense[ci] * x0RawFinal[ci];
       let sumSD = 0;
-      const sRawList = new Float64Array(activeDraws.length);
-      for (let idx = 0; idx < activeDraws.length; idx++) {
+      for (let idx = 0; idx < MDraws; idx++) {
         const d = activeDraws[idx];
         const dm = drawMoles[idx];
         let sVal = 0;
-        if (NON_VOLATILE_SET.has(comp)) {
-          sVal = d.phase === 'liquid' ? dm * xRaw[d.stageIdx][comp] : 0;
+        if (compNonVol[ci]) {
+          sVal = d.phase === 'liquid' ? dm * xRawRows[d.stageIdx][ci] : 0;
         } else {
-          sVal = dm * (d.phase === 'vapor' ? yRaw[d.stageIdx][comp] : xRaw[d.stageIdx][comp]);
+          const phaseRow = d.phase === 'vapor' ? yRawRows[d.stageIdx] : xRawRows[d.stageIdx];
+          sVal = dm * phaseRow[ci];
         }
-        sRawList[idx] = sVal;
+        sRawFinal[idx] = sVal;
         sumSD += sVal;
       }
-      const bRaw = B * xRaw[N - 1][comp];
+      const bRaw = B * xBotRawFinal[ci];
       const sumRaw = dRaw + sumSD + bRaw;
       if (sumRaw > 1e-15) {
         const scaleC = fTot / sumRaw;
         distMol[comp] = dRaw * scaleC;
-        for (let idx = 0; idx < activeDraws.length; idx++) sideMolArr[idx][comp] = sRawList[idx] * scaleC;
+        for (let idx = 0; idx < MDraws; idx++) sideMolArr[idx][comp] = sRawFinal[idx] * scaleC;
         botMol[comp] = bRaw * scaleC;
       } else {
-        distMol[comp] = NON_VOLATILE_SET.has(comp) ? 0 : fTot * (D / Math.max(1e-9, totalMolesIn));
+        distMol[comp] = compNonVol[ci] ? 0 : fTot * (D * invTotFeedMoles);
         let accS = 0;
-        for (let idx = 0; idx < activeDraws.length; idx++) {
-          const share = NON_VOLATILE_SET.has(comp) ? 0 : fTot * (drawMoles[idx] / Math.max(1e-9, totalMolesIn));
+        for (let idx = 0; idx < MDraws; idx++) {
+          const share = compNonVol[ci] ? 0 : fTot * (drawMoles[idx] * invTotFeedMoles);
           sideMolArr[idx][comp] = share;
           accS += share;
         }
@@ -2343,11 +2751,17 @@ function solveInnerMeshColumn(params: {
 
   // 총 몰유량 비율 미세 보정 후 질량 환산
   let distMassSum = 0;
+  let actualDistMoles = 0;
+  let actualBotMoles = 0;
   for (let ci = 0; ci < nActive; ci++) {
     const comp = activeComps[ci];
-    distKgH[comp] = distMol[comp] * COMP_MW[comp];
-    botKgH[comp] = botMol[comp] * COMP_MW[comp];
+    const dm = distMol[comp];
+    const bm = botMol[comp];
+    distKgH[comp] = dm * compMW[ci];
+    botKgH[comp] = bm * compMW[ci];
     distMassSum += distKgH[comp];
+    actualDistMoles += dm;
+    actualBotMoles += bm;
   }
 
   const stageSideLiqKgH = new Float64Array(N);
@@ -2360,7 +2774,7 @@ function solveInnerMeshColumn(params: {
     let molSum = 0;
     for (let ci = 0; ci < nActive; ci++) {
       const c = activeComps[ci];
-      kgH[c] = sideMolArr[idx][c] * COMP_MW[c];
+      kgH[c] = sideMolArr[idx][c] * compMW[ci];
       mSum += kgH[c];
       molSum += sideMolArr[idx][c];
     }
@@ -2387,91 +2801,110 @@ function solveInnerMeshColumn(params: {
     };
   });
 
-  // 유수분리 디캔터(decanter_ech) 운전 시: MESH 루프 내 커플링된 T[0] 2액상 LLE 결과와 정합되게 수상 배출(decanterFlowsKgH) 및 유기상 유출(distKgH) 분배
+  // 유수분리 디캔터(decanter_ech) 운전 시: MESH 루프 내 커플링된 T[0] 2액상 LLE 결과와 정합되게 수상 배출 및 유기상 유출 분배
   let decanterWaterDrawKgH = 0;
   const decanterFlowsKgH = zeroCompRecord();
   if (condenserType === 'decanter_ech' && distKgH.H2O > 0) {
-    const lleTop = solveRigorousLLEDecanter(distKgH, T[0]);
+    const lleTop = solveRigorousLLEDecanter(distKgH, T[0], decLleTieState);
     if (lleTop.phaseSplit) {
       let aqSum = 0;
       let orgSum = 0;
+      let orgMolSum = 0;
       for (let ci = 0; ci < nActive; ci++) {
         const c = activeComps[ci];
         decanterFlowsKgH[c] = lleTop.aqueousKgH[c];
         distKgH[c] = lleTop.organicKgH[c];
-        distMol[c] = distKgH[c] / COMP_MW[c];
+        const mC = distKgH[c] / compMW[ci];
+        distMol[c] = mC;
         aqSum += decanterFlowsKgH[c];
         orgSum += distKgH[c];
+        orgMolSum += mC;
       }
       decanterWaterDrawKgH = aqSum;
       distMassSum = orgSum;
+      actualDistMoles = orgMolSum;
     } else if (lastDecanterPhaseSplit) {
       let aqSum = 0;
       let orgSum = 0;
+      let orgMolSum = 0;
       for (let ci = 0; ci < nActive; ci++) {
         const c = activeComps[ci];
         const totalTopC = distKgH[c];
-        const aqC = totalTopC * clamp(decAqDrawShare[c] || 0, 0, 1);
+        const aqC = totalTopC * clamp(decAqDrawShareDense[ci] || 0, 0, 1);
         const orgC = Math.max(0, totalTopC - aqC);
         decanterFlowsKgH[c] = aqC;
         distKgH[c] = orgC;
-        distMol[c] = orgC / COMP_MW[c];
+        const mC = orgC / compMW[ci];
+        distMol[c] = mC;
         aqSum += aqC;
         orgSum += orgC;
+        orgMolSum += mC;
       }
       decanterWaterDrawKgH = aqSum;
       distMassSum = orgSum;
+      actualDistMoles = orgMolSum;
     }
   }
 
-  // 수렴된 단별 실제 기상 조성(Murphree 단효율 반영) 갱신 및 프로파일 데이터 생성 (1 .. N)
+  // 수렴된 단별 실제 기상 조성(Murphree 단효율 반영) 갱신 및 지연(Lazy) 프로파일 빌더 준비
   updateStageVapors();
-  const stages: DistillStageProfile[] = [];
-  for (let j = 0; j < N; j++) {
-    const yMol = { ...yStage[j] };
-    let mwLiq = 0;
-    let mwVap = 0;
-    for (let ci = 0; ci < nActive; ci++) {
-      const comp = activeComps[ci];
-      mwLiq += x[j][comp] * COMP_MW[comp];
-      mwVap += yMol[comp] * COMP_MW[comp];
-    }
-    mwLiq = Math.max(2.0, mwLiq);
-    mwVap = Math.max(2.0, mwVap);
+  const buildStages = (): DistillStageProfile[] => {
+    const out: DistillStageProfile[] = [];
+    for (let j = 0; j < N; j++) {
+      const xRow = xRows[j];
+      const yRow = yStageRows[j];
+      const xMol = zeroCompRecord();
+      const yMol = zeroCompRecord();
+      let mwLiq = 0;
+      let mwVap = 0;
+      for (let ci = 0; ci < nActive; ci++) {
+        const comp = activeComps[ci];
+        const xv = xRow[ci];
+        const yv = yRow[ci];
+        xMol[comp] = xv;
+        yMol[comp] = yv;
+        mwLiq += xv * compMW[ci];
+        mwVap += yv * compMW[ci];
+      }
+      mwLiq = Math.max(2.0, mwLiq);
+      mwVap = Math.max(2.0, mwVap);
 
-    const xWtPct = zeroCompRecord();
-    const yWtPct = zeroCompRecord();
-    for (let ci = 0; ci < nActive; ci++) {
-      const comp = activeComps[ci];
-      xWtPct[comp] = ((x[j][comp] * COMP_MW[comp]) / mwLiq) * 100;
-      yWtPct[comp] = ((yMol[comp] * COMP_MW[comp]) / mwVap) * 100;
-    }
+      const xWtPct = zeroCompRecord();
+      const yWtPct = zeroCompRecord();
+      for (let ci = 0; ci < nActive; ci++) {
+        const comp = activeComps[ci];
+        xWtPct[comp] = ((xRow[ci] * compMW[ci]) / mwLiq) * 100;
+        yWtPct[comp] = ((yRow[ci] * compMW[ci]) / mwVap) * 100;
+      }
 
-    const liqKmol = j === N - 1 ? B : L[j];
-    const vapKmol = j === 0 ? (condenserType === 'partial' ? D : V[1]) : V[j];
-    const hasSideCutHere = stageSideLiqKgH[j] > 1e-6 || stageSideVapKgH[j] > 1e-6;
-    stages.push({
-      stage: j + 1,
-      tempC: T[j],
-      pressBarA: P_stageBarA[j],
-      liqFlowKmolH: liqKmol,
-      vapFlowKmolH: vapKmol,
-      liqMassKgH: liqKmol * mwLiq,
-      vapMassKgH: vapKmol * mwVap,
-      xMol: { ...x[j] },
-      yMol,
-      xWtPct,
-      yWtPct,
-      isFeedStage: feedStageSet.has(j),
-      ...(hasSideCutHere
-        ? {
-            isSideCutStage: true,
-            sideCutLiqKgH: stageSideLiqKgH[j],
-            sideCutVapKgH: stageSideVapKgH[j],
-          }
-        : {}),
-    });
-  }
+      const liqKmol = j === N - 1 ? B : L[j];
+      const vapKmol = j === 0 ? (condenserType === 'partial' ? D : V[1]) : V[j];
+      const hasSideCutHere = stageSideLiqKgH[j] > 1e-6 || stageSideVapKgH[j] > 1e-6;
+      out.push({
+        stage: j + 1,
+        tempC: T[j],
+        pressBarA: P_stageBarA[j],
+        liqFlowKmolH: liqKmol,
+        vapFlowKmolH: vapKmol,
+        liqMassKgH: liqKmol * mwLiq,
+        vapMassKgH: vapKmol * mwVap,
+        xMol,
+        yMol,
+        xWtPct,
+        yWtPct,
+        isFeedStage: feedStageSet.has(j),
+        ...(hasSideCutHere
+          ? {
+              isSideCutStage: true,
+              sideCutLiqKgH: stageSideLiqKgH[j],
+              sideCutVapKgH: stageSideVapKgH[j],
+            }
+          : {}),
+      });
+    }
+    return out;
+  };
+  const stages = params.skipStageProfiles ? [] : buildStages();
 
   // 탑정 유출 상(Phase) 판정 — flowsheetSolver 와 100% 동일 기준
   const nonCondMass = (distKgH.H2 || 0) + (distKgH.O2 || 0) + (distKgH.N2 || 0);
@@ -2497,16 +2930,16 @@ function solveInnerMeshColumn(params: {
   const totalFeedEnthKcalH = totalFeedEnthKJH / KJ_PER_KCAL;
   const stage0FeedEnthKcalH = stage0FeedEnthKJH / KJ_PER_KCAL;
 
-  // Stage 0(응축기 + 환류드럼/디캔터) 경계 엔탈피 수지: Q_cond = H_D + H_dec + H_{L,0} - H_{V,1} - H_{F,0}
-  // 비반응 응축기 경계에서 성분 원자수지(V_1 = D + Dec + L_0 - F_0)를 엄밀 일치시켜 생성열 ΔHf° 잔차 왜곡 원천 차단
   const vap1KgH = zeroCompRecord();
   const reflux0KgH = zeroCompRecord();
   const t1Vap = N > 1 ? T[1] : T[0];
+  const x0Row = xRows[0];
+  const f0MolRow = stageFeedMolRows[0];
   for (let ci = 0; ci < nActive; ci++) {
     const comp = activeComps[ci];
-    reflux0KgH[comp] = L[0] * x[0][comp] * COMP_MW[comp];
-    const stage0InKg = stageFeedMol[0][comp] * COMP_MW[comp];
-    vap1KgH[comp] = NON_VOLATILE_SET.has(comp)
+    reflux0KgH[comp] = L[0] * x0Row[ci] * compMW[ci];
+    const stage0InKg = f0MolRow[ci] * compMW[ci];
+    vap1KgH[comp] = compNonVol[ci]
       ? 0
       : Math.max(0, distKgH[comp] + decanterFlowsKgH[comp] + reflux0KgH[comp] - stage0InKg);
   }
@@ -2531,9 +2964,6 @@ function solveInnerMeshColumn(params: {
     }
   }
 
-  const actualDistMoles = activeComps.reduce((s, c) => s + distMol[c], 0);
-  const actualBotMoles = activeComps.reduce((s, c) => s + botMol[c], 0);
-
   return {
     converged,
     iterations: iterUsed,
@@ -2553,6 +2983,10 @@ function solveInnerMeshColumn(params: {
     actualDOverFMole: actualDistMoles / Math.max(1e-6, totalMolesIn),
     ...(sideDrawsOut.length > 0 ? { sideDraws: sideDrawsOut } : {}),
     ...(sideCutClamped ? { sideCutClamped: true } : {}),
+    rawT: T,
+    rawXDense: xDense,
+    rawNActive: nActive,
+    materializeStages: buildStages,
   };
 }
 
@@ -3829,12 +4263,13 @@ function buildDistillCacheKey(feedsInput: DistillFeedInput[], colParams: Distill
  */
 export function solveRigorousDistillation(
   feedsInput: DistillFeedInput[],
-  colParams: DistillColumnParams
+  colParams: DistillColumnParams,
+  runtimeOpts?: DistillSolveRuntimeOptions
 ): DistillSolveResult {
   const cacheKey = buildDistillCacheKey(feedsInput, colParams);
   const cached = DISTILL_SOLVE_CACHE.get(cacheKey);
   if (cached) return cached;
-  const result = solveRigorousDistillationUncached(feedsInput, colParams);
+  const result = solveRigorousDistillationUncached(feedsInput, colParams, runtimeOpts);
   if (result.converged) {
     if (DISTILL_SOLVE_CACHE.size > 400) {
       const firstKey = DISTILL_SOLVE_CACHE.keys().next().value;
@@ -3847,7 +4282,8 @@ export function solveRigorousDistillation(
 
 function solveRigorousDistillationUncached(
   feedsInput: DistillFeedInput[],
-  colParams: DistillColumnParams
+  colParams: DistillColumnParams,
+  runtimeOpts?: DistillSolveRuntimeOptions
 ): DistillSolveResult {
   const solveStartMs = Date.now();
   const condenserType: DistillCondenserType = colParams.condenserType ?? 'total';
@@ -4279,8 +4715,95 @@ function solveRigorousDistillationUncached(
         ? clamp(sc.specValue, 0.01, totalFeedMassKgH * 0.92)
         : fallbackScFrac * totalFeedMassKgH;
       const mwGuess = stageMWMap?.get(id) ?? (sc.targetComp ? COMP_MW[sc.targetComp] : avgFeedMW) ?? avgFeedMW;
-      return { id, label, stageIdx: jIdx, phase: sc.phase, targetMolesKmolH: targetMassKgH / Math.max(2.0, mwGuess) };
+      return {
+        id,
+        label,
+        stageIdx: jIdx,
+        phase: sc.phase,
+        targetMolesKmolH: targetMassKgH / Math.max(2.0, mwGuess),
+      };
     });
+  };
+
+  const ensureStages = (sol: InnerMeshSolution): InnerMeshSolution => {
+    if (sol.stages.length === 0 && sol.materializeStages) {
+      sol.stages = sol.materializeStages();
+    }
+    return sol;
+  };
+
+  type WarmInitInput = InnerMeshSolution | DistillWarmStartState;
+  const isDistillWarmState = (w: WarmInitInput): w is DistillWarmStartState =>
+    'totalStages' in w && 'xDense' in w;
+
+  const buildWarmInitState = (
+    warmSol: WarmInitInput | undefined,
+    targetN: number
+  ): { T: ArrayLike<number>; x?: Array<Record<SimCompKey, number>>; xDense?: ArrayLike<number> } | undefined => {
+    if (!warmSol) return undefined;
+    const nAct = activeComps.length;
+    if (isDistillWarmState(warmSol)) {
+      const srcN = warmSol.totalStages;
+      if (srcN < 2 || warmSol.T.length !== srcN) return undefined;
+      const srcComps = warmSol.activeComps;
+      const sameComps =
+        srcComps.length === nAct && srcComps.every((c, i) => c === activeComps[i]);
+      if (srcN === targetN && sameComps && warmSol.xDense.length === targetN * nAct) {
+        return { T: warmSol.T, xDense: warmSol.xDense };
+      }
+      const srcNAct = srcComps.length;
+      if (srcNAct === 0 || warmSol.xDense.length !== srcN * srcNAct) return undefined;
+      const colMap = activeComps.map(c => srcComps.indexOf(c));
+      const dstT = new Float64Array(targetN);
+      const dstX = new Float64Array(targetN * nAct);
+      for (let j = 0; j < targetN; j++) {
+        const u = targetN > 1 ? (j / (targetN - 1)) * (srcN - 1) : 0;
+        const j0 = Math.floor(u);
+        const j1 = Math.min(srcN - 1, j0 + 1);
+        const f = u - j0;
+        dstT[j] = warmSol.T[j0] * (1.0 - f) + warmSol.T[j1] * f;
+        let rowSum = 0;
+        for (let ci = 0; ci < nAct; ci++) {
+          const si = colMap[ci];
+          const v = si >= 0
+            ? Math.max(0, warmSol.xDense[j0 * srcNAct + si] * (1.0 - f) + warmSol.xDense[j1 * srcNAct + si] * f)
+            : 0;
+          dstX[j * nAct + ci] = v;
+          rowSum += v;
+        }
+        if (rowSum > 1e-12) {
+          const inv = 1.0 / rowSum;
+          for (let ci = 0; ci < nAct; ci++) dstX[j * nAct + ci] *= inv;
+        }
+      }
+      return { T: dstT, xDense: dstX };
+    }
+
+    if (warmSol.rawT && warmSol.rawXDense && warmSol.rawNActive === nAct) {
+      const srcN = warmSol.rawT.length;
+      if (srcN === targetN && warmSol.rawXDense.length === targetN * nAct) {
+        return { T: warmSol.rawT, xDense: warmSol.rawXDense };
+      }
+      if (srcN >= 2 && warmSol.rawXDense.length === srcN * nAct) {
+        const dstT = new Float64Array(targetN);
+        const dstX = new Float64Array(targetN * nAct);
+        for (let j = 0; j < targetN; j++) {
+          const u = targetN > 1 ? (j / (targetN - 1)) * (srcN - 1) : 0;
+          const j0 = Math.floor(u);
+          const j1 = Math.min(srcN - 1, j0 + 1);
+          const f = u - j0;
+          dstT[j] = warmSol.rawT[j0] * (1.0 - f) + warmSol.rawT[j1] * f;
+          for (let ci = 0; ci < nAct; ci++) {
+            dstX[j * nAct + ci] = warmSol.rawXDense[j0 * nAct + ci] * (1.0 - f) + warmSol.rawXDense[j1 * nAct + ci] * f;
+          }
+        }
+        return { T: dstT, xDense: dstX };
+      }
+    }
+    if (warmSol.stages.length === targetN) {
+      return { T: warmSol.stages.map(s => s.tempC), x: warmSol.stages.map(s => s.xMol) };
+    }
+    return undefined;
   };
 
   const runMeshAt = (
@@ -4288,9 +4811,20 @@ function solveRigorousDistillationUncached(
     dfParam: number,
     dfIsMass: boolean,
     maxIterOverride?: number,
-    warmSol?: InnerMeshSolution
+    warmSol?: WarmInitInput,
+    skipStages = false
   ): InnerMeshSolution => {
-    const sideDrawsInit = buildInnerSideDraws(N);
+    const mwHintMap =
+      warmSol && !isDistillWarmState(warmSol) && warmSol.sideDraws && warmSol.sideDraws.length > 0
+        ? (() => {
+            const m = new Map<string, number>();
+            for (const sd of warmSol.sideDraws) {
+              if (sd.totalMolesKmolH > 1e-9) m.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
+            }
+            return m;
+          })()
+        : undefined;
+    const sideDrawsInit = buildInnerSideDraws(N, mwHintMap);
     const hasMassSideCut = getEffectiveSideCuts().some(
       sc => sc.specType === 'mass_kgh' || sc.specType === 's_over_f_mass'
     );
@@ -4298,67 +4832,99 @@ function solveRigorousDistillationUncached(
     const maxAllowedDMol = Math.max(1e-5, totalMolesIn * 0.996 - totalSideMolEstInit);
     let dMolTarget = clamp(dfParam * totalMolesIn, 0.0004 * totalMolesIn, maxAllowedDMol);
     let finalSideDraws = sideDrawsInit;
-    const warmInitState =
-      warmSol && warmSol.stages.length === N
-        ? { T: warmSol.stages.map(s => s.tempC), x: warmSol.stages.map(s => s.xMol) }
-        : undefined;
+    const warmInitState = buildWarmInitState(warmSol, N);
 
     if (dfIsMass || hasMassSideCut) {
       const targetMass = clamp(dfParam, 0.001, 0.995) * totalFeedMassKgH;
-      const dMol0 = dfIsMass
-        ? clamp(estInitDistMolesForMass(targetMass), 1e-5, maxAllowedDMol)
-        : dMolTarget;
-      const probe = solveInnerMeshColumn({
-        model: chosenModel,
-        N,
-        feeds: preparedFeeds,
-        totalFeedMol,
-        totalFeedMassKgH,
-        activeComps,
-        condenserType,
-        reboilerType,
-        P_stageBarA,
-        topPressKgcm2g,
-        stageDeltaP,
-        meshMurphreeEff,
-        refluxRatio: rrVal,
-        targetDistillateKmolH: dMol0,
-        sideDraws: sideDrawsInit,
-        maxIterations: hasMassSideCut ? 36 : 22,
-        initialState: warmInitState,
-      });
-      if (hasMassSideCut && probe.sideDraws && probe.sideDraws.length > 0) {
-        const mwMap = new Map<string, number>();
-        for (const sd of probe.sideDraws) {
-          if (sd.totalMolesKmolH > 1e-9) {
-            mwMap.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
+      let canUseWarmSinglePass = false;
+      if (
+        warmSol &&
+        !isDistillWarmState(warmSol) &&
+        warmSol.converged &&
+        (warmSol.rawT?.length ?? warmSol.stages.length) === N &&
+        (!hasMassSideCut || (warmSol.sideDraws && warmSol.sideDraws.length > 0))
+      ) {
+        const wDistMass =
+          activeComps.reduce((s, c) => s + warmSol.distillateKgH[c], 0) + warmSol.decanterWaterDrawKgH;
+        if (!dfIsMass || Math.abs(targetMass - wDistMass) < 0.04 * totalFeedMassKgH) {
+          canUseWarmSinglePass = true;
+          if (dfIsMass) {
+            const wDistMol = activeComps.reduce(
+              (s, c) => s + warmSol.distillateKmolH[c] + (warmSol.decanterFlowsKgH[c] || 0) / COMP_MW[c],
+              0
+            );
+            let splitMolWeightSum = 0;
+            let splitMolSum = 0;
+            for (const c of activeComps) {
+              if (NON_VOLATILE_SET.has(c) || totalFeedMol[c] <= 1e-9) continue;
+              const dCompMol = warmSol.distillateKmolH[c] + (warmSol.decanterFlowsKgH[c] || 0) / COMP_MW[c];
+              const rec = clamp(dCompMol / totalFeedMol[c], 0, 1);
+              const bw = 0.015 + rec * (1.0 - rec);
+              splitMolWeightSum += bw * totalFeedMol[c] * COMP_MW[c];
+              splitMolSum += bw * totalFeedMol[c];
+            }
+            const marginalMW = splitMolSum > 1e-9 ? splitMolWeightSum / splitMolSum : avgFeedMW;
+            dMolTarget = clamp(wDistMol + (targetMass - wDistMass) / Math.max(2.0, marginalMW), 1e-5, maxAllowedDMol);
           }
         }
-        finalSideDraws = buildInnerSideDraws(N, mwMap);
       }
-      if (dfIsMass) {
-        const probeDistMass =
-          activeComps.reduce((s, c) => s + probe.distillateKgH[c], 0) +
-          probe.decanterWaterDrawKgH;
-        let splitMolWeightSum = 0;
-        let splitMolSum = 0;
-        for (const c of activeComps) {
-          if (NON_VOLATILE_SET.has(c) || totalFeedMol[c] <= 1e-9) continue;
-          const dCompMol = probe.distillateKmolH[c] + (probe.decanterFlowsKgH[c] || 0) / COMP_MW[c];
-          const rec = clamp(dCompMol / totalFeedMol[c], 0, 1);
-          const boundaryWeight = 0.015 + rec * (1.0 - rec);
-          splitMolWeightSum += boundaryWeight * totalFeedMol[c] * COMP_MW[c];
-          splitMolSum += boundaryWeight * totalFeedMol[c];
+
+      let sol1InitState = warmInitState;
+      if (!canUseWarmSinglePass) {
+        const dMol0 = dfIsMass
+          ? clamp(estInitDistMolesForMass(targetMass), 1e-5, maxAllowedDMol)
+          : dMolTarget;
+        const probe = solveInnerMeshColumn({
+          model: chosenModel,
+          N,
+          feeds: preparedFeeds,
+          totalFeedMol,
+          totalFeedMassKgH,
+          activeComps,
+          condenserType,
+          reboilerType,
+          P_stageBarA,
+          topPressKgcm2g,
+          stageDeltaP,
+          meshMurphreeEff,
+          refluxRatio: rrVal,
+          targetDistillateKmolH: dMol0,
+          skipStageProfiles: true,
+          sideDraws: sideDrawsInit,
+          maxIterations: hasMassSideCut ? 36 : (warmInitState ? 16 : 22),
+          initialState: warmInitState,
+        });
+        if (hasMassSideCut && probe.sideDraws && probe.sideDraws.length > 0) {
+          const mwMap = new Map<string, number>();
+          for (const sd of probe.sideDraws) {
+            if (sd.totalMolesKmolH > 1e-9) {
+              mwMap.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
+            }
+          }
+          finalSideDraws = buildInnerSideDraws(N, mwMap);
         }
-        const marginalMW = splitMolSum > 1e-9 ? splitMolWeightSum / splitMolSum : avgFeedMW;
-        const estSideMolRef = finalSideDraws.reduce((s, d) => s + (d.targetMolesKmolH ?? 0), 0);
-        const capDRef = Math.max(1e-5, totalMolesIn * 0.996 - estSideMolRef);
-        dMolTarget = clamp(dMol0 + (targetMass - probeDistMass) / Math.max(2.0, marginalMW), 1e-5, capDRef);
+        if (dfIsMass) {
+          const probeDistMass =
+            activeComps.reduce((s, c) => s + probe.distillateKgH[c], 0) +
+            probe.decanterWaterDrawKgH;
+          let splitMolWeightSum = 0;
+          let splitMolSum = 0;
+          for (const c of activeComps) {
+            if (NON_VOLATILE_SET.has(c) || totalFeedMol[c] <= 1e-9) continue;
+            const dCompMol = probe.distillateKmolH[c] + (probe.decanterFlowsKgH[c] || 0) / COMP_MW[c];
+            const rec = clamp(dCompMol / totalFeedMol[c], 0, 1);
+            const boundaryWeight = 0.015 + rec * (1.0 - rec);
+            splitMolWeightSum += boundaryWeight * totalFeedMol[c] * COMP_MW[c];
+            splitMolSum += boundaryWeight * totalFeedMol[c];
+          }
+          const marginalMW = splitMolSum > 1e-9 ? splitMolWeightSum / splitMolSum : avgFeedMW;
+          const estSideMolRef = finalSideDraws.reduce((s, d) => s + (d.targetMolesKmolH ?? 0), 0);
+          const capDRef = Math.max(1e-5, totalMolesIn * 0.996 - estSideMolRef);
+          dMolTarget = clamp(dMol0 + (targetMass - probeDistMass) / Math.max(2.0, marginalMW), 1e-5, capDRef);
+        }
+        sol1InitState = buildWarmInitState(probe, N) ?? warmInitState;
       }
-      const probeInitState =
-        probe.stages.length === N
-          ? { T: probe.stages.map(s => s.tempC), x: probe.stages.map(s => s.xMol) }
-          : warmInitState;
+
       let sol1 = solveInnerMeshColumn({
         model: chosenModel,
         N,
@@ -4374,32 +4940,36 @@ function solveRigorousDistillationUncached(
         meshMurphreeEff,
         refluxRatio: rrVal,
         targetDistillateKmolH: dMolTarget,
+        skipStageProfiles: skipStages,
         sideDraws: finalSideDraws,
         maxIterations: maxIterOverride,
-        initialState: probeInitState,
+        initialState: sol1InitState,
       });
-      if (hasMassSideCut && !sol1.sideCutClamped && sol1.sideDraws && sol1.sideDraws.length > 0) {
-        const effCuts = getEffectiveSideCuts();
+
+      if ((hasMassSideCut || canUseWarmSinglePass) && !sol1.sideCutClamped) {
         let maxMassErr = 0;
         if (dfIsMass) {
           const distM = activeComps.reduce((s, c) => s + sol1.distillateKgH[c], 0) + sol1.decanterWaterDrawKgH;
           maxMassErr = Math.max(maxMassErr, Math.abs(targetMass - distM));
         }
         const mwMap2 = new Map<string, number>();
-        sol1.sideDraws.forEach((sd, idx) => {
-          if (sd.totalMolesKmolH > 1e-9) mwMap2.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
-          const sc = effCuts[idx];
-          if (sc && (sc.specType === 'mass_kgh' || sc.specType === 's_over_f_mass')) {
-            const tgtS = sc.specType === 'mass_kgh' ? sc.specValue : sc.specValue * totalFeedMassKgH;
-            maxMassErr = Math.max(maxMassErr, Math.abs(tgtS - sd.totalMassKgH));
-          }
-        });
-        if (maxMassErr > 0.0008 * totalFeedMassKgH && sol1.stages.length === N) {
-          const refinedDraws = buildInnerSideDraws(N, mwMap2);
+        if (hasMassSideCut && sol1.sideDraws && sol1.sideDraws.length > 0) {
+          const effCuts = getEffectiveSideCuts();
+          sol1.sideDraws.forEach((sd, idx) => {
+            if (sd.totalMolesKmolH > 1e-9) mwMap2.set(sd.id, sd.totalMassKgH / sd.totalMolesKmolH);
+            const sc = effCuts[idx];
+            if (sc && (sc.specType === 'mass_kgh' || sc.specType === 's_over_f_mass')) {
+              const tgtS = sc.specType === 'mass_kgh' ? sc.specValue : sc.specValue * totalFeedMassKgH;
+              maxMassErr = Math.max(maxMassErr, Math.abs(tgtS - sd.totalMassKgH));
+            }
+          });
+        }
+        if (maxMassErr > 0.0008 * totalFeedMassKgH) {
+          const refinedDraws = hasMassSideCut ? buildInnerSideDraws(N, mwMap2) : finalSideDraws;
           let dMol2 = dMolTarget;
           if (dfIsMass) {
             const distM = activeComps.reduce((s, c) => s + sol1.distillateKgH[c], 0) + sol1.decanterWaterDrawKgH;
-            const dTotMol = activeComps.reduce((s, c) => s + sol1.distillateKmolH[c], 0);
+            const dTotMol = activeComps.reduce((s, c) => s + sol1.distillateKmolH[c] + (sol1.decanterFlowsKgH[c] || 0) / COMP_MW[c], 0);
             const dMw = dTotMol > 1e-9 ? distM / dTotMol : avgFeedMW;
             const sideMol2 = refinedDraws.reduce((s, d) => s + (d.targetMolesKmolH ?? 0), 0);
             const cap2 = Math.max(1e-5, totalMolesIn * 0.996 - sideMol2);
@@ -4420,14 +4990,16 @@ function solveRigorousDistillationUncached(
             meshMurphreeEff,
             refluxRatio: rrVal,
             targetDistillateKmolH: dMol2,
+            skipStageProfiles: skipStages,
             sideDraws: refinedDraws,
             maxIterations: maxIterOverride,
-            initialState: { T: sol1.stages.map(s => s.tempC), x: sol1.stages.map(s => s.xMol) },
+            initialState: buildWarmInitState(sol1, N),
           });
         }
       }
       return sol1;
     }
+
     return solveInnerMeshColumn({
       model: chosenModel,
       N,
@@ -4443,6 +5015,7 @@ function solveRigorousDistillationUncached(
       meshMurphreeEff,
       refluxRatio: rrVal,
       targetDistillateKmolH: dMolTarget,
+      skipStageProfiles: skipStages,
       sideDraws: finalSideDraws,
       maxIterations: maxIterOverride,
       initialState: warmInitState,
@@ -4586,7 +5159,8 @@ function solveRigorousDistillationUncached(
   const solveSingleVary = (
     spec: DistillDesignSpec,
     fixedRR: number,
-    fixedDF: number
+    fixedDF: number,
+    warmSeed?: WarmInitInput
   ): { bestParam: number; sol: InnerMeshSolution; evals: number } => {
     const isDfVary = spec.varyParam === 'd_over_f';
     const minCompMW = activeComps.reduce((m, c) => Math.min(m, COMP_MW[c] || 18), Infinity);
@@ -4605,8 +5179,38 @@ function solveRigorousDistillationUncached(
       const dMass = activeComps.reduce((s, c) => s + sol.distillateKgH[c], 0) + sol.decanterWaterDrawKgH;
       return clamp(dMass / Math.max(1e-9, totalFeedMassKgH), 0.0005, 0.9995);
     };
-    const evalAt = (pVal: number) =>
-      isDfVary ? runMeshAt(fixedRR, pVal, false) : runMeshAt(pVal, fixedDF, dfIsMassMode);
+
+    const evalHistory: Array<{ p: number; sol: InnerMeshSolution }> = [];
+    const getWarmForParam = (pVal: number): WarmInitInput | undefined => {
+      let bestWarm: InnerMeshSolution | undefined;
+      let bestDist = Infinity;
+      for (const h of evalHistory) {
+        if (!h.sol.converged) continue;
+        const d = Math.abs(h.p - pVal);
+        if (d < bestDist) {
+          bestDist = d;
+          bestWarm = h.sol;
+        }
+      }
+      if (!bestWarm) {
+        for (const h of evalHistory) {
+          const d = Math.abs(h.p - pVal);
+          if (d < bestDist) {
+            bestDist = d;
+            bestWarm = h.sol;
+          }
+        }
+      }
+      return bestWarm ?? warmSeed ?? runtimeOpts?.warmStartState;
+    };
+
+    const evalAt = (pVal: number, maxIterCap?: number) => {
+      const sol = isDfVary
+        ? runMeshAt(fixedRR, pVal, false, maxIterCap, getWarmForParam(pVal), true)
+        : runMeshAt(pVal, fixedDF, dfIsMassMode, maxIterCap, getWarmForParam(pVal), true);
+      evalHistory.push({ p: pVal, sol });
+      return sol;
+    };
     const finalizeVary = (pVal: number, sol: InnerMeshSolution, ev: number) => ({
       bestParam: toReportedParam(pVal, sol),
       sol,
@@ -4614,43 +5218,62 @@ function solveRigorousDistillationUncached(
     });
 
     const effErr = (absF: number, s: InnerMeshSolution): number => (s.converged ? absF : absF + 50.0);
+    const warmSource = warmSeed ?? runtimeOpts?.warmStartState;
+    const warmSameN = warmSource
+      ? isDistillWarmState(warmSource)
+        ? warmSource.totalStages === N
+        : (warmSource.rawT?.length ?? warmSource.stages.length) === N
+      : false;
+    const warmGuessParam = warmSource && warmSameN
+      ? isDfVary
+        ? (isDistillWarmState(warmSource) ? warmSource.actualDFMole : warmSource.actualDOverFMole)
+        : (isDistillWarmState(warmSource) ? warmSource.actualRR : warmSource.actualRefluxRatio)
+      : undefined;
+
     let seedBest: { x: number; sol: InnerMeshSolution; err: number; evals: number } | null = null;
-    if (isDfVary && (spec.metric === 'purity_wt_pct' || (spec.metric === 'recovery_pct' && spec.streamTarget === 'distillate'))) {
+    if (isDfVary && (spec.metric === 'purity_wt_pct' || (spec.metric === 'recovery_pct' && spec.streamTarget === 'distillate') || (warmGuessParam !== undefined && Number.isFinite(warmGuessParam)))) {
       const compMass = totalFeedKgH[spec.component] || 0;
       const wFeed = compMass / Math.max(1e-9, totalFeedMassKgH);
       const compMW = COMP_MW[spec.component] || avgFeedMW;
-      let dfGuess = fixedDF;
-      if (spec.metric === 'recovery_pct') {
-        const recFrac = clamp(spec.targetValue / 100.0, 1e-4, 0.9999);
-        const kTarget = K_quick[spec.component] || 1.0;
-        let lighterMol = 0;
-        for (const c of activeComps) {
-          if (c !== spec.component && (K_quick[c] || 0) > kTarget * 1.15) {
-            lighterMol += totalFeedMol[c] || 0;
+      let dfGuess = warmGuessParam !== undefined && Number.isFinite(warmGuessParam) ? warmGuessParam : fixedDF;
+      if (warmGuessParam === undefined || !Number.isFinite(warmGuessParam)) {
+        if (spec.metric === 'recovery_pct') {
+          const recFrac = clamp(spec.targetValue / 100.0, 1e-4, 0.9999);
+          const kTarget = K_quick[spec.component] || 1.0;
+          let lighterMol = 0;
+          for (const c of activeComps) {
+            if (c !== spec.component && (K_quick[c] || 0) > kTarget * 1.15) {
+              lighterMol += totalFeedMol[c] || 0;
+            }
           }
-        }
-        const dMassEst = compMass * recFrac;
-        dfGuess = (lighterMol + dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
-      } else {
-        const wTgt = clamp(spec.targetValue / 100.0, 1e-5, 0.99999);
-        const otherMass = Math.max(0, totalFeedMassKgH - compMass);
-        const otherMol = Math.max(0, totalMolesIn - (totalFeedMol[spec.component] || 0));
-        const otherMW = otherMol > 1e-9 ? otherMass / otherMol : avgFeedMW;
-        if (spec.streamTarget === 'bottoms') {
-          if (wFeed < wTgt) {
-            const dMassEst = Math.max(0, totalFeedMassKgH - compMass / Math.max(1e-6, wTgt));
-            dfGuess = (dMassEst / Math.max(2.0, otherMW)) / Math.max(1e-9, totalMolesIn);
+          const dMassEst = compMass * recFrac;
+          dfGuess = (lighterMol + dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
+        } else {
+          const wTgt = clamp(spec.targetValue / 100.0, 1e-5, 0.99999);
+          const otherMass = Math.max(0, totalFeedMassKgH - compMass);
+          const otherMol = Math.max(0, totalMolesIn - (totalFeedMol[spec.component] || 0));
+          const otherMW = otherMol > 1e-9 ? otherMass / otherMol : avgFeedMW;
+          if (spec.streamTarget === 'bottoms') {
+            if (wFeed < wTgt) {
+              const dMassEst = Math.max(0, totalFeedMassKgH - compMass / Math.max(1e-6, wTgt));
+              dfGuess = (dMassEst / Math.max(2.0, otherMW)) / Math.max(1e-9, totalMolesIn);
+            } else {
+              const dMassEst = Math.max(0, totalFeedMassKgH - otherMass / Math.max(1e-6, 1.0 - wTgt));
+              dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
+            }
           } else {
-            const dMassEst = Math.max(0, totalFeedMassKgH - otherMass / Math.max(1e-6, 1.0 - wTgt));
+            const dMassEst = compMass / Math.max(1e-6, wTgt);
             dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
           }
-        } else {
-          const dMassEst = compMass / Math.max(1e-6, wTgt);
-          dfGuess = (dMassEst / Math.max(2.0, compMW)) / Math.max(1e-9, totalMolesIn);
         }
       }
       const remImp = Math.max(1e-4, 100 - spec.targetValue);
-      const fastAcceptTol = spec.metric === 'recovery_pct' ? 0.04 : Math.min(2e-3, remImp * 0.15);
+      const fastAcceptTol =
+        spec.metric === 'impurity_wt_ppm'
+          ? Math.max(0.05, spec.targetValue * 1e-4)
+          : spec.metric === 'recovery_pct'
+            ? 0.04
+            : Math.min(2e-3, remImp * 0.15);
       const xG = clamp(dfGuess, lo, hi);
       const solG = evalAt(xG);
       const fG = evalSpecMetric(spec, solG, totalFeedKgH) - spec.targetValue;
@@ -4675,6 +5298,7 @@ function solveRigorousDistillationUncached(
       let xCurrS = clamp(xG + (xG + step0 <= hi ? step0 : -step0), lo, hi);
       let usedEv = 1;
       let boundaryHitCount = 0;
+      let triedNegProbe = false;
       for (let st = 0; st < 8; st++) {
         if (Date.now() - solveStartMs > 3500) break;
         if (Math.abs(xCurrS - xPrevS) < 1e-7) break;
@@ -4700,11 +5324,17 @@ function solveRigorousDistillationUncached(
           if (hiB - loB < 1e-5) break;
           nextClamped = st % 3 === 2 || sec <= loB || sec >= hiB ? mid : 0.78 * sec + 0.22 * mid;
           if (fC < 0) { fBHi *= 0.5; } else { fBLo *= 0.5; }
+        } else if (st === 0 && !triedNegProbe && fC < fPrevS && fG < 0) {
+          triedNegProbe = true;
+          nextClamped = clamp(xG - step0, lo, hi);
         } else {
+          if (triedNegProbe && st === 1 && fC < fG && fG < 0) {
+            break;
+          }
           const denom = fC - fPrevS;
           if (Math.abs(denom) < 1e-8) break;
           const rawNext = xCurrS - (fC * (xCurrS - xPrevS)) / denom;
-          nextClamped = clamp(rawNext, Math.max(lo, xCurrS - 0.08), Math.min(hi, xCurrS + 0.08));
+          nextClamped = clamp(rawNext, Math.max(lo, xCurrS - 0.025), Math.min(hi, xCurrS + 0.025));
           if (nextClamped <= lo + 1e-9 || nextClamped >= hi - 1e-9) {
             boundaryHitCount++;
             if (boundaryHitCount >= 2) {
@@ -4716,11 +5346,35 @@ function solveRigorousDistillationUncached(
         fPrevS = fC;
         xCurrS = nextClamped;
       }
-      const seedAcceptTol = spec.metric === 'recovery_pct' ? 0.12 : Math.min(0.025, remImp * 0.35);
+      const seedAcceptTol =
+        spec.metric === 'impurity_wt_ppm'
+          ? Math.max(0.5, spec.targetValue * 1e-3)
+          : spec.metric === 'recovery_pct'
+            ? 0.12
+            : Math.min(0.025, remImp * 0.35);
       if (bestErrS <= seedAcceptTol && bestSolS.converged) {
         return finalizeVary(bestXS, bestSolS, usedEv);
       }
       seedBest = { x: bestXS, sol: bestSolS, err: bestErrS, evals: usedEv };
+    }
+
+    let warmSeedEvals = 0;
+    if (!isDfVary && warmGuessParam !== undefined && Number.isFinite(warmGuessParam)) {
+      const xW = clamp(warmGuessParam, lo, hi);
+      const solW = evalAt(xW);
+      warmSeedEvals = 1;
+      const fW = evalSpecMetric(spec, solW, totalFeedKgH) - spec.targetValue;
+      const remImpW = Math.max(1e-4, 100 - spec.targetValue);
+      const tolW =
+        spec.metric === 'impurity_wt_ppm'
+          ? Math.max(0.05, spec.targetValue * 1e-4)
+          : spec.metric === 'recovery_pct'
+            ? Math.min(0.04, remImpW * 0.4)
+            : Math.min(2e-3, remImpW * 0.15);
+      if (solW.converged && Math.abs(fW) <= tolW) {
+        return finalizeVary(xW, solW, warmSeedEvals);
+      }
+      seedBest = { x: xW, sol: solW, err: effErr(Math.abs(fW), solW), evals: warmSeedEvals };
     }
 
     const x0 = lo;
@@ -4782,55 +5436,101 @@ function solveRigorousDistillationUncached(
       return finalizeVary(bestX, bestSol, evals);
     }
 
-    // Monotonic unreachable spec fast-exit (check midpoint once instead of 15-eval grid+golden)
-    const xMidCheck = 0.5 * (lo + hi);
-    const solMidCheck = evalAt(xMidCheck);
-    evals++;
-    const fMidCheck = evalSpecMetric(spec, solMidCheck, totalFeedKgH) - spec.targetValue;
-    if (Math.abs(fMidCheck) < bestErr) {
-      bestErr = Math.abs(fMidCheck);
-      bestX = xMidCheck;
-      bestSol = solMidCheck;
-    }
-    if (f0 * fMidCheck > 0 && (fMidCheck - f0) * (f1 - fMidCheck) >= -1e-3) {
-      return finalizeVary(bestX, bestSol, evals);
-    }
+    const hasGoodSeed = Boolean(
+      seedBest &&
+      seedBest.sol.converged &&
+      seedBest.err < Math.min(err0, err1) - 0.01
+    );
 
-    const nGrid = 7;
-    let bestIdx = 0;
-    const gridX: number[] = [];
-    const gridErr: number[] = [];
-    for (let g = 0; g < nGrid; g++) {
-      if (Date.now() - solveStartMs > 3500) break;
-      const xg = lo + ((hi - lo) * g) / (nGrid - 1);
-      const sg = g === 0 ? sol0 : g === nGrid - 1 ? sol1 : evalAt(xg);
-      if (g > 0 && g < nGrid - 1) evals++;
-      const fg = evalSpecMetric(spec, sg, totalFeedKgH) - spec.targetValue;
-      const err = spec.metric === 'impurity_wt_ppm' && fg <= 0 ? Math.abs(fg) * 0.2 : Math.abs(fg);
-      gridX.push(xg);
-      gridErr.push(err);
-      if (err < bestErr) {
-        bestErr = err;
-        bestX = xg;
-        bestSol = sg;
-        bestIdx = g;
+    if (!hasGoodSeed) {
+      // Monotonic unreachable spec fast-exit (check midpoint once instead of 15-eval grid+golden)
+      const xMidCheck = 0.5 * (lo + hi);
+      const solMidCheck = evalAt(xMidCheck);
+      evals++;
+      const fMidCheck = evalSpecMetric(spec, solMidCheck, totalFeedKgH) - spec.targetValue;
+      const errMidCheck = effErr(Math.abs(fMidCheck), solMidCheck);
+      if (errMidCheck < bestErr) {
+        bestErr = errMidCheck;
+        bestX = xMidCheck;
+        bestSol = solMidCheck;
+      }
+      if (f0 * fMidCheck > 0 && (fMidCheck - f0) * (f1 - fMidCheck) >= -1e-3) {
+        return finalizeVary(bestX, bestSol, evals);
       }
     }
-    let subLo = gridX[Math.max(0, bestIdx - 1)];
-    let subHi = gridX[Math.min(nGrid - 1, bestIdx + 1)];
-    for (let k = 0; k < 5; k++) {
-      if (Date.now() - solveStartMs > 3500) break;
-      const m1 = subLo + 0.382 * (subHi - subLo);
-      const m2 = subLo + 0.618 * (subHi - subLo);
-      const sM1 = evalAt(m1);
-      const sM2 = evalAt(m2);
-      evals += 2;
-      const e1 = Math.abs(evalSpecMetric(spec, sM1, totalFeedKgH) - spec.targetValue);
-      const e2 = Math.abs(evalSpecMetric(spec, sM2, totalFeedKgH) - spec.targetValue);
-      if (e1 < bestErr) { bestErr = e1; bestX = m1; bestSol = sM1; }
-      if (e2 < bestErr) { bestErr = e2; bestX = m2; bestSol = sM2; }
-      if (e1 <= e2) subHi = m2;
-      else subLo = m1;
+
+    const searchIterCap = hasGoodSeed ? undefined : Math.min(135, Math.round(75 + N * 0.9));
+    let subLo: number;
+    let subHi: number;
+    let bestCameFromCapped = false;
+    if (hasGoodSeed && seedBest) {
+      subLo = Math.max(lo, seedBest.x - 0.025);
+      subHi = Math.min(hi, seedBest.x + 0.025);
+    } else {
+      const nGrid = 7;
+      let bestIdx = 0;
+      const gridX: number[] = [];
+      for (let g = 0; g < nGrid; g++) {
+        if (Date.now() - solveStartMs > 3500) break;
+        const xg = lo + ((hi - lo) * g) / (nGrid - 1);
+        const sg = g === 0 ? sol0 : g === nGrid - 1 ? sol1 : evalAt(xg, searchIterCap);
+        if (g > 0 && g < nGrid - 1) evals++;
+        const fg = evalSpecMetric(spec, sg, totalFeedKgH) - spec.targetValue;
+        const rawErr = spec.metric === 'impurity_wt_ppm' && fg <= 0 ? Math.abs(fg) * 0.2 : Math.abs(fg);
+        const err = effErr(rawErr, sg);
+        gridX.push(xg);
+        if (err < bestErr) {
+          bestErr = err;
+          bestX = xg;
+          bestSol = sg;
+          bestIdx = g;
+          bestCameFromCapped = g > 0 && g < nGrid - 1 && searchIterCap !== undefined;
+        }
+      }
+      subLo = gridX[Math.max(0, bestIdx - 1)] ?? lo;
+      subHi = gridX[Math.min(gridX.length - 1, bestIdx + 1)] ?? hi;
+    }
+
+    const invPhi = 0.61803398875;
+    const invPhi2 = 0.38196601125;
+    const evalGoldErr = (xTry: number) => {
+      const s = evalAt(xTry, searchIterCap);
+      evals++;
+      const fg = evalSpecMetric(spec, s, totalFeedKgH) - spec.targetValue;
+      const rawErr = spec.metric === 'impurity_wt_ppm' && fg <= 0 ? Math.abs(fg) * 0.2 : Math.abs(fg);
+      const err = effErr(rawErr, s);
+      if (err < bestErr) {
+        bestErr = err;
+        bestX = xTry;
+        bestSol = s;
+        bestCameFromCapped = searchIterCap !== undefined;
+      }
+      return err;
+    };
+    let m1 = subLo + invPhi2 * (subHi - subLo);
+    let m2 = subLo + invPhi * (subHi - subLo);
+    let e1 = evalGoldErr(m1);
+    let e2 = evalGoldErr(m2);
+    for (let k = 0; k < 6; k++) {
+      if (Date.now() - solveStartMs > 3500 || subHi - subLo < 2e-4) break;
+      if (e1 <= e2) {
+        subHi = m2;
+        m2 = m1;
+        e2 = e1;
+        m1 = subLo + invPhi2 * (subHi - subLo);
+        e1 = evalGoldErr(m1);
+      } else {
+        subLo = m1;
+        m1 = m2;
+        e1 = e2;
+        m2 = subLo + invPhi * (subHi - subLo);
+        e2 = evalGoldErr(m2);
+      }
+    }
+    if (bestCameFromCapped && !bestSol.converged) {
+      const fullBest = evalAt(bestX);
+      evals++;
+      bestSol = fullBest;
     }
     return finalizeVary(bestX, bestSol, evals);
   };
@@ -4847,6 +5547,7 @@ function solveRigorousDistillationUncached(
     stageCount: number,
     sc: DistillSideCutConfig
   ): number => {
+    ensureStages(sol);
     if (stageCount < 4) return clamp(sc.stage || 2, 2, Math.max(2, stageCount - 1));
     const comp = sc.targetComp ?? defaultSideCutComp;
     const isMinimize = sc.specType === 'impurity_ppm';
@@ -4880,6 +5581,7 @@ function solveRigorousDistillationUncached(
     stageCount: number,
     fallbackNf: number
   ): number => {
+    ensureStages(sol);
     let bestNf = fallbackNf;
     let minCompD = Infinity;
     const feedTotM = Math.max(1e-9, totalMolesIn);
@@ -4899,6 +5601,7 @@ function solveRigorousDistillationUncached(
   };
 
   const estimateDiamAndTac = (sol: InnerMeshSolution, stageCount: number) => {
+    ensureStages(sol);
     let diamM = 0.45;
     for (const st of sol.stages) {
       const tK = st.tempC + 273.15;
@@ -5310,14 +6013,30 @@ function solveRigorousDistillationUncached(
       rrNow: number,
       dfMoleCenter: number,
       stageCountNow: number,
-      tightSpan: boolean
+      tightSpan: boolean,
+      warmSeed?: WarmInitInput
     ): { bestDfMole: number; sol: InnerMeshSolution; metrics: ReturnType<typeof evalDesignMetrics>; evals: number } => {
       const meshIterLim = clamp(Math.round(68 + stageCountNow * 0.72), 95, 150);
       const safeCenter = clamp(dfMoleCenter, minDfMolFloor, dfCapMax);
       let ev = 0;
+      const evalPts: Array<{ xDf: number; sol: InnerMeshSolution }> = [];
+      const getWarmDf = (xDf: number): WarmInitInput | undefined => {
+        let bestW: InnerMeshSolution | undefined;
+        let bestDist = Infinity;
+        for (const p of evalPts) {
+          if (!p.sol.converged) continue;
+          const d = Math.abs(xDf - p.xDf);
+          if (d < bestDist) {
+            bestDist = d;
+            bestW = p.sol;
+          }
+        }
+        return bestW ?? warmSeed ?? runtimeOpts?.warmStartState;
+      };
 
       const scoreEval = (xDf: number) => {
-        const sol = runMeshAt(rrNow, xDf, false, meshIterLim);
+        const sol = runMeshAt(rrNow, xDf, false, meshIterLim, getWarmDf(xDf), true);
+        evalPts.push({ xDf, sol });
         ev++;
         const m = evalDesignMetrics(sol);
         const worstNorm = Math.max(m.normT, m.normB);
@@ -5475,6 +6194,7 @@ function solveRigorousDistillationUncached(
     let rollingDfMole = initDfMole;
     let learnedStageFactor = alphaUw < 2.0 ? 1.12 : 1.0;
     let learnedFeedFrac = feedFrac;
+    let prevPackWarmSol: WarmInitInput | undefined = runtimeOpts?.warmStartState;
     const optBudgetMs = nMin > 25 ? 8000 : 4500;
 
     const evalOneCandidate = (
@@ -5515,7 +6235,7 @@ function solveRigorousDistillationUncached(
       syncSideStageForN(nCand);
       ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
 
-      let rDesign = evaluateBalancedDf(opRR, rollingDfMole, nCand, candIdx > 0);
+      let rDesign = evaluateBalancedDf(opRR, rollingDfMole, nCand, candIdx > 0, prevPackWarmSol);
       totalEvals += rDesign.evals;
       let bestStageN = nCand;
       let bestNf = nfCand;
@@ -5561,7 +6281,7 @@ function solveRigorousDistillationUncached(
         syncSideStageForN(nCand);
         ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
         const escSeed = 0.5 * ((bestR.sol.converged ? bestR.bestDfMole : rDesign.bestDfMole) + initDfMole);
-        const rNext = evaluateBalancedDf(opRR, escSeed, nCand, true);
+        const rNext = evaluateBalancedDf(opRR, escSeed, nCand, true, refSol);
         totalEvals += rNext.evals;
         rDesign = rNext;
         if (rNext.sol.converged && (!bestR.sol.converged || rNext.metrics.penalty <= bestR.metrics.penalty + 1e-4)) {
@@ -5582,7 +6302,7 @@ function solveRigorousDistillationUncached(
           defaultFeedStage = profNf;
           syncSideStageForN(bestStageN);
           ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
-          const pol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true);
+          const pol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true, bestR.sol);
           totalEvals += pol.evals;
           if (pol.sol.converged && pol.metrics.penalty < bestR.metrics.penalty - 1e-4) {
             bestR = pol;
@@ -5598,13 +6318,14 @@ function solveRigorousDistillationUncached(
           defaultFeedStage = bestNf;
           scOverrideBox.val = { ...scOverrideBox.val, stage: optSc };
           ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
-          const scPol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true);
+          const scPol = evaluateBalancedDf(opRR, bestR.bestDfMole, bestStageN, true, bestR.sol);
           totalEvals += scPol.evals;
           if (scPol.sol.converged) bestR = scPol;
         }
       }
 
       if (bestR.sol.converged) {
+        prevPackWarmSol = bestR.sol;
         rollingDfMole = bestR.bestDfMole;
         const profBest = findBestFeedStageFromProfile(bestR.sol, bestStageN, bestNf);
         learnedFeedFrac = clamp(
@@ -5727,13 +6448,14 @@ function solveRigorousDistillationUncached(
     }
     ({ pBarArr: P_stageBarA, prepFeeds: preparedFeeds } = buildStageFeeds(N, defaultFeedStage, true));
     if (!chosenPack.sol.converged) {
-      const fullSol = runMeshAt(chosenPack.opRR, chosenPack.dfMole, false);
+      const fullSol = runMeshAt(chosenPack.opRR, chosenPack.dfMole, false, undefined, chosenPack.sol, false);
       if (fullSol.converged) {
         chosenPack.sol = fullSol;
         solvedRR = fullSol.actualRefluxRatio;
         solvedDF = fullSol.actualDOverFMass;
       }
     }
+    ensureStages(chosenPack.sol);
 
     return {
       chosenPack,
@@ -5825,7 +6547,8 @@ function solveRigorousDistillationUncached(
     return { bestP, bestSol, evals };
   };
 
-  const executeMainModeSolve = (): InnerMeshSolution => {
+  const executeMainModeSolve = (seedWarmSol?: WarmInitInput): InnerMeshSolution => {
+    const effWarm = seedWarmSol ?? runtimeOpts?.warmStartState;
     if (isOpenOrSemiOpen) {
       const runOpenMesh = (rrVal: number, qRebKcalH: number): InnerMeshSolution =>
         solveOpenOrSemiOpenMeshColumn({
@@ -6056,13 +6779,13 @@ function solveRigorousDistillationUncached(
       ? `✓ AI 다중후보(${metCount}/${optOut.candidateList.length} 수렴 · TAC 최소) 설계 완료 (N=${N}단 · 피드 ${defaultFeedStage}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`
       : `⚠ 목표 스펙 일부 미달 — 진단 가이드를 확인하세요 (N=${N}단 · RR=${finalSol.actualRefluxRatio.toFixed(2)})`;
   } else if (s1 && (!s2 || !dofValid)) {
-    const r1 = solveSingleVary(s1, solvedRR, solvedDF);
+    const r1 = solveSingleVary(s1, solvedRR, solvedDF, effWarm);
     outerIters = r1.evals;
     finalSol = r1.sol;
     if (s1.varyParam === 'd_over_f') solvedDF = r1.bestParam;
     else solvedRR = r1.bestParam;
   } else if (!s1 && s2) {
-    const r2 = solveSingleVary(s2, solvedRR, solvedDF);
+    const r2 = solveSingleVary(s2, solvedRR, solvedDF, effWarm);
     outerIters = r2.evals;
     finalSol = r2.sol;
     if (s2.varyParam === 'd_over_f') solvedDF = r2.bestParam;
@@ -6141,9 +6864,24 @@ function solveRigorousDistillationUncached(
       let dfSeed = dfMolSeed0;
       let totalEv = 0;
 
-      const evalBestDfForRR = (rrTry: number, centerDfMol: number) => {
+      const evalBestDfForRR = (rrTry: number, centerDfMol: number, warmSeed?: WarmInitInput) => {
+        const evalPts: Array<{ xDf: number; sol: InnerMeshSolution }> = [];
+        const getWarmForDf = (xDf: number): WarmInitInput | undefined => {
+          let bestW: InnerMeshSolution | undefined;
+          let bestDist = Infinity;
+          for (const p of evalPts) {
+            if (!p.sol.converged) continue;
+            const d = Math.abs(xDf - p.xDf);
+            if (d < bestDist) {
+              bestDist = d;
+              bestW = p.sol;
+            }
+          }
+          return bestW ?? warmSeed;
+        };
         const evalPt = (xDf: number) => {
-          const sol = runMeshAt(rrTry, xDf, false, meshIterLim);
+          const sol = runMeshAt(rrTry, xDf, false, meshIterLim, getWarmForDf(xDf), true);
+          evalPts.push({ xDf, sol });
           totalEv++;
           const d1 = normDeficit(s1!, sol, tol1);
           const d2 = normDeficit(s2!, sol, tol2);
@@ -6214,14 +6952,14 @@ function solveRigorousDistillationUncached(
 
       let rrLo = 0.22;
       let rrHi = 45.0;
-      const lowCheck = evalBestDfForRR(rrLo, dfSeed);
+      const lowCheck = evalBestDfForRR(rrLo, dfSeed, effWarm);
       dfSeed = lowCheck.bestD;
       if (lowCheck.bestWorst <= 0.1) {
         solvedRR = rrLo;
         solvedDF = lowCheck.bestSolD.actualDOverFMass;
         finalSol = lowCheck.bestSolD;
       } else {
-        const hiCheck = evalBestDfForRR(rrHi, dfSeed);
+        const hiCheck = evalBestDfForRR(rrHi, dfSeed, lowCheck.bestSolD);
         if (hiCheck.bestWorst > 1.0) {
           solvedRR = rrHi;
           solvedDF = hiCheck.bestSolD.actualDOverFMass;
@@ -6232,7 +6970,7 @@ function solveRigorousDistillationUncached(
           for (let step = 0; step < 7; step++) {
             if (Date.now() - solveStartMs > 4200) break;
             const rrMid = Math.sqrt(rrLo * rrHi);
-            const midPack = evalBestDfForRR(rrMid, bestPack.bestD);
+            const midPack = evalBestDfForRR(rrMid, bestPack.bestD, bestPack.bestSolD);
             if (midPack.bestWorst <= 1.0) {
               rrHi = rrMid;
               bestRR = rrMid;
@@ -6253,15 +6991,15 @@ function solveRigorousDistillationUncached(
     let curRR = solvedRR;
     let curDF = solvedDF;
     let totalEv = 0;
-    let lastSol = runMeshAt(curRR, curDF, dfIsMassMode);
+    let lastSol = runMeshAt(curRR, curDF, dfIsMassMode, undefined, effWarm, true);
     for (let pass = 0; pass < 3; pass++) {
       if (Date.now() - solveStartMs > 1200) break;
-      const r1 = solveSingleVary(s1, curRR, curDF);
+      const r1 = solveSingleVary(s1, curRR, curDF, lastSol);
       totalEv += r1.evals;
       if (s1.varyParam === 'd_over_f') curDF = r1.bestParam;
       else curRR = r1.bestParam;
 
-      const r2 = solveSingleVary(s2, curRR, curDF);
+      const r2 = solveSingleVary(s2, curRR, curDF, r1.sol);
       totalEv += r2.evals;
       if (s2.varyParam === 'd_over_f') curDF = r2.bestParam;
       else curRR = r2.bestParam;
@@ -6272,7 +7010,7 @@ function solveRigorousDistillationUncached(
     outerIters = totalEv;
     finalSol = lastSol;
   } else {
-    finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode);
+    finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode, undefined, effWarm);
   }
   return finalSol!;
   };
@@ -6290,7 +7028,7 @@ function solveRigorousDistillationUncached(
       const optSc = pickBestSideCutStage(finalSol, N, primarySideCut);
       if (optSc !== (scOverrideBox.val?.stage ?? primarySideCut.stage)) {
         scOverrideBox.val = { ...scOverrideBox.val, stage: optSc };
-        finalSol = executeMainModeSolve();
+        finalSol = executeMainModeSolve(finalSol);
       }
     }
 
@@ -6306,9 +7044,9 @@ function solveRigorousDistillationUncached(
       const evalAtSF = (sfVal: number): { val: number; err: number; sol: InnerMeshSolution } => {
         scOverrideBox.val = { stage: effScStage, specType: 's_over_f_mass', specValue: sfVal };
         if (hasOuterSpec && !isDesignStagesMode) {
-          finalSol = executeMainModeSolve();
+          finalSol = executeMainModeSolve(prevWarmScSol);
         } else {
-          finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode, undefined, prevWarmScSol);
+          finalSol = runMeshAt(solvedRR, solvedDF, dfIsMassMode, undefined, prevWarmScSol, true);
         }
         if (finalSol.converged) prevWarmScSol = finalSol;
         const val = evalSideCutMetric(finalSol, primarySideCut);
@@ -6457,6 +7195,8 @@ function solveRigorousDistillationUncached(
       summary: `${met ? '달성' : '근접'}: ${actual.toFixed(decDigits)} ${unitStr} (${spec.varyParam === 'd_over_f' ? `D/F=${pSolved.toFixed(3)}` : `RR=${pSolved.toFixed(2)}`})`,
     };
   };
+
+  ensureStages(finalSol);
 
   // 최적 공급단 추천 (주 피드 조성과 단별 액상 조성 편차가 최소인 단 탐색)
   let bestStage = defaultFeedStage;
@@ -6906,6 +7646,18 @@ function solveRigorousDistillationUncached(
       : {}),
     diagnostics: buildDiagnostics(),
     stages: finalSol.stages,
+    warmState:
+      finalSol.converged && finalSol.rawT && finalSol.rawXDense
+        ? {
+            totalStages: N,
+            feedStage: defaultFeedStage,
+            actualRR: finalSol.actualRefluxRatio,
+            actualDFMole: finalSol.actualDOverFMole,
+            activeComps: [...activeComps],
+            T: new Float64Array(finalSol.rawT),
+            xDense: new Float64Array(finalSol.rawXDense),
+          }
+        : undefined,
   };
 }
 

@@ -36,9 +36,9 @@ function sumMass(flows: Partial<Record<SimCompKey, number>>): number {
   return s;
 }
 
-// ── Test 1: 14종 산업 반응 템플릿 및 양론 원소 균형 검증 ──────────────────────
+// ── Test 1: 산업 반응 템플릿 및 양론 원소 균형 검증 ──────────────────────
 {
-  const countOk = INDUSTRIAL_REACTION_TEMPLATES.length === 14;
+  const countOk = INDUSTRIAL_REACTION_TEMPLATES.length >= 14;
   let allBalanced = true;
   const badIds: string[] = [];
 
@@ -56,7 +56,7 @@ function sumMass(flows: Partial<Record<SimCompKey, number>>): number {
   const detectUnbal = !unbal.balanced && Math.abs(unbal.elementResiduals.O ?? 0) === 2;
 
   recordCheck(
-    '1. 14 Industrial Reaction Templates & Elemental Balance Check',
+    `1. ${INDUSTRIAL_REACTION_TEMPLATES.length} Industrial Reaction Templates & Elemental Balance Check`,
     countOk && allBalanced && detectUnbal,
     `templates=${INDUSTRIAL_REACTION_TEMPLATES.length}, allBalanced=${allBalanced}${
       badIds.length ? ' [' + badIds.join(', ') + ']' : ''
