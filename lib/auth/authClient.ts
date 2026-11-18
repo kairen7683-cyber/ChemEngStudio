@@ -8,6 +8,7 @@ export interface UserProfile {
   display_name: string;
   role: 'admin' | 'user';
   status: 'active' | 'pending' | 'disabled';
+  allowed_plants?: string[] | null;
   daily_ai_count?: number;
   last_login_at?: string | null;
   created_at?: string;
@@ -277,6 +278,7 @@ export async function fetchAuthStatus(): Promise<AuthStatusResponse> {
             display_name: '로컬 개발자',
             role: 'admin',
             status: 'active',
+            allowed_plants: null,
           },
         };
       }
@@ -444,7 +446,8 @@ export async function adminCreateUser(payload: {
   display_name: string;
   password: string;
   role: 'admin' | 'user';
-}): Promise<void> {
+  allowed_plants?: string[] | null;
+}): Promise<{ ok?: boolean; user_id?: number; user?: UserProfile }> {
   const res = await fetch('/api/admin/users', {
     method: 'POST',
     credentials: 'include',
@@ -453,6 +456,7 @@ export async function adminCreateUser(payload: {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || '사용자 생성 실패');
+  return data;
 }
 
 export async function adminUpdateUser(
@@ -462,6 +466,7 @@ export async function adminUpdateUser(
     role?: 'admin' | 'user';
     new_password?: string;
     reset_workspace?: boolean;
+    allowed_plants?: string[] | null;
   }
 ): Promise<void> {
   const res = await fetch(`/api/admin/users/${userId}`, {

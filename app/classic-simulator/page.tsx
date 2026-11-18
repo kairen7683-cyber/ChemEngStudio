@@ -70,7 +70,10 @@ import HeatExchangerWorkbenchModal, {
 import {
   type DistillColumnParams,
   type DistillFeedInput,
+  type DistillSideCutConfig,
 } from '@/lib/calculations/rigorousDistillation';
+import { useAuth } from '@/components/auth/AuthContext';
+import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
 import {
   type SimPropertyMethod,
   type ResolvedPropertyMethod,
@@ -558,6 +561,7 @@ export default function ClassicSimulatorPage() {
   }, [simDefs, flowEdges, rfNodes, thermoMethod, activeComponents, solvedMeta, isDirty, hydrated]);
 
   const router = useRouter();
+  const { user } = useAuth();
   const setActivePlantId = useBalanceStore(s => s.setActivePlantId);
   const [ribbonTab, setRibbonTab] = useState<ClassicRibbonTab>('home');
   const [showPalette, setShowPalette] = useState(true);
@@ -570,7 +574,13 @@ export default function ClassicSimulatorPage() {
     { key: 'control', kind: 'control', title: 'Control Panel' },
   ]);
   const [activeMdiKey, setActiveMdiKey] = useState<string>('pfd');
-  const plantPresets = useMemo(() => getClassicPlantPresetOptions(), []);
+  const plantPresets = useMemo(
+    () =>
+      getClassicPlantPresetOptions().filter(opt =>
+        isPlantAllowed(PLANT_GROUP_TO_ID[opt.plantGroup], user)
+      ),
+    [user]
+  );
 
   const [isSimRunning, setIsSimRunning] = useState<boolean>(false);
   const simRunningRef = useRef<boolean>(false);
@@ -772,8 +782,10 @@ export default function ClassicSimulatorPage() {
     async (presetKey: string) => {
       const [groupRaw, sheetId] = presetKey.split(':');
       const group = (
-        groupRaw === 'hcl1A' || groupRaw === 'ech' || groupRaw === 'cms' ? groupRaw : 'electrolysis'
-      ) as 'electrolysis' | 'hcl1A' | 'ech' | 'cms';
+        groupRaw === 'hcl1A' || groupRaw === 'ech' || groupRaw === 'cms' || groupRaw === 'mdi'
+          ? groupRaw
+          : 'electrolysis'
+      ) as 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi';
       const bundle = await fetchConvergedBaselinesBundle();
       const bEntry = bundle?.plants?.[group]?.[sheetId];
       const sheets = getPlantSheetsByGroup(group, { syncMasterOnInit: !bEntry && sheetId !== 'master' });
@@ -788,16 +800,19 @@ export default function ClassicSimulatorPage() {
             ? 'ech_gte_plant'
             : group === 'cms'
               ? 'cms_plant'
-              : 'electrolyzer_plant';
+              : group === 'mdi'
+                ? 'mdi_plant'
+                : 'electrolyzer_plant';
       const nextComps = mergeFeedComponents(nextDefs, getPlantDefaultComponents(plantContext));
-      const nextMethod: SimPropertyMethod = group === 'cms' ? 'PR' : thermoMethod;
+      const nextMethod: SimPropertyMethod =
+        group === 'cms' ? 'PR' : group === 'mdi' ? 'NRTL' : thermoMethod;
 
       skipDirtyRef.current = true;
       setSimDefs(nextDefs);
       setFlowEdges(nextEdges);
       setActiveComponents(nextComps);
-      if (group === 'cms' && thermoMethod !== 'PR') {
-        setThermoMethod('PR');
+      if (nextMethod !== thermoMethod) {
+        setThermoMethod(nextMethod);
       }
       setRfNodes(
         nextDefs.map((d, idx) => ({
@@ -1184,12 +1199,15 @@ export default function ClassicSimulatorPage() {
     [paletteCat]
   );
 
-  // 스트림 유입원 Feed 블록 찾기 (스트림 선택 시에도 유량 직접 편집 지원!)
-  const selectedEdgeSourceFeed = useMemo(() => {
+  // 스트림 유입원 블록 & Feed 블록 찾기 (포트 역할 변경 및 유량 직접 편집 지원)
+  const selectedEdgeSourceNode = useMemo(() => {
     if (!selectedEdge) return null;
-    const src = simDefs.find(d => d.id === selectedEdge.source);
-    return src?.unitType === 'feed' ? src : null;
+    return simDefs.find(d => d.id === selectedEdge.source) ?? null;
   }, [selectedEdge, simDefs]);
+
+  const selectedEdgeSourceFeed = useMemo(() => {
+    return selectedEdgeSourceNode?.unitType === 'feed' ? selectedEdgeSourceNode : null;
+  }, [selectedEdgeSourceNode]);
 
   const blockStatusMap = useMemo(() => {
     const m = new Map<string, 'ok' | 'err' | 'incomplete'>();
@@ -2029,7 +2047,7 @@ export default function ClassicSimulatorPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 7, borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                   <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>🏭 공장별 성분 가져오기</span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                    {PLANT_COMPONENT_PRESETS.map(p => (
+                    {PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)).map(p => (
                       <button
                         key={p.plantId}
                         onClick={() => {
@@ -2191,12 +2209,63 @@ export default function ClassicSimulatorPage() {
               </div>
             )}
 
-            {selectedKind === 'stream' && selectedEdge && (
+            {selectedKind === 'stream' && selectedEdge && (() => {
+              const srcType = selectedEdgeSourceNode?.unitType;
+              const basePortOptions: Array<{ value: SourcePortId; label: string }> =
+                srcType === 'distillation'
+                  ? [
+                      { value: 'vapor', label: '탑정 제품 (Distillate / Vapor)' },
+                      { value: 'side_cut', label: '사이드컷 (중간발출 Side-Cut)' },
+                      { value: 'liquid', label: '탑저 제품 (Bottoms / Liquid)' },
+                      { value: 'decanter', label: '공비 디캔터 수층 (Decanter Aqueous)' },
+                    ]
+                  : srcType === 'separator' ||
+                      srcType === 'absorber' ||
+                      srcType === 'extractor' ||
+                      srcType === 'evaporator' ||
+                      srcType === 'liquefier' ||
+                      srcType === 'saturator' ||
+                      srcType === 'desiccant_dryer'
+                    ? [
+                        { value: 'vapor', label: '경질 / 기상 / 추잔상 (Top)' },
+                        { value: 'liquid', label: '중질 / 액상 / 추출상 (Bottom)' },
+                        ...(srcType === 'separator'
+                          ? [{ value: 'decanter' as SourcePortId, label: '수층 분리 (Aqueous)' }]
+                          : []),
+                      ]
+                    : srcType === 'splitter'
+                      ? [
+                          { value: 'vapor', label: '분기 1 (Top / Ratio)' },
+                          { value: 'liquid', label: '분기 2 (Bottom / 1-Ratio)' },
+                        ]
+                      : srcType === 'electrolyzer'
+                        ? [
+                            { value: 'anode_out', label: '양극 유출 (Anode Out)' },
+                            { value: 'cathode_out', label: '음극 유출 (Cathode Out)' },
+                          ]
+                        : srcType === 'hex' || srcType === 'cooler'
+                          ? [
+                              { value: 'out', label: '주 출구 (Process Out)' },
+                              { value: 'util_out', label: '유틸리티 출구 (Utility Out)' },
+                              { value: 'vapor', label: '기상 출구 (Vapor)' },
+                              { value: 'liquid', label: '액상 출구 (Liquid)' },
+                            ]
+                          : [{ value: 'out', label: '주 출구 (Main Outlet)' }];
+              const curPort = (selectedEdge.sourcePort ?? basePortOptions[0]?.value ?? 'out') as SourcePortId;
+              const portOptions = basePortOptions.some(o => o.value === curPort)
+                ? basePortOptions
+                : [...basePortOptions, { value: curPort, label: `현재 포트 (${curPort})` }];
+
+              return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1D4ED8' }}>
                     Stream [{selectedEdge.streamNo}]
-                    {selectedEdge.sourcePort === 'side_cut' ? ' · 사이드컷 측류(S)' : ''}
+                    {selectedEdge.sourcePort === 'side_cut'
+                      ? ' · 사이드컷 측류(S)'
+                      : selectedEdge.sourcePort === 'decanter'
+                        ? ' · 디캔터 수층'
+                        : ''}
                   </span>
                   <button
                     onClick={() => deleteEdge(selectedEdge.id)}
@@ -2213,6 +2282,94 @@ export default function ClassicSimulatorPage() {
                   >
                     삭제
                   </button>
+                </div>
+
+                <div
+                  style={{
+                    padding: 8,
+                    borderRadius: 6,
+                    background: '#F8FAFC',
+                    border: '1px solid #CBD5E1',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                  }}
+                >
+                  <label style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
+                    출구 포트 역할 변경 (Source Port)
+                  </label>
+                  <select
+                    value={curPort}
+                    onChange={e => {
+                      const newPort = e.target.value as SourcePortId;
+                      const nextEdges = flowEdges.map(ed =>
+                        ed.id === selectedEdge.id ? { ...ed, sourcePort: newPort } : ed
+                      );
+                      setFlowEdges(nextEdges);
+
+                      let nextDefs = simDefs;
+                      if (
+                        newPort === 'side_cut' &&
+                        selectedEdgeSourceNode?.unitType === 'distillation' &&
+                        !selectedEdgeSourceNode.params.distillConfig?.sideCut?.enabled
+                      ) {
+                        const baseDistCfg = selectedEdgeSourceNode.params.distillConfig ?? {};
+                        const totalSt = baseDistCfg.totalStages ?? 20;
+                        const autoSideCut: DistillSideCutConfig = {
+                          ...(baseDistCfg.sideCut ?? {}),
+                          id: baseDistCfg.sideCut?.id ?? 'SC-1',
+                          enabled: true,
+                          label: baseDistCfg.sideCut?.label ?? '사이드컷 S',
+                          phase: baseDistCfg.sideCut?.phase ?? 'liquid',
+                          autoOptimizeStage: false,
+                          stage: baseDistCfg.sideCut?.stage ?? Math.max(3, Math.round(totalSt * 0.45)),
+                          specType: baseDistCfg.sideCut?.specType ?? 's_over_f_mass',
+                          specValue: baseDistCfg.sideCut?.specValue ?? 0.15,
+                        };
+                        nextDefs = simDefs.map(d =>
+                          d.id === selectedEdgeSourceNode.id
+                            ? {
+                                ...d,
+                                params: {
+                                  ...d.params,
+                                  calcMode: 'rigorous' as const,
+                                  distillConfig: {
+                                    ...baseDistCfg,
+                                    sideCut: autoSideCut,
+                                  },
+                                },
+                              }
+                            : d
+                        );
+                        setSimDefs(nextDefs);
+                      }
+
+                      runSimulation(nextDefs, nextEdges);
+                    }}
+                    style={{
+                      width: '100%',
+                      height: 28,
+                      padding: '0 6px',
+                      borderRadius: 4,
+                      border: '1px solid #94A3B8',
+                      background: '#FFFFFF',
+                      color: '#0F172A',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {portOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedEdgeSourceNode && (
+                    <div style={{ fontSize: 9.8, color: '#64748B' }}>
+                      연결 블록: <b>{selectedEdgeSourceNode.tag}</b> ({getModelName(selectedEdgeSourceNode.unitType)})
+                    </div>
+                  )}
                 </div>
 
                 {selectedEdgeSourceFeed && (
@@ -2282,10 +2439,22 @@ export default function ClassicSimulatorPage() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Source Port</span>
-                      <b style={{ fontFamily: 'Inter, sans-serif', color: selectedEdge.sourcePort === 'side_cut' ? '#6D28D9' : '#0F172A' }}>
+                      <b
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          color:
+                            selectedEdge.sourcePort === 'side_cut'
+                              ? '#6D28D9'
+                              : selectedEdge.sourcePort === 'decanter'
+                                ? '#0284C7'
+                                : '#0F172A',
+                        }}
+                      >
                         {selectedEdge.sourcePort === 'side_cut'
                           ? '사이드컷 측류(S)'
-                          : selectedStreamRes.portRole || '주배관'}
+                          : selectedEdge.sourcePort === 'decanter'
+                            ? '공비 디캔터 수층'
+                            : selectedStreamRes.portRole || '주배관'}
                       </b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -2326,7 +2495,8 @@ export default function ClassicSimulatorPage() {
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
 
             {selectedKind === 'block' && selectedBlock && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

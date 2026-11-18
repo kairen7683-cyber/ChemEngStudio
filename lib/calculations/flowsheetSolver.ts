@@ -124,6 +124,13 @@ export type SimCompKey =
   | 'CH2Cl2'
   | 'CCl4'
   | 'C2Cl4'
+  | 'COCl2'
+  | 'HCHO'
+  | 'MCB'
+  | 'Aniline'
+  | 'MDA'
+  | 'MDI'
+  | 'PMDI'
   | 'CUSTOM_1'
   | 'CUSTOM_2';
 
@@ -196,6 +203,13 @@ export const SIM_COMPS: SimCompKey[] = [
   'CH2Cl2',
   'CCl4',
   'C2Cl4',
+  'COCl2',
+  'HCHO',
+  'MCB',
+  'Aniline',
+  'MDA',
+  'MDI',
+  'PMDI',
   'CUSTOM_1',
   'CUSTOM_2',
 ];
@@ -250,6 +264,13 @@ const GENERAL_21_KEYS: SimCompKey[] = [
   'CH2Cl2',
   'CCl4',
   'C2Cl4',
+  'COCl2',
+  'HCHO',
+  'MCB',
+  'Aniline',
+  'MDA',
+  'MDI',
+  'PMDI',
   'CUSTOM_1',
   'CUSTOM_2',
 ];
@@ -308,7 +329,7 @@ export const COMP_META: Record<
   Acetone:    { formula: 'Acetone',  label: 'Acetone (아세톤)',         mw: mwOf('Acetone', 58.080),isGasAtStd: false, cpLiq: 0.518, cpGas: 0.308, group: 'polar_solvent' },
   AceticAcid: { formula: 'CH₃COOH',  label: 'AceticAcid (초산)',        mw: mwOf('AceticAcid', 60.052),isGasAtStd: false, cpLiq: 0.490, cpGas: 0.265, group: 'polar_solvent' },
   EtOAc:      { formula: 'EtOAc',    label: 'EtOAc (초산에틸)',         mw: mwOf('EtOAc', 88.106),  isGasAtStd: false, cpLiq: 0.464, cpGas: 0.309, group: 'polar_solvent' },
-  CHCl3:      { formula: 'CHCl₃',    label: 'CHCl₃ (클로로포름)',       mw: mwOf('CHCl3', 119.378), isGasAtStd: false, cpLiq: 0.230, cpGas: 0.131, group: 'polar_solvent' },
+  CHCl3:      { formula: 'CHCl₃',    label: 'CHCl₃ (클로로포름/CFM)',       mw: mwOf('CHCl3', 119.378), isGasAtStd: false, cpLiq: 0.230, cpGas: 0.131, group: 'polar_solvent' },
   Ar: { formula: 'Ar', label: 'Ar (아르곤)', mw: mwOf('Ar', 39.948), isGasAtStd: true, cpLiq: 0.27, cpGas: 0.124, group: 'gas_syngas' },
   H2S: { formula: 'H₂S', label: 'H₂S (황화수소)', mw: mwOf('H2S', 34.081), isGasAtStd: true, cpLiq: 0.48, cpGas: 0.24, group: 'gas_syngas' },
   SO2: { formula: 'SO₂', label: 'SO₂ (이산화황)', mw: mwOf('SO2', 64.064), isGasAtStd: true, cpLiq: 0.32, cpGas: 0.149, group: 'gas_syngas' },
@@ -337,6 +358,13 @@ export const COMP_META: Record<
   CH2Cl2: { formula: 'CH₂Cl₂', label: 'CH₂Cl₂ (염화메틸렌/MCL)', mw: mwOf('CH2Cl2', 84.933), isGasAtStd: false, cpLiq: 0.28, cpGas: 0.15, group: 'polar_solvent' },
   CCl4: { formula: 'CCl₄', label: 'CCl₄ (사염화탄소/CTC)', mw: mwOf('CCl4', 153.823), isGasAtStd: false, cpLiq: 0.20, cpGas: 0.13, group: 'polar_solvent' },
   C2Cl4: { formula: 'C₂Cl₄', label: 'C₂Cl₄ (퍼클로로에틸렌/Heavies)', mw: mwOf('C2Cl4', 165.834), isGasAtStd: false, cpLiq: 0.21, cpGas: 0.14, group: 'polar_solvent' },
+  COCl2: { formula: 'COCl₂', label: 'COCl₂ (포스겐/Phosgene)', mw: mwOf('COCl2', 98.916), isGasAtStd: true, cpLiq: 0.245, cpGas: 0.145, group: 'gas_syngas' },
+  HCHO: { formula: 'CH₂O', label: 'HCHO (포름알데히드/Formalin)', mw: mwOf('HCHO', 30.026), isGasAtStd: true, cpLiq: 0.52, cpGas: 0.285, group: 'polar_solvent' },
+  MCB: { formula: 'C₆H₅Cl', label: 'MCB (모노클로로벤젠)', mw: mwOf('MCB', 112.558), isGasAtStd: false, cpLiq: 0.32, cpGas: 0.21, group: 'aromatic' },
+  Aniline: { formula: 'C₆H₅NH₂', label: 'Aniline (아닐린)', mw: mwOf('Aniline', 93.128), isGasAtStd: false, cpLiq: 0.495, cpGas: 0.285, group: 'aromatic' },
+  MDA: { formula: 'C₁₃H₁₄N₂', label: 'MDA (4,4\'-메틸렌디아닐린)', mw: mwOf('MDA', 198.268), isGasAtStd: false, cpLiq: 0.46, cpGas: 0.31, group: 'aromatic' },
+  MDI: { formula: 'C₁₅H₁₀N₂O₂', label: 'MDI (4,4\'-Pure MDI)', mw: mwOf('MDI', 250.256), isGasAtStd: false, cpLiq: 0.43, cpGas: 0.29, group: 'aromatic' },
+  PMDI: { formula: 'PMDI', label: 'PMDI (폴리머릭 MDI)', mw: mwOf('PMDI', 381.400), isGasAtStd: false, cpLiq: 0.44, cpGas: 0.30, group: 'aromatic' },
   CUSTOM_1: { formula: 'CUSTOM-1', label: 'CUSTOM_1 (사용자정의/UNIFAC 물질 1)', mw: mwOf('CUSTOM_1', 74.122), isGasAtStd: false, cpLiq: 0.56, cpGas: 0.355, group: 'polar_solvent' },
   CUSTOM_2: { formula: 'CUSTOM-2', label: 'CUSTOM_2 (사용자정의/UNIFAC 물질 2)', mw: mwOf('CUSTOM_2', 93.128), isGasAtStd: false, cpLiq: 0.495, cpGas: 0.285, group: 'aromatic' },
 };
@@ -516,7 +544,10 @@ export interface FlowUnitParams {
     | 'fecl3_chlorination'
     | 'gte_hydrochlorination'
     | 'ech_saponification'
-    | 'cms_aibn_chlorination';
+    | 'cms_aibn_chlorination'
+    | 'mda_condensation'
+    | 'phosgene_synthesis'
+    | 'mdi_phosgenation';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -836,6 +867,13 @@ export function emptySimFlows(
     CH2Cl2: 0,
     CCl4: 0,
     C2Cl4: 0,
+    COCl2: 0,
+    HCHO: 0,
+    MCB: 0,
+    Aniline: 0,
+    MDA: 0,
+    MDI: 0,
+    PMDI: 0,
     CUSTOM_1: 0,
     CUSTOM_2: 0,
     ...(overrides ?? {}),
@@ -897,10 +935,22 @@ export function identifyFluidName(flows: Record<SimCompKey, number>, tempC: numb
   if ((flows.AceticAcid || 0) / tot > 0.25) return `초산 용액 (AceticAcid ${(((flows.AceticAcid || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.EtOAc || 0) / tot > 0.25) return `초산에틸 용제 (EtOAc ${(((flows.EtOAc || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.CH2Cl2 || 0) / tot > 0.40) return `정제 MCL · 디클로로메탄 (CH₂Cl₂ ${(((flows.CH2Cl2 || 0) / tot) * 100).toFixed(2)} wt%)`;
-  if ((flows.CH3Cl || 0) / tot > 0.35) return `메틸클로라이드 유분 (CH₃Cl ${(((flows.CH3Cl || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CH3Cl || 0) / tot > 0.35) return `메틸클로라이드 유분 (MC · CH₃Cl ${(((flows.CH3Cl || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CHCl3 || 0) / tot > 0.35 && (flows.CCl4 || 0) / tot > 0.08) {
+    return `조 CFM/CTC 관출액 (CFM ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} · CTC ${(((flows.CCl4 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  }
   if ((flows.CHCl3 || 0) / tot > 0.35) return `정제 CFM · 클로로포름 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(2)} wt%)`;
   if (((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot > 0.35) return `잔류 CTC · 헤비 폐유기물 (${((((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.CHCl3 || 0) / tot > 0.25) return `클로로포름 용제 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CHCl3 || 0) / tot > 0.25) return `클로로포름/CFM 혼합유 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.MDI || 0) / tot > 0.35 && (flows.PMDI || 0) / tot > 0.25) {
+    return `Crude MDI 혼합액 (Pure MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(1)} · PMDI ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)} wt%)`;
+  }
+  if ((flows.MDI || 0) / tot > 0.45) return `Pure 4,4'-MDI 제품 (MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if ((flows.PMDI || 0) / tot > 0.45) return `Polymeric MDI (PMDI ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.MDA || 0) / tot > 0.25) return `조 MDA 유분 (MDA ${(((flows.MDA || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.MCB || 0) / tot > 0.35) return `MCB 용매 혼합유 (MCB ${(((flows.MCB || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.Aniline || 0) / tot > 0.35) return `아닐린 유분 (Aniline ${(((flows.Aniline || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.COCl2 || 0) / tot > 0.25) return `포스겐 혼합 스트림 (COCl₂ ${(((flows.COCl2 || 0) / tot) * 100).toFixed(1)} wt%)`;
 
   const wBTX = ((flows.Benzene || 0) + (flows.Toluene || 0) + (flows.pXylene || 0)) / tot;
   if ((flows.Benzene || 0) / tot > 0.45) return `벤젠 유분 (Benzene ${(((flows.Benzene || 0) / tot) * 100).toFixed(1)} wt%)`;
@@ -990,6 +1040,12 @@ function detectKeyConc(flows: Record<SimCompKey, number>, phase: 'L' | 'G' | 'L/
   if (flows.NaClO3 / tot > 0.08) return `${((flows.NaClO3 / tot) * 100).toFixed(1)} wt% NaClO₃`;
 
   // 탄화수소 · 방향족 · 극성용제 · 합성가스 지배 시 주성분 표시
+  if ((flows.CHCl3 || 0) / tot > 0.35 && (flows.CCl4 || 0) / tot > 0.08) {
+    return `${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)}% CFM / ${(((flows.CCl4 || 0) / tot) * 100).toFixed(1)}% CTC`;
+  }
+  if ((flows.MDI || 0) / tot > 0.35 && (flows.PMDI || 0) / tot > 0.25) {
+    return `${(((flows.MDI || 0) / tot) * 100).toFixed(1)}% MDI / ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)}% PMDI`;
+  }
   if (hasGeneralComponents(flows)) {
     let topGen: SimCompKey = GENERAL_21_KEYS[0];
     for (const gk of GENERAL_21_KEYS) {
@@ -2381,7 +2437,12 @@ export function solveFlowsheet(
           (liq.Toluene || 0) +
           (liq.pXylene || 0) +
           (liq.nC6H14 || 0) +
-          (liq.nC7H16 || 0);
+          (liq.nC7H16 || 0) +
+          (liq.MCB || 0) +
+          (liq.Aniline || 0) +
+          (liq.MDA || 0) +
+          (liq.MDI || 0) +
+          (liq.PMDI || 0);
         const lleDec =
           preLiqMass > 1.0 &&
           preVapMass < 0.05 * preLiqMass &&
@@ -3190,6 +3251,53 @@ export function solveFlowsheet(
           outF.CCl4 += ext3 * MW.CCl4;
           outF.HCl += (ext1 + ext2 + ext3) * MW.HCl;
           note = `AIBN 라디칼 염소화 (${T_out.toFixed(1)}°C): MCL ${outF.CH2Cl2.toFixed(0)} / CFM ${outF.CHCl3.toFixed(0)} kg/h`;
+        } else if (preset === 'mda_condensation') {
+          if (outF.HCl > 1e-9 && outF.NaOH > 1e-9) {
+            const extNeut = Math.min(outF.HCl / MW.HCl, outF.NaOH / MW.NaOH);
+            outF.HCl = Math.max(0, outF.HCl - extNeut * MW.HCl);
+            outF.NaOH = Math.max(0, outF.NaOH - extNeut * MW.NaOH);
+            outF.NaCl += extNeut * MW.NaCl;
+            outF.H2O += extNeut * (MW.HCl + MW.NaOH - MW.NaCl);
+          }
+          const extCond = Math.min(outF.Aniline / (2 * MW.Aniline), outF.HCHO / MW.HCHO) * conv;
+          outF.Aniline = Math.max(0, outF.Aniline - 2 * extCond * MW.Aniline);
+          outF.HCHO = Math.max(0, outF.HCHO - extCond * MW.HCHO);
+          outF.MDA += extCond * MW.MDA;
+          outF.H2O += extCond * (2 * MW.Aniline + MW.HCHO - MW.MDA);
+          note = `MDA 축합·전위 (${T_out.toFixed(1)}°C): MDA ${outF.MDA.toFixed(1)} kg/h 생성 (HCHO 전환율 ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'phosgene_synthesis') {
+          const extPhos = Math.min(outF.CO / MW.CO, outF.Cl2 / MW.Cl2) * conv;
+          outF.CO = Math.max(0, outF.CO - extPhos * MW.CO);
+          outF.Cl2 = Math.max(0, outF.Cl2 - extPhos * MW.Cl2);
+          outF.COCl2 += extPhos * (MW.CO + MW.Cl2);
+          note = `포스겐(COCl₂) 촉매 합성 (${T_out.toFixed(1)}°C): COCl₂ ${outF.COCl2.toFixed(1)} kg/h`;
+        } else if (preset === 'mdi_phosgenation') {
+          let waterHydroMsg = '';
+          if (outF.H2O > 1e-6 && outF.COCl2 > 1e-6) {
+            const xiW = Math.min(outF.H2O / MW.H2O, outF.COCl2 / MW.COCl2);
+            const h2oUse = xiW * MW.H2O;
+            const cocl2WUse = xiW * MW.COCl2;
+            const mUsedW = h2oUse + cocl2WUse;
+            const co2Stoich = xiW * MW.CO2;
+            const hclStoich = 2 * xiW * MW.HCl;
+            const scaleW = co2Stoich + hclStoich > 0 ? mUsedW / (co2Stoich + hclStoich) : 1;
+            outF.H2O = Math.max(0, outF.H2O - h2oUse);
+            outF.COCl2 = Math.max(0, outF.COCl2 - cocl2WUse);
+            outF.CO2 += co2Stoich * scaleW;
+            outF.HCl += hclStoich * scaleW;
+            waterHydroMsg = ` · 미량수분 ${h2oUse.toFixed(1)}kg/h 가수분해`;
+          }
+          const extMdi = Math.min(outF.MDA / MW.MDA, outF.COCl2 / (2 * MW.COCl2)) * conv;
+          const mdaUse = extMdi * MW.MDA;
+          const cocl2Use = 2 * extMdi * MW.COCl2;
+          const hclGen = 4 * extMdi * MW.HCl;
+          const isoMass = Math.max(0, mdaUse + cocl2Use - hclGen);
+          outF.MDA = Math.max(0, outF.MDA - mdaUse);
+          outF.COCl2 = Math.max(0, outF.COCl2 - cocl2Use);
+          outF.HCl += hclGen;
+          outF.MDI += isoMass * 0.36;
+          outF.PMDI += isoMass * 0.64;
+          note = `MDI 2단 포스겐화 (${T_out.toFixed(1)}°C): Crude MDI ${isoMass.toFixed(1)} (4,4'-MDI ${(isoMass * 0.36).toFixed(1)} / PMDI ${(isoMass * 0.64).toFixed(1)}) + 부생 HCl ${hclGen.toFixed(1)} kg/h${waterHydroMsg}`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;

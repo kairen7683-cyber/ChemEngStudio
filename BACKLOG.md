@@ -1,56 +1,47 @@
 # ChemEng Studio — Project Backlog
 
-> Last updated: 2026-11-17
+> Last updated: 2026-11-18
 
 ---
 
-## 1. [Planned · High] Plant 05: 금호미쓰이 공정 기반 100,000 MT/yr MDI 통합 플랜트 추가
+## 1. [Done · 2026-11-18] Plant 05: 금호미쓰이 공정 기반 100,000 MT/yr MDI 통합 플랜트 추가
 
-- **기준 생산 규모**: **100,000 MT/yr** (`8,000 hr/yr` 기준 약 `12,500 kg/h` — Monomeric `4,4'-MDI` + Polymeric `PMDI`)
-- **핵심 공정 섹션 (4개 시트 구성안)**:
-  1. **Sheet 1 — MDA 합성·중화·정제**: Aniline + HCHO (HCl 촉매 축합·전위) → NaOH 중화/수세 디캔터 → 미반응 Aniline 감압 회수탑 → Crude MDA
-  2. **Sheet 2 — 포스겐(`COCl2`) 제조 및 MDA 포스겐화**: CO + Cl2 활성탄 촉매 합성 → MCB 용매 저온/고온 포스겐화 → 부생 HCl 분리·흡수
-  3. **Sheet 3 — 탈포스겐 및 MCB 용매 회수**: 잔류 `COCl2`/`HCl` 스트리핑 → 포스겐 응축 리사이클 → MCB 다단 진공 회수탑
-  4. **Sheet 4 — Polymeric / Pure `4,4'-MDI` 진공 분별증류**: 박막증발기(TFE) + 고진공 분별증류(사이드컷 적용 검토) → `PMDI`(탑저) 및 `4,4'-MDI`(탑정/측류) 분리
-- **확장 필요 성분 (`SimCompKey` · 물성 DB)**: `Aniline`, `HCHO`, `MCB`, `COCl2`, `MDA`, `MDI`, `PMDI`
-- **밸류체인 연계**: 기존 Plant 01~04의 전해 `Cl2`·`NaOH` 원료 공급 및 포스겐화 부생 `HCl` 회수 루프 연결
+- **구현 내용**:
+  - 7종 신규 성분(`COCl2`, `HCHO`, `MCB`, `Aniline`, `MDA`, `MDI`, `PMDI`) 열역학·임계·증기압(DIPPR-101)·UNIFAC·생성깁스에너지·촉매반응 프리셋·LLE 분배·물성 DB 전수 확장 (총 `77`개 `SimCompKey`)
+  - 5-Sheet 통합 계층 플랜트(`lib/calculations/mdiPlantHierarchy.ts`): `Master` + `100 MDA 합성·중화·수세 디캔터·탈수·아닐린 회수` + `200 포스겐 합성·2단 포스겐화` + `300 탈포스겐·MCB 용매 진공 회수` + `400 고진공 Pure 4,4'-MDI (4,500 kg/h) · PMDI (8,000 kg/h) 정밀분별` 5개 시트 전 수렴 달성
+  - 사이드바, `/material-balance`, `/equipment-design?tab=mdi_hub`, `/unit-equipment`, `/pep-yearbook`, `/flowsheet-simulator`, `/classic-simulator`, 회귀 하네스(`solveAllPlants.ts`, `generateConvergedBaselines.ts`) 전수 연동 완료
 
 ---
 
-## 2. [Planned · High] 증류탑 변수선택 통합 단일 UI 및 순차 자유도 가이드
+## 2. [Done · 2026-11-18] 증류탑 변수선택 통합 단일 UI, 순차 자유도 가이드 & 미수렴 추천조합 원클릭
 
-- **목적**: 기존의 `모드 A (단수 자동설계)` / `모드 B (단수 고정)` 이원화 탭·입력 구분을 제거하고 **하나의 통합 변수선택 UI**로 단순화
-- **핵심 동작 설계**:
-  - **형상 변수 통합**: `총 단수(N)` · `공급단(Nf)` · `사이드컷 인출단(Ns)`을 별도 모드가 아닌 선택 항목으로 통합 (체크 시 고정값 사용, 미체크 시 AI 최적 자동 탐색)
-  - **순차 자유도 가이드 메시지**: 사용자가 변수(`① 환류비`, `② 유출분배 D/F`, `③ 탑정 스펙`, `④ 탑저 스펙`, `⑤ 사이드컷`)를 1개 고를 때마다 현재 자유도 상태와 다음에 추가로 선택할 수 있는 변수 안내를 실시간 표시
-  - **사이드컷 주제품 자유도 지원**: 사이드컷(`⑤`) 제품 순도 지정 시 **탑정 스펙(`③`) 생략 가능** (`①+④+⑤`, `②+④+⑤`, 또는 단수 미지정 시 라이트 퍼지/불순물 기준으로 대체)
-  - **Run 버튼 자동 활성화**: 고정단수·자동설계 여부에 따른 자유도가 충족되는 즉시 별도 모드 전환 없이 `Run` 버튼 활성화
-
----
-
-## 3. [Planned · High] 물성 DB(`/property-db`) 공장별 전 물질 전수 등재 및 동기화
-
-- **작업 내용**:
-  - Plant 01~04(및 향후 Plant 05) PFD·물질수지·시뮬레이터(`SimCompKey`)에 등장하는 **모든 공정 물질 전수 추출**
-  - 물성 DB(`app/property-db` 및 물성 데이터 모듈)에 기본 물성·증기압·열역학 상수 누락분 일괄 보완
-  - 공장별 물질 필터 선택 시 해당 공장의 원료·중간체·제품·부생물이 100% 조회되도록 동기화
+- **구현 내용**:
+  - `DistillationWorkbenchModal.tsx` 모드 A/B 이원화 제거 → `⓪ 고정 단수 지정 (N·Nf)` 체크박스 + `①~⑤` 변수선택 단일 통합 UI 구현
+  - 실시간 순차 자유도 가이드 배너 및 솔버 가능 여부에 따른 `▶ RUN` 버튼 스마트 활성화/비활성화
+  - **사이드컷(`⑤`) 주제품 시 탑정 스펙(`③`) 생략 조합** (`①+④+⑤`, `②+④+⑤`, `designOmitTopPurity`) 고정단수 및 AI 단수 자동설계 모두 지원
+  - 성분 `<select>`를 **`현재 유입 성분 (비점 순)`** 우선 `<optgroup>` (`MCL → CFM → CTC`)으로 정렬
+  - 미수렴 또는 스펙 미달 시 **`💡 수렴·스펙 달성 추천 조합`** 원클릭 조건 변경 & 즉시 재실행 카드 구현
 
 ---
 
-## 4. [Planned · High] 염화메탄(CMS) 공장 MCL 컬럼 탑저 스트림 `CFM (CHCl3)` 누락 수정
+## 3. [Done · 2026-11-18] 물성 DB(`/property-db`) 전 성분·공용 유틸리티 등재, 통합 검색 & 계정별 공장 접근 제어(`allowed_plants`)
 
-- **작업 내용**:
-  - 염화메탄 정제 계통 **MCL 컬럼**의 탑저(Bottoms) 스트림 및 후단(MC / CFM 정제 컬럼) 연결 피드 조성에서 누락된 **`CFM (CHCl3)`** 성분 복원
-  - CMS PFD·물질수지·시뮬레이터 프리셋 정합성 및 `scripts/regression/solveAllPlants.ts` 회귀 검증
+- **구현 내용**:
+  - 77종 전 `SimCompKey` 및 공용 유틸리티(`LP/MP/HP Steam`, `Cooling/Chilled Water`, `CaCl2 Brine`, `Dowtherm A`, `N2/Air`) `FLUID_DB` 100% 등재 (`132` 고유 엔트리)
+  - `[내 공장 물질 + 공용 유틸리티]` 기본 한눈 뷰 + `[전체 시뮬레이션 물성 DB (전 물질 개방)]` 토글, 화학식·국영문 물질명·공정 약어(`MCL`/`CFM`/`CTC`/`MDA`/`MDI`/`PMDI`/`MCB`)·CAS 실시간 통합 검색 구현
+  - SQLite `users.allowed_plants` 멱등 마이그레이션·관리자 콘솔(`AdminConsoleModal.tsx`) 권한 편집·헤더 공장 선택기 필터링 및 자동 폴백 적용 (`/property-db`, `/equipment-design`, `/unit-equipment`, `/flowsheet-simulator`, `/classic-simulator` 개방 유지)
 
 ---
 
-## 5. [Deferred] 증류탑 사이드컷(Side-Cut) 엄밀 MESH 수렴 안정화
+## 4. [Done · 2026-11-18] 염화메탄(CMS) 공장 MCL 컬럼 탑저 `CFM (CHCl3)` 인식·표기 동기화
 
-- **보류된 과제**:
-  - `lib/calculations/rigorousDistillation.ts` (`solveInnerMeshColumn`, `runMeshAt`)에서 측류 인출(`SL[j]`, `SV[j]`) 활성 시 일부 단의 `sum(xRaw)` 이탈로 인한 조기 수렴 판정·프로브 오차 보정
-  - **타임아웃·에러 방지 설계 반영**:
-    - 물리적 가능 범위 사전 체크 (`D + S`가 피드·내부 L/V 트래픽 한계를 넘으면 솔버 진입 전 차단/경고)
-    - 외부 순도/회수율 역산 루프에서 직전 해(`T`, `x`, `V`) **Warm-Start** 재사용으로 반복 수 및 계산 시간 단축
-    - 시간 상한(Time Budget) 초과 시 에러 중단 대신 **최선 근접 수렴 해 + 안내 상태** 안전 반환
-  - `scripts/validation/sideCutDistillationValidation.ts` 및 전체 회귀/수렴 테스트 통과 확인
+- **구현 내용**:
+  - `CH3Cl(MC)`, `CH2Cl2(MCL)`, `CHCl3(클로로포름/CFM)`, `CCl4(CTC)`, `C2Cl4(PCE)` 전 공정·브릿지·`chem_db.js`(`mcl_cfm` NRTL 프리셋)·`/property-db` 라벨 및 혼합 스트림(`303: CFM + CTC`) 인식 동기화 완료
+
+---
+
+## 5. [Done · 2026-11-18] 증류탑 사이드컷 엄밀 MESH 수렴 안정화 & 클래식 시뮬레이터 출구 포트 변경 UI
+
+- **구현 내용**:
+  - `rigorousDistillation.ts` Multi-$\theta$ 보정, 외부 역산 루프 Warm-Start, `D + S` 한계 사전 가드, 2,200 ms 타임 버짓 안전 반환 및 1-클릭 진단 `remedies` 탑재 (`sideCutDistillationValidation.ts` 전 4개 스위트 통과)
+  - `ClassicBlockNode.tsx` `<Handle id="decanter">` 추가 및 `app/classic-simulator/page.tsx` 스트림 인스펙터 내 **`출구 포트 역할 변경 (Source Port)`** (`vapor` / `side_cut` / `liquid` / `decanter`, `side_cut` 전환 시 사이드컷 자동 활성화 + 즉시 재해석) 구현

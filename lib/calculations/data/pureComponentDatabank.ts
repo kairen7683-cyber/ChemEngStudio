@@ -87,6 +87,13 @@ export const PSAT_DIPPR101: Partial<Record<SimCompKey, Dippr101Entry>> = {
   CH2Cl2: { A: 69.59102, B: -5348.626, C: -7.23770, D: 6.280074e-6, E: 2, TminK: 176.0, TmaxK: 510.0, source: LK_ANCHORED },
   CCl4: { A: 69.12897, B: -5775.806, C: -7.12461, D: 5.221251e-6, E: 2, TminK: 250.0, TmaxK: 556.4, source: LK_ANCHORED },
   C2Cl4: { A: 78.87788, B: -7124.475, C: -8.36413, D: 4.575644e-6, E: 2, TminK: 250.8, TmaxK: 620.2, source: LK_ANCHORED },
+  COCl2: { A: 57.0040, B: -4206.40, C: -5.50000, D: 6.2000e-6, E: 2, TminK: 145.0, TmaxK: 455.0, source: LK_ANCHORED },
+  HCHO: { A: 59.1184, B: -4046.10, C: -5.80000, D: 7.0000e-6, E: 2, TminK: 181.0, TmaxK: 408.0, source: LK_ANCHORED },
+  MCB: { A: 79.0534, B: -7010.70, C: -8.50000, D: 5.0000e-6, E: 2, TminK: 228.0, TmaxK: 632.4, source: LK_ANCHORED },
+  Aniline: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
+  MDA: { A: 117.0910, B: -15027.00, C: -13.00000, D: 3.2000e-6, E: 2, TminK: 365.0, TmaxK: 882.0, source: LK_ANCHORED },
+  MDI: { A: 114.7560, B: -14550.00, C: -12.50000, D: 3.6000e-6, E: 2, TminK: 311.0, TmaxK: 802.0, source: LK_ANCHORED },
+  PMDI: { A: 122.4000, B: -18250.00, C: -13.20000, D: 2.8000e-6, E: 2, TminK: 320.0, TmaxK: 945.0, source: LK_ANCHORED },
   CUSTOM_1: { A: 130.3499, B: -10136.14, C: -15.8164, D: 9.85969e-6, E: 2, TminK: 183.85, TmaxK: 563.05, source: LK_ANCHORED },
   CUSTOM_2: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
 };

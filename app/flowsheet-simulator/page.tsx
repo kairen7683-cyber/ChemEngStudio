@@ -78,6 +78,12 @@ import {
   createInitialCmsHierarchySheets,
   syncCmsSubDefsFromMaster,
 } from '@/lib/calculations/cmsPlantHierarchy';
+import {
+  createInitialMdiHierarchySheets,
+  syncMdiSubDefsFromMaster,
+} from '@/lib/calculations/mdiPlantHierarchy';
+import { useAuth } from '@/components/auth/AuthContext';
+import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import {
@@ -91,7 +97,7 @@ import {
   saveChemProHandoffPayload,
 } from '@/lib/calculations/unitDesignHandoff';
 
-// ── 모드별 분리 영구 자동저장 키 (PLANT 01 ↔ PLANT 02 ↔ PLANT 03 ↔ PLANT 04 ↔ 공정 시뮬레이터 완전 격리) ──
+// ── 모드별 분리 영구 자동저장 키 (PLANT 01 ↔ PLANT 02 ↔ PLANT 03 ↔ PLANT 04 ↔ PLANT 05 ↔ 공정 시뮬레이터 완전 격리) ──
 const PLANT02_AUTO_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT02_SLOTS_SAVE_KEY = 'chemplant-plant02-electrolyzer-slots-v1';
 const PLANT03_AUTO_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
@@ -100,6 +106,8 @@ const PLANT04_AUTO_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT04_SLOTS_SAVE_KEY = 'chemplant-plant04-ech-slots-v1';
 const PLANT05_AUTO_SAVE_KEY = 'chemplant-plant05-cms-v2';
 const PLANT05_SLOTS_KEY = 'chemplant-plant05-cms-slots-v2';
+const PLANT06_AUTO_SAVE_KEY = 'chemplant-plant06-mdi-v1';
+const PLANT06_SLOTS_KEY = 'chemplant-plant06-mdi-slots-v1';
 const BUILDER_AUTO_SAVE_KEY = 'chemplant-newplant-builder-v1';
 const BUILDER_SLOTS_SAVE_KEY = 'chemplant-newplant-builder-slots-v1';
 
@@ -1018,7 +1026,7 @@ const NODE_TYPES = { flowUnit: FlowUnitNode };
 // ── 프리셋 시나리오 ──────────────────────────────────────────
 interface PresetScenario {
   id: string;
-  group?: 'general' | 'plant02' | 'plant03' | 'plant04' | 'plant05';
+  group?: 'general' | 'plant02' | 'plant03' | 'plant04' | 'plant05' | 'plant06';
   btnLabel: string;
   title: string;
   nodes: Array<FlowNodeDef & { position: { x: number; y: number } }>;
@@ -1656,6 +1664,7 @@ interface ConvergedBaselinesBundle {
     hcl1A: Record<string, BaselineSheetEntry>;
     ech: Record<string, BaselineSheetEntry>;
     cms?: Record<string, BaselineSheetEntry>;
+    mdi?: Record<string, BaselineSheetEntry>;
   };
 }
 
@@ -1685,7 +1694,7 @@ function loadConvergedBaselines(): Promise<ConvergedBaselinesBundle | null> {
 
 function sheetToStandalonePreset(
   sheet: SheetRuntimeData,
-  group: 'plant02' | 'plant03' | 'plant04' | 'plant05',
+  group: 'plant02' | 'plant03' | 'plant04' | 'plant05' | 'plant06',
   prefix: string
 ): PresetScenario {
   return {
@@ -1743,12 +1752,19 @@ function getAllPresets(): PresetScenario[] {
     .filter(k => p5Sheets[k])
     .map(k => sheetToStandalonePreset(p5Sheets[k], 'plant05', 'PLANT 04 CMS ·'));
 
+  const p6Sheets = createInitialMdiHierarchySheets();
+  const p6Order = ['master', 'sub_mdi_100_mda', 'sub_mdi_200_phos', 'sub_mdi_300_mcb', 'sub_mdi_400_purif'];
+  const p6Presets = p6Order
+    .filter(k => p6Sheets[k])
+    .map(k => sheetToStandalonePreset(p6Sheets[k], 'plant06', 'PLANT 05 MDI ·'));
+
   _cachedAllPresets = [
     ...PRESETS.map(p => ({ ...p, group: 'general' as const })),
     ...p2Presets,
     ...p3Presets,
     ...p4Presets,
     ...p5Presets,
+    ...p6Presets,
   ];
   return _cachedAllPresets;
 }
@@ -1909,7 +1925,7 @@ function createDefaultParamsForType(type: FlowUnitType) {
 }
 
 export interface FlowsheetWorkspaceProps {
-  workspaceMode?: 'new_plant_builder' | 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant';
+  workspaceMode?: 'new_plant_builder' | 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant' | 'mdi_plant';
   embeddedInPlant?: boolean;
 }
 
@@ -1921,11 +1937,13 @@ export function FlowsheetWorkspace({
   workspaceMode = 'new_plant_builder',
   embeddedInPlant = false,
 }: FlowsheetWorkspaceProps) {
+  const { user } = useAuth();
   const isElectrolyzerMode = workspaceMode === 'electrolyzer_plant';
   const isHcl1AMode = workspaceMode === 'hcl_1a_plant';
   const isEchGteMode = workspaceMode === 'ech_gte_plant';
   const isCmsMode = workspaceMode === 'cms_plant';
-  const isPlantSimMode = isElectrolyzerMode || isHcl1AMode || isEchGteMode || isCmsMode;
+  const isMdiMode = workspaceMode === 'mdi_plant';
+  const isPlantSimMode = isElectrolyzerMode || isHcl1AMode || isEchGteMode || isCmsMode || isMdiMode;
   const AUTO_SAVE_KEY = isElectrolyzerMode
     ? PLANT02_AUTO_SAVE_KEY
     : isHcl1AMode
@@ -1934,7 +1952,9 @@ export function FlowsheetWorkspace({
         ? PLANT04_AUTO_SAVE_KEY
         : isCmsMode
           ? PLANT05_AUTO_SAVE_KEY
-          : BUILDER_AUTO_SAVE_KEY;
+          : isMdiMode
+            ? PLANT06_AUTO_SAVE_KEY
+            : BUILDER_AUTO_SAVE_KEY;
   const SLOTS_SAVE_KEY = isElectrolyzerMode
     ? PLANT02_SLOTS_SAVE_KEY
     : isHcl1AMode
@@ -1943,7 +1963,9 @@ export function FlowsheetWorkspace({
         ? PLANT04_SLOTS_SAVE_KEY
         : isCmsMode
           ? PLANT05_SLOTS_KEY
-          : BUILDER_SLOTS_SAVE_KEY;
+          : isMdiMode
+            ? PLANT06_SLOTS_KEY
+            : BUILDER_SLOTS_SAVE_KEY;
   const PROJECTS_SAVE_KEY = isElectrolyzerMode
     ? 'chemplant-plant02-projects-v1'
     : isHcl1AMode
@@ -1952,7 +1974,9 @@ export function FlowsheetWorkspace({
         ? 'chemplant-plant04-projects-v1'
         : isCmsMode
           ? 'chemplant-plant05-projects-v1'
-          : 'chemplant-builder-projects-v1';
+          : isMdiMode
+            ? 'chemplant-plant06-projects-v1'
+            : 'chemplant-builder-projects-v1';
 
   const router = useRouter();
   const setSimActiveSheetId = useBalanceStore(s => s.setSimActiveSheetId);
@@ -1966,6 +1990,9 @@ export function FlowsheetWorkspace({
   const cmsPlantInputs = useBalanceStore(s => s.cmsPlantInputs);
   const cmsPlantSummary = useBalanceStore(s => s.cmsPlantSummary);
   const cmsPlantSyncSeq = useBalanceStore(s => s.cmsPlantSyncSeq);
+  const mdiPlantInputs = useBalanceStore(s => s.mdiPlantInputs);
+  const mdiPlantSummary = useBalanceStore(s => s.mdiPlantSummary);
+  const mdiPlantSyncSeq = useBalanceStore(s => s.mdiPlantSyncSeq);
   const setActivePlantId = useBalanceStore(s => s.setActivePlantId);
   const requestSimSheet = useBalanceStore(s => s.requestSimSheet);
   const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
@@ -1979,7 +2006,9 @@ export function FlowsheetWorkspace({
         ? 'full_ech_gte_plant'
         : isCmsMode
           ? 'full_cms_plant'
-          : 'blank';
+          : isMdiMode
+            ? 'full_mdi_plant'
+            : 'blank';
   const defaultSelectedNodeId = isElectrolyzerMode
     ? 'fp_t430'
     : isHcl1AMode
@@ -1988,14 +2017,21 @@ export function FlowsheetWorkspace({
         ? 'ech_c102'
         : isCmsMode
           ? 'cms_m_r101'
-          : null;
-  const defaultModePropertyMethod: SimPropertyMethod = isCmsMode ? 'PR' : 'AUTO';
+          : isMdiMode
+            ? 'mdi_c401'
+            : null;
+  const defaultModePropertyMethod: SimPropertyMethod = isCmsMode
+    ? 'PR'
+    : isMdiMode
+      ? 'NRTL'
+      : 'AUTO';
 
   // 초기 상태 분기:
   // - PLANT 01 (electrolyzer_plant): 전해공장 전공정 풀패키지(100~700 SEC) 마스터 + 10개 하위 세부공정 시트
   // - PLANT 02 (hcl_1a_plant): 1A 초고순도·무수염산 & 폐염산 공비증류(PSD) 마스터 + 3개 하위 세부공정 시트
   // - PLANT 03 (ech_gte_plant): ECH 70,000 TPA (GTE 글리세린 공정) 마스터 + 3개 하위 세부공정 시트
   // - PLANT 04 (cms_plant): 클로로메탄(CMS · MCL 120 + CFM 80 T/D) 마스터 + 3개 하위 세부공정 시트
+  // - PLANT 05 (mdi_plant): 금호미쓰이 공정 MDI 10만톤 마스터 + 4개 하위 세부공정 시트
   // - 공정 시뮬레이터 (new_plant_builder): 깔끔한 빈 캔버스로 시작 (상단 프리셋/저장 프로젝트에서 선택 불러오기 가능)
   const [initialSheets] = useState<Record<string, SheetRuntimeData>>(() => {
     if (isElectrolyzerMode) {
@@ -2009,6 +2045,9 @@ export function FlowsheetWorkspace({
     }
     if (isCmsMode) {
       return createInitialCmsHierarchySheets();
+    }
+    if (isMdiMode) {
+      return createInitialMdiHierarchySheets();
     }
     return {
       master: {
@@ -2344,11 +2383,18 @@ export function FlowsheetWorkspace({
               nextSheets.master.flowEdges,
               masterCached.result.streams
             )
-          : applyMasterBoundaryToSubDefs(
-              nextTargetDefs,
-              nextSheets.master.flowEdges,
-              masterCached.result.streams
-            );
+          : isMdiMode
+            ? syncMdiSubDefsFromMaster(
+                targetSheetId,
+                nextTargetDefs,
+                nextSheets.master.flowEdges,
+                masterCached.result.streams
+              )
+            : applyMasterBoundaryToSubDefs(
+                nextTargetDefs,
+                nextSheets.master.flowEdges,
+                masterCached.result.streams
+              );
         nextTargetDefs = syncedDefs;
         boundaryUpdated = syncedDescriptions.length > 0;
         nextSheets[targetSheetId] = { ...targetSheet, simDefs: nextTargetDefs };
@@ -2407,7 +2453,7 @@ export function FlowsheetWorkspace({
         rfInstance?.fitView({ padding: 0.14, duration: 240 });
       }, 60);
     },
-    [activeComponents, activeSheetId, boundarySyncEnabled, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
+    [activeComponents, activeSheetId, boundarySyncEnabled, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isMdiMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
   );
 
   // 전공정 풀패키지 모드 활성화 또는 공장 초기화 (자동 수렴 실행 금지 — 즉시 오픈)
@@ -2421,7 +2467,9 @@ export function FlowsheetWorkspace({
               ? createInitialEchHierarchySheets()
               : isCmsMode
                 ? createInitialCmsHierarchySheets()
-                : createInitialHierarchySheets()
+                : isMdiMode
+                  ? createInitialMdiHierarchySheets()
+                  : createInitialHierarchySheets()
           : isPlantSimMode && activeSheetId !== 'master'
             ? (() => {
                 const curPos = extractCurrentPositions(rfNodes);
@@ -2458,13 +2506,15 @@ export function FlowsheetWorkspace({
               })()
             : hierarchySheets;
 
-      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' = isHcl1AMode
+      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi' = isHcl1AMode
         ? 'hcl1A'
         : isEchGteMode
           ? 'ech'
           : isCmsMode
             ? 'cms'
-            : 'electrolysis';
+            : isMdiMode
+              ? 'mdi'
+              : 'electrolysis';
       const baselinePlant = resetToFactory ? convergedBaselinesRef.current?.plants[pKey] : undefined;
       const sheets: Record<string, SheetRuntimeData> = { ...sheetsRaw };
       if (baselinePlant) {
@@ -2528,7 +2578,7 @@ export function FlowsheetWorkspace({
       setSelectedEdgeId(null);
       setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
     },
-    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isEchGteMode, isHcl1AMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
+    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isEchGteMode, isHcl1AMode, isMdiMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
   );
 
   // 사용자가 마스터 도면에 새로 추가한 커스텀 블록에도 내부 세부 시트를 생성해 진입할 수 있게 지원
@@ -2783,15 +2833,17 @@ export function FlowsheetWorkspace({
     loadConvergedBaselines().then(bundle => {
       if (!alive || !bundle) return;
       convergedBaselinesRef.current = bundle;
-      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | null = isHcl1AMode
+      const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi' | null = isHcl1AMode
         ? 'hcl1A'
         : isEchGteMode
           ? 'ech'
           : isCmsMode
             ? 'cms'
-            : isElectrolyzerMode
-              ? 'electrolysis'
-              : null;
+            : isMdiMode
+              ? 'mdi'
+              : isElectrolyzerMode
+                ? 'electrolysis'
+                : null;
       if (!pKey) return;
       const pBaselines = bundle.plants[pKey];
       if (!pBaselines) return;
@@ -2841,7 +2893,7 @@ export function FlowsheetWorkspace({
     return () => {
       alive = false;
     };
-  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, workspaceMode]);
+  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, isMdiMode, workspaceMode]);
 
   const switchToClassicUi = useCallback(() => {
     const positions = extractCurrentPositions(rfNodes);
@@ -3273,6 +3325,163 @@ export function FlowsheetWorkspace({
     simDefs,
   ]);
 
+  // Live sync: PLANT 05 MDI (Sidebar 운전조건 변경 -> 원료 Feed, C-302, C-401 동기화 후 활성 시트 재계산)
+  const lastMdiSyncRef = useRef<number>(0);
+  useEffect(() => {
+    if (!hydrated || !isMdiMode) return;
+    if (mdiPlantSyncSeq === lastMdiSyncRef.current) return;
+    lastMdiSyncRef.current = mdiPlantSyncSeq;
+
+    const capScale = Math.max(20, mdiPlantInputs.annualCapacityKta) / 100.0;
+    const pureShareFrac = Math.max(0.15, Math.min(0.65, mdiPlantInputs.pureMdiSharePct / 100));
+    const anilRatioScale = Math.max(0.5, mdiPlantInputs.anilineToHchoRatio / 3.2);
+    const phosScale = Math.max(0.5, (1 + mdiPlantInputs.phosgeneExcessPct / 100) / 2.0);
+    const mcbScale = Math.max(0.5, mdiPlantInputs.mcbSolventRatio / 2.5);
+    const vacTopKgcm2g = Math.max(
+      -0.99,
+      Math.min(-0.8, Number((mdiPlantInputs.vacColTopMbar / 1000 - 1.01325).toFixed(3)))
+    );
+
+    const patchMdiDefs = (defs: FlowNodeDef[]): FlowNodeDef[] =>
+      defs.map(d => {
+        if (d.id === 'mdi_f_anil' || d.id === 'mdi1_anil') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                Aniline: Number((mdiPlantSummary.anilineFreshKgH * (0.98 + 0.03 * anilRatioScale)).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_hcho' || d.id === 'mdi1_hcho') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                HCHO: Number((mdiPlantSummary.formalin37KgH * 0.37).toFixed(1)),
+                H2O: Number((mdiPlantSummary.formalin37KgH * 0.63).toFixed(1)),
+                HCl: Number((1200.0 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_naoh' || d.id === 'mdi1_naoh') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                NaOH: Number((1316.4 * capScale).toFixed(1)),
+                H2O: Number((3071.6 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_co' || d.id === 'mdi2_co') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                CO: Number((mdiPlantSummary.coFreshKgH * phosScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_cl2' || d.id === 'mdi2_cl2') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                Cl2: Number((mdiPlantSummary.cl2FreshKgH * phosScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_mcb_mu') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                MCB: Number((1100.0 * capScale * mcbScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if ((d.id === 'mdi_c302' || d.id === 'mdi3_c302') && d.params.distillConfig?.splitSpecType === 'bottoms_kgh') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              distillConfig: {
+                ...d.params.distillConfig,
+                splitSpecValue: Number((12320.0 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_c401' || d.id === 'mdi4_c401') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operPressKgcm2g: vacTopKgcm2g,
+              ...(d.params.distillConfig
+                ? {
+                    distillConfig: {
+                      ...d.params.distillConfig,
+                      topPressKgcm2g: vacTopKgcm2g,
+                      ...(d.params.distillConfig.splitSpecType === 'd_over_f_mass'
+                        ? { splitSpecValue: Number(pureShareFrac.toFixed(3)) }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        return d;
+      });
+
+    const nextActiveDefs = patchMdiDefs(simDefs);
+    setSimDefs(nextActiveDefs);
+    setHierarchySheets(prev => {
+      const next: typeof prev = {};
+      for (const [sid, s] of Object.entries(prev)) {
+        next[sid] = {
+          ...s,
+          simDefs: sid === activeSheetId ? nextActiveDefs : patchMdiDefs(s.simDefs),
+          cachedSolvedMeta: undefined,
+        };
+      }
+      return next;
+    });
+    setIsSimDirty(true);
+    runSimulationNow(nextActiveDefs, flowEdges, propertyMethod, activeComponents);
+  }, [
+    activeComponents,
+    activeSheetId,
+    flowEdges,
+    hydrated,
+    isMdiMode,
+    mdiPlantInputs,
+    mdiPlantSummary,
+    mdiPlantSyncSeq,
+    propertyMethod,
+    simDefs,
+  ]);
+
   const lastHandledReqSeqRef = useRef<number>(0);
   useEffect(() => {
     if (!hydrated || !isPlantSimMode || !simRequestedSheetId) return;
@@ -3356,6 +3565,7 @@ export function FlowsheetWorkspace({
     presetId === 'full_hcl_1a_plant' ||
     presetId === 'full_ech_gte_plant' ||
     presetId === 'full_cms_plant' ||
+    presetId === 'full_mdi_plant' ||
     Object.keys(hierarchySheets).length > 1;
 
   // ── 2) 노드·배관·속성·계층시트 변경 시 450ms 디바운스 저장 + 탭 전환/언마운트 시 즉시 플러시 ──
@@ -3739,16 +3949,20 @@ export function FlowsheetWorkspace({
             ? getPlantDefaultComponents('ech_gte_plant')
             : p.group === 'plant05'
               ? getPlantDefaultComponents('cms_plant')
-              : activeComponents;
+              : p.group === 'plant06'
+                ? getPlantDefaultComponents('mdi_plant')
+                : activeComponents;
     const nextComps = mergeSheetFeedComponents(nextDefs, presetPlantBase);
     const nextMethod: SimPropertyMethod =
       p.group === 'plant05'
         ? 'PR'
-        : propertyMethod === 'PR' && (p.group === 'plant02' || p.group === 'plant03' || p.group === 'plant04')
-          ? 'AUTO'
-          : propertyMethod;
+        : p.group === 'plant06'
+          ? 'NRTL'
+          : propertyMethod === 'PR' && (p.group === 'plant02' || p.group === 'plant03' || p.group === 'plant04')
+            ? 'AUTO'
+            : propertyMethod;
 
-    const bKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | null =
+    const bKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi' | null =
       p.group === 'plant02'
         ? 'electrolysis'
         : p.group === 'plant03'
@@ -3757,8 +3971,10 @@ export function FlowsheetWorkspace({
             ? 'ech'
             : p.group === 'plant05'
               ? 'cms'
-              : null;
-    const bSheetId = bKey ? p.id.replace(/^plant0[2345]_/, '') : '';
+              : p.group === 'plant06'
+                ? 'mdi'
+                : null;
+    const bSheetId = bKey ? p.id.replace(/^plant0[23456]_/, '') : '';
     const cachedEntry = bKey ? convergedBaselinesRef.current?.plants[bKey]?.[bSheetId] : undefined;
 
     skipNextDirtyRef.current = true;
@@ -3841,8 +4057,8 @@ export function FlowsheetWorkspace({
     setTimeout(() => rfInstance?.fitView({ padding: 0.16, duration: 240 }), 60);
   };
 
-  // 전 공장(01/02/03/04) 100% 수렴 기본 케이스 즉시 복원
-  const restoreConvergedPlantCase = async (targetPlant: 'electrolysis' | 'hcl1A' | 'ech' | 'cms') => {
+  // 전 공장(01/02/03/04/05) 100% 수렴 기본 케이스 즉시 복원
+  const restoreConvergedPlantCase = async (targetPlant: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi') => {
     const bundle = convergedBaselinesRef.current ?? (await loadConvergedBaselines());
     if (bundle) convergedBaselinesRef.current = bundle;
     const pBaselines = bundle?.plants[targetPlant];
@@ -3854,7 +4070,9 @@ export function FlowsheetWorkspace({
           ? createInitialEchHierarchySheets({ syncMasterOnInit: needSync })
           : targetPlant === 'cms'
             ? createInitialCmsHierarchySheets({ syncMasterOnInit: needSync })
-            : createInitialHierarchySheets({ syncMasterOnInit: needSync });
+            : targetPlant === 'mdi'
+              ? createInitialMdiHierarchySheets({ syncMasterOnInit: needSync })
+              : createInitialHierarchySheets({ syncMasterOnInit: needSync });
     const sheets: Record<string, SheetRuntimeData> = { ...rawSheets };
     if (pBaselines) {
       for (const [sid, sh] of Object.entries(sheets)) {
@@ -3881,8 +4099,11 @@ export function FlowsheetWorkspace({
           ? 'ech_gte_plant'
           : targetPlant === 'cms'
             ? 'cms_plant'
-            : 'electrolyzer_plant';
-    const nextMethod: SimPropertyMethod = targetPlant === 'cms' ? 'PR' : 'AUTO';
+            : targetPlant === 'mdi'
+              ? 'mdi_plant'
+              : 'electrolyzer_plant';
+    const nextMethod: SimPropertyMethod =
+      targetPlant === 'cms' ? 'PR' : targetPlant === 'mdi' ? 'NRTL' : 'AUTO';
     const nextComps = mergeSheetFeedComponents(sheets.master.simDefs, getPlantDefaultComponents(modeForComps));
     const nextDefs = sheets.master.simDefs.map(d => ({ ...d, params: { ...d.params } }));
     const nextEdges = sheets.master.flowEdges.map(e => ({ ...e }));
@@ -3897,7 +4118,9 @@ export function FlowsheetWorkspace({
           ? 'full_ech_gte_plant'
           : targetPlant === 'cms'
             ? 'full_cms_plant'
-            : 'full_electrolyzer_plant'
+            : targetPlant === 'mdi'
+              ? 'full_mdi_plant'
+              : 'full_electrolyzer_plant'
     );
     setHierarchySheets(sheets);
     setActiveSheetId('master');
@@ -4610,7 +4833,9 @@ export function FlowsheetWorkspace({
             ? `PLANT 03 ECH (7만톤 GTE) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
             : isCmsMode
               ? `PLANT 04 클로로메탄(CMS) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
-              : '공정 시뮬레이터';
+              : isMdiMode
+                ? `PLANT 05 금호미쓰이 MDI (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+                : '공정 시뮬레이터';
       const payload = buildChemProHandoffPayload(
         targetDef,
         flowEdges,
@@ -4659,6 +4884,7 @@ export function FlowsheetWorkspace({
     isHcl1AMode,
     isEchGteMode,
     isCmsMode,
+    isMdiMode,
     activeSheetId,
     flowEdges,
     solved.streams,
@@ -4960,42 +5186,61 @@ export function FlowsheetWorkspace({
                     </option>
                   ))}
               </optgroup>
-              <optgroup label="PLANT 01 전해 단위공정">
-                {getAllPresets()
-                  .filter(p => p.group === 'plant02')
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.btnLabel}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="PLANT 02 1A 단위공정">
-                {getAllPresets()
-                  .filter(p => p.group === 'plant03')
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.btnLabel}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="PLANT 03 바이오 ECH 단위공정">
-                {getAllPresets()
-                  .filter(p => p.group === 'plant04')
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.btnLabel}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="PLANT 04 클로로메탄(CMS) 단위공정">
-                {getAllPresets()
-                  .filter(p => p.group === 'plant05')
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.btnLabel}
-                    </option>
-                  ))}
-              </optgroup>
+              {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
+                <optgroup label="PLANT 01 전해 단위공정">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant02')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+              {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
+                <optgroup label="PLANT 02 1A 단위공정">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant03')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+              {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
+                <optgroup label="PLANT 03 바이오 ECH 단위공정">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant04')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+              {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
+                <optgroup label="PLANT 04 클로로메탄(CMS) 단위공정">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant05')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
+              {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
+                <optgroup label="PLANT 05 · 금호미쓰이 MDI 공정">
+                  {getAllPresets()
+                    .filter(p => p.group === 'plant06')
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.btnLabel}
+                      </option>
+                    ))}
+                </optgroup>
+              )}
             </select>
           )}
 
@@ -5423,7 +5668,9 @@ export function FlowsheetWorkspace({
                     ? '70,000 TPA (8.75 t/h) ECH (GTE 글리세린 공정) 전공정 도면을 초기 설계값으로 복원합니다.'
                     : isCmsMode
                       ? '66,000 TPA (MCL 120 + CFM 80 T/D) 클로로메탄(CMS) 전공정 도면을 초기 설계값으로 복원합니다.'
-                      : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
+                      : isMdiMode
+                        ? '100,000 TPA (Pure MDI 108 + PMDI 192 T/D) 금호미쓰이 MDI 전공정 도면을 초기 설계값으로 복원합니다.'
+                        : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
               }
               style={{
                 padding: '3px 8px',
@@ -5471,42 +5718,61 @@ export function FlowsheetWorkspace({
                       </option>
                     ))}
                 </optgroup>
-                <optgroup label="PLANT 01 전해공장 — 단위공정 단독 프리셋">
-                  {getAllPresets()
-                    .filter(p => p.group === 'plant02')
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.btnLabel}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋">
-                  {getAllPresets()
-                    .filter(p => p.group === 'plant03')
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.btnLabel}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="PLANT 03 바이오 ECH — 단위공정 단독 프리셋">
-                  {getAllPresets()
-                    .filter(p => p.group === 'plant04')
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.btnLabel}
-                      </option>
-                    ))}
-                </optgroup>
-                <optgroup label="PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋">
-                  {getAllPresets()
-                    .filter(p => p.group === 'plant05')
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.btnLabel}
-                      </option>
-                    ))}
-                </optgroup>
+                {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
+                  <optgroup label="PLANT 01 전해공장 — 단위공정 단독 프리셋">
+                    {getAllPresets()
+                      .filter(p => p.group === 'plant02')
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.btnLabel}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
+                  <optgroup label="PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋">
+                    {getAllPresets()
+                      .filter(p => p.group === 'plant03')
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.btnLabel}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
+                  <optgroup label="PLANT 03 바이오 ECH — 단위공정 단독 프리셋">
+                    {getAllPresets()
+                      .filter(p => p.group === 'plant04')
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.btnLabel}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
+                  <optgroup label="PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋">
+                    {getAllPresets()
+                      .filter(p => p.group === 'plant05')
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.btnLabel}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+                {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
+                  <optgroup label="PLANT 05 · 금호미쓰이 MDI 공정 — 단위공정 단독 프리셋">
+                    {getAllPresets()
+                      .filter(p => p.group === 'plant06')
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.btnLabel}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
               </select>
 
               <button
@@ -5787,8 +6053,11 @@ export function FlowsheetWorkspace({
                     { key: 'hcl1A', label: 'PLANT 02 1A 염산' },
                     { key: 'ech', label: 'PLANT 03 ECH' },
                     { key: 'cms', label: 'PLANT 04 CMS' },
+                    { key: 'mdi', label: 'PLANT 05 MDI' },
                   ] as const
-                ).map(item => (
+                )
+                  .filter(item => isPlantAllowed(PLANT_GROUP_TO_ID[item.key], user))
+                  .map(item => (
                   <button
                     key={item.key}
                     type="button"

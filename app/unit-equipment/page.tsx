@@ -22,12 +22,14 @@ import {
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
+import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
+const PLANT06_MDI_SAVE_KEY = 'chemplant-plant06-mdi-v1';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
 
 interface PlantBridgeCandidate {
@@ -245,7 +247,9 @@ function UnitEquipmentInner() {
             ? PLANT04_SAVE_KEY
             : activePlantId === 'cms_plant'
               ? PLANT05_SAVE_KEY
-              : BUILDER_SAVE_KEY;
+              : activePlantId === 'mdi_plant'
+                ? PLANT06_MDI_SAVE_KEY
+                : BUILDER_SAVE_KEY;
 
     let sheets: Record<string, SheetRuntimeData> | null = null;
     if (typeof window !== 'undefined') {
@@ -309,7 +313,9 @@ function UnitEquipmentInner() {
               ? createInitialEchHierarchySheets()
               : activePlantId === 'cms_plant'
                 ? createInitialCmsHierarchySheets()
-                : {};
+                : activePlantId === 'mdi_plant'
+                  ? createInitialMdiHierarchySheets({ syncMasterOnInit: true })
+                  : {};
     }
 
     const sheetValues = Object.values(sheets);
@@ -351,6 +357,75 @@ function UnitEquipmentInner() {
           payload,
         });
       }
+    }
+
+    if (activePlantId === 'mdi_plant') {
+      extracted.push(
+        {
+          id: 'mdi-aux-p101',
+          label: '[P-101A/B] MDA/아닐린 순환·이송 펌프 (펌프 · 10,006 kg/h)',
+          summary: '100 SEC · 정제 조 MDA/아닐린 (95°C · 0.5→3.8 barG)',
+          payload: {
+            version: 1,
+            timestamp: Date.now(),
+            sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+            tab: 'pump',
+            equipTag: 'P-101A/B',
+            equipName: 'MDA/아닐린 순환·이송 펌프',
+            detectedFluidSummary: 'MDA/아닐린 유기 혼합액 (95°C · 3.8 kG)',
+            pump: {
+              fluidId: 'aniline',
+              T_C: 95.0,
+              Q_m3h: 10.5,
+              rho_kgm3: 1015,
+              P1_barG: 0.5,
+              P2_barG: 3.8,
+              eff_pct: 74,
+              dsuc_mm: '80',
+              ddis_mm: '65',
+            },
+          },
+        },
+        {
+          id: 'mdi-aux-p302',
+          label: '[P-302A/B] 회수 MCB 용매 이송펌프 (펌프 · 18,807 kg/h)',
+          summary: '300 SEC · 모노클로로벤젠 MCB (68°C · -0.9→3.5 barG)',
+          payload: {
+            version: 1,
+            timestamp: Date.now(),
+            sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+            tab: 'pump',
+            equipTag: 'P-302A/B',
+            equipName: '회수 MCB 용매 이송·순환 펌프',
+            detectedFluidSummary: '회수 모노클로로벤젠 MCB 용매 (68°C · 3.5 kG)',
+            pump: {
+              fluidId: 'chlorobenzene',
+              T_C: 68.0,
+              Q_m3h: 17.5,
+              rho_kgm3: 1075,
+              P1_barG: -0.9,
+              P2_barG: 3.5,
+              eff_pct: 76,
+              dsuc_mm: '100',
+              ddis_mm: '80',
+            },
+          },
+        },
+        {
+          id: 'mdi-aux-psv201',
+          label: '[PSV-201] 포스겐 반응계 긴급 안전밸브 (안전밸브 · API 526)',
+          summary: '200 SEC · 포스겐/HCl 고압 가스계 (Set 4.5 barG · 145°C)',
+          payload: {
+            version: 1,
+            timestamp: Date.now(),
+            sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+            tab: 'psv',
+            equipTag: 'PSV-201',
+            equipName: '포스겐 반응계 긴급 압력방출 안전밸브',
+            detectedFluidSummary: '포스겐(COCl₂) / 무수 HCl 반응 가스 (Set 4.5 barG · 145°C)',
+          },
+        }
+      );
     }
 
     setCandidates(extracted);

@@ -47,6 +47,12 @@ function formatCompOption(ck: SimCompKey): string {
   return rawLabel === formula ? formula : `${formula} · ${rawLabel}`;
 }
 
+function formatCompOptionWithBp(ck: SimCompKey): string {
+  const base = formatCompOption(ck);
+  const tb = COMP_CATALOG_META[ck]?.tbC;
+  return typeof tb === 'number' && Number.isFinite(tb) ? `${base} (${tb.toFixed(1)}°C)` : base;
+}
+
 interface DistillationWorkbenchModalProps {
   open: boolean;
   onClose: () => void;
@@ -254,6 +260,7 @@ export default function DistillationWorkbenchModal({
 
   const onRunSimRef = useRef(onRunSimulation);
   onRunSimRef.current = onRunSimulation;
+  const pendingAutoRunRef = useRef<boolean>(false);
 
   const triggerRunSimulation = () => {
     if (!onRunSimRef.current) return;
@@ -268,6 +275,12 @@ export default function DistillationWorkbenchModal({
       setIsRunningFeedback(false);
     }, 220);
   };
+
+  useEffect(() => {
+    if (!open || !pendingAutoRunRef.current) return;
+    pendingAutoRunRef.current = false;
+    triggerRunSimulation();
+  }, [config, open]);
 
   const [isAiBusy, setIsAiBusy] = useState(false);
   const [aiStepLabel, setAiStepLabel] = useState('');
@@ -327,7 +340,7 @@ export default function DistillationWorkbenchModal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'F5') {
         e.preventDefault();
-        triggerRunSimulation();
+        if (dofEvaluation.canRun) triggerRunSimulation();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         handleCloseModal();
@@ -336,50 +349,6 @@ export default function DistillationWorkbenchModal({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
-
-  const selectedSlots = resolveEffectiveDofSlots(config);
-  const toggleDofSlot = (slot: DistillDofSlotId) => {
-    if (selectedSlots.includes(slot)) {
-      onChangeConfig({ activeDofSlots: selectedSlots.filter((s) => s !== slot) });
-    } else if (selectedSlots.length < 2) {
-      onChangeConfig({ activeDofSlots: [...selectedSlots, slot] });
-    }
-  };
-
-  const calcMode: DistillCalcMode = config.columnCalcMode ?? 'rigorous_mesh';
-  const isDualQualityMode =
-    calcMode === 'rigorous_mesh' &&
-    selectedSlots.includes('top_spec') &&
-    selectedSlots.includes('bot_spec');
-  const isAutoStageActive =
-    calcMode === 'design_stages' ||
-    (isDualQualityMode && config.autoOptimizeStagesOnDualSpec !== false);
-  const N =
-    isAutoStageActive && result?.totalStagesUsed
-      ? result.totalStagesUsed
-      : Math.max(4, Math.min(200, Math.round(config.totalStages ?? 24)));
-  const primaryFeedStage =
-    isAutoStageActive && result?.feedStageUsed
-      ? result.feedStageUsed
-      : Math.max(
-          2,
-          Math.min(N - 1, Math.round(config.feedStage ?? Math.round(N * 0.5)))
-        );
-  const topSpecType: DistillTopSpecType = config.topSpecType ?? 'reflux_ratio';
-  const topSpecValue = config.topSpecValue ?? 2.8;
-  const splitSpecType: DistillSplitSpecType =
-    config.splitSpecType ?? 'd_over_f_mass';
-  const splitSpecValue = config.splitSpecValue ?? 0.5;
-  const condenserType: DistillCondenserType = config.condenserType ?? 'total';
-  const reboilerType: DistillReboilerType = config.reboilerType ?? 'kettle';
-  const thermoModel: DistillThermoModel = config.thermoModel ?? 'AUTO';
-  const topPress = config.topPressKgcm2g ?? 0.05;
-  const stageDp = config.stageDeltaPKgcm2 ?? 0.004;
-  const murphreeEff = config.murphreeEffPct ?? 75;
-  const stageInputBasis: DistillStageInputBasis = config.stageInputBasis ?? 'theoretical';
-
-  const spec1: DistillDesignSpec = { ...DEFAULT_SPEC1, ...(config.spec1 ?? {}) };
-  const spec2: DistillDesignSpec = { ...DEFAULT_SPEC2, ...(config.spec2 ?? {}) };
 
   const totalFeedKgH = useMemo(
     () =>
@@ -412,6 +381,429 @@ export default function DistillationWorkbenchModal({
       .map((t) => t.key);
     return nonZero.length > 0 ? nonZero : (['HCl', 'H2O'] as SimCompKey[]);
   }, [feeds, result]);
+
+  const { feedSortedComps, otherSortedComps } = useMemo(() => {
+    const sortByTb = (a: SimCompKey, b: SimCompKey) =>
+      (COMP_CATALOG_META[a]?.tbC ?? 999) - (COMP_CATALOG_META[b]?.tbC ?? 999);
+    const feedTotals = new Map<SimCompKey, number>();
+    for (const f of feeds) {
+      for (const k of SIM_COMPS) {
+        const flow = f.flowsKgH[k] || 0;
+        if (flow > 1e-6) {
+          feedTotals.set(k, (feedTotals.get(k) ?? 0) + flow);
+        }
+      }
+    }
+    const feedPresent: SimCompKey[] =
+      feedTotals.size > 0
+        ? SIM_COMPS.filter((k) => (feedTotals.get(k) ?? 0) > 1e-6).sort(sortByTb)
+        : [...activeComps].sort(sortByTb);
+    const feedSet = new Set(feedPresent);
+    const others = SIM_COMPS.filter((k) => !feedSet.has(k)).sort(sortByTb);
+    return { feedSortedComps: feedPresent, otherSortedComps: others };
+  }, [feeds, activeComps]);
+
+  const calcMode: DistillCalcMode = config.columnCalcMode ?? 'rigorous_mesh';
+  const isFixedStages = calcMode !== 'design_stages';
+
+  const getUiDofSlots = (cfg: DistillColumnParams): DistillDofSlotId[] => {
+    if (Array.isArray(cfg.activeDofSlots)) {
+      const uniq: DistillDofSlotId[] = [];
+      for (const s of cfg.activeDofSlots) {
+        if ((s === 'rr' || s === 'split' || s === 'top_spec' || s === 'bot_spec') && !uniq.includes(s)) {
+          uniq.push(s);
+        }
+      }
+      return uniq;
+    }
+    if ((cfg.columnCalcMode ?? 'rigorous_mesh') === 'design_stages') {
+      const out: DistillDofSlotId[] = [];
+      if (cfg.designRefluxMode === 'fixed_rr') out.push('rr');
+      if (cfg.designOmitTopPurity && cfg.sideCut?.enabled) {
+        out.push('bot_spec');
+      } else {
+        out.push('top_spec', 'bot_spec');
+      }
+      return out;
+    }
+    return resolveEffectiveDofSlots(cfg);
+  };
+
+  const selectedSlots = getUiDofSlots(config);
+
+  const applyUnifiedConfigChange = (patch: Partial<DistillColumnParams>) => {
+    const merged: DistillColumnParams = { ...config, ...patch };
+    const nextCalcMode: DistillCalcMode = merged.columnCalcMode ?? 'rigorous_mesh';
+    const nextIsFixed = nextCalcMode !== 'design_stages';
+    const nextSlots = getUiDofSlots(merged);
+    const hasRr = nextSlots.includes('rr');
+    const hasTop = nextSlots.includes('top_spec');
+    const hasBot = nextSlots.includes('bot_spec');
+    const hasSide = Boolean(merged.sideCut?.enabled);
+
+    const defLk = feedSortedComps[0] ?? activeComps[0] ?? 'ECH';
+    const defHk =
+      feedSortedComps.find((c) => c !== defLk) ??
+      activeComps.find((c) => c !== defLk) ??
+      defLk;
+
+    const topMetric: DistillSpecMetric =
+      merged.topQualityMetric ??
+      (merged.designTopBasis as DistillSpecMetric | undefined) ??
+      merged.spec1?.metric ??
+      'purity_wt_pct';
+    const topComp: SimCompKey =
+      merged.topQualityComp ??
+      (topMetric === 'impurity_wt_ppm' ? defHk : merged.designLkComp ?? defLk);
+    const topTarget: number =
+      merged.topQualityTarget ??
+      (topMetric === 'impurity_wt_ppm'
+        ? merged.designTopImpurityPpm ?? 500
+        : topMetric === 'recovery_pct'
+        ? merged.designTopRecoveryPct ?? 99.2
+        : merged.designTopPurityWtPct ?? 99.5);
+
+    const botMetric: DistillSpecMetric =
+      merged.botQualityMetric ??
+      (merged.designBotBasis as DistillSpecMetric | undefined) ??
+      merged.spec2?.metric ??
+      'purity_wt_pct';
+    const botComp: SimCompKey =
+      merged.botQualityComp ??
+      (botMetric === 'impurity_wt_ppm' ? defLk : merged.designHkComp ?? defHk);
+    const botTarget: number =
+      merged.botQualityTarget ??
+      (botMetric === 'impurity_wt_ppm'
+        ? merged.designBotImpurityPpm ?? 500
+        : botMetric === 'recovery_pct'
+        ? merged.designBotRecoveryPct ?? 99.2
+        : merged.designBotPurityWtPct ?? 99.0);
+
+    let syncedLk = merged.designLkComp ?? defLk;
+    if (hasTop && topMetric !== 'impurity_wt_ppm') {
+      syncedLk = topComp;
+    } else if (hasBot && botMetric === 'impurity_wt_ppm') {
+      syncedLk = botComp;
+    }
+    let syncedHk = merged.designHkComp ?? defHk;
+    if (hasBot && botMetric !== 'impurity_wt_ppm') {
+      syncedHk = botComp;
+    } else if (hasTop && topMetric === 'impurity_wt_ppm') {
+      syncedHk = topComp;
+    }
+    if (syncedLk === syncedHk && feedSortedComps.length >= 2) {
+      syncedHk = feedSortedComps.find((c) => c !== syncedLk) ?? syncedHk;
+    }
+
+    const syncedTopBasis: DistillEndpointBasis =
+      topMetric === 'impurity_wt_ppm'
+        ? 'impurity_wt_ppm'
+        : topMetric === 'recovery_pct'
+        ? 'recovery_pct'
+        : 'purity_wt_pct';
+    const syncedBotBasis: DistillEndpointBasis =
+      botMetric === 'impurity_wt_ppm'
+        ? 'impurity_wt_ppm'
+        : botMetric === 'recovery_pct'
+        ? 'recovery_pct'
+        : 'purity_wt_pct';
+
+    const syncedPatch: Partial<DistillColumnParams> = {
+      ...patch,
+      activeDofSlots: nextSlots,
+      designLkComp: syncedLk,
+      designHkComp: syncedHk,
+      designTopBasis: syncedTopBasis,
+      designBotBasis: syncedBotBasis,
+      ...(syncedTopBasis === 'purity_wt_pct' ? { designTopPurityWtPct: topTarget } : {}),
+      ...(syncedTopBasis === 'impurity_wt_ppm' ? { designTopImpurityPpm: topTarget } : {}),
+      ...(syncedTopBasis === 'recovery_pct' ? { designTopRecoveryPct: topTarget } : {}),
+      ...(syncedBotBasis === 'purity_wt_pct' ? { designBotPurityWtPct: botTarget } : {}),
+      ...(syncedBotBasis === 'impurity_wt_ppm' ? { designBotImpurityPpm: botTarget } : {}),
+      ...(syncedBotBasis === 'recovery_pct' ? { designBotRecoveryPct: botTarget } : {}),
+    };
+
+    if (!nextIsFixed) {
+      syncedPatch.designOmitTopPurity = Boolean(hasSide && !hasTop);
+      syncedPatch.designRefluxMode = hasRr
+        ? 'fixed_rr'
+        : merged.designRefluxMode === 'r_mult'
+        ? 'r_mult'
+        : 'auto_opt';
+      if (hasRr) {
+        syncedPatch.designFixedRR =
+          (merged.topSpecType ?? 'reflux_ratio') === 'reflux_ratio'
+            ? merged.topSpecValue ?? merged.designFixedRR ?? 2.8
+            : merged.designFixedRR ?? 2.8;
+      }
+    } else {
+      syncedPatch.designOmitTopPurity = false;
+      syncedPatch.autoOptimizeStagesOnDualSpec = false;
+    }
+
+    onChangeConfig(syncedPatch);
+  };
+
+  const applyPatchAndRun = (patch: Partial<DistillColumnParams>) => {
+    pendingAutoRunRef.current = true;
+    applyUnifiedConfigChange(patch);
+  };
+
+  const toggleDofSlot = (slot: DistillDofSlotId) => {
+    const nextSlots = selectedSlots.includes(slot)
+      ? selectedSlots.filter((s) => s !== slot)
+      : [...selectedSlots, slot];
+    applyUnifiedConfigChange({ activeDofSlots: nextSlots });
+  };
+
+  const spec1: DistillDesignSpec = { ...DEFAULT_SPEC1, ...(config.spec1 ?? {}) };
+  const spec2: DistillDesignSpec = { ...DEFAULT_SPEC2, ...(config.spec2 ?? {}) };
+
+  const defLkGlobal = feedSortedComps[0] ?? activeComps[0] ?? 'ECH';
+  const defHkGlobal =
+    feedSortedComps.find((c) => c !== defLkGlobal) ??
+    activeComps.find((c) => c !== defLkGlobal) ??
+    defLkGlobal;
+
+  const uiTopMetric: DistillSpecMetric =
+    !isFixedStages && config.designTopBasis
+      ? config.designTopBasis
+      : config.topQualityMetric ?? spec1.metric ?? 'purity_wt_pct';
+  const uiTopComp: SimCompKey =
+    config.topQualityComp ??
+    (!isFixedStages
+      ? uiTopMetric === 'impurity_wt_ppm'
+        ? config.designHkComp ?? defHkGlobal
+        : config.designLkComp ?? defLkGlobal
+      : uiTopMetric === 'impurity_wt_ppm'
+      ? defHkGlobal
+      : defLkGlobal);
+  const uiTopTarget: number =
+    !isFixedStages
+      ? uiTopMetric === 'impurity_wt_ppm'
+        ? config.designTopImpurityPpm ?? config.topQualityTarget ?? 500
+        : uiTopMetric === 'recovery_pct'
+        ? config.designTopRecoveryPct ?? config.topQualityTarget ?? 99.2
+        : config.designTopPurityWtPct ?? config.topQualityTarget ?? 99.5
+      : config.topQualityTarget ?? (uiTopMetric === 'impurity_wt_ppm' ? 200 : 99.5);
+
+  const uiBotMetric: DistillSpecMetric =
+    !isFixedStages && config.designBotBasis
+      ? config.designBotBasis
+      : config.botQualityMetric ?? spec2.metric ?? 'purity_wt_pct';
+  const uiBotComp: SimCompKey =
+    config.botQualityComp ??
+    (!isFixedStages
+      ? uiBotMetric === 'impurity_wt_ppm'
+        ? config.designLkComp ?? defLkGlobal
+        : config.designHkComp ?? defHkGlobal
+      : uiBotMetric === 'impurity_wt_ppm'
+      ? defLkGlobal
+      : defHkGlobal);
+  const uiBotTarget: number =
+    !isFixedStages
+      ? uiBotMetric === 'impurity_wt_ppm'
+        ? config.designBotImpurityPpm ?? config.botQualityTarget ?? 500
+        : uiBotMetric === 'recovery_pct'
+        ? config.designBotRecoveryPct ?? config.botQualityTarget ?? 99.2
+        : config.designBotPurityWtPct ?? config.botQualityTarget ?? 99.0
+      : config.botQualityTarget ?? (uiBotMetric === 'impurity_wt_ppm' ? 200 : 99.0);
+
+  const dofEvaluation = (() => {
+    const hasRr = selectedSlots.includes('rr');
+    const hasSplit = selectedSlots.includes('split');
+    const hasTop = selectedSlots.includes('top_spec');
+    const hasBot = selectedSlots.includes('bot_spec');
+    const hasSide = Boolean(config.sideCut?.enabled);
+    const mainCount = [hasRr, hasSplit, hasTop, hasBot].filter(Boolean).length;
+    const sideCount = hasSide ? 1 : 0;
+    const selectedCount = mainCount + sideCount;
+
+    const activeLabels: string[] = [];
+    if (hasRr) activeLabels.push('① 환류비');
+    if (hasSplit) activeLabels.push('② 유량분할');
+    if (hasTop) activeLabels.push('③ 탑정품질');
+    if (hasBot) activeLabels.push('④ 탑저품질');
+    if (hasSide) activeLabels.push('⑤ 사이드컷');
+
+    const sameEndpointConflict =
+      hasTop &&
+      hasBot &&
+      uiTopComp === uiBotComp &&
+      uiTopMetric !== 'impurity_wt_ppm' &&
+      uiBotMetric !== 'impurity_wt_ppm';
+
+    if (isFixedStages) {
+      const requiredCount = 2 + sideCount;
+      if (mainCount > 2) {
+        return {
+          canRun: false,
+          selectedCount,
+          requiredCount,
+          statusLevel: 'error' as const,
+          headline: `⚠️ 자유도 초과 (${mainCount}/2) — 과다 구속`,
+          hint: '고정 단수(⓪) 모드에서는 ①~④ 중 정확히 2개만 선택해야 합니다. 1개 이상 해제하거나 ⓪ 고정 단수를 해제하세요.',
+        };
+      }
+      if (mainCount < 2) {
+        let hint = '① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요.';
+        if (mainCount === 0 && hasSide) {
+          hint =
+            '⑤ 사이드컷 선택 완료 → ① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요 (③ 없이 ①+④+⑤ 또는 ②+④+⑤ 가능).';
+        } else if (hasSide && hasBot && !hasTop) {
+          hint =
+            '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.';
+        } else if (hasRr) {
+          hint =
+            '① 탑정 환류비 선택 완료 → 추가로 ② 유량분할 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+        } else if (hasSplit) {
+          hint =
+            '② 유량·분할 조건 선택 완료 → 추가로 ① 환류비 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+        } else if (hasTop) {
+          hint =
+            '③ 탑정순도 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+        } else if (hasBot) {
+          hint = hasSide
+            ? '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.'
+            : '④ 탑저순도 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 또는 ③ 탑정순도 중 1개를 선택하면 실행할 수 있습니다.';
+        }
+        return {
+          canRun: false,
+          selectedCount,
+          requiredCount,
+          statusLevel: 'warn' as const,
+          headline: `🟡 추가 조건 ${2 - mainCount}개 선택 필요`,
+          hint,
+        };
+      }
+      if (sameEndpointConflict) {
+        return {
+          canRun: false,
+          selectedCount,
+          requiredCount,
+          statusLevel: 'error' as const,
+          headline: '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
+          hint: '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
+        };
+      }
+      return {
+        canRun: true,
+        selectedCount,
+        requiredCount,
+        statusLevel: 'ok' as const,
+        headline: `✓ 자유도 충족 [${activeLabels.join(' + ')}]`,
+        hint:
+          hasSide && !hasTop
+            ? `⑤ 사이드컷 활성: ③ 탑정순도 없이 [${activeLabels.join(' + ')}] 조합으로 정밀 MESH 해석을 실행합니다.`
+            : '모든 운전·설계 자유도가 정확히 충족되어 즉시 [▶ RUN] 실행 가능합니다.',
+      };
+    }
+
+    // ⓪ 해제: AI 최적 단수(N · Nf) 자동설계 모드
+    if (hasTop && hasBot && hasSplit) {
+      return {
+        canRun: false,
+        selectedCount,
+        requiredCount: 2 + (hasRr ? 1 : 0) + sideCount,
+        statusLevel: 'error' as const,
+        headline: '⚠️ 자유도 과다 구속 (③+④ + ② 충돌)',
+        hint: 'AI 최적 단수 모드에서 ③ 탑정품질과 ④ 탑저품질을 동시에 지정하면 ② 유출분배(D/F)는 자동 산출되므로 ②를 해제하거나 ⓪ 고정 단수를 체크하세요.',
+      };
+    }
+    if (sameEndpointConflict) {
+      return {
+        canRun: false,
+        selectedCount,
+        requiredCount: selectedCount,
+        statusLevel: 'error' as const,
+        headline: '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
+        hint: '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
+      };
+    }
+    if (hasSide && !hasTop) {
+      if (hasBot) {
+        return {
+          canRun: true,
+          selectedCount,
+          requiredCount: Math.max(2, selectedCount),
+          statusLevel: 'ok' as const,
+          headline: `✓ 사이드컷(⑤) + 탑저(④) AI 단수설계 [${activeLabels.join(' + ')}]`,
+          hint: `⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ${
+            hasRr ? '① 환류비 + ④ 탑저순도' : hasSplit ? '② 유량분할 + ④ 탑저순도' : '④ 탑저순도(환류비 자동최적)'
+          }만으로 N·Nf·측류를 자동 설계합니다.`,
+        };
+      }
+      return {
+        canRun: false,
+        selectedCount,
+        requiredCount: Math.max(2, selectedCount + 1),
+        statusLevel: 'warn' as const,
+        headline: '🟡 ④ 탑저순도 추가 선택 필요',
+        hint: '⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ④ 탑저순도(또는 ⓪ 고정 단수 체크 후 ①+②)만 선택하면 해석 가능합니다.',
+      };
+    }
+    if (hasTop && hasBot) {
+      return {
+        canRun: true,
+        selectedCount,
+        requiredCount: Math.max(2, selectedCount),
+        statusLevel: 'ok' as const,
+        headline: `✓ AI 최적 단수·피드단 설계 [${activeLabels.join(' + ')}]`,
+        hint: hasRr
+          ? '① 지정 환류비 조건에서 ③ 탑정·④ 탑저 목표를 만족하는 최적 단수(N·Nf)와 D/F를 자동 산출합니다.'
+          : '③ 탑정·④ 탑저 목표를 동시에 만족하는 최적 단수(N·Nf)·환류비·D/F를 TAC 최소 기준으로 탐색합니다.',
+      };
+    }
+    if (hasTop && !hasBot) {
+      return {
+        canRun: false,
+        selectedCount,
+        requiredCount: Math.max(2, selectedCount + 1),
+        statusLevel: 'warn' as const,
+        headline: '🟡 ④ 탑저품질 추가 선택 필요',
+        hint: '③ 탑정품질 선택 완료 → AI 최적 단수(N·Nf) 설계를 위해 ④ 탑저 제품 순도·회수율을 추가로 선택하세요 (운전 고정은 ⓪ 체크).',
+      };
+    }
+    return {
+      canRun: false,
+      selectedCount,
+      requiredCount: 2 + sideCount,
+      statusLevel: 'warn' as const,
+      headline: '🟡 제품 품질 목표(③·④) 선택 필요',
+      hint: hasBot
+        ? '④ 탑저품질 선택 완료 → ③ 탑정품질을 추가하거나 ⑤ 사이드컷을 선택하면 AI 최적 단수(N·Nf)를 자동 설계합니다.'
+        : 'AI 최적 단수(⓪ 해제) 모드에서는 ③+④ (또는 ⑤ 사이드컷 시 ④ 단독/①+④/②+④)를 선택하세요. ①+②만으로 실행하려면 ⓪ 고정 단수를 체크하세요.',
+    };
+  })();
+
+  const isDualQualityMode =
+    isFixedStages &&
+    selectedSlots.includes('top_spec') &&
+    selectedSlots.includes('bot_spec');
+  const isAutoStageActive = !isFixedStages;
+  const N =
+    isAutoStageActive && result?.totalStagesUsed
+      ? result.totalStagesUsed
+      : Math.max(4, Math.min(200, Math.round(config.totalStages ?? 24)));
+  const primaryFeedStage =
+    isAutoStageActive && result?.feedStageUsed
+      ? result.feedStageUsed
+      : Math.max(
+          2,
+          Math.min(N - 1, Math.round(config.feedStage ?? Math.round(N * 0.5)))
+        );
+  const topSpecType: DistillTopSpecType = config.topSpecType ?? 'reflux_ratio';
+  const topSpecValue = config.topSpecValue ?? 2.8;
+  const splitSpecType: DistillSplitSpecType =
+    config.splitSpecType ?? 'd_over_f_mass';
+  const splitSpecValue = config.splitSpecValue ?? 0.5;
+  const condenserType: DistillCondenserType = config.condenserType ?? 'total';
+  const reboilerType: DistillReboilerType = config.reboilerType ?? 'kettle';
+  const thermoModel: DistillThermoModel = config.thermoModel ?? 'AUTO';
+  const topPress = config.topPressKgcm2g ?? 0.05;
+  const stageDp = config.stageDeltaPKgcm2 ?? 0.004;
+  const murphreeEff = config.murphreeEffPct ?? 75;
+  const stageInputBasis: DistillStageInputBasis = config.stageInputBasis ?? 'theoretical';
 
   if (!open) return null;
 
@@ -469,6 +861,10 @@ export default function DistillationWorkbenchModal({
 
   const makeDefaultSideCut = (enabled: boolean): DistillSideCutConfig => {
     const rawTotal = config.totalStages ?? 24;
+    const midByTb =
+      feedSortedComps.length >= 3
+        ? feedSortedComps[Math.floor(feedSortedComps.length / 2)]
+        : feedSortedComps[1] ?? feedSortedComps[0] ?? activeComps[0];
     return {
       id: 'SC-1',
       enabled,
@@ -478,7 +874,7 @@ export default function DistillationWorkbenchModal({
       phase: 'liquid',
       specType: 's_over_f_mass',
       specValue: 0.15,
-      targetComp: activeComps[1] ?? activeComps[0],
+      targetComp: midByTb,
     };
   };
 
@@ -489,18 +885,39 @@ export default function DistillationWorkbenchModal({
 
   const toggleSideCutEnabled = () => {
     if (!config.sideCut) {
-      onChangeConfig({ sideCut: makeDefaultSideCut(true) });
+      applyUnifiedConfigChange({ sideCut: makeDefaultSideCut(true) });
       return;
     }
-    onChangeConfig({ sideCut: { ...sideCutCfg, enabled: !sideCutEnabled } });
+    applyUnifiedConfigChange({ sideCut: { ...sideCutCfg, enabled: !sideCutEnabled } });
   };
 
   const updateSideCut = (patch: Partial<DistillSideCutConfig>) => {
     const base = config.sideCut ? sideCutCfg : makeDefaultSideCut(true);
-    onChangeConfig({ sideCut: { ...base, ...patch } });
+    applyUnifiedConfigChange({ sideCut: { ...base, ...patch } });
   };
 
-  const renderSideCutCard = (mode: 'rigorous_specs' | 'design_stages') => {
+  const renderCompOptGroups = () => (
+    <>
+      {feedSortedComps.length > 0 && (
+        <optgroup label="현재 유입 성분 (비점 순)">
+          {feedSortedComps.map((ck) => (
+            <option key={ck} value={ck}>
+              {formatCompOptionWithBp(ck)}
+            </option>
+          ))}
+        </optgroup>
+      )}
+      <optgroup label="기타 시뮬레이션 성분">
+        {otherSortedComps.map((ck) => (
+          <option key={ck} value={ck}>
+            {formatCompOptionWithBp(ck)}
+          </option>
+        ))}
+      </optgroup>
+    </>
+  );
+
+  const renderSideCutCard = () => {
     const maxSideStage = Math.max(2, N - 1);
     const clampedSideStage = Math.max(2, Math.min(maxSideStage, Math.round(sideCutCfg.stage || 2)));
     const specMeta = SIDECUT_SPEC_META[sideCutCfg.specType] ?? SIDECUT_SPEC_META.s_over_f_mass;
@@ -509,11 +926,8 @@ export default function DistillationWorkbenchModal({
       sideCutCfg.specType === 'purity_wt_pct' ||
       sideCutCfg.specType === 'recovery_pct' ||
       sideCutCfg.specType === 'impurity_ppm';
-    const scCompOptions =
-      sideCutCfg.targetComp && !activeComps.includes(sideCutCfg.targetComp)
-        ? [sideCutCfg.targetComp, ...activeComps]
-        : activeComps;
-    const effectiveTargetComp = sideCutCfg.targetComp ?? scCompOptions[0] ?? 'H2O';
+    const effectiveTargetComp =
+      sideCutCfg.targetComp ?? feedSortedComps[1] ?? feedSortedComps[0] ?? activeComps[0] ?? 'H2O';
     const showSideResultBadge = Boolean(
       result && (result.sideCutSpecStatus || (result.sideCutMassKgH ?? 0) > 0)
     );
@@ -542,9 +956,7 @@ export default function DistillationWorkbenchModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 900, color: sideCutEnabled ? '#4C1D95' : '#334155' }}>
-              {mode === 'rigorous_specs'
-                ? '⑤ 사이드컷 (측류 인출 · Side-Cut) 변수 설정 [선택 자유도 +1]'
-                : '③ 사이드컷(측류) 동시 인출 옵션 (선택)'}
+              ⑤ 사이드컷(측류) 조건 · Side-Cut (③ 탑정순도 없이 ①+④+⑤ 또는 ②+④+⑤ 지원)
             </span>
           </div>
 
@@ -578,87 +990,82 @@ export default function DistillationWorkbenchModal({
 
         {sideCutEnabled && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            {/* 공정 실무 빠른 프리셋 스트립 (정밀모사 탭 ①) */}
-            {mode === 'rigorous_specs' && (
-              <div
-                style={{
-                  padding: '7px 9px',
-                  borderRadius: 7,
-                  background: '#FAF5FF',
-                  border: '1px solid #E9D5FF',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 5,
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>빠른 공정 프리셋:</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      updateSideCut({
-                        stage: Math.min(3, Math.max(2, (config.totalStages ?? 24) - 2)),
-                        autoOptimizeStage: false,
-                        phase: 'liquid',
-                        specType: 's_over_f_mass',
-                        specValue: 0.70,
-                      })
-                    }
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 5,
-                      border: '1px solid #C084FC',
-                      background: '#FFFFFF',
-                      color: '#5B21B6',
-                      fontSize: 10.3,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🧪 파스퇴르 정제품 측류 (상부 3단 액상)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const sortedByBp = [...activeComps].sort(
-                        (a, b) => (COMP_CATALOG_META[a]?.tbC ?? 100) - (COMP_CATALOG_META[b]?.tbC ?? 100)
-                      );
-                      const midComp =
-                        sortedByBp.length >= 3
-                          ? sortedByBp[Math.floor(sortedByBp.length / 2)]
-                          : (activeComps[1] ?? activeComps[0]);
-                      const keepCurrent =
-                        sideCutCfg.targetComp &&
-                        sortedByBp.length >= 3 &&
-                        sideCutCfg.targetComp !== sortedByBp[0] &&
-                        sideCutCfg.targetComp !== sortedByBp[sortedByBp.length - 1];
-                      updateSideCut({
-                        autoOptimizeStage: true,
-                        phase: 'liquid',
-                        specType: 's_over_f_mass',
-                        specValue: 0.20,
-                        targetComp: keepCurrent ? sideCutCfg.targetComp : midComp,
-                      });
-                    }}
-                    style={{
-                      padding: '4px 8px',
-                      borderRadius: 5,
-                      border: '1px solid #C084FC',
-                      background: '#FFFFFF',
-                      color: '#5B21B6',
-                      fontSize: 10.3,
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🎯 중간비점 농축 측류 (최적단 AI 자동탐색)
-                  </button>
-                </div>
-                <div style={{ fontSize: 10, color: '#6B21A8', lineHeight: 1.35 }}>
-                  💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.
-                </div>
+            {/* 공정 실무 빠른 프리셋 스트립 */}
+            <div
+              style={{
+                padding: '7px 9px',
+                borderRadius: 7,
+                background: '#FAF5FF',
+                border: '1px solid #E9D5FF',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>빠른 공정 프리셋:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateSideCut({
+                      stage: Math.min(3, Math.max(2, (config.totalStages ?? 24) - 2)),
+                      autoOptimizeStage: false,
+                      phase: 'liquid',
+                      specType: 's_over_f_mass',
+                      specValue: 0.70,
+                    })
+                  }
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 5,
+                    border: '1px solid #C084FC',
+                    background: '#FFFFFF',
+                    color: '#5B21B6',
+                    fontSize: 10.3,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🧪 파스퇴르 정제품 측류 (상부 3단 액상)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const midComp =
+                      feedSortedComps.length >= 3
+                        ? feedSortedComps[Math.floor(feedSortedComps.length / 2)]
+                        : feedSortedComps[1] ?? feedSortedComps[0] ?? activeComps[0];
+                    const keepCurrent =
+                      sideCutCfg.targetComp &&
+                      feedSortedComps.length >= 3 &&
+                      sideCutCfg.targetComp !== feedSortedComps[0] &&
+                      sideCutCfg.targetComp !== feedSortedComps[feedSortedComps.length - 1];
+                    updateSideCut({
+                      autoOptimizeStage: true,
+                      phase: 'liquid',
+                      specType: 's_over_f_mass',
+                      specValue: 0.20,
+                      targetComp: keepCurrent ? sideCutCfg.targetComp : midComp,
+                    });
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: 5,
+                    border: '1px solid #C084FC',
+                    background: '#FFFFFF',
+                    color: '#5B21B6',
+                    fontSize: 10.3,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  🎯 중간비점 농축 측류 (최적단 AI 자동탐색)
+                </button>
               </div>
-            )}
+              <div style={{ fontSize: 10, color: '#6B21A8', lineHeight: 1.35 }}>
+                💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.
+              </div>
+            </div>
 
             {/* 인출 상(Phase) + 인출 단(Stage) + 최적단 자동탐색 */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.05fr 0.95fr', gap: 8 }}>
@@ -722,7 +1129,7 @@ export default function DistillationWorkbenchModal({
                   )}
                 </div>
                 <BufferedNumberInput
-                  syncKey={`${unitTag}-scstage-${mode}-${sideCutCfg.autoOptimizeStage ? 'auto' : 'man'}`}
+                  syncKey={`${unitTag}-scstage-${sideCutCfg.autoOptimizeStage ? 'auto' : 'man'}`}
                   min={2}
                   max={maxSideStage}
                   step={1}
@@ -733,7 +1140,9 @@ export default function DistillationWorkbenchModal({
                       stage: Math.max(2, Math.min(maxSideStage, Math.round(v || 2))),
                     })
                   }
-                  onEnterRun={triggerRunSimulation}
+                  onEnterRun={() => {
+                    if (dofEvaluation.canRun) triggerRunSimulation();
+                  }}
                   style={{
                     ...inputBaseStyle,
                     background: sideCutCfg.autoOptimizeStage ? '#F1F5F9' : '#FFFFFF',
@@ -811,11 +1220,7 @@ export default function DistillationWorkbenchModal({
                     onChange={(e) => updateSideCut({ targetComp: e.target.value as SimCompKey })}
                     style={selectBaseStyle}
                   >
-                    {scCompOptions.map((ck) => (
-                      <option key={ck} value={ck}>
-                        {formatCompOption(ck)}
-                      </option>
-                    ))}
+                    {renderCompOptGroups()}
                   </select>
                 </div>
               )}
@@ -823,13 +1228,15 @@ export default function DistillationWorkbenchModal({
               <div>
                 <label style={labelStyle}>목표 수치 ({specMeta.unit})</label>
                 <BufferedNumberInput
-                  syncKey={`${unitTag}-scval-${mode}-${sideCutCfg.specType}`}
+                  syncKey={`${unitTag}-scval-${sideCutCfg.specType}`}
                   step={specMeta.step}
                   min={specMeta.min}
                   max={specMeta.max}
                   value={sideCutCfg.specValue}
                   onValueChange={(v) => updateSideCut({ specValue: v })}
-                  onEnterRun={triggerRunSimulation}
+                  onEnterRun={() => {
+                    if (dofEvaluation.canRun) triggerRunSimulation();
+                  }}
                   style={inputBaseStyle}
                 />
                 {sideCutCfg.specType === 's_over_f_mass' && totalFeedKgH > 0 && (
@@ -1368,31 +1775,18 @@ export default function DistillationWorkbenchModal({
                             config.sideCut?.enabled && typeof c.sideCutStage === 'number'
                               ? { sideCut: { ...config.sideCut, stage: c.sideCutStage } }
                               : {};
-                          if (contextMode === 'design_stages') {
-                            onChangeConfig({
-                              columnCalcMode: 'rigorous_mesh',
-                              activeDofSlots: ['rr', 'split'],
-                              totalStages: c.stagesN,
-                              feedStage: c.feedStage,
-                              topSpecType: 'reflux_ratio',
-                              topSpecValue: Number(c.refluxRatio.toFixed(3)),
-                              splitSpecType: 'd_over_f_mass',
-                              splitSpecValue: Number(c.dOverFMass.toFixed(4)),
-                              ...syncedSideCut,
-                            });
-                          } else {
-                            onChangeConfig({
-                              totalStages: c.stagesN,
-                              feedStage: c.feedStage,
-                              topSpecType: 'reflux_ratio',
-                              topSpecValue: Number(c.refluxRatio.toFixed(3)),
-                              splitSpecType: 'd_over_f_mass',
-                              splitSpecValue: Number(c.dOverFMass.toFixed(4)),
-                              autoOptimizeStagesOnDualSpec: false,
-                              ...syncedSideCut,
-                            });
-                          }
-                          window.setTimeout(() => triggerRunSimulation(), 30);
+                          applyPatchAndRun({
+                            columnCalcMode: 'rigorous_mesh',
+                            activeDofSlots: ['rr', 'split'],
+                            totalStages: c.stagesN,
+                            feedStage: c.feedStage,
+                            topSpecType: 'reflux_ratio',
+                            topSpecValue: Number(c.refluxRatio.toFixed(3)),
+                            splitSpecType: 'd_over_f_mass',
+                            splitSpecValue: Number(c.dOverFMass.toFixed(4)),
+                            autoOptimizeStagesOnDualSpec: false,
+                            ...syncedSideCut,
+                          });
                         }}
                         style={{
                           padding: '3px 7px',
@@ -1659,21 +2053,31 @@ export default function DistillationWorkbenchModal({
                   <button
                     type="button"
                     onClick={triggerRunSimulation}
-                    disabled={isRunningFeedback}
+                    disabled={isRunningFeedback || !dofEvaluation.canRun}
+                    title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행'}
                     style={{
                       flex: 1,
                       padding: '7px 10px',
                       borderRadius: 7,
-                      border: '1px solid #60A5FA',
-                      background: isSimDirty ? '#D97706' : '#2563EB',
+                      border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #60A5FA',
+                      background: !dofEvaluation.canRun
+                        ? '#475569'
+                        : isSimDirty
+                        ? '#D97706'
+                        : '#2563EB',
                       color: '#FFFFFF',
                       fontSize: 11.2,
                       fontWeight: 900,
-                      cursor: isRunningFeedback ? 'wait' : 'pointer',
+                      cursor: isRunningFeedback
+                        ? 'wait'
+                        : !dofEvaluation.canRun
+                        ? 'not-allowed'
+                        : 'pointer',
+                      opacity: !dofEvaluation.canRun ? 0.65 : 1,
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {isRunningFeedback ? '⏳ 계산 중...' : '▶ RUN 실행'}
+                    {isRunningFeedback ? '⏳ 계산 중...' : !dofEvaluation.canRun ? '▶ RUN (조건 필요)' : '▶ RUN 실행'}
                   </button>
                 )}
               </div>
@@ -1705,16 +2109,21 @@ export default function DistillationWorkbenchModal({
               <button
                 type="button"
                 onClick={triggerRunSimulation}
-                disabled={isRunningFeedback}
+                disabled={isRunningFeedback || !dofEvaluation.canRun}
+                title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행 (F5)'}
                 style={{
                   padding: '8px 15px',
                   borderRadius: 7,
-                  border: isRunningFeedback
+                  border: !dofEvaluation.canRun
+                    ? '1px solid #64748B'
+                    : isRunningFeedback
                     ? '1.5px solid #93C5FD'
                     : isSimDirty
                     ? '1.5px solid #FDE047'
                     : '1px solid #60A5FA',
-                  background: isRunningFeedback
+                  background: !dofEvaluation.canRun
+                    ? '#475569'
+                    : isRunningFeedback
                     ? '#1D4ED8'
                     : isSimDirty
                     ? '#D97706'
@@ -1722,15 +2131,23 @@ export default function DistillationWorkbenchModal({
                   color: '#FFFFFF',
                   fontSize: 11.8,
                   fontWeight: 900,
-                  cursor: isRunningFeedback ? 'wait' : 'pointer',
+                  cursor: isRunningFeedback
+                    ? 'wait'
+                    : !dofEvaluation.canRun
+                    ? 'not-allowed'
+                    : 'pointer',
+                  opacity: !dofEvaluation.canRun ? 0.65 : 1,
                   whiteSpace: 'nowrap',
-                  boxShadow: isSimDirty
-                    ? '0 0 0 3px rgba(245,158,11,0.30)'
-                    : '0 2px 6px rgba(15,23,42,0.25)',
+                  boxShadow:
+                    dofEvaluation.canRun && isSimDirty
+                      ? '0 0 0 3px rgba(245,158,11,0.30)'
+                      : '0 2px 6px rgba(15,23,42,0.25)',
                 }}
               >
                 {isRunningFeedback
                   ? '⏳ 수렴 계산 중...'
+                  : !dofEvaluation.canRun
+                  ? '▶ RUN (자유도 확인)'
                   : isSimDirty
                   ? '▶ RUN 시뮬레이션 실행'
                   : '▶ RUN 재실행 (F5)'}
@@ -1953,109 +2370,56 @@ export default function DistillationWorkbenchModal({
               overflow: 'hidden',
             }}
           >
-            {/* ── 상단 시뮬레이션 계산방식(2-Mode) 선택 스위처 (통일된 슬레이트·네이비 톤) ── */}
+            {/* 좌측 3개 통합 세그먼트 탭 */}
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 6,
-                padding: '9px 14px',
-                background: '#E2E8F0',
-                borderBottom: '1px solid #CBD5E1',
+                display: 'flex',
+                gap: 5,
+                padding: '8px 14px',
+                background: '#EFECE5',
+                borderBottom: '1px solid #DFDCD4',
                 flexShrink: 0,
+                flexWrap: 'wrap',
               }}
             >
-              <button
-                type="button"
-                onClick={() =>
-                  onChangeConfig({
-                    columnCalcMode: 'design_stages',
-                    designRefluxMode: config.designRefluxMode ?? 'auto_opt',
-                  })
-                }
-                style={{
-                  padding: '7px 10px',
-                  borderRadius: 7,
-                  border: calcMode === 'design_stages' ? '2px solid #1E3A8A' : '1px solid #CBD5E1',
-                  background: calcMode === 'design_stages' ? '#1E3A8A' : '#FFFFFF',
-                  color: calcMode === 'design_stages' ? '#FFFFFF' : '#1E293B',
-                  fontSize: 11.5,
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div>① 목표순도 → 단수·유량 자동설계</div>
-                <div style={{ fontSize: 9.5, fontWeight: 600, opacity: 0.9, marginTop: 1 }}>
-                  목표 순도·회수율 기반 단수·유량 자동 산출
-                </div>
-              </button>
-              <button
-                type="button"
-                onClick={() => onChangeConfig({ columnCalcMode: 'rigorous_mesh' })}
-                style={{
-                  padding: '7px 10px',
-                  borderRadius: 7,
-                  border: calcMode === 'rigorous_mesh' ? '2px solid #1E3A8A' : '1px solid #CBD5E1',
-                  background: calcMode === 'rigorous_mesh' ? '#1E3A8A' : '#FFFFFF',
-                  color: calcMode === 'rigorous_mesh' ? '#FFFFFF' : '#1E293B',
-                  fontSize: 11.5,
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <div>② 단수 지정 → 다단 정밀모사</div>
-                <div style={{ fontSize: 9.5, fontWeight: 600, opacity: 0.9, marginTop: 1 }}>
-                  고정 단수(N) 정밀 수렴 (자유도 2/2)
-                </div>
-              </button>
+              {(
+                [
+                  {
+                    id: 'specs',
+                    label: `① 운전·설계 변수 (${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount})`,
+                  },
+                  {
+                    id: 'tower',
+                    label: isFixedStages
+                      ? `② 탑 단수·피드단 구성 (N=${N}단)`
+                      : `② 응축기·리보일러·피드 (${feeds.length}개)`,
+                  },
+                  { id: 'pressure', label: '③ 압력·열역학·효율' },
+                ] as { id: LeftTabId; label: string }[]
+              ).map((tb) => {
+                const active = leftTab === tb.id;
+                return (
+                  <button
+                    key={tb.id}
+                    type="button"
+                    onClick={() => setLeftTab(tb.id)}
+                    style={{
+                      padding: '6px 11px',
+                      borderRadius: 6,
+                      border: active ? '1.5px solid #1A2F44' : '1px solid #CBD5E1',
+                      background: active ? '#1A2F44' : '#FFFFFF',
+                      color: active ? '#FFFFFF' : '#334155',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {tb.label}
+                  </button>
+                );
+              })}
             </div>
-
-            {/* 좌측 3개 세그먼트 탭 (정밀모사 모드에서만 노출) */}
-            {calcMode === 'rigorous_mesh' && (
-              <div
-                style={{
-                  display: 'flex',
-                  gap: 5,
-                  padding: '8px 14px',
-                  background: '#EFECE5',
-                  borderBottom: '1px solid #DFDCD4',
-                  flexShrink: 0,
-                  flexWrap: 'wrap',
-                }}
-              >
-                {(
-                  [
-                    { id: 'specs', label: `① 운전·품질 조건 (${selectedSlots.length}/2${config.sideCut?.enabled ? '+측류' : ''})` },
-                    { id: 'tower', label: `② 탑 단수·피드단 구성 (N=${N}단)` },
-                    { id: 'pressure', label: '③ 압력·열역학·효율' },
-                  ] as { id: LeftTabId; label: string }[]
-                ).map((tb) => {
-                  const active = leftTab === tb.id;
-                  return (
-                    <button
-                      key={tb.id}
-                      type="button"
-                      onClick={() => setLeftTab(tb.id)}
-                      style={{
-                        padding: '6px 11px',
-                        borderRadius: 6,
-                        border: active ? '1.5px solid #1A2F44' : '1px solid #CBD5E1',
-                        background: active ? '#1A2F44' : '#FFFFFF',
-                        color: active ? '#FFFFFF' : '#334155',
-                        fontSize: 11.5,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {tb.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
 
             {/* 좌측 스크롤 컨텐츠 */}
             <div
@@ -2069,7 +2433,7 @@ export default function DistillationWorkbenchModal({
                 gap: 12,
               }}
             >
-              {/* ── 상단 통합 [시뮬레이션 실행 상태 · 수렴 판정 · 오류 원인 & 원클릭 수정] 패널 ── */}
+              {/* ── 상단 통합 [시뮬레이션 실행 상태 · 수렴 판정 · 수렴 추천 조합] 패널 ── */}
               {(() => {
                 const diag = result?.diagnostics;
                 if (isRunningFeedback) {
@@ -2089,742 +2453,341 @@ export default function DistillationWorkbenchModal({
                     </div>
                   );
                 }
-                if (isSimDirty) {
-                  return (
-                    <div
-                      style={{
-                        padding: '10px 13px',
-                        borderRadius: 8,
-                        background: '#FFFBEB',
-                        border: '1.5px solid #D97706',
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: 10,
-                        flexWrap: 'wrap',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: 11.5, fontWeight: 900, color: '#92400E' }}>
-                          ⏸ 조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.
-                        </div>
-                      </div>
-                      {onRunSimulation && (
-                        <button
-                          type="button"
-                          onClick={triggerRunSimulation}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 6,
-                            border: '1px solid #B45309',
-                            background: '#D97706',
-                            color: '#FFFFFF',
-                            fontSize: 11,
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          ▶ RUN 실행
-                        </button>
-                      )}
-                    </div>
-                  );
-                }
-                if (!diag) return null;
-
-                const isErr = diag.level === 'error';
-                const isWarn = diag.level === 'warning';
-                const boxBg = isErr ? '#FEF2F2' : isWarn ? '#FFFBEB' : '#ECFDF5';
-                const boxBd = isErr ? '#DC2626' : isWarn ? '#D97706' : '#059669';
-                const titleCol = isErr ? '#991B1B' : isWarn ? '#92400E' : '#065F46';
-                const icon = isErr ? '✕' : isWarn ? '⚠' : '✓';
-
                 return (
-                  <div
-                    style={{
-                      padding: '10px 13px',
-                      borderRadius: 8,
-                      background: boxBg,
-                      border: `1.5px solid ${boxBd}`,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, fontWeight: 900, color: titleCol }}>
-                        {icon} [{diag.badgeText}] {diag.headline}
-                      </span>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', fontFamily: MONO }}>
-                        {result ? `내부 MESH ${result.innerIterations}회 · 외부 ${result.outerIterations}회` : ''}
-                        {lastRunStamp ? ` · ${lastRunStamp} 갱신` : ''}
-                      </span>
-                    </div>
-                    {diag.causes.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {diag.causes.map((cText, ci) => (
-                          <div key={ci} style={{ fontSize: 10.8, color: '#1E293B', lineHeight: 1.4 }}>
-                            • {cText}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {(diag.level !== 'ok' || diag.remedies.length > 0) && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
-                        {diag.level !== 'ok' && (
-                          <button
-                            type="button"
-                            onClick={runAiAutoFixDistill}
-                            disabled={isAiBusy}
-                            style={{
-                              padding: '5px 11px',
-                              borderRadius: 6,
-                              border: '1px solid #7C3AED',
-                              background: '#7C3AED',
-                              color: '#FFFFFF',
-                              fontSize: 10.8,
-                              fontWeight: 900,
-                              cursor: isAiBusy ? 'wait' : 'pointer',
-                            }}
-                          >
-                            {isAiBusy ? (aiStepLabel || '⏳ AI 해결 탐색 중...') : '✨ AI 자동 해결'}
-                          </button>
-                        )}
-                        {diag.remedies.map((rem, ri) => (
-                          <button
-                            key={ri}
-                            type="button"
-                            onClick={() => {
-                              onChangeConfig(rem.patch);
-                              window.setTimeout(() => triggerRunSimulation(), 30);
-                            }}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: 6,
-                              border: `1px solid ${boxBd}`,
-                              background: '#FFFFFF',
-                              color: titleCol,
-                              fontSize: 10.8,
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            🔧 적용 후 재실행: {rem.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── 모드 A: 목표순도 기반 단수·유량 자동설계 통합 화면 ── */}
-              {calcMode === 'design_stages' && (() => {
-                const sortedByBp = [...activeComps].sort(
-                  (a, b) => (COMP_CATALOG_META[a]?.tbC ?? 100) - (COMP_CATALOG_META[b]?.tbC ?? 100)
-                );
-                const defaultLk = sortedByBp[0] ?? 'HCl';
-                const defaultHk = sortedByBp.find((c) => c !== defaultLk) ?? sortedByBp[0] ?? 'H2O';
-                const lkSel: SimCompKey = config.designLkComp ?? result?.shortcutDesign?.lkComp ?? defaultLk;
-                const hkSel: SimCompKey =
-                  config.designHkComp ??
-                  result?.shortcutDesign?.hkComp ??
-                  (defaultHk !== lkSel ? defaultHk : activeComps.find((c) => c !== lkSel) ?? activeComps[0] ?? 'H2O');
-                const topBasis: DistillEndpointBasis = config.designTopBasis ?? 'purity_wt_pct';
-                const botBasis: DistillEndpointBasis = config.designBotBasis ?? 'purity_wt_pct';
-                const lkFormula = COMP_META[lkSel]?.formula ?? lkSel;
-                const hkFormula = COMP_META[hkSel]?.formula ?? hkSel;
-                const sameKeyError = lkSel === hkSel;
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-                    {/* 섹션 1: 필수 입력 조건 (2개 명확 그룹화 + 완료 여부 즉시 표시) */}
-                    <div
-                      style={{
-                        padding: '11px 12px',
-                        borderRadius: 9,
-                        background: '#FFFFFF',
-                        border: sameKeyError ? '1.5px solid #DC2626' : '1.5px solid #CBD5E1',
-                      }}
-                    >
+                  <>
+                    {isSimDirty ? (
                       <div
                         style={{
+                          padding: '10px 13px',
+                          borderRadius: 8,
+                          background: '#FFFBEB',
+                          border: '1.5px solid #D97706',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
+                          gap: 10,
                           flexWrap: 'wrap',
-                          gap: 6,
-                          paddingBottom: 8,
-                          marginBottom: 9,
-                          borderBottom: '1px solid #E2E8F0',
                         }}
                       >
-                        <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
-                          필수 입력 2개 (탑정 · 탑저)
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10.5,
-                            fontWeight: 900,
-                            padding: '2px 9px',
-                            borderRadius: 999,
-                            background: sameKeyError ? '#FEF2F2' : '#ECFDF5',
-                            color: sameKeyError ? '#991B1B' : '#065F46',
-                            border: sameKeyError ? '1px solid #FCA5A5' : '1px solid #A7F3D0',
-                          }}
-                        >
-                          {sameKeyError
-                            ? '✕ 상부(LK)와 하부(HK)를 서로 다르게 선택하세요'
-                            : '✓ 2/2 입력 완료'}
-                        </span>
-                      </div>
-
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 9 }}>
-                        {/* 탑정 조건 카드 (무채색 슬레이트 + 단일 스틸블루 포인트) */}
-                        <div style={{ ...cardStyle, border: '1px solid #CBD5E1', background: '#F8FAFC' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>① 탑정(D) 목표 조건</span>
-                            <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155', background: '#E2E8F0', padding: '1px 6px', borderRadius: 999 }}>
-                              필수 1/2 ✓
-                            </span>
-                          </div>
-                          <label style={labelStyle}>탑정 주 회수 경질성분 (LK)</label>
-                          <select
-                            value={lkSel}
-                            onChange={(e) => onChangeConfig({ designLkComp: e.target.value as SimCompKey })}
-                            style={selectBaseStyle}
-                          >
-                            {SIM_COMPS.map((ck) => (
-                              <option key={ck} value={ck}>
-                                {formatCompOption(ck)}
-                              </option>
-                            ))}
-                          </select>
-
-                          <label style={{ ...labelStyle, marginTop: 8 }}>지정할 기준 선택 (택 1)</label>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginBottom: 7 }}>
-                            {(
-                              [
-                                { id: 'purity_wt_pct', lbl: '성분농도 wt%' },
-                                { id: 'impurity_wt_ppm', lbl: '불순물 ppm' },
-                                { id: 'recovery_pct', lbl: '회수율 %' },
-                              ] as { id: DistillEndpointBasis; lbl: string }[]
-                            ).map((b) => (
-                              <button
-                                key={b.id}
-                                type="button"
-                                onClick={() => onChangeConfig({ designTopBasis: b.id })}
-                                style={{
-                                  padding: '4px 3px',
-                                  borderRadius: 5,
-                                  border: topBasis === b.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                  background: topBasis === b.id ? '#EFF6FF' : '#FFFFFF',
-                                  color: topBasis === b.id ? '#1D4ED8' : '#475569',
-                                  fontSize: 10,
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {b.lbl}
-                              </button>
-                            ))}
-                          </div>
-
-                          {topBasis === 'purity_wt_pct' && (
-                            <>
-                              <label style={labelStyle}>
-                                탑정(D) 내 [{lkFormula}] 목표 농도 (wt%)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dlk`}
-                                min={0.01}
-                                max={99.9999}
-                                step={0.001}
-                                value={config.designTopPurityWtPct ?? 99.5}
-                                onValueChange={(v) => onChangeConfig({ designTopPurityWtPct: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                            </>
-                          )}
-                          {topBasis === 'impurity_wt_ppm' && (
-                            <>
-                              <label style={labelStyle}>
-                                탑정(D) 내 [{hkFormula}] 불순물 허용 농도 (wt ppm)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dlkppm`}
-                                min={1}
-                                max={200000}
-                                step={50}
-                                value={config.designTopImpurityPpm ?? 500}
-                                onValueChange={(v) => onChangeConfig({ designTopImpurityPpm: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                              <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3 }}>
-                                환산 [{lkFormula}] 순도 ≈ {(100 - (config.designTopImpurityPpm ?? 500) / 10000).toFixed(3)} wt%
-                              </div>
-                            </>
-                          )}
-                          {topBasis === 'recovery_pct' && (
-                            <>
-                              <label style={labelStyle}>
-                                원료 대비 탑정(D) [{lkFormula}] 목표 회수율 (%)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dlkrec`}
-                                min={50}
-                                max={99.9999}
-                                step={0.001}
-                                value={config.designTopRecoveryPct ?? 99.2}
-                                onValueChange={(v) => onChangeConfig({ designTopRecoveryPct: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                            </>
-                          )}
-                        </div>
-
-                        {/* 탑저 조건 카드 (오류처럼 보이던 적색 테두리/배경 완전 제거 — 상부와 동일한 클린 슬레이트 톤) */}
-                        <div style={{ ...cardStyle, border: '1px solid #CBD5E1', background: '#F8FAFC' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>② 탑저(B) 목표 조건</span>
-                            <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155', background: '#E2E8F0', padding: '1px 6px', borderRadius: 999 }}>
-                              필수 2/2 ✓
-                            </span>
-                          </div>
-                          <label style={labelStyle}>탑저 주 관출 중질성분 (HK)</label>
-                          <select
-                            value={hkSel}
-                            onChange={(e) => onChangeConfig({ designHkComp: e.target.value as SimCompKey })}
-                            style={selectBaseStyle}
-                          >
-                            {SIM_COMPS.map((ck) => (
-                              <option key={ck} value={ck}>
-                                {formatCompOption(ck)}
-                              </option>
-                            ))}
-                          </select>
-
-                          <label style={{ ...labelStyle, marginTop: 8 }}>지정할 기준 선택 (택 1)</label>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4, marginBottom: 7 }}>
-                            {(
-                              [
-                                { id: 'purity_wt_pct', lbl: '성분농도 wt%' },
-                                { id: 'impurity_wt_ppm', lbl: '불순물 ppm' },
-                                { id: 'recovery_pct', lbl: '회수율 %' },
-                              ] as { id: DistillEndpointBasis; lbl: string }[]
-                            ).map((b) => (
-                              <button
-                                key={b.id}
-                                type="button"
-                                onClick={() => onChangeConfig({ designBotBasis: b.id })}
-                                style={{
-                                  padding: '4px 3px',
-                                  borderRadius: 5,
-                                  border: botBasis === b.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                  background: botBasis === b.id ? '#EFF6FF' : '#FFFFFF',
-                                  color: botBasis === b.id ? '#1D4ED8' : '#475569',
-                                  fontSize: 10,
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {b.lbl}
-                              </button>
-                            ))}
-                          </div>
-
-                          {botBasis === 'purity_wt_pct' && (
-                            <>
-                              <label style={labelStyle}>
-                                탑저(B) 내 [{hkFormula}] 목표 농도 (wt%)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dhk`}
-                                min={0.01}
-                                max={99.9999}
-                                step={0.001}
-                                value={config.designBotPurityWtPct ?? 99.0}
-                                onValueChange={(v) => onChangeConfig({ designBotPurityWtPct: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                              <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3 }}>
-                                ※ [{hkFormula}] 회수율(%)은 별도 입력 없이 자동 산출됩니다.
-                              </div>
-                              {(() => {
-                                const botTargetVal = config.designBotPurityWtPct ?? 99.0;
-                                const feedHkTotal = feeds.reduce((s, f) => s + (f.flowsKgH[hkSel] || 0), 0);
-                                const feedLkTotal = feeds.reduce((s, f) => s + (f.flowsKgH[lkSel] || 0), 0);
-                                const heavyList = activeComps.filter(
-                                  (c) => c !== lkSel && c !== hkSel && feeds.reduce((s, f) => s + (f.flowsKgH[c] || 0), 0) > 1e-4
-                                );
-                                // HK보다 무거운 성분 또는 공비/잔류 성분 체크 (이미 결과에 미달 진단이 있거나, 회수율 연동 잔류 LK 초과 시 안내)
-                                const topRecVal = topBasis === 'recovery_pct' ? (config.designTopRecoveryPct ?? 99.2) : 100;
-                                const lkSlipEstKg = topBasis === 'recovery_pct' ? feedLkTotal * Math.max(0, 1 - topRecVal / 100) : 0;
-                                const maxByLkSlipPct =
-                                  feedHkTotal > 1e-6 && lkSlipEstKg > 1e-6
-                                    ? (feedHkTotal / (feedHkTotal + lkSlipEstKg)) * 100
-                                    : 100;
-                                if (topBasis === 'recovery_pct' && botTargetVal > maxByLkSlipPct + 0.0005) {
-                                  return (
-                                    <div
-                                      style={{
-                                        marginTop: 5,
-                                        padding: '5px 7px',
-                                        borderRadius: 6,
-                                        background: '#FFFBEB',
-                                        border: '1px solid #FDE68A',
-                                        fontSize: 10,
-                                        color: '#92400E',
-                                        lineHeight: 1.4,
-                                      }}
-                                    >
-                                      <b>물질수지 한계:</b> 탑정 [{lkFormula}] 회수율 {topRecVal}% 기준 시 미회수 {lkFormula}({lkSlipEstKg.toFixed(4)} kg/h)가 탑저로 남아 탑저 [{hkFormula}] 최대 농도가 <b>{maxByLkSlipPct.toFixed(4)}%</b>로 제한됩니다. 탑정 회수율을 상향하거나 탑저 기준을 <b>회수율(%)</b>로 변경하세요.
-                                    </div>
-                                  );
-                                }
-                                if (heavyList.length > 0 && result?.diagnostics?.level === 'warning') {
-                                  return (
-                                    <div
-                                      style={{
-                                        marginTop: 5,
-                                        padding: '5px 7px',
-                                        borderRadius: 6,
-                                        background: '#FFFBEB',
-                                        border: '1px solid #FDE68A',
-                                        fontSize: 10,
-                                        color: '#92400E',
-                                        lineHeight: 1.4,
-                                      }}
-                                    >
-                                      <b>물질수지 안내:</b> 원료 내 비주성분({heavyList.join('·')}) 잔류 여부에 따라 순도 상한이 제한될 수 있습니다. 하단 진단 가이드의 수정안을 확인하세요.
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })()}
-                            </>
-                          )}
-                          {botBasis === 'impurity_wt_ppm' && (
-                            <>
-                              <label style={labelStyle}>
-                                탑저(B) 내 [{lkFormula}] 불순물 허용 농도 (wt ppm)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dhkppm`}
-                                min={1}
-                                max={200000}
-                                step={50}
-                                value={config.designBotImpurityPpm ?? 500}
-                                onValueChange={(v) => onChangeConfig({ designBotImpurityPpm: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                              <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3 }}>
-                                환산 [{hkFormula}] 순도 ≈ {(100 - (config.designBotImpurityPpm ?? 500) / 10000).toFixed(3)} wt%
-                              </div>
-                            </>
-                          )}
-                          {botBasis === 'recovery_pct' && (
-                            <>
-                              <label style={labelStyle}>
-                                원료 대비 탑저(B) [{hkFormula}] 목표 회수율 (%)
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-dhkrec`}
-                                min={50}
-                                max={99.9999}
-                                step={0.001}
-                                value={config.designBotRecoveryPct ?? 99.2}
-                                onValueChange={(v) => onChangeConfig({ designBotRecoveryPct: v })}
-                                onEnterRun={triggerRunSimulation}
-                                style={inputBaseStyle}
-                              />
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {renderSideCutCard('design_stages')}
-
-                    {/* 섹션 2: 운전 설정 */}
-                    <div
-                      style={{
-                        padding: '10px 12px',
-                        borderRadius: 9,
-                        background: '#F8FAFC',
-                        border: '1px solid #E2E8F0',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>
-                          운전 설정 (환류 · 압력 · 열역학)
-                        </span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.15fr 0.85fr', gap: 9 }}>
-                        <div style={{ ...cardStyle, padding: '9px 11px' }}>
-                          <label style={labelStyle}>환류비(Reflux) 기준</label>
-                          {(() => {
-                            const effRMode: DistillRefluxDesignMode =
-                              config.designRefluxMode ??
-                              (typeof config.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
-                            return (
-                              <>
-                                <select
-                                  value={effRMode}
-                                  onChange={(e) =>
-                                    onChangeConfig({
-                                      designRefluxMode: e.target.value as DistillRefluxDesignMode,
-                                    })
-                                  }
-                                  style={selectBaseStyle}
-                                >
-                                  <option value="auto_opt">
-                                    ✨ AI 다중후보 자동최적화 (단수·피드단·환류비·유량 TAC 최소 선정)
-                                  </option>
-                                  <option value="r_mult">최소환류비 배수 지정 (R = 배수 × R_min)</option>
-                                  <option value="fixed_rr">운전 환류비 (RR = L₀/D) 직접 입력</option>
-                                </select>
-                                <div style={{ display: 'grid', gridTemplateColumns: '0.85fr 1.15fr', gap: 6, marginTop: 8 }}>
-                                  <div>
-                                    {effRMode === 'auto_opt' ? (
-                                      <>
-                                        <label style={labelStyle}>AI 탐색 범위</label>
-                                        <div
-                                          style={{
-                                            ...inputBaseStyle,
-                                            background: '#ECFDF5',
-                                            borderColor: '#6EE7B7',
-                                            color: '#065F46',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            fontSize: 10.5,
-                                            fontFamily: 'sans-serif',
-                                          }}
-                                        >
-                                          1.15~1.80×R_min TAC 최소
-                                        </div>
-                                      </>
-                                    ) : effRMode === 'r_mult' ? (
-                                      <>
-                                        <label style={labelStyle}>R / R_min 배수</label>
-                                        <BufferedNumberInput
-                                          syncKey={`${unitTag}-rmult`}
-                                          min={1.05}
-                                          max={5.0}
-                                          step={0.05}
-                                          value={config.designRefluxMult ?? 1.25}
-                                          onValueChange={(v) => onChangeConfig({ designRefluxMult: v })}
-                                          onEnterRun={triggerRunSimulation}
-                                          style={inputBaseStyle}
-                                        />
-                                      </>
-                                    ) : (
-                                      <>
-                                        <label style={labelStyle}>직접 지정 RR</label>
-                                        <BufferedNumberInput
-                                          syncKey={`${unitTag}-drr`}
-                                          min={0.15}
-                                          max={75}
-                                          step={0.1}
-                                          value={config.designFixedRR ?? config.topSpecValue ?? 2.8}
-                                          onValueChange={(v) => onChangeConfig({ designFixedRR: v, topSpecValue: v })}
-                                          onEnterRun={triggerRunSimulation}
-                                          style={inputBaseStyle}
-                                        />
-                                      </>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <label style={labelStyle}>탑정 응축기 형식</label>
-                                    <select
-                                      value={condenserType}
-                                      onChange={(e) =>
-                                        onChangeConfig({ condenserType: e.target.value as DistillCondenserType })
-                                      }
-                                      style={selectBaseStyle}
-                                    >
-                                      <option value="total">전응축기 (액상 유출)</option>
-                                      <option value="decanter_ech">공비 유수분리 디캔터</option>
-                                      <option value="partial">부분응축기 (기상 유출)</option>
-                                    </select>
-                                  </div>
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </div>
-
-                        <div style={{ ...cardStyle, padding: '9px 11px' }}>
-                          <label style={labelStyle}>탑정 운전압력 (kgf/cm²G)</label>
-                          <BufferedNumberInput
-                            syncKey={`${unitTag}-dpress`}
-                            min={-0.99}
-                            max={35}
-                            step={0.05}
-                            value={topPress}
-                            onValueChange={(v) => onChangeConfig({ topPressKgcm2g: v })}
-                            onEnterRun={triggerRunSimulation}
-                            style={inputBaseStyle}
-                          />
-                          <label style={{ ...labelStyle, marginTop: 8 }}>단효율 (%) / 열역학</label>
-                          <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 1.2fr', gap: 6 }}>
-                            <BufferedNumberInput
-                              syncKey={`${unitTag}-deff`}
-                              min={25}
-                              max={100}
-                              step={5}
-                              value={murphreeEff}
-                              onValueChange={(v) => onChangeConfig({ murphreeEffPct: v })}
-                              onEnterRun={triggerRunSimulation}
-                              style={inputBaseStyle}
-                            />
-                            <select
-                              value={thermoModel}
-                              onChange={(e) => onChangeConfig({ thermoModel: e.target.value as DistillThermoModel })}
-                              style={selectBaseStyle}
-                            >
-                              <option value="AUTO">AUTO (자동)</option>
-                              <option value="ENRTL">ENRTL</option>
-                              <option value="NRTL">NRTL</option>
-                              <option value="PR">PR</option>
-                              <option value="SRK">SRK</option>
-                              <option value="ELEC_HCL_AZEO">HCl공비</option>
-                              <option value="PENG_ROB">PR-EOS(호환)</option>
-                            </select>
+                        <div>
+                          <div style={{ fontSize: 11.5, fontWeight: 900, color: '#92400E' }}>
+                            ⏸ 조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.
                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                    {/* 자동설계 산출 KPI 요약 카드 (무채색 화이트/슬레이트 톤) */}
-                    {result?.shortcutDesign && (
-                      <div
-                        style={{
-                          padding: '11px 13px',
-                          borderRadius: 9,
-                          border: '1px solid #CBD5E1',
-                          background: '#FFFFFF',
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
-                            자동설계 산출 요약 (단수 · 환류비 · 상하부 유량)
-                          </span>
+                        {onRunSimulation && (
                           <button
                             type="button"
-                            onClick={() =>
-                              onChangeConfig({
-                                columnCalcMode: 'rigorous_mesh',
-                                activeDofSlots: ['rr', 'split'],
-                                totalStages: result.shortcutDesign!.solvedStagesN,
-                                feedStage: result.shortcutDesign!.solvedFeedStage,
-                                topSpecType: 'reflux_ratio',
-                                topSpecValue: Number(result.actualRefluxRatio.toFixed(3)),
-                                splitSpecType: 'd_over_f_mass',
-                                splitSpecValue: Number(result.actualDOverFMass.toFixed(4)),
-                                ...(config.sideCut?.enabled && result.sideCutStageUsed
-                                  ? { sideCut: { ...config.sideCut, stage: result.sideCutStageUsed } }
-                                  : {}),
-                              })
-                            }
+                            onClick={triggerRunSimulation}
+                            disabled={!dofEvaluation.canRun}
+                            title={!dofEvaluation.canRun ? dofEvaluation.hint : '시뮬레이션 실행'}
                             style={{
-                              padding: '4px 9px',
+                              padding: '6px 12px',
                               borderRadius: 6,
-                              border: '1px solid #2563EB',
-                              background: '#EFF6FF',
-                              color: '#1D4ED8',
-                              fontSize: 10.5,
+                              border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #B45309',
+                              background: !dofEvaluation.canRun ? '#475569' : '#D97706',
+                              color: '#FFFFFF',
+                              fontSize: 11,
                               fontWeight: 900,
-                              cursor: 'pointer',
+                              cursor: !dofEvaluation.canRun ? 'not-allowed' : 'pointer',
+                              opacity: !dofEvaluation.canRun ? 0.65 : 1,
+                              whiteSpace: 'nowrap',
                             }}
                           >
-                            산출 단수({result.shortcutDesign.solvedStagesN}단)·RR을 정밀모사 값으로 확정 →
+                            ▶ RUN 실행
                           </button>
-                        </div>
+                        )}
+                      </div>
+                    ) : diag ? (() => {
+                      const isErr = diag.level === 'error';
+                      const isWarn = diag.level === 'warning';
+                      const boxBg = isErr ? '#FEF2F2' : isWarn ? '#FFFBEB' : '#ECFDF5';
+                      const boxBd = isErr ? '#DC2626' : isWarn ? '#D97706' : '#059669';
+                      const titleCol = isErr ? '#991B1B' : isWarn ? '#92400E' : '#065F46';
+                      const icon = isErr ? '✕' : isWarn ? '⚠' : '✓';
 
+                      return (
                         <div
                           style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                            gap: 8,
-                            marginTop: 9,
-                            fontFamily: MONO,
+                            padding: '10px 13px',
+                            borderRadius: 8,
+                            background: boxBg,
+                            border: `1.5px solid ${boxBd}`,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 6,
                           }}
                         >
-                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>산출 이론단 / 실제단</div>
-                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {result.shortcutDesign.solvedStagesN}단 / {result.shortcutDesign.solvedActualTrays}단
-                            </div>
-                            <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              N_min={result.shortcutDesign.minStagesNmin} · 피드 {result.shortcutDesign.solvedFeedStage}단
-                            </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 12, fontWeight: 900, color: titleCol }}>
+                              {icon} [{diag.badgeText}] {diag.headline}
+                            </span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', fontFamily: MONO }}>
+                              {result ? `내부 MESH ${result.innerIterations}회 · 외부 ${result.outerIterations}회` : ''}
+                              {lastRunStamp ? ` · ${lastRunStamp} 갱신` : ''}
+                            </span>
                           </div>
-                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>운전 환류비 (RR)</div>
-                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {result.actualRefluxRatio.toFixed(2)}
+                          {diag.causes.length > 0 && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              {diag.causes.map((cText, ci) => (
+                                <div key={ci} style={{ fontSize: 10.8, color: '#1E293B', lineHeight: 1.4 }}>
+                                  • {cText}
+                                </div>
+                              ))}
                             </div>
-                            <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              R_min={result.shortcutDesign.minRefluxRmin} · α={result.shortcutDesign.alphaAvg}
-                            </div>
-                          </div>
-                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑정 유량 D (상부)</div>
-                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {distTotalKgH.toFixed(1)} kg/h
-                            </div>
-                            <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              {result.shortcutDesign.lkComp} {result.shortcutDesign.topLkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.topLkRecoveryPct}%)
-                            </div>
-                          </div>
-                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑저 유량 B (하부)</div>
-                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {botTotalKgH.toFixed(1)} kg/h
-                            </div>
-                            <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              {result.shortcutDesign.hkComp} {result.shortcutDesign.botHkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.botHkRecoveryPct}%)
-                            </div>
-                          </div>
+                          )}
                         </div>
+                      );
+                    })() : null}
 
-                        {(result.sideCutMassKgH ?? 0) > 1e-4 && (
+                    {/* ── 💡 수렴·스펙 달성 1-클릭 추천 조합 카드 (미수렴 · 스펙 미달 · remedies 존재 시 상시 노출) ── */}
+                    {result &&
+                      (!result.converged ||
+                        result.diagnostics?.level !== 'ok' ||
+                        (result.diagnostics?.remedies?.length ?? 0) > 0 ||
+                        (result.spec1Status?.enabled && !result.spec1Status.met) ||
+                        (result.spec2Status?.enabled && !result.spec2Status.met) ||
+                        (result.shortcutDesign && !result.shortcutDesign.designMet) ||
+                        (result.sideCutSpecStatus && !result.sideCutSpecStatus.met)) && (() => {
+                        const recipes: Array<{ key: string; label: string; desc: string; patch: Partial<DistillColumnParams> }> = [];
+
+                        // 1) 엔진 진단 remedies 우선 반영
+                        for (const rem of result.diagnostics?.remedies ?? []) {
+                          recipes.push({
+                            key: `diag_${rem.label}`,
+                            label: rem.label,
+                            desc: '진단 엔진 권장 처방',
+                            patch: rem.patch,
+                          });
+                        }
+
+                        // 2) 내장 Fallback Recipe 1: 고정 운전 (① 환류비 + ② D/F) 안정 수렴 모드 전환
+                        const estSFrac = sideCutEnabled
+                          ? sideCutCfg.specType === 's_over_f_mass' || sideCutCfg.specType === 's_over_f_mole'
+                            ? sideCutCfg.specValue
+                            : sideCutCfg.specType === 'mass_kgh' && totalFeedKgH > 0
+                            ? sideCutCfg.specValue / totalFeedKgH
+                            : 0.15
+                          : 0;
+                        const feedLkMassEst =
+                          feeds.reduce((s, f) => s + (f.flowsKgH[defLkGlobal] || 0), 0) ||
+                          totalFeedKgH * 0.35;
+                        const rawEstDf =
+                          totalFeedKgH > 0
+                            ? feedLkMassEst / totalFeedKgH
+                            : result.actualDOverFMass || 0.35;
+                        const safeDF = Number(
+                          Math.max(0.03, Math.min(0.88 - Math.min(0.75, estSFrac), rawEstDf)).toFixed(4)
+                        );
+                        const safeRR = Number(
+                          Math.min(6.0, Math.max(1.5, result.actualRefluxRatio || topSpecValue || 2.5)).toFixed(2)
+                        );
+                        if (
+                          !recipes.some((r) => r.label.includes('① 환류비') && r.label.includes('②'))
+                        ) {
+                          recipes.push({
+                            key: 'builtin_fixed_rr_df',
+                            label: `고정 운전 (① 환류비 RR=${safeRR} + ② D/F=${safeDF}) 안정 수렴 모드 전환`,
+                            desc: '품질 역산 루프를 해제하고 추정 물리 유량비로 즉시 수렴',
+                            patch: {
+                              columnCalcMode: 'rigorous_mesh',
+                              activeDofSlots: ['rr', 'split'],
+                              autoOptimizeStagesOnDualSpec: false,
+                              topSpecType: 'reflux_ratio',
+                              topSpecValue: safeRR,
+                              splitSpecType: 'd_over_f_mass',
+                              splitSpecValue: safeDF,
+                            },
+                          });
+                        }
+
+                        // 3) 내장 Fallback Recipe 2: 사이드컷(⑤) 발출량/회수율 안전 범위(0.7배)로 완화
+                        if (sideCutEnabled) {
+                          let relaxedVal = sideCutCfg.specValue;
+                          if (
+                            sideCutCfg.specType === 'mass_kgh' ||
+                            sideCutCfg.specType === 's_over_f_mass' ||
+                            sideCutCfg.specType === 's_over_f_mole' ||
+                            sideCutCfg.specType === 'draw_ratio'
+                          ) {
+                            relaxedVal = Number(Math.max(0.02, sideCutCfg.specValue * 0.7).toFixed(4));
+                          } else if (sideCutCfg.specType === 'recovery_pct') {
+                            relaxedVal = Number(Math.max(15, sideCutCfg.specValue * 0.7).toFixed(2));
+                          } else if (sideCutCfg.specType === 'purity_wt_pct') {
+                            relaxedVal = Number(Math.max(70, Math.min(95, sideCutCfg.specValue - 2.5)).toFixed(2));
+                          } else if (sideCutCfg.specType === 'impurity_ppm') {
+                            relaxedVal = Math.min(100000, Math.round(sideCutCfg.specValue * 2));
+                          }
+                          recipes.push({
+                            key: 'builtin_relax_sidecut',
+                            label: `사이드컷(⑤) 발출량/회수율 안전 범위(0.7배 → ${relaxedVal})로 완화`,
+                            desc: '단 내부 기액 트래픽 과부하·플러딩 방지 및 최적단 탐색',
+                            patch: {
+                              sideCut: {
+                                ...sideCutCfg,
+                                specValue: relaxedVal,
+                                autoOptimizeStage: true,
+                              },
+                            },
+                          });
+                        }
+
+                        // 4) 내장 Fallback Recipe 3: 고정 단수(⓪) 해제 → AI 최적 단수·피드단 자동 탐색
+                        if (isFixedStages) {
+                          const hasTopSlot = selectedSlots.includes('top_spec');
+                          const nextSlotsForAuto: DistillDofSlotId[] =
+                            sideCutEnabled && !hasTopSlot ? ['bot_spec'] : ['top_spec', 'bot_spec'];
+                          recipes.push({
+                            key: 'builtin_auto_stages',
+                            label: '고정 단수(⓪) 해제 → AI 최적 단수·피드단 자동 탐색',
+                            desc: '단수·공급단·환류비를 목표 순도 기준으로 자동 최적화',
+                            patch: {
+                              columnCalcMode: 'design_stages',
+                              activeDofSlots: nextSlotsForAuto,
+                              designRefluxMode: 'auto_opt',
+                              designOmitTopPurity: Boolean(sideCutEnabled && !hasTopSlot),
+                            },
+                          });
+                        }
+
+                        // 5) 내장 Fallback Recipe 4: 목표 순도 현실화 & 환류비 상향
+                        const hasEndpointUnmet = Boolean(
+                          (result.spec1Status?.enabled && !result.spec1Status.met) ||
+                            (result.spec2Status?.enabled && !result.spec2Status.met) ||
+                            (result.shortcutDesign && !result.shortcutDesign.designMet)
+                        );
+                        if (hasEndpointUnmet || selectedSlots.includes('bot_spec') || selectedSlots.includes('top_spec')) {
+                          const higherRR = Number(
+                            Math.min(12.0, Math.max(2.5, (result.actualRefluxRatio || topSpecValue || 2.5) * 1.35)).toFixed(2)
+                          );
+                          const nextTopTgt =
+                            uiTopMetric === 'impurity_wt_ppm'
+                              ? Math.min(50000, Math.round(uiTopTarget * 2.5))
+                              : uiTopMetric === 'recovery_pct'
+                              ? Number(Math.max(85, Math.min(97.5, uiTopTarget - 1.5)).toFixed(2))
+                              : Number(Math.max(85, Math.min(98.5, uiTopTarget - 1.2)).toFixed(2));
+                          const nextBotTgt =
+                            uiBotMetric === 'impurity_wt_ppm'
+                              ? Math.min(50000, Math.round(uiBotTarget * 2.5))
+                              : uiBotMetric === 'recovery_pct'
+                              ? Number(Math.max(85, Math.min(97.5, uiBotTarget - 1.5)).toFixed(2))
+                              : Number(Math.max(85, Math.min(98.5, uiBotTarget - 1.2)).toFixed(2));
+                          recipes.push({
+                            key: 'builtin_realistic_purity_rr',
+                            label: `목표 순도 현실화 & 환류비 상향 (RR=${higherRR})`,
+                            desc: '공비·다성분 물리 한계를 반영해 목표치 완화 및 분리도 강화',
+                            patch: {
+                              topSpecType: 'reflux_ratio',
+                              topSpecValue: higherRR,
+                              designFixedRR: higherRR,
+                              ...(selectedSlots.includes('top_spec') ? { topQualityTarget: nextTopTgt } : {}),
+                              ...(selectedSlots.includes('bot_spec') ? { botQualityTarget: nextBotTgt } : {}),
+                            },
+                          });
+                        }
+
+                        return (
                           <div
                             style={{
-                              marginTop: 7,
-                              padding: '5px 9px',
-                              borderRadius: 6,
+                              padding: '10px 12px',
+                              borderRadius: 9,
                               background: '#F5F3FF',
-                              border: '1px solid #DDD6FE',
-                              color: '#5B21B6',
-                              fontSize: 10.5,
-                              fontWeight: 800,
-                              fontFamily: MONO,
+                              border: '1.5px solid #8B5CF6',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 7,
                             }}
                           >
-                            🟣 사이드컷 측류(S): {result.sideCutStageUsed ?? '-'}단 ({result.sideCutPhase === 'G' ? '기상' : '액상'}) · {result.sideCutMassKgH!.toFixed(1)} kg/h (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%)
-                            {result.sideCutSpecStatus?.label ? ` · ${result.sideCutSpecStatus.label}` : ''}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 11.8, fontWeight: 900, color: '#4C1D95' }}>
+                                💡 수렴·스펙 달성 추천 조합 (클릭 1회로 조건 변경 &amp; 즉시 재실행)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={runAiAutoFixDistill}
+                                disabled={isAiBusy}
+                                style={{
+                                  padding: '4px 10px',
+                                  borderRadius: 6,
+                                  border: '1px solid #6D28D9',
+                                  background: '#6D28D9',
+                                  color: '#FFFFFF',
+                                  fontSize: 10.5,
+                                  fontWeight: 900,
+                                  cursor: isAiBusy ? 'wait' : 'pointer',
+                                }}
+                              >
+                                {isAiBusy ? (aiStepLabel || '⏳ AI 해결 탐색 중...') : '✨ AI 전수 자동 해결'}
+                              </button>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              {recipes.map((rec) => (
+                                <button
+                                  key={rec.key}
+                                  type="button"
+                                  onClick={() => applyPatchAndRun(rec.patch)}
+                                  style={{
+                                    padding: '7px 10px',
+                                    borderRadius: 7,
+                                    border: '1px solid #C4B5FD',
+                                    background: '#FFFFFF',
+                                    color: '#1E293B',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                  }}
+                                >
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 900, color: '#5B21B6' }}>
+                                      ▶ {rec.label}
+                                    </div>
+                                    <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 1 }}>
+                                      {rec.desc}
+                                    </div>
+                                  </div>
+                                  <span
+                                    style={{
+                                      flexShrink: 0,
+                                      padding: '2px 7px',
+                                      borderRadius: 5,
+                                      background: '#EDE9FE',
+                                      color: '#5B21B6',
+                                      fontSize: 9.8,
+                                      fontWeight: 900,
+                                    }}
+                                  >
+                                    즉시 적용·실행
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                        )}
-
-                        {result.shortcutDesign.candidates && result.shortcutDesign.candidates.length > 0 &&
-                          renderCandidateComparisonTable(result.shortcutDesign.candidates, 'design_stages')}
-                      </div>
-                    )}
-                  </div>
+                        );
+                      })()}
+                  </>
                 );
               })()}
 
               {/* 탭 2: 탑·피드단 구성 */}
-              {calcMode === 'rigorous_mesh' && leftTab === 'tower' && (
+              {leftTab === 'tower' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+                  {!isFixedStages && (
+                    <div
+                      style={{
+                        padding: '8px 11px',
+                        borderRadius: 7,
+                        background: '#EFF6FF',
+                        border: '1px solid #93C5FD',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: '#1E3A8A',
+                      }}
+                    >
+                      ✨ 현재 <b>AI 최적 단수·피드단 자동 탐색 모드</b> (⓪ 해제)입니다. 단수(N)·피드단(Nf)을 직접 고정하려면 [① 운전·설계 변수] 탭에서 <b>⓪ 고정 단수 지정</b>을 체크하세요.
+                    </div>
+                  )}
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
                     <div style={cardStyle}>
                       <label style={labelStyle}>
@@ -2837,6 +2800,7 @@ export default function DistillationWorkbenchModal({
                         min={4}
                         max={200}
                         step={1}
+                        disabled={!isFixedStages}
                         value={N}
                         onValueChange={(rawN) => {
                           const nextN = Math.max(4, Math.min(200, Math.round(rawN || 24)));
@@ -2853,8 +2817,14 @@ export default function DistillationWorkbenchModal({
                               : {}),
                           });
                         }}
-                        onEnterRun={triggerRunSimulation}
-                        style={inputBaseStyle}
+                        onEnterRun={() => {
+                          if (dofEvaluation.canRun) triggerRunSimulation();
+                        }}
+                        style={{
+                          ...inputBaseStyle,
+                          background: !isFixedStages ? '#F1F5F9' : '#FFFFFF',
+                          color: !isFixedStages ? '#64748B' : '#1A2F44',
+                        }}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4 }}>
                         {isActualMurphreeUi ? (
@@ -2870,7 +2840,7 @@ export default function DistillationWorkbenchModal({
                         <label style={{ ...labelStyle, marginBottom: 0 }}>
                           주 공급단 (Primary Feed Stage)
                         </label>
-                        {recFeedStage !== primaryFeedStage && (
+                        {isFixedStages && recFeedStage !== primaryFeedStage && (
                           <button
                             type="button"
                             onClick={() => onChangeConfig({ feedStage: recFeedStage })}
@@ -2894,14 +2864,21 @@ export default function DistillationWorkbenchModal({
                         min={2}
                         max={N - 1}
                         step={1}
+                        disabled={!isFixedStages}
                         value={primaryFeedStage}
                         onValueChange={(rawF) =>
                           onChangeConfig({
                             feedStage: Math.max(2, Math.min(N - 1, Math.round(rawF || 10))),
                           })
                         }
-                        onEnterRun={triggerRunSimulation}
-                        style={inputBaseStyle}
+                        onEnterRun={() => {
+                          if (dofEvaluation.canRun) triggerRunSimulation();
+                        }}
+                        style={{
+                          ...inputBaseStyle,
+                          background: !isFixedStages ? '#F1F5F9' : '#FFFFFF',
+                          color: !isFixedStages ? '#64748B' : '#1A2F44',
+                        }}
                       />
                       <div style={{ fontSize: 10.5, color: '#475569', fontWeight: 700, marginTop: 4 }}>
                         조성 정합 기준 권장 공급단: <b>제 {recFeedStage} 단</b>
@@ -3024,7 +3001,9 @@ export default function DistillationWorkbenchModal({
                                 ),
                               })
                             }
-                            onEnterRun={triggerRunSimulation}
+                            onEnterRun={() => {
+                              if (dofEvaluation.canRun) triggerRunSimulation();
+                            }}
                             style={{
                               ...inputBaseStyle,
                               background: sideCutCfg.autoOptimizeStage ? '#F1F5F9' : '#FFFFFF',
@@ -3140,7 +3119,9 @@ export default function DistillationWorkbenchModal({
                                     onValueChange={(v) =>
                                       updateFeedStageForEdge(f.edgeId, v || primaryFeedStage)
                                     }
-                                    onEnterRun={triggerRunSimulation}
+                                    onEnterRun={() => {
+                                      if (dofEvaluation.canRun) triggerRunSimulation();
+                                    }}
                                     style={{ ...inputBaseStyle, width: 72, height: 26, textAlign: 'right' }}
                                   />
                                 </td>
@@ -3154,30 +3135,44 @@ export default function DistillationWorkbenchModal({
                 </div>
               )}
 
-              {/* 탭 1 (통합): 4개 후보 중 딱 2개 조건만 선택하는 단계별 운전·품질 가이드 (DOF = 2) */}
-              {calcMode === 'rigorous_mesh' && leftTab === 'specs' && (() => {
-                const count = selectedSlots.length;
+              {/* 탭 1 (통합): ⓪ 고정 단수 + ①~⑤ 운전·설계 변수 선택 (순차 자유도 가이드) */}
+              {leftTab === 'specs' && (() => {
                 const isRrSel = selectedSlots.includes('rr');
                 const isSplitSel = selectedSlots.includes('split');
                 const isTopSel = selectedSlots.includes('top_spec');
                 const isBotSel = selectedSlots.includes('bot_spec');
 
-                const defLk = activeComps[0] ?? 'ECH';
-                const defHk = activeComps.find((c) => c !== defLk) ?? defLk;
+                const topCompFormula = COMP_META[uiTopComp]?.formula ?? uiTopComp;
+                const botCompFormula = COMP_META[uiBotComp]?.formula ?? uiBotComp;
 
-                const topMetric: DistillSpecMetric = config.topQualityMetric ?? spec1.metric ?? 'purity_wt_pct';
-                const topComp: SimCompKey =
-                  config.topQualityComp ?? (topMetric === 'impurity_wt_ppm' ? defHk : defLk);
-                const topTarget: number =
-                  config.topQualityTarget ?? (topMetric === 'impurity_wt_ppm' ? 200 : 99.5);
-                const topCompFormula = COMP_META[topComp]?.formula ?? topComp;
-
-                const botMetric: DistillSpecMetric = config.botQualityMetric ?? spec2.metric ?? 'purity_wt_pct';
-                const botComp: SimCompKey =
-                  config.botQualityComp ?? (botMetric === 'impurity_wt_ppm' ? defLk : defHk);
-                const botTarget: number =
-                  config.botQualityTarget ?? (botMetric === 'impurity_wt_ppm' ? 200 : 99.0);
-                const botCompFormula = COMP_META[botComp]?.formula ?? botComp;
+                const toggleFixedStages = (checked: boolean) => {
+                  if (checked) {
+                    const nextSlots: DistillDofSlotId[] =
+                      selectedSlots.length >= 2
+                        ? selectedSlots.slice(0, 2)
+                        : selectedSlots.length === 1
+                        ? selectedSlots[0] === 'rr'
+                          ? ['rr', 'split']
+                          : ['rr', selectedSlots[0]]
+                        : ['rr', 'split'];
+                    applyUnifiedConfigChange({
+                      columnCalcMode: 'rigorous_mesh',
+                      activeDofSlots: nextSlots,
+                      totalStages: config.totalStages ?? result?.totalStagesUsed ?? 24,
+                      feedStage: config.feedStage ?? result?.feedStageUsed ?? 12,
+                      autoOptimizeStagesOnDualSpec: false,
+                      designOmitTopPurity: false,
+                    });
+                  } else {
+                    const nextSlots: DistillDofSlotId[] =
+                      selectedSlots.length === 0 ? ['top_spec', 'bot_spec'] : selectedSlots;
+                    applyUnifiedConfigChange({
+                      columnCalcMode: 'design_stages',
+                      activeDofSlots: nextSlots,
+                      designRefluxMode: nextSlots.includes('rr') ? 'fixed_rr' : 'auto_opt',
+                    });
+                  }
+                };
 
                 const renderSlotHeader = (
                   slotId: DistillDofSlotId,
@@ -3186,20 +3181,23 @@ export default function DistillationWorkbenchModal({
                 ) => {
                   const selIdx = selectedSlots.indexOf(slotId);
                   const isSel = selIdx >= 0;
-                  const canAdd = !isSel && count < 2;
-                  const isLockedAuto = !isSel && count >= 2;
+                  const canAdd =
+                    !isSel &&
+                    (isFixedStages
+                      ? selectedSlots.length < 2
+                      : slotId === 'split'
+                      ? !isTopSel
+                      : true);
                   return (
                     <div
-                      onClick={() => {
-                        if (!isLockedAuto) toggleDofSlot(slotId);
-                      }}
+                      onClick={() => toggleDofSlot(slotId)}
                       style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         gap: 8,
                         flexWrap: 'wrap',
-                        cursor: isLockedAuto ? 'default' : 'pointer',
+                        cursor: 'pointer',
                         marginBottom: isSel ? 9 : 0,
                       }}
                     >
@@ -3207,23 +3205,22 @@ export default function DistillationWorkbenchModal({
                         <input
                           type="checkbox"
                           checked={isSel}
-                          disabled={isLockedAuto}
                           onChange={() => toggleDofSlot(slotId)}
                           onClick={(e) => e.stopPropagation()}
-                          style={{ width: 15, height: 15, cursor: isLockedAuto ? 'not-allowed' : 'pointer' }}
+                          style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#2563EB' }}
                         />
                         <span
                           style={{
                             fontSize: 12,
                             fontWeight: 900,
-                            color: isSel ? '#0F172A' : isLockedAuto ? '#64748B' : '#1E293B',
+                            color: isSel ? '#0F172A' : '#334155',
                           }}
                         >
                           {titleText}
                         </span>
                       </div>
 
-                      {isSel && (
+                      {isSel ? (
                         <span
                           style={{
                             padding: '2px 8px',
@@ -3234,10 +3231,9 @@ export default function DistillationWorkbenchModal({
                             fontWeight: 900,
                           }}
                         >
-                          ✓ 필수 {selIdx + 1}/2 지정됨 (클릭 시 해제)
+                          ✓ 선택됨 (클릭 시 해제)
                         </span>
-                      )}
-                      {canAdd && (
+                      ) : canAdd ? (
                         <span
                           style={{
                             padding: '2px 9px',
@@ -3249,32 +3245,35 @@ export default function DistillationWorkbenchModal({
                             fontWeight: 900,
                           }}
                         >
-                          + 클릭하여 {count === 0 ? '1번째' : '2번째 추가'} 조건으로 선택
+                          + 클릭하여 선택
                         </span>
-                      )}
-                      {isLockedAuto && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span
-                            style={{
-                              padding: '2px 8px',
-                              borderRadius: 999,
-                              background: '#E2E8F0',
-                              color: '#475569',
-                              fontSize: 10,
-                              fontWeight: 800,
-                              fontFamily: MONO,
-                            }}
-                          >
-                            자동 계산됨 · {autoSummaryText}
-                          </span>
-                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            background: '#E2E8F0',
+                            color: '#475569',
+                            fontSize: 10,
+                            fontWeight: 800,
+                            fontFamily: MONO,
+                          }}
+                        >
+                          자동 계산됨 · {autoSummaryText}
+                        </span>
                       )}
                     </div>
                   );
                 };
 
-                const slotCardBoxStyle = (isSel: boolean): React.CSSProperties => {
-                  const canAdd = !isSel && count < 2;
+                const slotCardBoxStyle = (isSel: boolean, slotId: DistillDofSlotId): React.CSSProperties => {
+                  const canAdd =
+                    !isSel &&
+                    (isFixedStages
+                      ? selectedSlots.length < 2
+                      : slotId === 'split'
+                      ? !isTopSel
+                      : true);
                   if (isSel) {
                     return {
                       ...cardStyle,
@@ -3298,50 +3297,256 @@ export default function DistillationWorkbenchModal({
                   };
                 };
 
+                const dofBannerColors =
+                  dofEvaluation.statusLevel === 'ok'
+                    ? { bg: '#F0FDF4', bd: '#86EFAC', fg: '#166534' }
+                    : dofEvaluation.statusLevel === 'error'
+                    ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B' }
+                    : { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E' };
+
+                const effRMode: DistillRefluxDesignMode =
+                  config.designRefluxMode ??
+                  (typeof config.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
+
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* 상단 단계별 진행 배너 (0/2 -> 1/2 -> 2/2 완료) */}
+                    {/* ⓪ 고정 단수 지정 (N · Nf) 체크박스 카드 */}
+                    <div
+                      style={{
+                        ...cardStyle,
+                        border: isFixedStages ? '1.5px solid #1E3A8A' : '1.5px solid #059669',
+                        background: isFixedStages ? '#FFFFFF' : '#F0FDF4',
+                      }}
+                    >
+                      <div
+                        onClick={() => toggleFixedStages(!isFixedStages)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={isFixedStages}
+                            onChange={(e) => toggleFixedStages(e.target.checked)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E3A8A' }}
+                          />
+                          <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
+                            ⓪ 고정 단수 지정 (N · Nf)
+                          </span>
+                        </div>
+                        <span
+                          style={{
+                            padding: '2px 9px',
+                            borderRadius: 999,
+                            background: isFixedStages ? '#EFF6FF' : '#DCFCE7',
+                            color: isFixedStages ? '#1E3A8A' : '#166534',
+                            border: isFixedStages ? '1px solid #93C5FD' : '1px solid #86EFAC',
+                            fontSize: 10,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {isFixedStages
+                            ? `고정 단수 정밀모사 (N=${N}단 · 피드 ${primaryFeedStage}단)`
+                            : '✨ 해제됨: AI 최적 단수(N)·피드단(Nf) 자동 설계'}
+                        </span>
+                      </div>
+
+                      {isFixedStages ? (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                            gap: 8,
+                            marginTop: 9,
+                            paddingTop: 8,
+                            borderTop: '1px solid #E2E8F0',
+                          }}
+                        >
+                          <div>
+                            <label style={labelStyle}>
+                              {isActualMurphreeUi ? '총 실제단수 N' : '총 이론단수 N'} (1=응축, N=리보일러)
+                            </label>
+                            <BufferedNumberInput
+                              syncKey={`${unitTag}-nstages-spec`}
+                              min={4}
+                              max={200}
+                              step={1}
+                              value={N}
+                              onValueChange={(rawN) => {
+                                const nextN = Math.max(4, Math.min(200, Math.round(rawN || 24)));
+                                applyUnifiedConfigChange({
+                                  totalStages: nextN,
+                                  feedStage: Math.min(nextN - 1, Math.max(2, primaryFeedStage)),
+                                  ...(config.sideCut
+                                    ? {
+                                        sideCut: {
+                                          ...config.sideCut,
+                                          stage: Math.max(2, Math.min(nextN - 1, config.sideCut.stage)),
+                                        },
+                                      }
+                                    : {}),
+                                });
+                              }}
+                              onEnterRun={() => {
+                                if (dofEvaluation.canRun) triggerRunSimulation();
+                              }}
+                              style={inputBaseStyle}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                주 공급단 Nf (2 ~ {N - 1}단)
+                              </label>
+                              {recFeedStage !== primaryFeedStage && (
+                                <button
+                                  type="button"
+                                  onClick={() => applyUnifiedConfigChange({ feedStage: recFeedStage })}
+                                  style={{
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    border: '1px solid #2563EB',
+                                    background: '#EFF6FF',
+                                    color: '#1D4ED8',
+                                    fontSize: 9.8,
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  최적 {recFeedStage}단
+                                </button>
+                              )}
+                            </div>
+                            <BufferedNumberInput
+                              syncKey={`${unitTag}-pfeed-spec`}
+                              min={2}
+                              max={N - 1}
+                              step={1}
+                              value={primaryFeedStage}
+                              onValueChange={(rawF) =>
+                                applyUnifiedConfigChange({
+                                  feedStage: Math.max(2, Math.min(N - 1, Math.round(rawF || 10))),
+                                })
+                              }
+                              onEnterRun={() => {
+                                if (dofEvaluation.canRun) triggerRunSimulation();
+                              }}
+                              style={inputBaseStyle}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #BBF7D0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ fontSize: 10.5, color: '#166534', fontWeight: 700, lineHeight: 1.4 }}>
+                            💡 체크 해제 시 목표 스펙을 만족하는 최적 이론단수(N)·공급단(Nf)을 TAC 최소 기준으로 자동 탐색합니다.
+                            {!isRrSel && ' (환류비 ① 미선택 시 R도 함께 자동 최적화)'}
+                          </div>
+                          {!isRrSel && (
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 0.8fr', gap: 8, alignItems: 'end' }}>
+                              <div>
+                                <label style={labelStyle}>자동 환류비(R) 탐색 기준</label>
+                                <select
+                                  value={effRMode === 'fixed_rr' ? 'auto_opt' : effRMode}
+                                  onChange={(e) =>
+                                    applyUnifiedConfigChange({
+                                      designRefluxMode: e.target.value as DistillRefluxDesignMode,
+                                    })
+                                  }
+                                  style={selectBaseStyle}
+                                >
+                                  <option value="auto_opt">✨ AI 다중후보 TAC 최소 최적화 (1.15~1.80 × R_min)</option>
+                                  <option value="r_mult">최소환류비 배수 지정 (R = 배수 × R_min)</option>
+                                </select>
+                              </div>
+                              {effRMode === 'r_mult' && (
+                                <div>
+                                  <label style={labelStyle}>R / R_min 배수</label>
+                                  <BufferedNumberInput
+                                    syncKey={`${unitTag}-rmult`}
+                                    min={1.05}
+                                    max={5.0}
+                                    step={0.05}
+                                    value={config.designRefluxMult ?? 1.25}
+                                    onValueChange={(v) => applyUnifiedConfigChange({ designRefluxMult: v })}
+                                    onEnterRun={() => {
+                                      if (dofEvaluation.canRun) triggerRunSimulation();
+                                    }}
+                                    style={inputBaseStyle}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 순차 자유도(DOF) 실시간 상태 & 다음 선택 안내 스트립 */}
                     <div
                       style={{
                         padding: '9px 12px',
                         borderRadius: 8,
-                        background: count === 2 ? '#F0FDF4' : '#FFFBEB',
-                        border: count === 2 ? '1.5px solid #86EFAC' : '1.5px solid #FCD34D',
+                        background: dofBannerColors.bg,
+                        border: `1.5px solid ${dofBannerColors.bd}`,
                         display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: 8,
-                        flexWrap: 'wrap',
+                        flexDirection: 'column',
+                        gap: 5,
                       }}
                     >
-                      <div style={{ fontSize: 11.5, fontWeight: 900, color: count === 2 ? '#166534' : '#92400E' }}>
-                        {count === 0 && '필수 조건 [0/2]: 아래 4개 후보 중 알고 있는 1번째 운전·품질 조건을 선택하세요.'}
-                        {count === 1 && '필수 조건 [1/2]: 점선으로 활성화된 후보 중 추가 조건 1개만 더 선택하면 완료됩니다.'}
-                        {count === 2 && '✓ 필수 입력 완료 [2/2]: 4개 중 2개 조건 지정 완료 — 나머지 2개와 회수율은 자동 계산됩니다.'}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              background: '#FFFFFF',
+                              border: `1px solid ${dofBannerColors.bd}`,
+                              color: dofBannerColors.fg,
+                              fontSize: 10.5,
+                              fontWeight: 900,
+                              fontFamily: MONO,
+                            }}
+                          >
+                            선택된 자유도: {dofEvaluation.selectedCount} / 필요 {dofEvaluation.requiredCount}
+                          </span>
+                          <span style={{ fontSize: 11.5, fontWeight: 900, color: dofBannerColors.fg }}>
+                            {dofEvaluation.headline}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => applyUnifiedConfigChange({ activeDofSlots: [] })}
+                          style={{
+                            padding: '3px 9px',
+                            borderRadius: 5,
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            color: '#334155',
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          조건 다시 선택 (초기화)
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => onChangeConfig({ activeDofSlots: [] })}
-                        style={{
-                          padding: '3px 9px',
-                          borderRadius: 5,
-                          border: '1px solid #CBD5E1',
-                          background: '#FFFFFF',
-                          color: '#334155',
-                          fontSize: 10.5,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        조건 다시 선택 (초기화)
-                      </button>
+                      <div style={{ fontSize: 10.8, fontWeight: 700, color: '#1E293B', lineHeight: 1.45 }}>
+                        {dofEvaluation.hint}
+                      </div>
                     </div>
 
-                    {/* 후보 ①: 상부 환류비 (RR) / 보일업비 */}
-                    <div style={slotCardBoxStyle(isRrSel)}>
+                    {/* 후보 ①: 탑정 응축기 운전조건 (RR / 환류량 / 재비율) */}
+                    <div style={slotCardBoxStyle(isRrSel, 'rr')}>
                       {renderSlotHeader(
                         'rr',
-                        '① 상부 환류비 (RR = L₀/D) 또는 재비율 지정',
+                        '① 탑정 응축기 운전조건 (환류비 RR = L₀/D · 환류량 · 재비율)',
                         result ? `RR = ${result.actualRefluxRatio.toFixed(2)}` : '시뮬레이션 시 역산'
                       )}
                       {isRrSel && (
@@ -3349,11 +3554,17 @@ export default function DistillationWorkbenchModal({
                           <div>
                             <label style={labelStyle}>환류/재비 입력 방식</label>
                             <select
-                              value={topSpecType}
+                              value={isFixedStages ? topSpecType : 'reflux_ratio'}
+                              disabled={!isFixedStages}
                               onChange={(e) =>
-                                onChangeConfig({ topSpecType: e.target.value as DistillTopSpecType })
+                                applyUnifiedConfigChange({
+                                  topSpecType: e.target.value as DistillTopSpecType,
+                                })
                               }
-                              style={selectBaseStyle}
+                              style={{
+                                ...selectBaseStyle,
+                                background: !isFixedStages ? '#F1F5F9' : '#FFFFFF',
+                              }}
                             >
                               <option value="reflux_ratio">몰 환류비 (Reflux Ratio, RR = L₀/D)</option>
                               <option value="reflux_mass_kgh">환류 액상 유량 L₀ (kg/h)</option>
@@ -3362,443 +3573,474 @@ export default function DistillationWorkbenchModal({
                           </div>
                           <div>
                             <label style={labelStyle}>
-                              {topSpecType === 'reflux_mass_kgh'
+                              {isFixedStages && topSpecType === 'reflux_mass_kgh'
                                 ? '환류 액상 유량 (kg/h)'
-                                : topSpecType === 'boilup_ratio'
+                                : isFixedStages && topSpecType === 'boilup_ratio'
                                 ? '재비율 (VB/B)'
                                 : '운전 환류비 (RR)'}
                             </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-topspec`}
-                                step={0.1}
-                                min={0.05}
-                                value={topSpecValue}
-                                onValueChange={(v) =>
-                                  onChangeConfig({ topSpecValue: Math.max(0.05, v || 1.5) })
+                            <BufferedNumberInput
+                              syncKey={`${unitTag}-topspec`}
+                              step={0.1}
+                              min={0.05}
+                              value={topSpecValue}
+                              onValueChange={(v) => {
+                                const val = Math.max(0.05, v || 1.5);
+                                applyUnifiedConfigChange({
+                                  topSpecValue: val,
+                                  designFixedRR: val,
+                                });
+                              }}
+                              onEnterRun={() => {
+                                if (dofEvaluation.canRun) triggerRunSimulation();
+                              }}
+                              style={inputBaseStyle}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 후보 ②: 유량·분할 조건 (D/F, B/F, D, B) */}
+                    <div style={slotCardBoxStyle(isSplitSel, 'split')}>
+                      {renderSlotHeader(
+                        'split',
+                        '② 유량·분할 조건 (D/F · B/F · 탑정/탑저 유량 kg/h)',
+                        result
+                          ? `D=${distTotalKgH.toFixed(1)} kg/h (D/F=${result.actualDOverFMass.toFixed(3)})`
+                          : '시뮬레이션 시 역산'
+                      )}
+                      {isSplitSel && (
+                        <>
+                          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.35fr 1fr', gap: 8 }}>
+                            <div>
+                              <label style={labelStyle}>유출 분배 입력 방식</label>
+                              <select
+                                value={splitSpecType}
+                                onChange={(e) =>
+                                  applyUnifiedConfigChange({
+                                    splitSpecType: e.target.value as DistillSplitSpecType,
+                                  })
                                 }
-                                onEnterRun={triggerRunSimulation}
+                                style={selectBaseStyle}
+                              >
+                                <option value="d_over_f_mass">탑정 대 피드 질량비 (D/F, kg/kg)</option>
+                                <option value="b_over_f_mass">탑저 대 피드 질량비 (B/F, kg/kg)</option>
+                                <option value="d_over_f_mole">탑정 대 피드 몰비 (D/F, kmol/kmol)</option>
+                                <option value="distillate_kgh">탑정 유출 유량 D (kg/h)</option>
+                                <option value="bottoms_kgh">탑저 관출 유량 B (kg/h)</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label style={labelStyle}>
+                                {splitSpecType === 'distillate_kgh'
+                                  ? '탑정 유출 유량 D (kg/h)'
+                                  : splitSpecType === 'bottoms_kgh'
+                                  ? '탑저 관출 유량 B (kg/h)'
+                                  : '분배 비율 수치'}
+                              </label>
+                              <BufferedNumberInput
+                                syncKey={`${unitTag}-splitspec`}
+                                step={splitSpecType.includes('kgh') ? 10 : 0.01}
+                                min={0.0001}
+                                value={splitSpecValue}
+                                onValueChange={(v) =>
+                                  applyUnifiedConfigChange({
+                                    splitSpecValue: Math.max(0.0001, v || 0.5),
+                                  })
+                                }
+                                onEnterRun={() => {
+                                  if (dofEvaluation.canRun) triggerRunSimulation();
+                                }}
                                 style={inputBaseStyle}
                               />
                             </div>
                           </div>
-                        )}
-                      </div>
-
-                      {/* 후보 ②: 탑정/탑저 유량 분배 사양 (D/F, B/F, D, B) */}
-                      <div style={slotCardBoxStyle(isSplitSel)}>
-                        {renderSlotHeader(
-                          'split',
-                          '② 탑정/탑저 유출 분배비 (D/F · B/F) 또는 유량(kg/h) 지정',
-                          result
-                            ? `D=${distTotalKgH.toFixed(1)} kg/h (D/F=${result.actualDOverFMass.toFixed(3)})`
-                            : '시뮬레이션 시 역산'
-                        )}
-                        {isSplitSel && (
-                          <>
-                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.35fr 1fr', gap: 8 }}>
-                              <div>
-                                <label style={labelStyle}>유출 분배 입력 방식</label>
-                                <select
-                                  value={splitSpecType}
-                                  onChange={(e) =>
-                                    onChangeConfig({ splitSpecType: e.target.value as DistillSplitSpecType })
-                                  }
-                                  style={selectBaseStyle}
-                                >
-                                  <option value="d_over_f_mass">탑정 대 피드 질량비 (D/F, kg/kg)</option>
-                                  <option value="b_over_f_mass">탑저 대 피드 질량비 (B/F, kg/kg)</option>
-                                  <option value="d_over_f_mole">탑정 대 피드 몰비 (D/F, kmol/kmol)</option>
-                                  <option value="distillate_kgh">탑정 유출 유량 D (kg/h)</option>
-                                  <option value="bottoms_kgh">탑저 관출 유량 B (kg/h)</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label style={labelStyle}>
-                                  {splitSpecType === 'distillate_kgh'
-                                    ? '탑정 유출 유량 D (kg/h)'
-                                    : splitSpecType === 'bottoms_kgh'
-                                    ? '탑저 관출 유량 B (kg/h)'
-                                    : '분배 비율 수치'}
-                                </label>
-                                <BufferedNumberInput
-                                  syncKey={`${unitTag}-splitspec`}
-                                  step={splitSpecType.includes('kgh') ? 10 : 0.01}
-                                  min={0.0001}
-                                  value={splitSpecValue}
-                                  onValueChange={(v) =>
-                                    onChangeConfig({ splitSpecValue: Math.max(0.0001, v || 0.5) })
-                                  }
-                                  onEnterRun={triggerRunSimulation}
-                                  style={inputBaseStyle}
-                                />
-                              </div>
-                            </div>
-                            <div
-                              style={{
-                                marginTop: 7,
-                                padding: '4px 8px',
-                                borderRadius: 5,
-                                background: '#F8FAFC',
-                                border: '1px solid #E2E8F0',
-                                fontSize: 10.5,
-                                fontWeight: 700,
-                                color: '#1E3A8A',
-                                fontFamily: MONO,
-                              }}
-                            >
-                              ⇄ {complementRatioText}
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      {/* 후보 ③: 탑정(D) 목표 제품 농도 / 불순물 농도 / 회수율 */}
-                      <div style={slotCardBoxStyle(isTopSel)}>
-                        {renderSlotHeader(
-                          'top_spec',
-                          '③ 탑정 유출(D) 목표 제품 농도(wt%) · 불순물(ppm) · 회수율(%)',
-                          result && activeComps[0]
-                            ? `D=${distTotalKgH.toFixed(1)} kg/h`
-                            : '시뮬레이션 시 자동 산출'
-                        )}
-                        {isTopSel && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div>
-                              <label style={labelStyle}>어떤 기준으로 탑정(D) 품질을 지정할까요? (택 1)</label>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-                                {(
-                                  [
-                                    { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
-                                    { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
-                                    { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
-                                  ] as { id: DistillSpecMetric; lbl: string }[]
-                                ).map((m) => (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={() => {
-                                      const nextComp = m.id === 'impurity_wt_ppm' ? defHk : defLk;
-                                      const nextTgt = m.id === 'impurity_wt_ppm' ? 200 : 99.5;
-                                      onChangeConfig({
-                                        topQualityMetric: m.id,
-                                        topQualityComp: nextComp,
-                                        topQualityTarget: nextTgt,
-                                      });
-                                    }}
-                                    style={{
-                                      padding: '5px 6px',
-                                      borderRadius: 6,
-                                      border: topMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                      background: topMetric === m.id ? '#EFF6FF' : '#FFFFFF',
-                                      color: topMetric === m.id ? '#1D4ED8' : '#475569',
-                                      fontSize: 10.5,
-                                      fontWeight: 800,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    {m.lbl}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.15fr', gap: 8 }}>
-                              <div>
-                                <label style={labelStyle}>
-                                  {topMetric === 'impurity_wt_ppm'
-                                    ? '탑정(D)에서 억제할 불순물 성분'
-                                    : topMetric === 'recovery_pct'
-                                    ? '탑정(D)으로 회수할 성분'
-                                    : '탑정(D) 목표 제품 성분'}
-                                </label>
-                                <select
-                                  value={topComp}
-                                  onChange={(e) =>
-                                    onChangeConfig({ topQualityComp: e.target.value as SimCompKey })
-                                  }
-                                  style={selectBaseStyle}
-                                >
-                                  {SIM_COMPS.map((ck) => (
-                                    <option key={ck} value={ck}>
-                                      {formatCompOption(ck)}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label style={{ ...labelStyle, color: '#0F172A' }}>
-                                  {topMetric === 'impurity_wt_ppm'
-                                    ? `탑정(D) 내 [${topCompFormula}] 허용 농도 (wt ppm)`
-                                    : topMetric === 'recovery_pct'
-                                    ? `원료 대비 탑정(D) [${topCompFormula}] 회수율 (%)`
-                                    : `탑정(D) 내 [${topCompFormula}] 목표 농도 (wt%)`}
-                                </label>
-                                <BufferedNumberInput
-                                  syncKey={`${unitTag}-topq-${topMetric}`}
-                                  step={topMetric === 'impurity_wt_ppm' ? 25 : 0.1}
-                                  min={0.001}
-                                  max={topMetric === 'impurity_wt_ppm' ? 500000 : 99.999}
-                                  value={topTarget}
-                                  onValueChange={(v) => onChangeConfig({ topQualityTarget: v })}
-                                  onEnterRun={triggerRunSimulation}
-                                  style={inputBaseStyle}
-                                />
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 10, color: '#475569' }}>
-                              {topMetric === 'impurity_wt_ppm'
-                                ? `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 허용 불순물 농도(ppm = ${(topTarget / 10000).toFixed(4)} wt%)입니다.`
-                                : topMetric === 'recovery_pct'
-                                ? `※ 입력하신 수치는 유입 원료 중 탑정(D)으로 회수되는 [${topCompFormula}]의 질량 회수율(%)입니다.`
-                                : `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 후보 ④: 탑저(B) 목표 제품 농도 / 불순물 농도 / 회수율 (붉은색 제거 — 차분한 슬레이트/블루 통일) */}
-                      <div style={slotCardBoxStyle(isBotSel)}>
-                        {renderSlotHeader(
-                          'bot_spec',
-                          '④ 탑저 관출(B) 목표 제품 농도(wt%) · 불순물(ppm) · 회수율(%)',
-                          result
-                            ? `B=${botTotalKgH.toFixed(1)} kg/h`
-                            : '시뮬레이션 시 자동 산출'
-                        )}
-                        {isBotSel && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            <div>
-                              <label style={labelStyle}>어떤 기준으로 탑저(B) 품질을 지정할까요? (택 1)</label>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
-                                {(
-                                  [
-                                    { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
-                                    { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
-                                    { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
-                                  ] as { id: DistillSpecMetric; lbl: string }[]
-                                ).map((m) => (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={() => {
-                                      const nextComp = m.id === 'impurity_wt_ppm' ? defLk : defHk;
-                                      const nextTgt = m.id === 'impurity_wt_ppm' ? 200 : 99.0;
-                                      onChangeConfig({
-                                        botQualityMetric: m.id,
-                                        botQualityComp: nextComp,
-                                        botQualityTarget: nextTgt,
-                                      });
-                                    }}
-                                    style={{
-                                      padding: '5px 6px',
-                                      borderRadius: 6,
-                                      border: botMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                      background: botMetric === m.id ? '#EFF6FF' : '#FFFFFF',
-                                      color: botMetric === m.id ? '#1D4ED8' : '#475569',
-                                      fontSize: 10.5,
-                                      fontWeight: 800,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    {m.lbl}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.15fr', gap: 8 }}>
-                              <div>
-                                <label style={labelStyle}>
-                                  {botMetric === 'impurity_wt_ppm'
-                                    ? '탑저(B)에서 억제할 불순물 성분'
-                                    : botMetric === 'recovery_pct'
-                                    ? '탑저(B)로 회수할 성분'
-                                    : '탑저(B) 목표 제품 성분'}
-                                </label>
-                                <select
-                                  value={botComp}
-                                  onChange={(e) =>
-                                    onChangeConfig({ botQualityComp: e.target.value as SimCompKey })
-                                  }
-                                  style={selectBaseStyle}
-                                >
-                                  {SIM_COMPS.map((ck) => (
-                                    <option key={ck} value={ck}>
-                                      {formatCompOption(ck)}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div>
-                                <label style={{ ...labelStyle, color: '#0F172A' }}>
-                                  {botMetric === 'impurity_wt_ppm'
-                                    ? `탑저(B) 내 [${botCompFormula}] 허용 농도 (wt ppm)`
-                                    : botMetric === 'recovery_pct'
-                                    ? `원료 대비 탑저(B) [${botCompFormula}] 회수율 (%)`
-                                    : `탑저(B) 내 [${botCompFormula}] 목표 농도 (wt%)`}
-                                </label>
-                                <BufferedNumberInput
-                                  syncKey={`${unitTag}-botq-${botMetric}`}
-                                  step={botMetric === 'impurity_wt_ppm' ? 25 : 0.1}
-                                  min={0.001}
-                                  max={botMetric === 'impurity_wt_ppm' ? 500000 : 99.999}
-                                  value={botTarget}
-                                  onValueChange={(v) => onChangeConfig({ botQualityTarget: v })}
-                                  onEnterRun={triggerRunSimulation}
-                                  style={inputBaseStyle}
-                                />
-                              </div>
-                            </div>
-                            <div style={{ fontSize: 10, color: '#475569' }}>
-                              {botMetric === 'impurity_wt_ppm'
-                                ? `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 허용 불순물 농도(ppm = ${(botTarget / 10000).toFixed(4)} wt%)입니다.`
-                                : botMetric === 'recovery_pct'
-                                ? `※ 입력하신 수치는 유입 원료 중 탑저(B)로 회수되는 [${botCompFormula}]의 질량 회수율(%)입니다.`
-                                : `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 후보 ⑤ (선택 자유도 +1): 사이드컷 (측류 인출 · Side-Cut) 변수 설정 */}
-                      {renderSideCutCard('rigorous_specs')}
-
-                      {/* ③ 탑정 + ④ 탑저 2개 품질 스펙 동시 지정 시: AI 단수·공급단·환류비·유량 자동 동시최적화 및 후보 비교표 */}
-                      {isTopSel && isBotSel && (() => {
-                        const autoOptStages = config.autoOptimizeStagesOnDualSpec !== false;
-                        return (
                           <div
                             style={{
-                              padding: '10px 12px',
-                              borderRadius: 9,
-                              background: autoOptStages ? '#F0FDF4' : '#F8FAFC',
-                              border: autoOptStages ? '1.5px solid #34D399' : '1px solid #CBD5E1',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 8,
+                              marginTop: 7,
+                              padding: '4px 8px',
+                              borderRadius: 5,
+                              background: '#F8FAFC',
+                              border: '1px solid #E2E8F0',
+                              fontSize: 10.5,
+                              fontWeight: 700,
+                              color: '#1E3A8A',
+                              fontFamily: MONO,
                             }}
                           >
-                            <div
-                              style={{
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                flexWrap: 'wrap',
-                                gap: 6,
-                              }}
-                            >
-                              <span style={{ fontSize: 11.5, fontWeight: 900, color: '#065F46' }}>
-                                ✨ AI 이중 목표품질(③+④) → 단수·공급단·환류비·탑정유량 자동 최적화
-                              </span>
-                              {result && (
-                                <span
+                            ⇄ {complementRatioText}
+                            {!isFixedStages && sideCutEnabled && !isTopSel
+                              ? ' (사이드컷 모드 탑정 퍼지 비율 연동)'
+                              : ''}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* 후보 ③: 탑정 제품 순도·회수율 */}
+                    <div style={slotCardBoxStyle(isTopSel, 'top_spec')}>
+                      {renderSlotHeader(
+                        'top_spec',
+                        '③ 탑정 제품 순도·회수율 (wt% · 불순물 ppm · 회수율 %)',
+                        result && activeComps[0]
+                          ? `D=${distTotalKgH.toFixed(1)} kg/h`
+                          : '시뮬레이션 시 자동 산출'
+                      )}
+                      {isTopSel && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div>
+                            <label style={labelStyle}>어떤 기준으로 탑정(D) 품질을 지정할까요? (택 1)</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+                              {(
+                                [
+                                  { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
+                                  { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
+                                  { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
+                                ] as { id: DistillSpecMetric; lbl: string }[]
+                              ).map((m) => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const nextComp = m.id === 'impurity_wt_ppm' ? defHkGlobal : defLkGlobal;
+                                    const nextTgt = m.id === 'impurity_wt_ppm' ? 200 : 99.5;
+                                    applyUnifiedConfigChange({
+                                      topQualityMetric: m.id,
+                                      topQualityComp: nextComp,
+                                      topQualityTarget: nextTgt,
+                                    });
+                                  }}
                                   style={{
-                                    fontSize: 10.2,
-                                    fontFamily: MONO,
+                                    padding: '5px 6px',
+                                    borderRadius: 6,
+                                    border: uiTopMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
+                                    background: uiTopMetric === m.id ? '#EFF6FF' : '#FFFFFF',
+                                    color: uiTopMetric === m.id ? '#1D4ED8' : '#475569',
+                                    fontSize: 10.5,
                                     fontWeight: 800,
-                                    color: '#0F172A',
+                                    cursor: 'pointer',
                                   }}
                                 >
-                                  현재 해: N={result.totalStagesUsed}단 · Nf={result.feedStageUsed}단 · RR={result.actualRefluxRatio.toFixed(2)} · D={distTotalKgH.toFixed(1)} kg/h
-                                </span>
-                              )}
+                                  {m.lbl}
+                                </button>
+                              ))}
                             </div>
-                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 6 }}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onChangeConfig({ autoOptimizeStagesOnDualSpec: true });
-                                  window.setTimeout(() => triggerRunSimulation(), 30);
-                                }}
-                                style={{
-                                  padding: '6px 9px',
-                                  borderRadius: 6,
-                                  border: autoOptStages ? '1.5px solid #059669' : '1px solid #CBD5E1',
-                                  background: autoOptStages ? '#059669' : '#FFFFFF',
-                                  color: autoOptStages ? '#FFFFFF' : '#334155',
-                                  fontSize: 10.5,
-                                  fontWeight: 900,
-                                  cursor: 'pointer',
-                                  textAlign: 'left',
-                                }}
-                              >
-                                ✨ AI 단수·공급단·환류비·유량 자동탐색 (TAC 최적 · 권장)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  onChangeConfig({ autoOptimizeStagesOnDualSpec: false });
-                                  window.setTimeout(() => triggerRunSimulation(), 30);
-                                }}
-                                style={{
-                                  padding: '6px 9px',
-                                  borderRadius: 6,
-                                  border: !autoOptStages ? '1.5px solid #1E293B' : '1px solid #CBD5E1',
-                                  background: !autoOptStages ? '#1E293B' : '#FFFFFF',
-                                  color: !autoOptStages ? '#FFFFFF' : '#334155',
-                                  fontSize: 10.5,
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                  textAlign: 'left',
-                                }}
-                              >
-                                🔒 단수 수동 고정 (N={config.totalStages ?? 24}단 유지 · RR/유량만 역산)
-                              </button>
-                            </div>
-                            {result?.dualSpecCandidates &&
-                              result.dualSpecCandidates.length > 0 &&
-                              renderCandidateComparisonTable(result.dualSpecCandidates, 'dual_spec')}
                           </div>
-                        );
-                      })()}
 
-                      {/* 응축기 / 리보일러 열수지 카드 (무채색 슬레이트 카드 — 오류로 오인되는 붉은 배경 제거) */}
-                      {result && (
-                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
-                          <div
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: 8,
-                              background: '#F8FAFC',
-                              border: '1px solid #CBD5E1',
-                            }}
-                          >
-                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                              탑정 응축기 냉각열량 (Q_cond)
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.15fr', gap: 8 }}>
+                            <div>
+                              <label style={labelStyle}>
+                                {uiTopMetric === 'impurity_wt_ppm'
+                                  ? '탑정(D)에서 억제할 불순물 성분'
+                                  : uiTopMetric === 'recovery_pct'
+                                  ? '탑정(D)으로 회수할 성분'
+                                  : '탑정(D) 목표 제품 성분'}
+                              </label>
+                              <select
+                                value={uiTopComp}
+                                onChange={(e) =>
+                                  applyUnifiedConfigChange({
+                                    topQualityComp: e.target.value as SimCompKey,
+                                  })
+                                }
+                                style={selectBaseStyle}
+                              >
+                                {renderCompOptGroups()}
+                              </select>
                             </div>
-                            <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
-                              {(result.condenserDutyKcalH / 1000).toFixed(1)} Mcal/h
-                            </div>
-                            <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                              ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · 탑정 {result.topTempC.toFixed(1)}°C)
+                            <div>
+                              <label style={{ ...labelStyle, color: '#0F172A' }}>
+                                {uiTopMetric === 'impurity_wt_ppm'
+                                  ? `탑정(D) 내 [${topCompFormula}] 허용 농도 (wt ppm)`
+                                  : uiTopMetric === 'recovery_pct'
+                                  ? `원료 대비 탑정(D) [${topCompFormula}] 회수율 (%)`
+                                  : `탑정(D) 내 [${topCompFormula}] 목표 농도 (wt%)`}
+                              </label>
+                              <BufferedNumberInput
+                                syncKey={`${unitTag}-topq-${uiTopMetric}`}
+                                step={uiTopMetric === 'impurity_wt_ppm' ? 25 : 0.1}
+                                min={0.001}
+                                max={uiTopMetric === 'impurity_wt_ppm' ? 500000 : 99.9999}
+                                value={uiTopTarget}
+                                onValueChange={(v) => applyUnifiedConfigChange({ topQualityTarget: v })}
+                                onEnterRun={() => {
+                                  if (dofEvaluation.canRun) triggerRunSimulation();
+                                }}
+                                style={inputBaseStyle}
+                              />
                             </div>
                           </div>
-                          <div
-                            style={{
-                              padding: '10px 12px',
-                              borderRadius: 8,
-                              background: '#F8FAFC',
-                              border: '1px solid #CBD5E1',
-                            }}
-                          >
-                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                              탑저 리보일러 가열열량 (Q_reb)
-                            </div>
-                            <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
-                              +{(result.reboilerDutyKcalH / 1000).toFixed(1)} Mcal/h
-                            </div>
-                            <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                              ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · 탑저 {result.bottomTempC.toFixed(1)}°C)
-                            </div>
+                          <div style={{ fontSize: 10, color: '#475569' }}>
+                            {uiTopMetric === 'impurity_wt_ppm'
+                              ? `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 허용 불순물 농도(ppm = ${(uiTopTarget / 10000).toFixed(4)} wt%)입니다.`
+                              : uiTopMetric === 'recovery_pct'
+                              ? `※ 입력하신 수치는 유입 원료 중 탑정(D)으로 회수되는 [${topCompFormula}]의 질량 회수율(%)입니다.`
+                              : `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
                           </div>
                         </div>
                       )}
+                    </div>
+
+                    {/* 후보 ④: 탑저 제품 순도·회수율·불순물 */}
+                    <div style={slotCardBoxStyle(isBotSel, 'bot_spec')}>
+                      {renderSlotHeader(
+                        'bot_spec',
+                        '④ 탑저 제품 순도·회수율·불순물 (wt% · ppm · %)',
+                        result
+                          ? `B=${botTotalKgH.toFixed(1)} kg/h`
+                          : '시뮬레이션 시 자동 산출'
+                      )}
+                      {isBotSel && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          <div>
+                            <label style={labelStyle}>어떤 기준으로 탑저(B) 품질을 지정할까요? (택 1)</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
+                              {(
+                                [
+                                  { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
+                                  { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
+                                  { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
+                                ] as { id: DistillSpecMetric; lbl: string }[]
+                              ).map((m) => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onClick={() => {
+                                    const nextComp = m.id === 'impurity_wt_ppm' ? defLkGlobal : defHkGlobal;
+                                    const nextTgt = m.id === 'impurity_wt_ppm' ? 200 : 99.0;
+                                    applyUnifiedConfigChange({
+                                      botQualityMetric: m.id,
+                                      botQualityComp: nextComp,
+                                      botQualityTarget: nextTgt,
+                                    });
+                                  }}
+                                  style={{
+                                    padding: '5px 6px',
+                                    borderRadius: 6,
+                                    border: uiBotMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
+                                    background: uiBotMetric === m.id ? '#EFF6FF' : '#FFFFFF',
+                                    color: uiBotMetric === m.id ? '#1D4ED8' : '#475569',
+                                    fontSize: 10.5,
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {m.lbl}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.15fr', gap: 8 }}>
+                            <div>
+                              <label style={labelStyle}>
+                                {uiBotMetric === 'impurity_wt_ppm'
+                                  ? '탑저(B)에서 억제할 불순물 성분'
+                                  : uiBotMetric === 'recovery_pct'
+                                  ? '탑저(B)로 회수할 성분'
+                                  : '탑저(B) 목표 제품 성분'}
+                              </label>
+                              <select
+                                value={uiBotComp}
+                                onChange={(e) =>
+                                  applyUnifiedConfigChange({
+                                    botQualityComp: e.target.value as SimCompKey,
+                                  })
+                                }
+                                style={selectBaseStyle}
+                              >
+                                {renderCompOptGroups()}
+                              </select>
+                            </div>
+                            <div>
+                              <label style={{ ...labelStyle, color: '#0F172A' }}>
+                                {uiBotMetric === 'impurity_wt_ppm'
+                                  ? `탑저(B) 내 [${botCompFormula}] 허용 농도 (wt ppm)`
+                                  : uiBotMetric === 'recovery_pct'
+                                  ? `원료 대비 탑저(B) [${botCompFormula}] 회수율 (%)`
+                                  : `탑저(B) 내 [${botCompFormula}] 목표 농도 (wt%)`}
+                              </label>
+                              <BufferedNumberInput
+                                syncKey={`${unitTag}-botq-${uiBotMetric}`}
+                                step={uiBotMetric === 'impurity_wt_ppm' ? 25 : 0.1}
+                                min={0.001}
+                                max={uiBotMetric === 'impurity_wt_ppm' ? 500000 : 99.9999}
+                                value={uiBotTarget}
+                                onValueChange={(v) => applyUnifiedConfigChange({ botQualityTarget: v })}
+                                onEnterRun={() => {
+                                  if (dofEvaluation.canRun) triggerRunSimulation();
+                                }}
+                                style={inputBaseStyle}
+                              />
+                            </div>
+                          </div>
+                          <div style={{ fontSize: 10, color: '#475569' }}>
+                            {uiBotMetric === 'impurity_wt_ppm'
+                              ? `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 허용 불순물 농도(ppm = ${(uiBotTarget / 10000).toFixed(4)} wt%)입니다.`
+                              : uiBotMetric === 'recovery_pct'
+                              ? `※ 입력하신 수치는 유입 원료 중 탑저(B)로 회수되는 [${botCompFormula}]의 질량 회수율(%)입니다.`
+                              : `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 후보 ⑤: 사이드컷 (측류 인출 · Side-Cut) 조건 */}
+                    {renderSideCutCard()}
+
+                    {/* AI 최적 단수·후보 비교표 (단수 자동설계 결과 존재 시 노출) */}
+                    {!isFixedStages && result?.shortcutDesign && (
+                      <div
+                        style={{
+                          padding: '11px 13px',
+                          borderRadius: 9,
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
+                            AI 자동설계 산출 요약 (단수 · 피드단 · 환류비 · 상하부 유량)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              applyPatchAndRun({
+                                columnCalcMode: 'rigorous_mesh',
+                                activeDofSlots: ['rr', 'split'],
+                                totalStages: result.shortcutDesign!.solvedStagesN,
+                                feedStage: result.shortcutDesign!.solvedFeedStage,
+                                topSpecType: 'reflux_ratio',
+                                topSpecValue: Number(result.actualRefluxRatio.toFixed(3)),
+                                splitSpecType: 'd_over_f_mass',
+                                splitSpecValue: Number(result.actualDOverFMass.toFixed(4)),
+                                autoOptimizeStagesOnDualSpec: false,
+                                ...(config.sideCut?.enabled && result.sideCutStageUsed
+                                  ? { sideCut: { ...config.sideCut, stage: result.sideCutStageUsed } }
+                                  : {}),
+                              })
+                            }
+                            style={{
+                              padding: '4px 9px',
+                              borderRadius: 6,
+                              border: '1px solid #2563EB',
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              fontSize: 10.5,
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            산출 단수({result.shortcutDesign.solvedStagesN}단)·RR을 ⓪ 고정 단수로 확정 →
+                          </button>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                            gap: 8,
+                            marginTop: 9,
+                            fontFamily: MONO,
+                          }}
+                        >
+                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>산출 이론단 / 실제단</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                              {result.shortcutDesign.solvedStagesN}단 / {result.shortcutDesign.solvedActualTrays}단
+                            </div>
+                            <div style={{ fontSize: 9.5, color: '#475569' }}>
+                              N_min={result.shortcutDesign.minStagesNmin} · 피드 {result.shortcutDesign.solvedFeedStage}단
+                            </div>
+                          </div>
+                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>운전 환류비 (RR)</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                              {result.actualRefluxRatio.toFixed(2)}
+                            </div>
+                            <div style={{ fontSize: 9.5, color: '#475569' }}>
+                              R_min={result.shortcutDesign.minRefluxRmin} · α={result.shortcutDesign.alphaAvg}
+                            </div>
+                          </div>
+                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑정 유량 D (상부)</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                              {distTotalKgH.toFixed(1)} kg/h
+                            </div>
+                            <div style={{ fontSize: 9.5, color: '#475569' }}>
+                              {result.shortcutDesign.lkComp} {result.shortcutDesign.topLkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.topLkRecoveryPct}%)
+                            </div>
+                          </div>
+                          <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑저 유량 B (하부)</div>
+                            <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                              {botTotalKgH.toFixed(1)} kg/h
+                            </div>
+                            <div style={{ fontSize: 9.5, color: '#475569' }}>
+                              {result.shortcutDesign.hkComp} {result.shortcutDesign.botHkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.botHkRecoveryPct}%)
+                            </div>
+                          </div>
+                        </div>
+
+                        {result.shortcutDesign.candidates &&
+                          result.shortcutDesign.candidates.length > 0 &&
+                          renderCandidateComparisonTable(result.shortcutDesign.candidates, 'design_stages')}
+                      </div>
+                    )}
+
+                    {isFixedStages &&
+                      result?.dualSpecCandidates &&
+                      result.dualSpecCandidates.length > 0 &&
+                      renderCandidateComparisonTable(result.dualSpecCandidates, 'dual_spec')}
+
+                    {/* 응축기 / 리보일러 열수지 카드 */}
+                    {result && (
+                      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+                        <div
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            background: '#F8FAFC',
+                            border: '1px solid #CBD5E1',
+                          }}
+                        >
+                          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                            탑정 응축기 냉각열량 (Q_cond)
+                          </div>
+                          <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
+                            {(result.condenserDutyKcalH / 1000).toFixed(1)} Mcal/h
+                          </div>
+                          <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
+                            ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · 탑정 {result.topTempC.toFixed(1)}°C)
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: 8,
+                            background: '#F8FAFC',
+                            border: '1px solid #CBD5E1',
+                          }}
+                        >
+                          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                            탑저 리보일러 가열열량 (Q_reb)
+                          </div>
+                          <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
+                            +{(result.reboilerDutyKcalH / 1000).toFixed(1)} Mcal/h
+                          </div>
+                          <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
+                            ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · 탑저 {result.bottomTempC.toFixed(1)}°C)
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
 
-              {/* 탭 4: 압력·열역학·효율 */}
-              {calcMode === 'rigorous_mesh' && leftTab === 'pressure' && (
+              {/* 탭 3: 압력·열역학·효율 */}
+              {leftTab === 'pressure' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                   <div style={cardStyle}>
                     <label style={labelStyle}>열역학 기액평형(VLE) 패키지 선택</label>
@@ -3847,7 +4089,9 @@ export default function DistillationWorkbenchModal({
                             topPressKgcm2g: Math.max(-0.99, Math.min(35, v)),
                           })
                         }
-                        onEnterRun={triggerRunSimulation}
+                        onEnterRun={() => {
+                          if (dofEvaluation.canRun) triggerRunSimulation();
+                        }}
                         style={inputBaseStyle}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4, fontFamily: MONO }}>
@@ -3866,7 +4110,9 @@ export default function DistillationWorkbenchModal({
                         onValueChange={(v) =>
                           onChangeConfig({ stageDeltaPKgcm2: Math.max(0, v || 0) })
                         }
-                        onEnterRun={triggerRunSimulation}
+                        onEnterRun={() => {
+                          if (dofEvaluation.canRun) triggerRunSimulation();
+                        }}
                         style={inputBaseStyle}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4, fontFamily: MONO }}>
@@ -3887,7 +4133,9 @@ export default function DistillationWorkbenchModal({
                             murphreeEffPct: Math.max(25, Math.min(100, v || 75)),
                           })
                         }
-                        onEnterRun={triggerRunSimulation}
+                        onEnterRun={() => {
+                          if (dofEvaluation.canRun) triggerRunSimulation();
+                        }}
                         style={inputBaseStyle}
                       />
                       <select
@@ -4327,13 +4575,20 @@ export default function DistillationWorkbenchModal({
               <button
                 type="button"
                 onClick={triggerRunSimulation}
-                disabled={isRunningFeedback}
+                disabled={isRunningFeedback || !dofEvaluation.canRun}
+                title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행'}
                 style={{
                   flex: 1,
                   padding: '9px 12px',
                   borderRadius: 7,
-                  border: isSimDirty ? '1.5px solid #FDE047' : '1px solid #60A5FA',
-                  background: isRunningFeedback
+                  border: !dofEvaluation.canRun
+                    ? '1px solid #64748B'
+                    : isSimDirty
+                    ? '1.5px solid #FDE047'
+                    : '1px solid #60A5FA',
+                  background: !dofEvaluation.canRun
+                    ? '#475569'
+                    : isRunningFeedback
                     ? '#1D4ED8'
                     : isSimDirty
                     ? '#D97706'
@@ -4341,12 +4596,19 @@ export default function DistillationWorkbenchModal({
                   color: '#FFFFFF',
                   fontSize: 12,
                   fontWeight: 900,
-                  cursor: isRunningFeedback ? 'wait' : 'pointer',
+                  cursor: isRunningFeedback
+                    ? 'wait'
+                    : !dofEvaluation.canRun
+                    ? 'not-allowed'
+                    : 'pointer',
+                  opacity: !dofEvaluation.canRun ? 0.65 : 1,
                   textAlign: 'center',
                 }}
               >
                 {isRunningFeedback
                   ? '⏳ 수렴 계산 중...'
+                  : !dofEvaluation.canRun
+                  ? '▶ RUN (자유도 확인)'
                   : isSimDirty
                   ? '▶ RUN 시뮬레이션 실행'
                   : '▶ RUN 재실행'}

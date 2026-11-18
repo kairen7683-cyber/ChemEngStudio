@@ -7,6 +7,7 @@ import { usePFDStore } from '@/lib/stores/pfdStore';
 import {
   PLANT_REGISTRY,
   getPlantRegistryItem,
+  isPlantAllowed,
   type PlantWorkspaceTab,
 } from '@/lib/plantRegistry';
 import {
@@ -15,11 +16,13 @@ import {
   type SimUiMode,
 } from '@/lib/simUiHandoff';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
+import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 
 export default function Header() {
   const pathname = usePathname() || '/';
   const router = useRouter();
+  const { user } = useAuth();
   const [isMobile, setIsMobile] = useState(false);
   const [simUiMode, setSimUiMode] = useState<SimUiMode>('modern');
   const [plantMenuOpen, setPlantMenuOpen] = useState(false);
@@ -100,9 +103,32 @@ export default function Header() {
     handleSelectPlant(targetUi === 'classic' ? 'classic_sim' : 'new_builder');
   };
 
+  const allowedCommercialPlants = PLANT_REGISTRY.filter(
+    p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+  );
+
+  // 계정에 할당된 공장 목록 기준으로 허용되지 않은 상용 공장에 머무르지 않도록 자동 전환
+  useEffect(() => {
+    if (!user) return;
+    const curMeta = getPlantRegistryItem(activePlantId);
+    if (!curMeta.isSandbox && !isPlantAllowed(activePlantId, user)) {
+      const firstAllowed = PLANT_REGISTRY.find(
+        p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+      );
+      if (firstAllowed) {
+        setActivePlantId(firstAllowed.id);
+      } else {
+        setActivePlantId('new_builder');
+      }
+    }
+  }, [user, activePlantId, setActivePlantId]);
+
   const plantMeta = getPlantRegistryItem(activePlantId);
   const isSimulatorMode = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
-  const dropdownPlantMeta = getPlantRegistryItem(isSimulatorMode ? lastCommercialPlantId : activePlantId);
+  const safeCommercialId = isPlantAllowed(lastCommercialPlantId, user)
+    ? lastCommercialPlantId
+    : (allowedCommercialPlants[0]?.id ?? lastCommercialPlantId);
+  const dropdownPlantMeta = getPlantRegistryItem(isSimulatorMode ? safeCommercialId : activePlantId);
   const isUnitCalcTool = pathname.startsWith('/unit-equipment');
   const isPropDbTool = pathname.startsWith('/property-db');
   const isGlobalToolMode = isUnitCalcTool || isPropDbTool;
@@ -122,6 +148,14 @@ export default function Header() {
 
   const handleSelectPlant = (nextId: PlantId) => {
     const nextMeta = getPlantRegistryItem(nextId);
+    if (!nextMeta.isSandbox && !isPlantAllowed(nextId, user)) {
+      const fallback = allowedCommercialPlants[0];
+      if (fallback) {
+        setActivePlantId(fallback.id);
+        router.push(fallback.defaultHref);
+      }
+      return;
+    }
     setActivePlantId(nextId);
 
     // 도구함 화면이거나 샌드박스/표준 시뮬레이터 선택 시 즉시 해당 기본 시뮬레이터 화면으로 진입
@@ -361,9 +395,14 @@ export default function Header() {
                     letterSpacing: '0.3px',
                   }}
                 >
-                  상용 공정 플랜트 ({PLANT_REGISTRY.filter(p => !p.isSandbox && !p.hiddenFromSelector).length})
+                  상용 공정 플랜트 ({allowedCommercialPlants.length})
                 </div>
-                {PLANT_REGISTRY.filter(p => !p.isSandbox && !p.hiddenFromSelector).map(p => {
+                {allowedCommercialPlants.length === 0 ? (
+                  <div style={{ padding: '10px 10px', fontSize: 11, color: '#64748B', lineHeight: 1.45 }}>
+                    할당된 상용 공장이 없습니다. 상단의 공정 시뮬레이터 및 독립 도구함(단품 계산기·물성 DB)은 자유롭게 이용하실 수 있습니다.
+                  </div>
+                ) : (
+                allowedCommercialPlants.map(p => {
                   const selected = isCommercialPlantActive && p.id === activePlantId;
                   return (
                     <button
@@ -442,7 +481,8 @@ export default function Header() {
                       )}
                     </button>
                   );
-                })}
+                })
+                )}
               </div>
             )}
           </div>

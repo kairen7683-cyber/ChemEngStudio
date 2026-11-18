@@ -164,6 +164,13 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   CH2Cl2:     { mw: MW.CH2Cl2, kind: 'molecular', dHfIg: -95.4, cpIg: [12.95, 0.1623, -1.302e-4, 4.208e-8], Tc: 510.0, TvapRef: 312.95, dHvapRef: 28.06, cpLiq298: 100.0, watsonN: 0.38 },
   CCl4:       { mw: MW.CCl4, kind: 'molecular', dHfIg: -95.9, cpIg: [40.72, 0.2049, -2.27e-4, 8.84e-8], Tc: 556.4, TvapRef: 349.85, dHvapRef: 29.82, cpLiq298: 131.0, watsonN: 0.38 },
   C2Cl4:      { mw: MW.C2Cl4, kind: 'molecular', dHfIg: -12.1, cpIg: [45.97, 0.2256, -1.96e-4, 5.82e-8], Tc: 620.2, TvapRef: 394.25, dHvapRef: 34.68, cpLiq298: 145.0, watsonN: 0.38 },
+  COCl2:      { mw: MW.COCl2, kind: 'molecular', dHfIg: -219.1, cpIg: [28.4, 0.128, -9.2e-5, 2.4e-8], Tc: 455.0, TvapRef: 281.35, dHvapRef: 24.4, cpLiq298: 100.8, watsonN: 0.38 },
+  HCHO:       { mw: MW.HCHO, kind: 'molecular', dHfIg: -108.6, cpIg: [23.48, 0.0315, 2.99e-5, -2.3e-8], Tc: 408.0, TvapRef: 254.05, dHvapRef: 23.3, cpLiq298: 71.0, watsonN: 0.38 },
+  MCB:        { mw: MW.MCB, kind: 'molecular', dHfIg: 52.0, cpIg: [-33.89, 0.563, -4.52e-4, 1.42e-7], Tc: 632.4, TvapRef: 404.87, dHvapRef: 35.19, cpLiq298: 150.2, watsonN: 0.38 },
+  Aniline:    { mw: MW.Aniline, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-7], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
+  MDA:        { mw: MW.MDA, kind: 'molecular', dHfIg: 148.0, cpIg: [-45.0, 1.12, -7.8e-4, 2.1e-7], Tc: 882.0, TvapRef: 671.15, dHvapRef: 68.5, cpLiq298: 345.0, watsonN: 0.38 },
+  MDI:        { mw: MW.MDI, kind: 'molecular', dHfIg: -152.0, cpIg: [-38.0, 1.18, -8.4e-4, 2.3e-7], Tc: 802.0, TvapRef: 587.15, dHvapRef: 65.0, cpLiq298: 390.0, watsonN: 0.38 },
+  PMDI:       { mw: MW.PMDI, kind: 'molecular', dHfIg: -240.0, cpIg: [-52.0, 1.65, -1.1e-3, 3.0e-7], Tc: 945.0, TvapRef: 708.15, dHvapRef: 78.0, cpLiq298: 580.0, watsonN: 0.38 },
   CUSTOM_1: { mw: MW.CUSTOM_1, kind: 'molecular', dHfIg: -274.6, cpIg: [3.266, 0.418, -0.0002242, 4.685e-08], Tc: 563.05, TvapRef: 390.9, dHvapRef: 43.29, watsonN: 0.38 },
   CUSTOM_2: { mw: MW.CUSTOM_2, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-07], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
 };

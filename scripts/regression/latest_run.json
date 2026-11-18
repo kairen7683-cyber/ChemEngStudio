@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T00:22:00.144Z",
+  "generatedAt": "2026-11-18T04:34:18.628Z",
   "sheets": [
     {
       "plant": "electrolysis",
@@ -10,7 +10,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 295.49,
       "iterations": 2,
-      "ms": 128,
+      "ms": 91,
       "boundaryFeedKgH": 98676.44,
       "boundaryProductKgH": 98911.17,
       "rawBoundaryGapKgH": -234.73,
@@ -102,7 +102,7 @@
       "warningUnitCount": 1,
       "makeupTotalKgH": 0,
       "iterations": 5,
-      "ms": 195,
+      "ms": 185,
       "boundaryFeedKgH": 19429.26,
       "boundaryProductKgH": 19429.26,
       "rawBoundaryGapKgH": 0,
@@ -140,7 +140,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 21.24,
       "iterations": 2,
-      "ms": 8,
+      "ms": 9,
       "boundaryFeedKgH": 225533.35,
       "boundaryProductKgH": 225554.59,
       "rawBoundaryGapKgH": -21.24,
@@ -178,7 +178,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 6,
+      "ms": 7,
       "boundaryFeedKgH": 225472.6,
       "boundaryProductKgH": 225472.6,
       "rawBoundaryGapKgH": 0,
@@ -210,7 +210,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 6,
-      "ms": 89,
+      "ms": 101,
       "boundaryFeedKgH": 240997.6,
       "boundaryProductKgH": 240997.71,
       "rawBoundaryGapKgH": -0.11,
@@ -298,7 +298,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 14,
+      "ms": 16,
       "boundaryFeedKgH": 66514.78,
       "boundaryProductKgH": 66514.78,
       "rawBoundaryGapKgH": 0,
@@ -336,7 +336,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 12,
+      "ms": 11,
       "boundaryFeedKgH": 24449.22,
       "boundaryProductKgH": 24449.22,
       "rawBoundaryGapKgH": 0,
@@ -374,7 +374,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 10,
+      "ms": 12,
       "boundaryFeedKgH": 16051.41,
       "boundaryProductKgH": 16051.41,
       "rawBoundaryGapKgH": 0,
@@ -412,7 +412,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 11,
+      "ms": 13,
       "boundaryFeedKgH": 1768.05,
       "boundaryProductKgH": 1768.06,
       "rawBoundaryGapKgH": -0.01,
@@ -462,7 +462,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 120.24,
       "iterations": 2,
-      "ms": 49,
+      "ms": 43,
       "boundaryFeedKgH": 14935.45,
       "boundaryProductKgH": 15055.69,
       "rawBoundaryGapKgH": -120.24,
@@ -518,7 +518,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 12,
-      "ms": 705,
+      "ms": 632,
       "boundaryFeedKgH": 11620.2,
       "boundaryProductKgH": 11619.38,
       "rawBoundaryGapKgH": 0.82,
@@ -547,7 +547,7 @@
         },
         {
           "tag": "PROD-5N-AHCL",
-          "kgH": 1851.54,
+          "kgH": 1851.6,
           "tempC": -12.7,
           "topWtPct": "HCl 100.00%, Cl2 0.00%, O2 0.00%"
         },
@@ -559,9 +559,9 @@
         },
         {
           "tag": "DRN-NACL",
-          "kgH": 854.02,
+          "kgH": 853.96,
           "tempC": 65,
-          "topWtPct": "H2O 67.91%, NaOH 16.98%, HCl 15.11%"
+          "topWtPct": "H2O 67.92%, NaOH 16.98%, HCl 15.10%"
         },
         {
           "tag": "PROD-REC-H2O",
@@ -580,7 +580,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 17,
+      "ms": 18,
       "boundaryFeedKgH": 6835.2,
       "boundaryProductKgH": 6835.19,
       "rawBoundaryGapKgH": 0.01,
@@ -624,7 +624,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 140,
+      "ms": 104,
       "boundaryFeedKgH": 2044.02,
       "boundaryProductKgH": 2044.03,
       "rawBoundaryGapKgH": -0.01,
@@ -647,13 +647,13 @@
         },
         {
           "tag": "TO-SCRUBBER",
-          "kgH": 132.48,
+          "kgH": 132.42,
           "tempC": -11.3,
-          "topWtPct": "HCl 97.36%, H2 1.37%, O2 1.27%"
+          "topWtPct": "HCl 97.35%, H2 1.37%, O2 1.27%"
         },
         {
           "tag": "PROD-5N-AHCL",
-          "kgH": 1851.55,
+          "kgH": 1851.61,
           "tempC": -12.7,
           "topWtPct": "HCl 100.00%, Cl2 0.00%, O2 0.00%"
         }
@@ -668,7 +668,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 8,
-      "ms": 1261,
+      "ms": 926,
       "boundaryFeedKgH": 4000,
       "boundaryProductKgH": 3998.8,
       "rawBoundaryGapKgH": 1.2,
@@ -706,12 +706,12 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 66,
+      "ms": 35,
       "boundaryFeedKgH": 33717,
-      "boundaryProductKgH": 33716.99,
-      "rawBoundaryGapKgH": 0.01,
+      "boundaryProductKgH": 33717,
+      "rawBoundaryGapKgH": 0,
       "sumAbsUnitImbalanceKgH": 0,
-      "naiveEnergyResidualKW": 3642,
+      "naiveEnergyResidualKW": 3651.3,
       "massImbalanceKgH": 0,
       "physicalMassImbalanceKgH": 0,
       "makeupInKgH": 0,
@@ -729,27 +729,27 @@
         },
         {
           "tag": "OUT-DEC-H2O",
-          "kgH": 203.12,
+          "kgH": 203.68,
           "tempC": 64.4,
           "topWtPct": "H2O 92.53%, ECH 7.47%, DCH 0.00%"
         },
         {
           "tag": "OUT-LIGHT",
-          "kgH": 880.75,
+          "kgH": 860.11,
           "tempC": 64.4,
           "topWtPct": "ECH 97.45%, H2O 2.55%, DCH 0.00%"
         },
         {
           "tag": "PROD-ECH",
-          "kgH": 7242.9,
+          "kgH": 7266.17,
           "tempC": 58.2,
           "topWtPct": "ECH 100.00%, DCH 0.00%, H2O 0.00%"
         },
         {
           "tag": "REC-HEAVY",
-          "kgH": 365.95,
-          "tempC": 79.8,
-          "topWtPct": "ECH 50.99%, DCH 45.00%, MCH 3.95%"
+          "kgH": 362.77,
+          "tempC": 79.9,
+          "topWtPct": "ECH 50.55%, DCH 45.39%, MCH 3.98%"
         }
       ]
     },
@@ -762,7 +762,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 44,
+      "ms": 14,
       "boundaryFeedKgH": 16517,
       "boundaryProductKgH": 16517,
       "rawBoundaryGapKgH": 0,
@@ -794,7 +794,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 93,
+      "ms": 16,
       "boundaryFeedKgH": 32242,
       "boundaryProductKgH": 32242,
       "rawBoundaryGapKgH": 0,
@@ -832,12 +832,12 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 617,
+      "ms": 151,
       "boundaryFeedKgH": 9505,
-      "boundaryProductKgH": 9505.01,
-      "rawBoundaryGapKgH": -0.01,
+      "boundaryProductKgH": 9505,
+      "rawBoundaryGapKgH": 0,
       "sumAbsUnitImbalanceKgH": 0,
-      "naiveEnergyResidualKW": 3867.2,
+      "naiveEnergyResidualKW": 3871.2,
       "massImbalanceKgH": 0,
       "physicalMassImbalanceKgH": 0,
       "makeupInKgH": 0,
@@ -849,27 +849,27 @@
       "products": [
         {
           "tag": "OUT-DEC-H2O",
-          "kgH": 131.89,
-          "tempC": 62.3,
-          "topWtPct": "H2O 93.72%, ECH 6.21%, DCP 0.07%"
+          "kgH": 132.29,
+          "tempC": 62.1,
+          "topWtPct": "H2O 93.74%, ECH 6.18%, DCP 0.07%"
         },
         {
           "tag": "OUT-LIGHT-DCP",
-          "kgH": 906.07,
-          "tempC": 62.3,
-          "topWtPct": "ECH 81.78%, DCP 16.41%, H2O 1.81%"
+          "kgH": 891.49,
+          "tempC": 62.1,
+          "topWtPct": "ECH 81.43%, DCP 16.78%, H2O 1.79%"
         },
         {
           "tag": "PROD-ECH-99.9%",
-          "kgH": 8080.05,
+          "kgH": 8092.93,
           "tempC": 58.1,
-          "topWtPct": "ECH 99.80%, DCP 0.20%, DCH 0.00%"
+          "topWtPct": "ECH 99.81%, DCP 0.19%, DCH 0.00%"
         },
         {
           "tag": "REC-HEAVY-DCH",
-          "kgH": 387,
-          "tempC": 117.9,
-          "topWtPct": "DCH 98.19%, ECH 1.81%, DCP 0.00%"
+          "kgH": 388.29,
+          "tempC": 117.3,
+          "topWtPct": "DCH 97.86%, ECH 2.14%, DCP 0.00%"
         }
       ]
     },
@@ -882,7 +882,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 10,
-      "ms": 590,
+      "ms": 262,
       "boundaryFeedKgH": 13895.95,
       "boundaryProductKgH": 13896.36,
       "rawBoundaryGapKgH": -0.41,
@@ -938,7 +938,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 121,
+      "ms": 42,
       "boundaryFeedKgH": 23148.28,
       "boundaryProductKgH": 23148.28,
       "rawBoundaryGapKgH": 0,
@@ -970,7 +970,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 767,
+      "ms": 413,
       "boundaryFeedKgH": 23148.7,
       "boundaryProductKgH": 23148.69,
       "rawBoundaryGapKgH": 0.01,
@@ -1020,7 +1020,7 @@
       "warningUnitCount": 0,
       "makeupTotalKgH": 0,
       "iterations": 2,
-      "ms": 657,
+      "ms": 299,
       "boundaryFeedKgH": 9096.31,
       "boundaryProductKgH": 9096.31,
       "rawBoundaryGapKgH": 0,
@@ -1052,6 +1052,232 @@
           "kgH": 736.36,
           "tempC": 99.6,
           "topWtPct": "CCl4 92.77%, C2Cl4 7.23%, CHCl3 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "mdi",
+      "sheetId": "master",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 5,
+      "ms": 118,
+      "boundaryFeedKgH": 30789.9,
+      "boundaryProductKgH": 30791.49,
+      "rawBoundaryGapKgH": -1.59,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 6534.3,
+      "massImbalanceKgH": -1.58,
+      "physicalMassImbalanceKgH": -1.58,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0.1,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-BRINE",
+          "kgH": 7598.66,
+          "tempC": 75,
+          "topWtPct": "H2O 74.63%, NaCl 25.31%, HCHO 0.05%"
+        },
+        {
+          "tag": "OUT-COND-H2O",
+          "kgH": 1582.03,
+          "tempC": 140,
+          "topWtPct": "H2O 92.74%, Aniline 6.18%, MDA 0.85%"
+        },
+        {
+          "tag": "BYPROD-HCL",
+          "kgH": 8233.5,
+          "tempC": 38,
+          "topWtPct": "HCl 88.35%, COCl2 8.30%, MCB 2.76%"
+        },
+        {
+          "tag": "OUT-MCB-REGEN",
+          "kgH": 752.29,
+          "tempC": 66.5,
+          "topWtPct": "MCB 99.88%, COCl2 0.12%, MDI 0.00%"
+        },
+        {
+          "tag": "PROD-PURE-MDI",
+          "kgH": 4616.29,
+          "tempC": 120.7,
+          "topWtPct": "MDI 97.34%, MCB 2.66%, MDA 0.00%"
+        },
+        {
+          "tag": "PROD-PMDI",
+          "kgH": 8008.72,
+          "tempC": 310,
+          "topWtPct": "PMDI 99.75%, MDA 0.25%, MDI 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "mdi",
+      "sheetId": "sub_mdi_100_mda",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 5,
+      "ms": 322,
+      "boundaryFeedKgH": 19089.9,
+      "boundaryProductKgH": 19089.9,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 87.3,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "OUT-BRINE",
+          "kgH": 7598.65,
+          "tempC": 75,
+          "topWtPct": "H2O 74.63%, NaCl 25.31%, HCHO 0.05%"
+        },
+        {
+          "tag": "OUT-COND-H2O",
+          "kgH": 1582.04,
+          "tempC": 140,
+          "topWtPct": "H2O 92.74%, Aniline 6.18%, MDA 0.85%"
+        },
+        {
+          "tag": "TO-200-MDA",
+          "kgH": 9909.21,
+          "tempC": 310,
+          "topWtPct": "MDA 100.00%, Aniline 0.00%, H2O 0.00%"
+        }
+      ]
+    },
+    {
+      "plant": "mdi",
+      "sheetId": "sub_mdi_200_phos",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 20,
+      "boundaryFeedKgH": 41823.18,
+      "boundaryProductKgH": 41823.18,
+      "rawBoundaryGapKgH": 0,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 0,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "BYPROD-HCL",
+          "kgH": 8233.48,
+          "tempC": 38,
+          "topWtPct": "HCl 88.35%, COCl2 8.30%, MCB 2.76%"
+        },
+        {
+          "tag": "TO-300-CRUDE",
+          "kgH": 33589.7,
+          "tempC": 38,
+          "topWtPct": "MCB 56.28%, PMDI 23.78%, MDI 13.38%"
+        }
+      ]
+    },
+    {
+      "plant": "mdi",
+      "sheetId": "sub_mdi_300_mcb",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 191,
+      "boundaryFeedKgH": 33591.26,
+      "boundaryProductKgH": 33591.27,
+      "rawBoundaryGapKgH": -0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 5001.2,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "REC-COCl2",
+          "kgH": 2159.06,
+          "tempC": 18.2,
+          "topWtPct": "COCl2 71.23%, HCl 28.20%, Cl2 0.56%"
+        },
+        {
+          "tag": "REC-MCB",
+          "kgH": 18807.2,
+          "tempC": 66.5,
+          "topWtPct": "MCB 99.88%, COCl2 0.12%, MDI 0.00%"
+        },
+        {
+          "tag": "TO-400-MDI",
+          "kgH": 12625.01,
+          "tempC": 220.3,
+          "topWtPct": "PMDI 63.28%, MDI 35.59%, MCB 0.97%"
+        }
+      ]
+    },
+    {
+      "plant": "mdi",
+      "sheetId": "sub_mdi_400_purif",
+      "converged": true,
+      "overallStatus": "converged",
+      "failedUnitCount": 0,
+      "warningUnitCount": 0,
+      "makeupTotalKgH": 0,
+      "iterations": 2,
+      "ms": 79,
+      "boundaryFeedKgH": 12625.01,
+      "boundaryProductKgH": 12625,
+      "rawBoundaryGapKgH": 0.01,
+      "sumAbsUnitImbalanceKgH": 0,
+      "naiveEnergyResidualKW": 1452.2,
+      "massImbalanceKgH": 0,
+      "physicalMassImbalanceKgH": 0,
+      "makeupInKgH": 0,
+      "unroutedOutKgH": 0,
+      "unroutedOutletCount": 0,
+      "makeupInletCount": 0,
+      "energyResidualKW": 0,
+      "energyResidualPct": 0,
+      "products": [
+        {
+          "tag": "PROD-PURE-MDI",
+          "kgH": 4616.23,
+          "tempC": 48,
+          "topWtPct": "MDI 97.34%, MCB 2.66%, MDA 0.00%"
+        },
+        {
+          "tag": "PROD-PMDI",
+          "kgH": 8008.77,
+          "tempC": 55,
+          "topWtPct": "PMDI 99.75%, MDA 0.25%, MDI 0.00%"
         }
       ]
     }

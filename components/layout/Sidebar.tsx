@@ -5,9 +5,11 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   useBalanceStore,
   calculateCmsPlantSummary,
+  calculateMdiPlantSummary,
   type PlantId,
   type Plant03OperatingInputs,
   type CmsPlantOperatingInputs,
+  type MdiPlantOperatingInputs,
 } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import type { ElectrolyzerInputs } from '@/lib/calculations/electrolyzer';
@@ -15,10 +17,12 @@ import { emptySimFlows, type FlowNodeDef } from '@/lib/calculations/flowsheetSol
 import { createInitialHierarchySheets } from '@/lib/calculations/fullPlantHierarchy';
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
+import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
 
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
+const PLANT06_MDI_SAVE_KEY = 'chemplant-plant06-mdi-v1';
 
 interface NavMenuItem {
   key: string;
@@ -98,6 +102,23 @@ const CMS_SHEETS = [
   { sheetId: 'sub_cms_100_rxn',   label: '100 Cl₂ 기화 · R-101 AIBN 반응',        badge: '100' },
   { sheetId: 'sub_cms_200_rec',   label: '200 HCl(60단)·MC(50단)·Azeo(30단)',     badge: '200' },
   { sheetId: 'sub_cms_300_purif', label: '300 MCL(80단)·CFM(120단) 정제',         badge: '300' },
+];
+
+const MDI_SUB_MENUS: NavMenuItem[] = [
+  { key: 'pfd',     label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
+  { key: 'mdi_hub', label: 'MDI 핵심장치 내장설계',          badge: 'RXN/COL' },
+  { key: 'packing', label: 'C-101·301·302·401 증류탑 설계',  badge: 'COL' },
+  { key: 'chempro', label: '예열기·냉각기·펌프·안전밸브',    badge: 'HX/PMP' },
+  { key: 'equip',   label: 'MDI 전공정 기기목록 & 시트',     badge: 'LIST' },
+  { key: 'econ',    label: 'MDI 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
+];
+
+const MDI_SHEETS = [
+  { sheetId: 'master',            label: '통합 마스터 도면 (100~400)',           badge: 'ALL' },
+  { sheetId: 'sub_mdi_100_mda',   label: '100 MDA 합성·염수분리·아닐린 회수',   badge: '100' },
+  { sheetId: 'sub_mdi_200_phos',  label: '200 CO+Cl₂ 포스겐·2단 포스겐화',     badge: '200' },
+  { sheetId: 'sub_mdi_300_mcb',   label: '300 탈포스겐·MCB 진공 회수',          badge: '300' },
+  { sheetId: 'sub_mdi_400_purif', label: '400 Pure 4,4\'-MDI / PMDI 정밀분별',  badge: '400' },
 ];
 
 /** 비-PFD 화면(장치목록 등)에서 PLANT 01(전해) 사이드바 운전변수 조절 시 저장소 즉시 동기화 */
@@ -346,6 +367,144 @@ function patchStoredCmsFlowsheet(cms: CmsPlantOperatingInputs) {
   }
 }
 
+/** 비-PFD 화면(장치목록 등)에서 PLANT 05(MDI) 사이드바 운전변수 조절 시 저장소 즉시 동기화 */
+function patchStoredMdiFlowsheet(mdi: MdiPlantOperatingInputs) {
+  if (typeof window === 'undefined') return;
+  try {
+    const baseSheets = createInitialMdiHierarchySheets();
+    const raw = window.localStorage.getItem(PLANT06_MDI_SAVE_KEY);
+    const parsed = raw
+      ? JSON.parse(raw)
+      : { hierarchySheets: baseSheets, savedAt: 'MDI 운전변수 실시간 동기화' };
+
+    const mdiSum = calculateMdiPlantSummary(mdi);
+    const capScale = Math.max(20, mdi.annualCapacityKta) / 100.0;
+    const pureShareFrac = Math.max(0.15, Math.min(0.65, mdi.pureMdiSharePct / 100));
+    const anilRatioScale = Math.max(0.5, mdi.anilineToHchoRatio / 3.2);
+    const phosScale = Math.max(0.5, (1 + mdi.phosgeneExcessPct / 100) / 2.0);
+    const mcbScale = Math.max(0.5, mdi.mcbSolventRatio / 2.5);
+    const vacPressKg = Math.max(
+      -0.99,
+      Math.min(-0.8, Number((mdi.vacColTopMbar / 1000 - 1.01325).toFixed(3)))
+    );
+
+    const patchDefs = (defs: FlowNodeDef[]): FlowNodeDef[] =>
+      defs.map(d => {
+        if (d.id === 'mdi_f_anil' || d.id === 'mdi1_anil') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                Aniline: Number((mdiSum.anilineFreshKgH * (0.98 + 0.03 * anilRatioScale)).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_hcho' || d.id === 'mdi1_hcho') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                HCHO: Number((mdiSum.formalin37KgH * 0.37).toFixed(1)),
+                H2O: Number((mdiSum.formalin37KgH * 0.63).toFixed(1)),
+                HCl: Number((1200.0 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_naoh' || d.id === 'mdi1_naoh') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: {
+                ...(d.params.feedFlowsKgH ?? {}),
+                NaOH: Number((1316.4 * capScale).toFixed(1)),
+                H2O: Number((3071.6 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_co' || d.id === 'mdi2_co') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), CO: Number((mdiSum.coFreshKgH * phosScale).toFixed(1)) },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_cl2' || d.id === 'mdi2_cl2') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), Cl2: Number((mdiSum.cl2FreshKgH * phosScale).toFixed(1)) },
+            },
+          };
+        }
+        if (d.id === 'mdi_f_mcb_mu') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), MCB: Number((1100.0 * capScale * mcbScale).toFixed(1)) },
+            },
+          };
+        }
+        if ((d.id === 'mdi_c302' || d.id === 'mdi3_c302') && d.params.distillConfig?.splitSpecType === 'bottoms_kgh') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              distillConfig: {
+                ...d.params.distillConfig,
+                splitSpecValue: Number((12320.0 * capScale).toFixed(1)),
+              },
+            },
+          };
+        }
+        if (d.id === 'mdi_c401' || d.id === 'mdi4_c401') {
+          return {
+            ...d,
+            params: {
+              ...d.params,
+              operPressKgcm2g: vacPressKg,
+              ...(d.params.distillConfig
+                ? {
+                    distillConfig: {
+                      ...d.params.distillConfig,
+                      topPressKgcm2g: vacPressKg,
+                      ...(d.params.distillConfig.splitSpecType === 'd_over_f_mass'
+                        ? { splitSpecValue: Number(pureShareFrac.toFixed(3)) }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
+          };
+        }
+        return d;
+      });
+
+    if (Array.isArray(parsed.simDefs)) parsed.simDefs = patchDefs(parsed.simDefs);
+    if (parsed.hierarchySheets && typeof parsed.hierarchySheets === 'object') {
+      for (const k of Object.keys(parsed.hierarchySheets)) {
+        if (Array.isArray(parsed.hierarchySheets[k]?.simDefs)) {
+          parsed.hierarchySheets[k].simDefs = patchDefs(parsed.hierarchySheets[k].simDefs);
+        }
+      }
+    }
+    window.localStorage.setItem(PLANT06_MDI_SAVE_KEY, JSON.stringify(parsed));
+  } catch {
+    // ignore
+  }
+}
+
 export default function Sidebar() {
   const pathname = usePathname() || '/';
   const router = useRouter();
@@ -372,6 +531,10 @@ export default function Sidebar() {
     cmsPlantSummary,
     setCmsPlantInput,
     resetCmsPlantInputs,
+    mdiPlantInputs,
+    mdiPlantSummary,
+    setMdiPlantInput,
+    resetMdiPlantInputs,
   } = useBalanceStore();
 
   const equipSubTab = usePFDStore(s => s.equipSubTab);
@@ -382,6 +545,7 @@ export default function Sidebar() {
   const [p02SheetsExpanded, setP02SheetsExpanded] = useState(true);
   const [p03SheetsExpanded, setP03SheetsExpanded] = useState(true);
   const [cmsSheetsExpanded, setCmsSheetsExpanded] = useState(true);
+  const [mdiSheetsExpanded, setMdiSheetsExpanded] = useState(true);
 
   useEffect(() => {
     const checkViewport = () => {
@@ -449,6 +613,13 @@ export default function Sidebar() {
     setCmsPlantInput(key, val);
     if (!isPfdLikeRoute) {
       patchStoredCmsFlowsheet({ ...cmsPlantInputs, [key]: val });
+    }
+  };
+
+  const handleMdiChange = (key: keyof MdiPlantOperatingInputs, val: number) => {
+    setMdiPlantInput(key, val);
+    if (!isPfdLikeRoute) {
+      patchStoredMdiFlowsheet({ ...mdiPlantInputs, [key]: val });
     }
   };
 
@@ -961,6 +1132,163 @@ export default function Sidebar() {
     </>
   );
 
+  // PLANT 05 (금호미쓰이 MDI 10만톤) 전용 운전변수 + 실시간 Pure/PMDI·부생HCl·MCB 수지 대시보드
+  const renderMdiOperatingAndKpi = () => (
+    <>
+      <div style={{ padding: '6px 14px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: 800,
+              color: '#1A2F44',
+              textTransform: 'uppercase',
+              letterSpacing: '0.6px',
+            }}
+          >
+            MDI 공정 운전 · 반응 변수
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              resetMdiPlantInputs();
+            }}
+            style={{
+              padding: '1.5px 6px',
+              borderRadius: 4,
+              border: '1px solid #D5D2C8',
+              background: '#FAF9F5',
+              color: '#5A6570',
+              fontSize: 9,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            초기화
+          </button>
+        </div>
+
+        <ControlRow
+          label="연간 생산규모" unit="kTA"
+          value={mdiPlantInputs.annualCapacityKta}
+          min={20} max={300} step={5}
+          showSlider
+          onChange={v => handleMdiChange('annualCapacityKta', v)}
+        />
+        <ControlRow
+          label="Pure 4,4'-MDI 비율" unit="wt%"
+          value={mdiPlantInputs.pureMdiSharePct}
+          min={15} max={65} step={1}
+          showSlider
+          onChange={v => handleMdiChange('pureMdiSharePct', v)}
+        />
+        <ControlRow
+          label="Aniline/HCHO 몰비" unit="mol"
+          value={mdiPlantInputs.anilineToHchoRatio}
+          min={2.2} max={5.0} step={0.1}
+          showSlider
+          onChange={v => handleMdiChange('anilineToHchoRatio', v)}
+        />
+        <ControlRow
+          label="포스겐 과잉률" unit="%"
+          value={mdiPlantInputs.phosgeneExcessPct}
+          min={30} max={200} step={5}
+          showSlider
+          onChange={v => handleMdiChange('phosgeneExcessPct', v)}
+        />
+        <ControlRow
+          label="MCB 용매/MDA 비" unit="wt/wt"
+          value={mdiPlantInputs.mcbSolventRatio}
+          min={1.5} max={4.0} step={0.1}
+          showSlider
+          onChange={v => handleMdiChange('mcbSolventRatio', v)}
+        />
+        <ControlRow
+          label="C-401 고진공 압력" unit="mbar"
+          value={mdiPlantInputs.vacColTopMbar}
+          min={5} max={50} step={1}
+          showSlider
+          onChange={v => handleMdiChange('vacColTopMbar', v)}
+        />
+
+        <div
+          style={{
+            marginTop: 6,
+            padding: '8px 10px',
+            borderRadius: 8,
+            background: '#FFFBEB',
+            border: '1px solid #FCD34D',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 9, color: '#92400E', fontWeight: 700 }}>
+              소요 전력 / 총 열부하
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#B45309', fontFamily: 'JetBrains Mono, monospace' }}>
+              {mdiPlantSummary.elecPowerKW.toFixed(0)} kW · {mdiPlantSummary.thermalDutyMW.toFixed(1)} MW
+            </span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dashed #FCD34D', paddingTop: 4 }}>
+            <span style={{ fontSize: 9, color: '#92400E', fontWeight: 700 }}>
+              Aniline / Cl₂ / CO
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#1A2F44', fontFamily: 'JetBrains Mono, monospace' }}>
+              {mdiPlantSummary.anilineFreshKgH.toFixed(0)} / {mdiPlantSummary.cl2FreshKgH.toFixed(0)} / {mdiPlantSummary.coFreshKgH.toFixed(0)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: '#E5E2DC', margin: '10px 0' }} />
+
+      <div style={{ padding: '0 14px 14px' }}>
+        <div
+          style={{
+            fontSize: 9.5,
+            fontWeight: 800,
+            color: '#1A2F44',
+            textTransform: 'uppercase',
+            letterSpacing: '0.6px',
+            marginBottom: 8,
+          }}
+        >
+          실시간 물질수지 생산량 (MDI CAPA)
+        </div>
+
+        <SummaryCard
+          label="Pure 4,4'-MDI (고진공 탑정)"
+          main={`${(mdiPlantSummary.pureMdiKgH / 1000).toFixed(2)} t/h · ${mdiPlantSummary.pureMdiTonDay.toFixed(1)} T/D`}
+          sub={`${mdiPlantSummary.pureMdiKgH.toFixed(0)} kg/h · C-401 (${mdiPlantInputs.pureMdiSharePct.toFixed(0)} wt%)`}
+          highlight
+        />
+        <SummaryCard
+          label="Polymeric MDI (PMDI 탑저)"
+          main={`${(mdiPlantSummary.pmdiKgH / 1000).toFixed(2)} t/h · ${mdiPlantSummary.pmdiTonDay.toFixed(1)} T/D`}
+          sub={`${mdiPlantSummary.pmdiKgH.toFixed(0)} kg/h · C-401 (20 mbar 고진공)`}
+          highlight
+        />
+        <SummaryCard
+          label="총 MDI 생산규모 (100,000 TPA)"
+          main={`${(mdiPlantSummary.annualCapacityKta * 1000).toLocaleString()} TPA`}
+          sub={`${(mdiPlantSummary.totalMdiKgH / 1000).toFixed(2)} t/h · ${mdiPlantSummary.totalMdiTonDay.toFixed(1)} T/D (8,000 hr/yr)`}
+        />
+        <SummaryCard
+          label="부생 무수 HCl 회수"
+          main={`${mdiPlantSummary.byproductHclTonDay.toFixed(1)} ton/일`}
+          sub={`${mdiPlantSummary.byproductHclKgH.toFixed(0)} kg/h · S-201 탈거 (Plant 02 연계)`}
+        />
+        <SummaryCard
+          label="MCB 용매 순환량 (C-302)"
+          main={`${(mdiPlantSummary.mcbRecycleKgH / 1000).toFixed(2)} t/h`}
+          sub={`${mdiPlantSummary.mcbRecycleKgH.toFixed(0)} kg/h · 용매/MDA 비 ${mdiPlantInputs.mcbSolventRatio.toFixed(1)}×`}
+        />
+      </div>
+    </>
+  );
+
   if (isMobile) {
     const mobileMenus =
       activePlantId === 'clorsim' || activePlantId === 'clorsim_sim'
@@ -971,7 +1299,9 @@ export default function Sidebar() {
             ? PLANT04_ECH_SUB_MENUS
             : activePlantId === 'cms_plant'
               ? CMS_SUB_MENUS
-              : [];
+              : activePlantId === 'mdi_plant'
+                ? MDI_SUB_MENUS
+                : [];
 
     return (
       <>
@@ -990,7 +1320,7 @@ export default function Sidebar() {
             zIndex: 40,
           }}
         >
-          {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || activePlantId === 'cms_plant') && (
+          {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || activePlantId === 'cms_plant' || activePlantId === 'mdi_plant') && (
             <button
               type="button"
               onClick={() => setMobileDrawerOpen(v => !v)}
@@ -1101,6 +1431,7 @@ export default function Sidebar() {
               )}
               {activePlantId === 'hcl_synth' && renderPlant03OperatingAndKpi()}
               {activePlantId === 'cms_plant' && renderCmsOperatingAndKpi()}
+              {activePlantId === 'mdi_plant' && renderMdiOperatingAndKpi()}
             </div>
           </div>
         )}
@@ -1684,6 +2015,127 @@ export default function Sidebar() {
         </>
       )}
 
+      {/* ═══════════════════════════════════════════════════════════════════════
+          PLANT 05 (금호미쓰이 MDI 10만톤 공정) 좌측 사이드 패널
+          ═══════════════════════════════════════════════════════════════════════ */}
+      {!collapsed && activePlantId === 'mdi_plant' && (
+        <>
+          <div style={{ padding: '12px 12px 6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 800,
+                  color: '#1A2F44',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                PLANT 05 · 금호미쓰이 MDI
+              </span>
+              <span
+                style={{
+                  fontSize: 8.5,
+                  fontWeight: 800,
+                  padding: '1px 6px',
+                  borderRadius: 8,
+                  background: '#FEF3C7',
+                  color: '#92400E',
+                  border: '1px solid #FCD34D',
+                }}
+              >
+                LIVE
+              </span>
+            </div>
+            <div style={{ fontSize: 9, fontWeight: 600, color: '#7A7872', marginBottom: 8 }}>
+              100,000 TPA · Pure 108 · PMDI 192 T/D
+            </div>
+
+            {MDI_SUB_MENUS.map(item => {
+              const active = item.isPfd ? isPfdLikeRoute : isOnEquipPage && equipSubTab === item.key;
+              return (
+                <React.Fragment key={item.key}>
+                  <MenuButton
+                    label={item.label}
+                    badge={item.badge}
+                    active={active}
+                    onClick={() => handleMenuNavigate(item, 'mdi_plant')}
+                  />
+                  {item.isPfd && (
+                    <div
+                      style={{
+                        margin: '2px 0 6px',
+                        padding: '6px 7px',
+                        borderRadius: 10,
+                        background: '#FAF9F5',
+                        border: '1px solid #E5E2DC',
+                      }}
+                    >
+                      <div
+                        onClick={() => setMdiSheetsExpanded(v => !v)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: 9.5,
+                          fontWeight: 800,
+                          color: '#B45309',
+                          cursor: 'pointer',
+                          marginBottom: mdiSheetsExpanded ? 5 : 0,
+                        }}
+                      >
+                        <span>세부공정 시트 이동 (100~400)</span>
+                        <span style={{ fontSize: 9, color: '#64748B' }}>{mdiSheetsExpanded ? '▲' : '▼'}</span>
+                      </div>
+                      {mdiSheetsExpanded && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          {MDI_SHEETS.map(sh => {
+                            const shActive = isPfdLikeRoute && simActiveSheetId === sh.sheetId;
+                            return (
+                              <button
+                                key={sh.sheetId}
+                                type="button"
+                                onClick={() => {
+                                  requestSimSheet(sh.sheetId);
+                                  if (!isPfdLikeRoute) router.push('/material-balance');
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  padding: '4px 7px',
+                                  borderRadius: 6,
+                                  border: shActive ? '1px solid #B45309' : '1px solid #E2E8F0',
+                                  background: shActive ? '#B45309' : '#FFFFFF',
+                                  color: shActive ? '#FFFFFF' : '#334155',
+                                  fontSize: 10,
+                                  fontWeight: shActive ? 800 : 700,
+                                  cursor: 'pointer',
+                                  textAlign: 'left',
+                                }}
+                              >
+                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {sh.label}
+                                </span>
+                                <span style={{ fontSize: 8.5, fontWeight: 900, marginLeft: 4 }}>{sh.badge}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 1, background: '#E5E2DC', margin: '6px 0' }} />
+
+          {renderMdiOperatingAndKpi()}
+        </>
+      )}
+
       {/* ─── 접힘(Collapsed) 아이콘 스트립 ─── */}
       {collapsed && (
         <div style={{ paddingTop: 44, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, paddingBottom: 12 }}>
@@ -1705,7 +2157,9 @@ export default function Sidebar() {
                 ? 'P02'
                 : activePlantId === 'ech_gte'
                   ? 'P03'
-                  : 'P04'}
+                  : activePlantId === 'cms_plant'
+                    ? 'P04'
+                    : 'P05'}
           </span>
 
           {(activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') &&
@@ -1819,6 +2273,34 @@ export default function Sidebar() {
                 </button>
               );
             })}
+
+          {activePlantId === 'mdi_plant' &&
+            MDI_SUB_MENUS.map(item => {
+              const active = item.isPfd ? isPfdLikeRoute : isOnEquipPage && equipSubTab === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => handleMenuNavigate(item, 'mdi_plant')}
+                  title={item.label}
+                  style={{
+                    width: 36,
+                    height: 26,
+                    borderRadius: 7,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: active ? '#FFFFFF' : '#1A2F44',
+                    background: active ? '#1A2F44' : '#F6F7F2',
+                    border: '1px solid #DFDCD4',
+                    fontSize: 8.5,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {item.badge.slice(0, 4)}
+                </button>
+              );
+            })}
         </div>
       )}
     </nav>
@@ -1883,6 +2365,7 @@ function ControlRow({
   min,
   max,
   step,
+  showSlider,
   onChange,
 }: {
   label: string;
@@ -1892,48 +2375,76 @@ function ControlRow({
   min: number;
   max: number;
   step: number;
+  showSlider?: boolean;
   onChange: (v: number) => void;
 }) {
   return (
     <div
       style={{
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        flexDirection: 'column',
+        gap: showSlider ? 3 : 0,
         padding: '3px 0',
         marginBottom: 3,
         borderBottom: '1px dashed #EFECE5',
       }}
     >
-      <span style={{ fontSize: 10.5, color: '#2C353E', fontWeight: 600 }}>{label}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
+        <span style={{ fontSize: 10.5, color: '#2C353E', fontWeight: 600 }}>{label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input
+            type="number"
+            min={min}
+            max={max}
+            step={step}
+            value={Number(value.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0))}
+            onChange={e => {
+              const v = parseFloat(e.target.value);
+              if (!Number.isNaN(v)) onChange(v);
+            }}
+            style={{
+              width: 64,
+              height: 22,
+              padding: '0 5px',
+              borderRadius: 5,
+              border: '1px solid #D5D2C8',
+              background: '#F6F7F2',
+              color: '#1A2F44',
+              fontSize: 11.5,
+              fontWeight: 800,
+              textAlign: 'right',
+              fontFamily: 'JetBrains Mono, monospace',
+              outline: 'none',
+            }}
+          />
+          <span style={{ fontSize: 9, color: '#7A7872', minWidth: 28 }}>{unit}</span>
+        </div>
+      </div>
+      {showSlider && (
         <input
-          type="number"
+          type="range"
           min={min}
           max={max}
           step={step}
-          value={Number(value.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0))}
+          value={Math.max(min, Math.min(max, value))}
           onChange={e => {
             const v = parseFloat(e.target.value);
             if (!Number.isNaN(v)) onChange(v);
           }}
           style={{
-            width: 64,
-            height: 22,
-            padding: '0 5px',
-            borderRadius: 5,
-            border: '1px solid #D5D2C8',
-            background: '#F6F7F2',
-            color: '#1A2F44',
-            fontSize: 11.5,
-            fontWeight: 800,
-            textAlign: 'right',
-            fontFamily: 'JetBrains Mono, monospace',
-            outline: 'none',
+            width: '100%',
+            height: 4,
+            accentColor: '#B45309',
+            cursor: 'pointer',
           }}
         />
-        <span style={{ fontSize: 9, color: '#7A7872', minWidth: 28 }}>{unit}</span>
-      </div>
+      )}
     </div>
   );
 }

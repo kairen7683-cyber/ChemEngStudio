@@ -3,6 +3,7 @@ import { createInitialHierarchySheets } from '../../lib/calculations/fullPlantHi
 import { createInitialHcl1AHierarchySheets } from '../../lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '../../lib/calculations/echPlantHierarchy';
 import { createInitialCmsHierarchySheets } from '../../lib/calculations/cmsPlantHierarchy';
+import { createInitialMdiHierarchySheets } from '../../lib/calculations/mdiPlantHierarchy';
 
 const all: Record<string, any> = {};
 for (const [p, s] of [
@@ -10,6 +11,7 @@ for (const [p, s] of [
   ['hcl1A', createInitialHcl1AHierarchySheets()],
   ['ech', createInitialEchHierarchySheets()],
   ['cms', createInitialCmsHierarchySheets()],
+  ['mdi', createInitialMdiHierarchySheets()],
 ] as const) {
   for (const [k, v] of Object.entries(s)) all[`${p}/${k}`] = v;
 }

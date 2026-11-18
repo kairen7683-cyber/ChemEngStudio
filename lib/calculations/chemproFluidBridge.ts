@@ -910,7 +910,7 @@ export const CORE_FLUID_FALLBACKS: Record<string, FluidRecord> = {
   },
   dcm: {
     id: 'dcm',
-    name: '디클로로메탄 / 메틸렌클로라이드 (MDC)',
+    name: '디클로로메탄 / 메틸렌클로라이드 (MCL · MDC)',
     formula: 'CH₂Cl₂',
     cas: '75-09-2',
     category: '염소계/특수용매',
@@ -932,7 +932,7 @@ export const CORE_FLUID_FALLBACKS: Record<string, FluidRecord> = {
   },
   chloroform: {
     id: 'chloroform',
-    name: '클로로포름 (Chloroform)',
+    name: '클로로포름 (CFM · Chloroform)',
     formula: 'CHCl₃',
     cas: '67-66-3',
     category: '염소계/특수용매',
@@ -954,7 +954,7 @@ export const CORE_FLUID_FALLBACKS: Record<string, FluidRecord> = {
   },
   ccl4: {
     id: 'ccl4',
-    name: '사염화탄소 (Carbon Tetrachloride)',
+    name: '사염화탄소 (CTC · Carbon Tetrachloride)',
     formula: 'CCl₄',
     cas: '56-23-5',
     category: '염소계/특수용매',
@@ -1097,6 +1097,15 @@ export const DEFAULT_NRTL_PRESETS: Record<string, NrtlPreset> = {
     a21: 92,
     alpha: 0.3,
     azeotrope: '진공 운전으로 열분해 억제 (α≈4.8)',
+  },
+  mcl_cfm: {
+    name: '염화메틸렌(MCL) / 클로로포름(CFM) (CMS 정제계)',
+    lk: 'dcm',
+    hk: 'chloroform',
+    a12: 48,
+    a21: -12,
+    alpha: 0.3,
+    azeotrope: '공비점 없음 (상대휘발도 α≈2.05 · 80단 고순도 분리)',
   },
   water_hcl_azeo: {
     name: '물 / 공비염산(20.2%) (진공·가압 PSD 압력변동 증류)',

@@ -5,13 +5,14 @@ import { ElectrolyzerInputs } from '@/lib/calculations/electrolyzer';
 import { PlantMassBalance, calculatePlantBalance } from '@/lib/calculations/streams';
 import { DEFAULT_CONDITIONS, MW } from '@/lib/calculations/constants';
 
-export type PlantId = 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'green_h2' | 'new_builder' | 'classic_sim';
+export type PlantId = 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'mdi_plant' | 'green_h2' | 'new_builder' | 'classic_sim';
 
 export const ACTIVE_PLANT_STORAGE_KEY = 'chemplant-active-plant-v1';
 export const LAST_COMMERCIAL_PLANT_STORAGE_KEY = 'chemplant-last-commercial-plant-v1';
 export const PLANT02_SIDEBAR_INPUTS_KEY = 'chemplant-plant02-sidebar-inputs-v1';
 export const PLANT03_SIDEBAR_INPUTS_KEY = 'chemplant-plant03-sidebar-inputs-v1';
 export const CMS_SIDEBAR_INPUTS_KEY = 'chemplant-cms-sidebar-inputs-v1';
+export const MDI_SIDEBAR_INPUTS_KEY = 'chemplant-mdi-sidebar-inputs-v1';
 
 export interface SimNodeActionRequest {
   sheetId: string;
@@ -199,6 +200,75 @@ export function calculateCmsPlantSummary(cms: CmsPlantOperatingInputs): CmsPlant
   };
 }
 
+export interface MdiPlantOperatingInputs {
+  annualCapacityKta: number;  // 연간 MDI 생산규모 (kt/yr, 기본 100.0)
+  pureMdiSharePct: number;    // Pure 4,4'-MDI 비율 (wt%, 기본 36.0)
+  anilineToHchoRatio: number; // 100 SEC Aniline/HCHO 몰비 (기본 3.2)
+  phosgeneExcessPct: number;  // 200 SEC 포스겐 과잉률 (%, 기본 100.0)
+  mcbSolventRatio: number;    // MCB 용매/MDA 질량비 (기본 2.5)
+  vacColTopMbar: number;      // 400 SEC 고진공 분별탑 압력 (mbar, 기본 20.0)
+}
+
+export interface MdiPlantKpiSummary {
+  totalMdiKgH: number;
+  totalMdiTonDay: number;
+  annualCapacityKta: number;
+  pureMdiKgH: number;
+  pureMdiTonDay: number;
+  pmdiKgH: number;
+  pmdiTonDay: number;
+  anilineFreshKgH: number;
+  formalin37KgH: number;
+  coFreshKgH: number;
+  cl2FreshKgH: number;
+  byproductHclKgH: number;
+  byproductHclTonDay: number;
+  mcbRecycleKgH: number;
+  elecPowerKW: number;
+  thermalDutyMW: number;
+}
+
+export function calculateMdiPlantSummary(mdi: MdiPlantOperatingInputs): MdiPlantKpiSummary {
+  const capKta = Math.max(20, mdi.annualCapacityKta);
+  const totalMdiKgH = (capKta * 1_000_000) / 8000.0; // 100 kTA -> 12,500 kg/h
+  const pureFrac = Math.max(0.15, Math.min(0.65, mdi.pureMdiSharePct / 100));
+  const pureMdiKgH = totalMdiKgH * pureFrac;
+  const pmdiKgH = Math.max(0, totalMdiKgH - pureMdiKgH);
+  const scale = totalMdiKgH / 12500.0;
+  const nMdiIso = totalMdiKgH / 250.256; // 49.949 kmol/h at 100 kTA
+  const nMdaNeed = nMdiIso / 0.998;
+  const anilineFreshKgH = 2.0 * nMdaNeed * 93.128;
+  const hchoFreshKgH = (nMdaNeed / 0.995) * 30.026;
+  const formalin37KgH = hchoFreshKgH / 0.37;
+  const nPhosFresh = 2.0 * nMdaNeed;
+  const coFreshKgH = (nPhosFresh / 0.996) * 28.010;
+  const cl2FreshKgH = (nPhosFresh / 0.996) * MW.Cl2;
+  const byproductHclKgH = 4.0 * nMdiIso * MW.HCl;
+  const mcbRecycleKgH = nMdaNeed * 198.268 * Math.max(1.2, mdi.mcbSolventRatio);
+  const vacPenalty = mdi.vacColTopMbar < 15 ? 1.12 : 1.0;
+  const elecPowerKW = (1950 + (mdi.phosgeneExcessPct / 100) * 320) * scale;
+  const thermalDutyMW = (14.8 + (mdi.mcbSolventRatio - 2.0) * 1.9 + (mdi.anilineToHchoRatio - 3.0) * 1.4) * scale * vacPenalty;
+
+  return {
+    totalMdiKgH,
+    totalMdiTonDay: (totalMdiKgH * 24) / 1000,
+    annualCapacityKta: capKta,
+    pureMdiKgH,
+    pureMdiTonDay: (pureMdiKgH * 24) / 1000,
+    pmdiKgH,
+    pmdiTonDay: (pmdiKgH * 24) / 1000,
+    anilineFreshKgH,
+    formalin37KgH,
+    coFreshKgH,
+    cl2FreshKgH,
+    byproductHclKgH,
+    byproductHclTonDay: (byproductHclKgH * 24) / 1000,
+    mcbRecycleKgH,
+    elecPowerKW,
+    thermalDutyMW,
+  };
+}
+
 interface BalanceStore {
   activePlantId: PlantId;
   lastCommercialPlantId: PlantId;
@@ -229,6 +299,11 @@ interface BalanceStore {
   cmsPlantSummary: CmsPlantKpiSummary;
   cmsPlantSyncSeq: number;
 
+  // PLANT 05 (금호미쓰이 MDI 10만톤 공정 — Pure 4,4'-MDI 4,500 kg/h · PMDI 8,000 kg/h)
+  mdiPlantInputs: MdiPlantOperatingInputs;
+  mdiPlantSummary: MdiPlantKpiSummary;
+  mdiPlantSyncSeq: number;
+
   setActivePlantId: (id: PlantId) => void;
   hydrateActivePlant: () => void;
   setLastPlantReturnHref: (href: string) => void;
@@ -249,6 +324,9 @@ interface BalanceStore {
 
   setCmsPlantInput: (key: keyof CmsPlantOperatingInputs, value: number) => void;
   resetCmsPlantInputs: () => void;
+
+  setMdiPlantInput: (key: keyof MdiPlantOperatingInputs, value: number) => void;
+  resetMdiPlantInputs: () => void;
 
   setActiveSection: (section: '100' | '200' | '300' | '400' | 'all') => void;
   recalculate: () => void;
@@ -297,11 +375,21 @@ export const defaultCmsPlantInputs: CmsPlantOperatingInputs = {
   hclStripperPressKg: 17.5,
 };
 
+export const defaultMdiPlantInputs: MdiPlantOperatingInputs = {
+  annualCapacityKta: 100.0,
+  pureMdiSharePct: 36.0,
+  anilineToHchoRatio: 3.2,
+  phosgeneExcessPct: 100.0,
+  mcbSolventRatio: 2.5,
+  vacColTopMbar: 20.0,
+};
+
 export const useBalanceStore = create<BalanceStore>((set, get) => {
   const initBal = calculatePlantBalance(defaultElectrolyzerInputs);
   const initP2Bal = calculatePlantBalance(defaultElectrolyzerInputs);
   const initP3Sum = calculatePlant03Summary(defaultPlant03Inputs);
   const initCmsSum = calculateCmsPlantSummary(defaultCmsPlantInputs);
+  const initMdiSum = calculateMdiPlantSummary(defaultMdiPlantInputs);
 
   return {
     activePlantId: 'clorsim_sim',
@@ -328,6 +416,10 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
     cmsPlantInputs: { ...defaultCmsPlantInputs },
     cmsPlantSummary: initCmsSum,
     cmsPlantSyncSeq: 0,
+
+    mdiPlantInputs: { ...defaultMdiPlantInputs },
+    mdiPlantSummary: initMdiSum,
+    mdiPlantSyncSeq: 0,
 
     setActivePlantId: (id) => {
       const isCommercial = id !== 'new_builder' && id !== 'classic_sim';
@@ -365,6 +457,7 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
           saved === 'hcl_synth' ||
           saved === 'ech_gte' ||
           saved === 'cms_plant' ||
+          saved === 'mdi_plant' ||
           saved === 'new_builder' ||
           saved === 'classic_sim'
         ) {
@@ -382,7 +475,8 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
           savedCommercial === 'clorsim_sim' ||
           savedCommercial === 'hcl_synth' ||
           savedCommercial === 'ech_gte' ||
-          savedCommercial === 'cms_plant'
+          savedCommercial === 'cms_plant' ||
+          savedCommercial === 'mdi_plant'
         ) {
           patch.lastCommercialPlantId = savedCommercial;
         }
@@ -403,6 +497,12 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
           const parsedCms = { ...defaultCmsPlantInputs, ...JSON.parse(rawCms) };
           patch.cmsPlantInputs = parsedCms;
           patch.cmsPlantSummary = calculateCmsPlantSummary(parsedCms);
+        }
+        const rawMdi = window.localStorage.getItem(MDI_SIDEBAR_INPUTS_KEY);
+        if (rawMdi) {
+          const parsedMdi = { ...defaultMdiPlantInputs, ...JSON.parse(rawMdi) };
+          patch.mdiPlantInputs = parsedMdi;
+          patch.mdiPlantSummary = calculateMdiPlantSummary(parsedMdi);
         }
         if (Object.keys(patch).length > 0) {
           set(patch);
@@ -548,6 +648,40 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
         cmsPlantInputs: nextCms,
         cmsPlantSummary: nextSum,
         cmsPlantSyncSeq: state.cmsPlantSyncSeq + 1,
+      }));
+    },
+
+    setMdiPlantInput: (key, value) => {
+      const nextMdi = { ...get().mdiPlantInputs, [key]: value };
+      const nextSum = calculateMdiPlantSummary(nextMdi);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(MDI_SIDEBAR_INPUTS_KEY, JSON.stringify(nextMdi));
+        } catch {
+          // ignore
+        }
+      }
+      set((state) => ({
+        mdiPlantInputs: nextMdi,
+        mdiPlantSummary: nextSum,
+        mdiPlantSyncSeq: state.mdiPlantSyncSeq + 1,
+      }));
+    },
+
+    resetMdiPlantInputs: () => {
+      const nextMdi = { ...defaultMdiPlantInputs };
+      const nextSum = calculateMdiPlantSummary(nextMdi);
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(MDI_SIDEBAR_INPUTS_KEY, JSON.stringify(nextMdi));
+        } catch {
+          // ignore
+        }
+      }
+      set((state) => ({
+        mdiPlantInputs: nextMdi,
+        mdiPlantSummary: nextSum,
+        mdiPlantSyncSeq: state.mdiPlantSyncSeq + 1,
       }));
     },
 

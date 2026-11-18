@@ -21,6 +21,7 @@ import {
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
+import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
 import {
   HX_MATERIAL_CATALOG,
   solveHeatExchangerDesign,
@@ -37,6 +38,7 @@ const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
 const PLANT03_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
 const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
+const PLANT06_MDI_SAVE_KEY = 'chemplant-plant06-mdi-v1';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
 
 type RatingHealth = 'ok' | 'warning' | 'critical' | 'passive';
@@ -54,7 +56,7 @@ interface ScopedEquipRow {
   sectionTitle: string;
   tag: string;
   name: string;
-  unitType: FlowUnitType | 'stack_bfd';
+  unitType: FlowUnitType | 'stack_bfd' | 'psv';
   categoryLabel: string;
   fluidLabel: string;
   flowSummary: string;
@@ -116,6 +118,13 @@ function defaultMaterialForNode(def: FlowNodeDef): string {
   }
   const tagUp = def.tag.toUpperCase();
   const nameUp = def.name.toUpperCase();
+  if (def.id.startsWith('mdi')) {
+    if (tagUp === 'R-201' || tagUp === 'R-202' || tagUp === 'S-201' || tagUp === 'C-301') {
+      return 'Hastelloy C-276 / Ni-Alloy';
+    }
+    if (tagUp === 'R-101') return 'CS + PTFE/Rubber Lining';
+    if (tagUp === 'C-302' || tagUp === 'C-401' || tagUp === 'E-401') return 'SS316L Vacuum Clad';
+  }
   if (nameUp.includes('흑연') || nameUp.includes('GRAPHITE')) return '불침투성 흑연 (Graphite)';
   if (def.unitType === 'liquefier') return 'LTCS (ASTM A334 Gr.6)';
   if (def.unitType === 'electrolyzer') return 'Ti Gr.2 / Ni 200';
@@ -625,6 +634,176 @@ function buildGreenH2Rows(sf: number): ScopedEquipRow[] {
   ];
 }
 
+function buildMdiAuxiliaryRows(scale: number): ScopedEquipRow[] {
+  const s = Math.max(0.2, scale);
+  const p101Flow = 10006 * s;
+  const p101Qm3h = 10.5 * s;
+  const p101Kw = 3.2 * s;
+  const p302Flow = 18807 * s;
+  const p302Qm3h = 17.5 * s;
+  const p302Kw = 4.6 * s;
+  const psvRelieve = 12800 * s;
+
+  return [
+    {
+      uid: 'mdi-aux-p101',
+      nodeId: 'mdi_aux_p101',
+      sheetId: 'sub_mdi_100_mda',
+      sectionCode: '100 SEC',
+      sectionTitle: '100 MDA 합성·회수',
+      tag: 'P-101A/B',
+      name: 'MDA/아닐린 순환·이송 펌프 (Circulation Pump)',
+      unitType: 'pump',
+      categoryLabel: '이송 펌프 (Pump)',
+      fluidLabel: '조 MDA / 순환 아닐린 유기액',
+      flowSummary: `${p101Flow.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h`,
+      inletTempPress: '95.0°C / 0.50 kG (L)',
+      outletTempPress: '96.2°C / 3.80 kG (L)',
+      dutyOrPower: `${p101Kw.toFixed(1)} kW`,
+      powerKwNumeric: p101Kw,
+      absDutyMcalNumeric: 0,
+      designSpecSummary: `토출압 3.8 kG · Q=${p101Qm3h.toFixed(1)} m³/h · 효율 74%`,
+      mechanicalSizingSummary: `원심식 공정 펌프 (1운전+1예비) · ${p101Kw.toFixed(1)} kW (모터 ${(p101Kw * 1.25).toFixed(1)} kW)`,
+      ratingLoadSummary: 'NPSHa 4.2m > NPSHr 1.8m · 정상 운전',
+      ratingHealth: 'ok',
+      ratingBadgeLabel: '✓ 적정 (74% Eff)',
+      materialLabel: 'SS316L',
+      hasEmbeddedWorkbench: false,
+      handoffPayload: {
+        version: 1,
+        timestamp: Date.now(),
+        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        tab: 'pump',
+        equipTag: 'P-101A/B',
+        equipName: 'MDA/아닐린 순환·이송 펌프',
+        detectedFluidSummary: `조 MDA/아닐린 유기액 (${p101Flow.toFixed(0)} kg/h · 95°C)`,
+        pump: {
+          fluidId: 'aniline',
+          T_C: 95.0,
+          Q_m3h: Number(p101Qm3h.toFixed(1)),
+          rho_kgm3: 1015,
+          P1_barG: 0.5,
+          P2_barG: 3.8,
+          eff_pct: 74,
+          dsuc_mm: '80',
+          ddis_mm: '65',
+        },
+      },
+      datasheetProcessRows: [
+        { label: '취급 유체 (Fluid)', value: '조 MDA / 아닐린 혼합 유기상' },
+        { label: '유입 질량유량', value: `${p101Flow.toFixed(1)} kg/h (${p101Qm3h.toFixed(1)} m³/h)` },
+        { label: '흡입 / 토출 압력', value: '0.50 kG → 3.80 kG (ΔP 3.30 bar)' },
+        { label: '소요 축동력', value: `${p101Kw.toFixed(2)} kW` },
+      ],
+      datasheetMechRows: [
+        { label: '형식 / 재질', value: 'API 610 OH2 원심펌프 (1W+1S) · SS316L' },
+        { label: '구경 (흡입 / 토출)', value: '80A (3") / 65A (2.5")' },
+      ],
+      datasheetNotes: [],
+    },
+    {
+      uid: 'mdi-aux-p302',
+      nodeId: 'mdi_aux_p302',
+      sheetId: 'sub_mdi_300_mcb',
+      sectionCode: '300 SEC',
+      sectionTitle: '300 탈포스겐·MCB 회수',
+      tag: 'P-302A/B',
+      name: '회수 MCB 용매 이송·순환 펌프 (MCB Transfer Pump)',
+      unitType: 'pump',
+      categoryLabel: '이송 펌프 (Pump)',
+      fluidLabel: '회수 모노클로로벤젠 (MCB 99.8%)',
+      flowSummary: `${p302Flow.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h`,
+      inletTempPress: '68.0°C / -0.90 kG (L)',
+      outletTempPress: '69.0°C / 3.50 kG (L)',
+      dutyOrPower: `${p302Kw.toFixed(1)} kW`,
+      powerKwNumeric: p302Kw,
+      absDutyMcalNumeric: 0,
+      designSpecSummary: `진공 흡입(-0.90 kG) → 3.5 kG · Q=${p302Qm3h.toFixed(1)} m³/h`,
+      mechanicalSizingSummary: `저-NPSHr 원심 펌프 (1운전+1예비) · ${p302Kw.toFixed(1)} kW (모터 ${(p302Kw * 1.25).toFixed(1)} kW)`,
+      ratingLoadSummary: '이중 메카니컬 씰 (Zero Leak) · 정상',
+      ratingHealth: 'ok',
+      ratingBadgeLabel: '✓ 적정 (76% Eff)',
+      materialLabel: 'SS316L (Double Mech Seal)',
+      hasEmbeddedWorkbench: false,
+      handoffPayload: {
+        version: 1,
+        timestamp: Date.now(),
+        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        tab: 'pump',
+        equipTag: 'P-302A/B',
+        equipName: '회수 MCB 용매 이송·순환 펌프',
+        detectedFluidSummary: `회수 MCB 용매 (${p302Flow.toFixed(0)} kg/h · 68°C)`,
+        pump: {
+          fluidId: 'chlorobenzene',
+          T_C: 68.0,
+          Q_m3h: Number(p302Qm3h.toFixed(1)),
+          rho_kgm3: 1075,
+          P1_barG: -0.9,
+          P2_barG: 3.5,
+          eff_pct: 76,
+          dsuc_mm: '100',
+          ddis_mm: '80',
+        },
+      },
+      datasheetProcessRows: [
+        { label: '취급 유체 (Fluid)', value: '회수 모노클로로벤젠 (MCB)' },
+        { label: '유입 질량유량', value: `${p302Flow.toFixed(1)} kg/h (${p302Qm3h.toFixed(1)} m³/h)` },
+        { label: '흡입 / 토출 압력', value: '-0.90 kG → 3.50 kG (ΔP 4.40 bar)' },
+        { label: '소요 축동력', value: `${p302Kw.toFixed(2)} kW` },
+      ],
+      datasheetMechRows: [
+        { label: '형식 / 씰', value: 'API 610 + Plan 53B 이중 메카니컬 씰 (1W+1S)' },
+        { label: '구경 (흡입 / 토출)', value: '100A (4") / 80A (3")' },
+      ],
+      datasheetNotes: [],
+    },
+    {
+      uid: 'mdi-aux-psv201',
+      nodeId: 'mdi_aux_psv201',
+      sheetId: 'sub_mdi_200_phos',
+      sectionCode: '200 SEC',
+      sectionTitle: '200 포스겐화 반응',
+      tag: 'PSV-201',
+      name: '포스겐(COCl₂) 반응계 긴급 압력방출 안전밸브',
+      unitType: 'psv',
+      categoryLabel: '안전밸브 (API 526 PSV)',
+      fluidLabel: '포스겐(COCl₂) / 부생 HCl / MCB 증기',
+      flowSummary: `정격분출 ${psvRelieve.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h`,
+      inletTempPress: '145.0°C / 3.50 kG (G)',
+      outletTempPress: '스크러버 폐가스 헤더 (0.3 kG)',
+      dutyOrPower: '-',
+      powerKwNumeric: 0,
+      absDutyMcalNumeric: 0,
+      designSpecSummary: '설정압 4.5 barG · 10% 과압 · 밀폐형 포스겐 제해탑 직결',
+      mechanicalSizingSummary: 'API 526 \'J\' Orifice (830.3 mm² · 3"×4") Bellows + Rupture Disk',
+      ratingLoadSummary: '가동률 72% · 부식방지 파열판 전단 조합',
+      ratingHealth: 'ok',
+      ratingBadgeLabel: '✓ API 526 적정',
+      materialLabel: 'Hastelloy C-276 Trim / PTFE',
+      hasEmbeddedWorkbench: false,
+      handoffPayload: {
+        version: 1,
+        timestamp: Date.now(),
+        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        tab: 'psv',
+        equipTag: 'PSV-201',
+        equipName: '포스겐 반응계 긴급 압력방출 안전밸브',
+        detectedFluidSummary: `포스겐/HCl 반응가스 (Set 4.5 barG · ${psvRelieve.toFixed(0)} kg/h)`,
+      },
+      datasheetProcessRows: [
+        { label: '방출 시나리오', value: 'R-201/R-202 냉각상실 · Blocked Outlet (제해탑 직결)' },
+        { label: '설정압 / 허용과압', value: '4.50 barG / 10% (배압 0.30 barG)' },
+        { label: '설계 분출량', value: `${psvRelieve.toFixed(0)} kg/h @ 145°C` },
+      ],
+      datasheetMechRows: [
+        { label: 'API 526 오리피스 규격', value: '\'J\' Orifice (830.3 mm² · 3" 300# × 4" 150#)' },
+        { label: '안전 사양', value: '전단 파열판(Rupture Disk) + Hastelloy C-276 벨로우즈' },
+      ],
+      datasheetNotes: ['맹독성 포스겐(COCl₂) 계통으로 대기 방출 금지 — 가성소다/활성탄 비상 스크러버(Scrubber) 직결 필수'],
+    },
+  ];
+}
+
 export default function PlantScopedEquipmentList() {
   const router = useRouter();
   const {
@@ -633,6 +812,8 @@ export default function PlantScopedEquipmentList() {
     plant02SyncSeq,
     plant03SyncSeq,
     cmsPlantSyncSeq,
+    mdiPlantInputs,
+    mdiPlantSyncSeq,
     requestSimNodeAction,
     setLastPlantReturnHref,
   } = useBalanceStore();
@@ -666,7 +847,9 @@ export default function PlantScopedEquipmentList() {
             ? PLANT04_SAVE_KEY
             : activePlantId === 'cms_plant'
               ? PLANT05_SAVE_KEY
-              : BUILDER_SAVE_KEY;
+              : activePlantId === 'mdi_plant'
+                ? PLANT06_MDI_SAVE_KEY
+                : BUILDER_SAVE_KEY;
 
     let sheets: Record<string, SheetRuntimeData> | null = null;
     let savedStamp = '';
@@ -736,6 +919,9 @@ export default function PlantScopedEquipmentList() {
       } else if (activePlantId === 'cms_plant') {
         sheets = createInitialCmsHierarchySheets();
         savedStamp = '클로로메탄(CMS · MCL 120 + CFM 80 T/D) 표준 초기 시뮬레이션 패키지 기준';
+      } else if (activePlantId === 'mdi_plant') {
+        sheets = createInitialMdiHierarchySheets({ syncMasterOnInit: true });
+        savedStamp = '금호미쓰이 MDI 10만톤 (Pure 4,500 · PMDI 8,000 kg/h) 표준 초기 시뮬레이션 패키지 기준';
       } else {
         sheets = {};
         savedStamp = '신규 빌더 캔버스 (배치된 장치 실시간 반영)';
@@ -743,15 +929,20 @@ export default function PlantScopedEquipmentList() {
     }
 
     loadedSheetsRef.current = sheets;
+    const hasMdiCache = activePlantId === 'mdi_plant' && Boolean(sheets.sub_mdi_100_mda?.cachedSolvedMeta);
     const extracted = extractRowsFromSheets(
       sheets,
       activePlantId !== 'new_builder',
       `${plantMeta.code} ${plantMeta.shortLabel}`,
-      false
+      activePlantId === 'mdi_plant' && !hasMdiCache
     );
-    setRows(extracted);
+    const finalRows =
+      activePlantId === 'mdi_plant'
+        ? [...extracted, ...buildMdiAuxiliaryRows(mdiPlantInputs.annualCapacityKta / 100)]
+        : extracted;
+    setRows(finalRows);
     setSourceNote(savedStamp);
-  }, [activePlantId, expansionScaleFactor, plant02SyncSeq, plant03SyncSeq, cmsPlantSyncSeq, plantMeta.code, plantMeta.shortLabel]);
+  }, [activePlantId, expansionScaleFactor, plant02SyncSeq, plant03SyncSeq, cmsPlantSyncSeq, mdiPlantInputs.annualCapacityKta, mdiPlantSyncSeq, plantMeta.code, plantMeta.shortLabel]);
 
   const handleRunManualRefresh = () => {
     if (activePlantId === 'green_h2') return;
@@ -761,7 +952,11 @@ export default function PlantScopedEquipmentList() {
       `${plantMeta.code} ${plantMeta.shortLabel}`,
       true
     );
-    setRows(extracted);
+    const finalRows =
+      activePlantId === 'mdi_plant'
+        ? [...extracted, ...buildMdiAuxiliaryRows(mdiPlantInputs.annualCapacityKta / 100)]
+        : extracted;
+    setRows(finalRows);
     setSourceNote(`수동 수렴 갱신 완료 (${new Date().toLocaleTimeString('ko-KR', { hour12: false })})`);
   };
 
@@ -811,9 +1006,17 @@ export default function PlantScopedEquipmentList() {
       router.push('/material-balance');
       return;
     }
+    const targetNodeId =
+      row.nodeId === 'mdi_aux_p101'
+        ? 'R-101'
+        : row.nodeId === 'mdi_aux_p302'
+          ? 'C-302'
+          : row.nodeId === 'mdi_aux_psv201'
+            ? 'R-202'
+            : row.nodeId;
     requestSimNodeAction({
       sheetId: row.sheetId,
-      nodeIdOrTag: row.nodeId,
+      nodeIdOrTag: targetNodeId,
       openWorkbench,
       workbenchView: row.unitType === 'distillation' ? 'internals' : 'thermal',
     });

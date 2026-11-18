@@ -190,6 +190,35 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
       { item: '고압 순환펌프·냉동기·계장 전력 (Electricity)', type: 'UTIL', unit: 'kWh / t-CMS', qty: 112.0, unitCost_krw: 135 },
     ],
   },
+  mdi_plant: {
+    key: 'mdi_plant',
+    code: 'PEP-MDI-05',
+    name: '금호미쓰이 공정 MDI 10만톤 통합 플랜트 (MDA · 포스겐화 · Pure/PMDI)',
+    product: 'Pure 4,4\'-MDI (4,500 kg/h · 36%) + Polymeric MDI (8,000 kg/h · 64%) · 합계 12,500 kg/h (100,000 MT/yr) + 부생 무수 HCl 0.659 t/t-MDI',
+    licensor: 'Kumho Mitsui Chemicals (KMCI) / Mitsui Phosgenation Process',
+    baseCap_tpy: 100000,
+    baseCapex_musd: 145.0,
+    scaleExponent: 0.65,
+    productPrice_krw: 2702000, // Pure 4,4'-MDI (36% @ ₩3,150,000/t) + PMDI (64% @ ₩2,450,000/t) 가중평균 판가
+    byproductCredit_krw: 184500, // 부생 무수 HCl 회수(0.659 t/t-MDI @ ₩280,000/t) 크레딧
+    blocks: [
+      { code: '100 SEC', title: 'MDA 합성·염수분리·아닐린회수', desc: 'Aniline + Formalin(37%) HCl 촉매 축합(R-101) → NaOH 중화 → 염수 디캔터(D-101) → 진공탈수(S-101) & 아닐린 감압회수(C-101)' },
+      { code: '200 SEC', title: '포스겐(COCl₂) 제조·2단 포스겐화', desc: 'CO + Cl₂ 활성탄 촉매 포스겐 합성(R-201) → MCB 용매 2단 포스겐화 반응(R-202, 145°C) → 부생 무수 HCl 탈거 분리(S-201)' },
+      { code: '300 SEC', title: '탈포스겐·MCB 용매 진공 회수', desc: 'C-301(14단 · 2.0 kG) 잔류 포스겐 탈기 순환 → C-302(16단 · -0.90 kG) MCB 용매 진공 회수 및 순환' },
+      { code: '400 SEC', title: '고진공 Pure 4,4\'-MDI / PMDI 분별', desc: '박막예열기(E-401, 190°C) → C-401(16단 · 20 mbar) 고진공 분별탑 → Pure 4,4\'-MDI (4,500 kg/h) + PMDI (8,000 kg/h)' },
+    ],
+    unitConsumptions: [
+      { item: '아닐린 원료 (Aniline ≥ 99.8%)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.754, unitCost_krw: 1650000 },
+      { item: '포르말린 수용액 (Formalin 37 wt% HCHO)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.327, unitCost_krw: 520000 },
+      { item: '일산화탄소 원료 (CO ≥ 99.5%)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.240, unitCost_krw: 420000 },
+      { item: '건조 염소 원료 (Dry Cl₂ 99.9%)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.608, unitCost_krw: 295000 },
+      { item: '중화 가성소다 (NaOH 100% 환산 · 30% 투입)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.105, unitCost_krw: 470000 },
+      { item: 'MCB 보충 용매 (Monochlorobenzene Make-up)', type: 'RAW', unit: 'ton / t-MDI', qty: 0.060, unitCost_krw: 1350000 },
+      { item: '고압/중압 가열 스팀 (C-101·C-301·C-302·E-401/C-401)', type: 'UTIL', unit: 'ton / t-MDI', qty: 1.42, unitCost_krw: 62000 },
+      { item: '공정 전력 (반응교반·진공펌프·이송펌프·냉동기)', type: 'UTIL', unit: 'kWh / t-MDI', qty: 182.0, unitCost_krw: 135 },
+      { item: '순환 냉각수 (포스겐화 제열·응축기·제품냉각 CW)', type: 'UTIL', unit: 'm³ / t-MDI', qty: 64.0, unitCost_krw: 350 },
+    ],
+  },
   amine_ccus: {
     key: 'amine_ccus',
     code: 'PEP-CC-01',
@@ -250,9 +279,11 @@ function getPlantPepKeys(plantId: PlantId): string[] {
       return ['ech_gte'];
     case 'cms_plant':
       return ['cms_plant'];
+    case 'mdi_plant':
+      return ['mdi_plant'];
     case 'new_builder':
     default:
-      return ['cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
+      return ['mdi_plant', 'cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
   }
 }
 
@@ -531,12 +562,49 @@ export default function PepYearbookPage() {
 
         {/* 5 KPI Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 16 }}>
-          <KpiCard label="총 설비투자비 (Total CAPEX)" value={`${totalCapex_bkrw.toFixed(0)} 억원`} sub={`$${totalCapex_musd.toFixed(1)}M (ISBL $${isbl_musd.toFixed(1)}M)`} highlight />
+          <KpiCard label="총 설비투자비 (Total CAPEX)" value={`${totalCapex_bkrw.toFixed(0)} 억원`} sub={`$${totalCapex_musd.toFixed(1)}M (ISBL $${isbl_musd.toFixed(1)}M · OSBL $${osbl_musd.toFixed(1)}M)`} highlight />
           <KpiCard label="원료 투입 원가 (Raw Materials)" value={`₩${Math.round(rawCostPerTon).toLocaleString()} /t`} sub={`시간당 생산량 ${prodRate_tph.toFixed(1)} ton/h`} />
           <KpiCard label="유틸리티 원가 (Utilities)" value={`₩${Math.round(utilCostPerTon).toLocaleString()} /t`} sub={`전력 ₩${powerCost}/kWh · 스팀 ₩${(steamCost/1000).toFixed(0)}k/t`} />
-          <KpiCard label="제품 1톤당 순 제조원가" value={`₩${Math.round(totalMfgCostPerTon).toLocaleString()} /t`} sub={`$${(totalMfgCostPerTon / fxKrw).toFixed(0)} /ton (감가상각 포함)`} highlight />
+          <KpiCard label="제품 1톤당 순 제조원가" value={`₩${Math.round(totalMfgCostPerTon).toLocaleString()} /t`} sub={`$${(totalMfgCostPerTon / fxKrw).toFixed(0)} /ton (감가상각 포함 · 부산물 차감)`} highlight />
           <KpiCard label="연간 EBITDA & 투자회수기간" value={`${paybackYrs.toFixed(1)} 년`} sub={`연간 EBITDA ${annualEbitda_bkrw.toFixed(0)} 억원/yr`} />
         </div>
+
+        {proc.key === 'mdi_plant' && (
+          <div style={{
+            padding: '12px 18px', borderRadius: 10, marginBottom: 16,
+            background: '#FFFBEB', border: '1px solid #FCD34D',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10,
+          }}>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#92400E' }}>Pure 4,4&apos;-MDI 매출 (36 wt%)</div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: '#78350F', fontFamily: 'monospace', marginTop: 2 }}>
+                {(prodRate_tph * 1000 * 0.36).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h · ₩{((capTpy * 0.36 * 3150000) / 1e8).toFixed(0)} 억원/yr
+              </div>
+              <div style={{ fontSize: 10, color: '#92400E' }}>판가 ₩3,150,000 /ton 기준 ({(capTpy * 0.36).toLocaleString()} MT/yr)</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#92400E' }}>Polymeric MDI (PMDI) 매출 (64 wt%)</div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: '#78350F', fontFamily: 'monospace', marginTop: 2 }}>
+                {(prodRate_tph * 1000 * 0.64).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h · ₩{((capTpy * 0.64 * 2450000) / 1e8).toFixed(0)} 억원/yr
+              </div>
+              <div style={{ fontSize: 10, color: '#92400E' }}>판가 ₩2,450,000 /ton 기준 ({(capTpy * 0.64).toLocaleString()} MT/yr)</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#065F46' }}>부생 무수 HCl 회수 크레딧</div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: '#065F46', fontFamily: 'monospace', marginTop: 2 }}>
+                {(prodRate_tph * 0.659 * 1000).toLocaleString(undefined, { maximumFractionDigits: 0 })} kg/h · ₩{((capTpy * proc.byproductCredit_krw) / 1e8).toFixed(1)} 억원/yr
+              </div>
+              <div style={{ fontSize: 10, color: '#047857' }}>₩{proc.byproductCredit_krw.toLocaleString()} /t-MDI (0.659 t-HCl/t-MDI @ ₩280k/t)</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#1E3A8A' }}>ISBL / OSBL / Eng. CAPEX 세부</div>
+              <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A', fontFamily: 'monospace', marginTop: 2 }}>
+                ISBL ${isbl_musd.toFixed(1)}M · OSBL ${osbl_musd.toFixed(1)}M
+              </div>
+              <div style={{ fontSize: 10, color: '#334155' }}>설계·예비비 ${engContingency_musd.toFixed(1)}M 포함 총 ${totalCapex_musd.toFixed(1)}M</div>
+            </div>
+          </div>
+        )}
 
         {/* Standardized Process Block Flow Diagram */}
         <div style={{

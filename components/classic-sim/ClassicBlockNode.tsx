@@ -666,13 +666,21 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
             type="source"
             position={Position.Right}
             title="상부 / 기상 / 탑정 유출"
-            style={{ ...handleStyle, top: '26%' }}
+            style={{
+              ...handleStyle,
+              top: data.unitType === 'distillation' ? '18%' : '26%',
+            }}
           />
           <Handle
             id="top"
             type="source"
             position={Position.Right}
-            style={{ ...handleStyle, top: '26%', opacity: 0, pointerEvents: 'none' }}
+            style={{
+              ...handleStyle,
+              top: data.unitType === 'distillation' ? '18%' : '26%',
+              opacity: 0,
+              pointerEvents: 'none',
+            }}
           />
           <Handle
             id="out"
@@ -680,26 +688,38 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
             position={Position.Right}
             style={{
               ...handleStyle,
-              top: data.unitType === 'distillation' ? '39%' : '48%',
+              top: '48%',
               opacity: 0,
               pointerEvents: 'none',
             }}
           />
           {data.unitType === 'distillation' && (
-            <Handle
-              id="side_cut"
-              type="source"
-              position={Position.Right}
-              title="사이드컷 측류 출구 (Side-Cut S)"
-              style={{ ...handleStyle, top: '52%', borderColor: '#7C3AED' }}
-            />
+            <>
+              <Handle
+                id="decanter"
+                type="source"
+                position={Position.Right}
+                title="공비 디캔터 수층 분리 배출 (Decanter Aqueous)"
+                style={{ ...handleStyle, top: '38%', borderColor: '#0284C7' }}
+              />
+              <Handle
+                id="side_cut"
+                type="source"
+                position={Position.Right}
+                title="사이드컷 측류 출구 (Side-Cut S)"
+                style={{ ...handleStyle, top: '58%', borderColor: '#7C3AED' }}
+              />
+            </>
           )}
           <Handle
             id="liquid"
             type="source"
             position={Position.Right}
             title="하부 / 액상 / 탑저 유출"
-            style={{ ...handleStyle, top: data.unitType === 'distillation' ? '78%' : '70%' }}
+            style={{
+              ...handleStyle,
+              top: data.unitType === 'distillation' ? '80%' : '70%',
+            }}
           />
           <Handle
             id="bot"
@@ -707,7 +727,7 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
             position={Position.Right}
             style={{
               ...handleStyle,
-              top: data.unitType === 'distillation' ? '78%' : '70%',
+              top: data.unitType === 'distillation' ? '80%' : '70%',
               opacity: 0,
               pointerEvents: 'none',
             }}

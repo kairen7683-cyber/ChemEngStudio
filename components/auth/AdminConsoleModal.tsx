@@ -15,7 +15,111 @@ import {
   changeMyPassword,
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+import { PLANT_REGISTRY } from '@/lib/plantRegistry';
 import { useAuth } from './AuthContext';
+
+const SELECTABLE_PLANTS = PLANT_REGISTRY.filter(p => !p.hiddenFromSelector && !p.isSandbox);
+
+function formatAllowedPlantCodes(user: { role?: string; allowed_plants?: string[] | null }): string[] {
+  if (user.role === 'admin') return ['전체'];
+  if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return ['전체'];
+  if (user.allowed_plants.includes('*')) return ['전체'];
+  return user.allowed_plants.map(pid => PLANT_REGISTRY.find(p => p.id === pid)?.code ?? pid);
+}
+
+function PlantPermissionPicker({
+  scope,
+  selectedPlants,
+  onChangeScope,
+  onTogglePlant,
+  disabled,
+  disabledReason,
+}: {
+  scope: 'all' | 'custom';
+  selectedPlants: string[];
+  onChangeScope: (next: 'all' | 'custom') => void;
+  onTogglePlant: (plantId: string) => void;
+  disabled?: boolean;
+  disabledReason?: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: '8px 10px',
+        borderRadius: 7,
+        background: '#F8FAFC',
+        border: '1px solid #E2E8F0',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        width: '100%',
+      }}
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, fontSize: 11.2 }}>
+        <span style={{ fontWeight: 800, color: '#0F172A' }}>공장 접근 권한:</span>
+        {disabled ? (
+          <span style={{ color: '#0F766E', fontWeight: 700 }}>{disabledReason || '전체 공장 허용'}</span>
+        ) : (
+          <>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: scope === 'all' ? 800 : 600, color: scope === 'all' ? '#1D4ED8' : '#334155' }}>
+              <input
+                type="radio"
+                checked={scope === 'all'}
+                onChange={() => onChangeScope('all')}
+                style={{ margin: 0, cursor: 'pointer' }}
+              />
+              <span>전체 공장 허용 (제한 없음)</span>
+            </label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: scope === 'custom' ? 800 : 600, color: scope === 'custom' ? '#1D4ED8' : '#334155' }}>
+              <input
+                type="radio"
+                checked={scope === 'custom'}
+                onChange={() => onChangeScope('custom')}
+                style={{ margin: 0, cursor: 'pointer' }}
+              />
+              <span>개별 공장 선택</span>
+            </label>
+          </>
+        )}
+      </div>
+
+      {!disabled && scope === 'custom' && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingTop: 2 }}>
+          {SELECTABLE_PLANTS.map(p => {
+            const checked = selectedPlants.includes(p.id);
+            return (
+              <label
+                key={p.id}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  border: checked ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
+                  background: checked ? '#EFF6FF' : '#FFFFFF',
+                  color: checked ? '#1E3A8A' : '#334155',
+                  fontSize: 11,
+                  fontWeight: checked ? 800 : 600,
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => onTogglePlant(p.id)}
+                  style={{ margin: 0, cursor: 'pointer' }}
+                />
+                <span>{p.code}</span>
+                <span style={{ color: '#64748B', fontWeight: 600 }}>({p.shortLabel})</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 async function copyToClipboard(text: string): Promise<boolean> {
   if (!text) return false;
@@ -212,6 +316,11 @@ export default function AdminConsoleModal() {
   const [newDispName, setNewDispName] = useState('');
   const [newUserPw, setNewUserPw] = useState('');
   const [newUserRole, setNewUserRole] = useState<'user' | 'admin'>('user');
+  const [newUserPlantScope, setNewUserPlantScope] = useState<'all' | 'custom'>('all');
+  const [newUserAllowedPlants, setNewUserAllowedPlants] = useState<string[]>([]);
+  const [editingPlantsUser, setEditingPlantsUser] = useState<AdminUserSummary | null>(null);
+  const [editPlantScope, setEditPlantScope] = useState<'all' | 'custom'>('all');
+  const [editAllowedPlants, setEditAllowedPlants] = useState<string[]>([]);
   const [showCreateUserPw, setShowCreateUserPw] = useState(true);
   const [lastIssuedCreds, setLastIssuedCreds] = useState<{
     username: string;
@@ -335,18 +444,26 @@ export default function AdminConsoleModal() {
       setAdminMsg({ type: 'err', text: '생성할 아이디와 비밀번호를 입력하세요.' });
       return;
     }
+    if (newUserRole !== 'admin' && newUserPlantScope === 'custom' && newUserAllowedPlants.length === 0) {
+      setAdminMsg({ type: 'err', text: '개별 공장 선택 모드에서는 최소 1개 이상의 공장을 선택하세요.' });
+      return;
+    }
     try {
       await adminCreateUser({
         username: uname,
         display_name: newDispName.trim() || uname,
         password: pw,
         role: newUserRole,
+        allowed_plants:
+          newUserRole === 'admin' || newUserPlantScope === 'all' ? null : newUserAllowedPlants,
       });
       setLastIssuedCreds({ username: uname, password: pw, mode: '생성' });
       const copied = await copyToClipboard(pw);
       setNewUsername('');
       setNewDispName('');
       setNewUserPw('');
+      setNewUserPlantScope('all');
+      setNewUserAllowedPlants([]);
       setAdminMsg({
         type: 'ok',
         text: copied
@@ -356,6 +473,43 @@ export default function AdminConsoleModal() {
       await loadAdminOverview();
     } catch (err) {
       setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '사용자 생성 실패' });
+    }
+  };
+
+  const openEditUserPlants = (u: AdminUserSummary) => {
+    const hasRestricted =
+      u.role !== 'admin' &&
+      Array.isArray(u.allowed_plants) &&
+      u.allowed_plants.length > 0 &&
+      !u.allowed_plants.includes('*');
+    setEditingPlantsUser(u);
+    setEditPlantScope(hasRestricted ? 'custom' : 'all');
+    setEditAllowedPlants(hasRestricted ? [...(u.allowed_plants ?? [])] : []);
+  };
+
+  const handleSaveUserPlants = async () => {
+    if (!editingPlantsUser) return;
+    setAdminMsg(null);
+    if (editPlantScope === 'custom' && editAllowedPlants.length === 0) {
+      setAdminMsg({ type: 'err', text: '개별 공장 선택 모드에서는 최소 1개 이상의 공장을 선택하세요.' });
+      return;
+    }
+    try {
+      await adminUpdateUser(editingPlantsUser.id, {
+        allowed_plants: editPlantScope === 'all' ? null : editAllowedPlants,
+      });
+      setAdminMsg({
+        type: 'ok',
+        text: `[${editingPlantsUser.username}] 공장 접근 권한이 저장되었습니다.`,
+      });
+      const editedSelf = editingPlantsUser.id === user.id;
+      setEditingPlantsUser(null);
+      await loadAdminOverview();
+      if (editedSelf) {
+        await refreshAuthAndHydrate();
+      }
+    } catch (err) {
+      setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '공장 권한 변경 실패' });
     }
   };
 
@@ -542,7 +696,8 @@ export default function AdminConsoleModal() {
                     {user.display_name} ({user.username})
                   </div>
                   <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2 }}>
-                    권한: <b>{user.role === 'admin' ? '시스템 관리자' : '엔지니어 사용자'}</b> · 상태: <b>{user.status}</b>
+                    권한: <b>{user.role === 'admin' ? '시스템 관리자' : '엔지니어 사용자'}</b> · 상태: <b>{user.status}</b> · 접근 공장:{' '}
+                    <b>{formatAllowedPlantCodes(user).join(', ')}</b>
                   </div>
                 </div>
                 <button
@@ -1080,27 +1235,141 @@ export default function AdminConsoleModal() {
                   >
                     + 계정 직접 발급
                   </button>
+                  <PlantPermissionPicker
+                    scope={newUserPlantScope}
+                    selectedPlants={newUserAllowedPlants}
+                    onChangeScope={next => {
+                      setNewUserPlantScope(next);
+                      if (next === 'custom' && newUserAllowedPlants.length === 0 && SELECTABLE_PLANTS[0]) {
+                        setNewUserAllowedPlants([SELECTABLE_PLANTS[0].id]);
+                      }
+                    }}
+                    onTogglePlant={pid =>
+                      setNewUserAllowedPlants(prev =>
+                        prev.includes(pid) ? prev.filter(x => x !== pid) : [...prev, pid]
+                      )
+                    }
+                    disabled={newUserRole === 'admin'}
+                    disabledReason="관리자는 항상 전체 공장 접근이 허용됩니다"
+                  />
                 </form>
 
-                <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 7 }}>
+                {editingPlantsUser && (
+                  <div
+                    style={{
+                      padding: 10,
+                      marginBottom: 10,
+                      borderRadius: 8,
+                      background: '#EFF6FF',
+                      border: '1.5px solid #2563EB',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A' }}>
+                        🏭 [{editingPlantsUser.username}] ({editingPlantsUser.display_name}) 공장 접근 권한 수정
+                      </span>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => void handleSaveUserPlants()}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 5,
+                            border: 'none',
+                            background: '#1D4ED8',
+                            color: '#FFFFFF',
+                            fontSize: 11,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          권한 저장
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingPlantsUser(null)}
+                          style={{
+                            padding: '4px 8px',
+                            borderRadius: 5,
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            color: '#334155',
+                            fontSize: 11,
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                    <PlantPermissionPicker
+                      scope={editPlantScope}
+                      selectedPlants={editAllowedPlants}
+                      onChangeScope={next => {
+                        setEditPlantScope(next);
+                        if (next === 'custom' && editAllowedPlants.length === 0 && SELECTABLE_PLANTS[0]) {
+                          setEditAllowedPlants([SELECTABLE_PLANTS[0].id]);
+                        }
+                      }}
+                      onTogglePlant={pid =>
+                        setEditAllowedPlants(prev =>
+                          prev.includes(pid) ? prev.filter(x => x !== pid) : [...prev, pid]
+                        )
+                      }
+                      disabled={editingPlantsUser.role === 'admin'}
+                      disabledReason="관리자 계정은 항상 전체 공장 접근이 허용됩니다"
+                    />
+                  </div>
+                )}
+
+                <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 7 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead style={{ background: '#F8FAFC', color: '#475569' }}>
                       <tr>
                         <th style={{ padding: '6px 8px', textAlign: 'left' }}>아이디 (이름)</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>권한</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>공장 권한</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>상태</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>저장 데이터</th>
                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>관리</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map(u => (
+                      {users.map(u => {
+                        const plantBadges = formatAllowedPlantCodes(u);
+                        const isAllPlants = plantBadges.length === 1 && plantBadges[0] === '전체';
+                        return (
                         <tr key={u.id} style={{ borderTop: '1px solid #F1F5F9' }}>
                           <td style={{ padding: '6px 8px' }}>
                             <b>{u.username}</b> <span style={{ color: '#64748B' }}>({u.display_name})</span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             {u.role === 'admin' ? '👑 관리자' : '사용자'}
+                          </td>
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center' }}>
+                              {plantBadges.map(badge => (
+                                <span
+                                  key={badge}
+                                  style={{
+                                    padding: '1.5px 6px',
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    fontWeight: 800,
+                                    background: isAllPlants ? '#ECFDF5' : '#EFF6FF',
+                                    border: `1px solid ${isAllPlants ? '#6EE7B7' : '#93C5FD'}`,
+                                    color: isAllPlants ? '#065F46' : '#1E40AF',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {badge}
+                                </span>
+                              ))}
+                            </div>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <span
@@ -1129,6 +1398,15 @@ export default function AdminConsoleModal() {
                             {u.workspace_count}키 / {Math.round(u.workspace_bytes / 1024)}KB
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'right', display: 'flex', justifyContent: 'flex-end', gap: 4, flexWrap: 'wrap' }}>
+                            {u.role !== 'admin' && (
+                              <button
+                                type="button"
+                                onClick={() => openEditUserPlants(u)}
+                                style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #93C5FD', background: '#EFF6FF', color: '#1D4ED8', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}
+                              >
+                                공장권한
+                              </button>
+                            )}
                             {u.status === 'pending' && (
                               <button
                                 type="button"
@@ -1180,7 +1458,8 @@ export default function AdminConsoleModal() {
                             )}
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

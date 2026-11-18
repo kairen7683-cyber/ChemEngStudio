@@ -23,6 +23,11 @@ import {
 } from '@/lib/auth/authClient';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
+import {
+  PLANT_REGISTRY,
+  getPlantRegistryItem,
+  isPlantAllowed,
+} from '@/lib/plantRegistry';
 
 export type SyncState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -89,6 +94,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         try {
           useBalanceStore.getState().hydrateActivePlant();
+        } catch {
+          // ignore
+        }
+        try {
+          const balState = useBalanceStore.getState();
+          const curPlant = balState.activePlantId;
+          const curMeta = getPlantRegistryItem(curPlant);
+          if (
+            st.user.role !== 'admin' &&
+            Array.isArray(st.user.allowed_plants) &&
+            st.user.allowed_plants.length > 0 &&
+            !curMeta.isSandbox &&
+            !isPlantAllowed(curPlant, st.user)
+          ) {
+            const firstAllowed = PLANT_REGISTRY.find(
+              p => !p.hiddenFromSelector && !p.isSandbox && isPlantAllowed(p.id, st.user)
+            );
+            if (firstAllowed) {
+              balState.setActivePlantId(firstAllowed.id);
+            } else {
+              balState.setActivePlantId('new_builder');
+            }
+          }
         } catch {
           // ignore
         }

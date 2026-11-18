@@ -26,6 +26,10 @@ import {
   createInitialCmsHierarchySheets,
   syncCmsSubDefsFromMaster,
 } from '../lib/calculations/cmsPlantHierarchy';
+import {
+  createInitialMdiHierarchySheets,
+  syncMdiSubDefsFromMaster,
+} from '../lib/calculations/mdiPlantHierarchy';
 
 function mergeSheetFeedComponents(defs: FlowNodeDef[], base: SimCompKey[]): SimCompKey[] {
   const set = new Set<SimCompKey>(base);
@@ -54,8 +58,8 @@ interface BaselineSheetEntry {
 }
 
 function solvePlantSheets(
-  plantKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms',
-  workspaceMode: 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant',
+  plantKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi',
+  workspaceMode: 'electrolyzer_plant' | 'hcl_1a_plant' | 'ech_gte_plant' | 'cms_plant' | 'mdi_plant',
   sheets: Record<string, SheetRuntimeData>
 ): Record<string, BaselineSheetEntry> {
   const baseComps = getPlantDefaultComponents(workspaceMode);
@@ -93,7 +97,9 @@ function solvePlantSheets(
       const { syncedDefs } =
         plantKey === 'cms'
           ? syncCmsSubDefsFromMaster(sid, sh.simDefs, masterSheet.flowEdges, res.streams)
-          : applyMasterBoundaryToSubDefs(sh.simDefs, masterSheet.flowEdges, res.streams);
+          : plantKey === 'mdi'
+            ? syncMdiSubDefsFromMaster(sid, sh.simDefs, masterSheet.flowEdges, res.streams)
+            : applyMasterBoundaryToSubDefs(sh.simDefs, masterSheet.flowEdges, res.streams);
       sheets[sid] = { ...sh, simDefs: syncedDefs };
     }
   }
@@ -150,6 +156,11 @@ function main() {
       'cms_plant',
       createInitialCmsHierarchySheets({ syncMasterOnInit: true })
     ),
+    mdi: solvePlantSheets(
+      'mdi',
+      'mdi_plant',
+      createInitialMdiHierarchySheets({ syncMasterOnInit: true })
+    ),
   };
 
   const payload = {
@@ -169,7 +180,8 @@ function main() {
     Object.keys(plants.electrolysis).length +
     Object.keys(plants.hcl1A).length +
     Object.keys(plants.ech).length +
-    Object.keys(plants.cms).length;
+    Object.keys(plants.cms).length +
+    Object.keys(plants.mdi).length;
   console.log(`\nDONE: ${totalSheets} converged sheets written to ${outFile} (${sizeKB} KB)`);
 }
 

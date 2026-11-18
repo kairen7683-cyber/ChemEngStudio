@@ -707,6 +707,69 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
     isPolarOrganic: false,
     noteKo: '퍼클로로에틸렌/Heavies (C₂ 염소화 고비점 헤비 잔류 폐유분)',
   },
+  COCl2: {
+    cas: '75-44-5',
+    tbC: 8.2,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    isPolarOrganic: false,
+    noteKo: '포스겐 (CO + Cl₂ 합성 중간체 · MDI 포스겐화 시약)',
+  },
+  HCHO: {
+    cas: '50-00-0',
+    tbC: -19.1,
+    family: 'polar_solvent',
+    familyLabelKo: COMP_FAMILY_LABELS.polar_solvent,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: true,
+    noteKo: '포름알데히드 (Formalin 37% 수용액 · MDA 축합 원료)',
+  },
+  MCB: {
+    cas: '108-90-7',
+    tbC: 131.7,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: false,
+    noteKo: '모노클로로벤젠 (MDI 포스겐화 반응/진공 회수용 주용매)',
+  },
+  Aniline: {
+    cas: '62-53-3',
+    tbC: 184.1,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: true,
+    noteKo: '아닐린 (MDA 합성 주원료 · 감압 탑정 순환 회수)',
+  },
+  MDA: {
+    cas: '101-77-9',
+    tbC: 398.0,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: true,
+    noteKo: '4,4\'-메틸렌디아닐린 (Aniline-HCHO 축합 중간체 · 포스겐화 원료)',
+  },
+  MDI: {
+    cas: '101-68-8',
+    tbC: 314.0,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: true,
+    noteKo: '4,4\'-Pure MDI 모노머 (고진공 증류 탑정/측류 제품)',
+  },
+  PMDI: {
+    cas: '9016-87-9',
+    tbC: 435.0,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR', 'SRK'],
+    isPolarOrganic: false,
+    noteKo: '폴리머릭 MDI (Crude MDI 고비점 올리고머 · 진공탑 탑저 제품)',
+  },
   CUSTOM_1: {
     cas: '71-36-3',
     tbC: 117.7,
@@ -728,7 +791,7 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
 };
 
 export interface PlantComponentPreset {
-  plantId: 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'green_h2';
+  plantId: 'clorsim' | 'clorsim_sim' | 'hcl_synth' | 'ech_gte' | 'cms_plant' | 'mdi_plant' | 'green_h2';
   code: string;
   labelKo: string;
   descKo: string;
@@ -769,6 +832,14 @@ export const PLANT_COMPONENT_PRESETS: PlantComponentPreset[] = [
     components: ['Cl2', 'HCl', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'N2', 'NaOH', 'H2O'],
     defaultMethod: 'PR',
   },
+  {
+    plantId: 'mdi_plant',
+    code: 'PLANT 05',
+    labelKo: '금호미쓰이 MDI 10만톤 (MDA · 포스겐화 · Pure/PMDI)',
+    descKo: '아닐린·포르말린 축합, CO+Cl₂ 포스겐 합성, MCB 용매 포스겐화, MCB 회수 및 고진공 MDI/PMDI 정밀분별 13종',
+    components: ['Aniline', 'HCHO', 'HCl', 'NaOH', 'NaCl', 'H2O', 'CO', 'Cl2', 'COCl2', 'MCB', 'MDA', 'MDI', 'PMDI'],
+    defaultMethod: 'NRTL',
+  },
 ];
 
 export function getPlantDefaultComponents(plantKey?: string): SimCompKey[] {
@@ -783,6 +854,9 @@ export function getPlantDefaultComponents(plantKey?: string): SimCompKey[] {
   }
   if (plantKey === 'cms_plant' || plantKey === 'cms_plant_mode') {
     return [...PLANT_COMPONENT_PRESETS[3].components];
+  }
+  if (plantKey === 'mdi_plant') {
+    return [...PLANT_COMPONENT_PRESETS[4].components];
   }
   // 범용 기본 시작 세트 (자주 쓰는 물·유기용제·기본가스·전해질 코어)
   return ['H2O', 'MeOH', 'EtOH', 'Acetone', 'EtOAc', 'Toluene', 'N2', 'H2', 'CO2', 'NaCl', 'NaOH', 'HCl'];

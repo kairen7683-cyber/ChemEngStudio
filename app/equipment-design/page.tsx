@@ -8,7 +8,7 @@ import { saveChemProHandoffPayload } from '@/lib/calculations/unitDesignHandoff'
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
-const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'cms_hub', 'compressor'];
+const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'cms_hub', 'mdi_hub', 'compressor'];
 
 const PackingTower             = dynamic(() => import('@/components/equipment-design/PackingTower'),             { ssr: false });
 const BrinePurificationDesign  = dynamic(() => import('@/components/equipment-design/BrinePurificationDesign'),  { ssr: false });
@@ -46,6 +46,13 @@ const CMS_DESIGN_TABS = [
   { key: 'cms_hub',    label: 'CMS 핵심장치 (E-101·R-101·C-201~203·C-301~302)' },
   { key: 'packing',    label: 'C-201~203 · C-301~302 5탑 패킹/트레이 설계' },
   { key: 'chempro',    label: '기화기(E-101)·냉각기(E-301)·펌프(P-202) 상세설계' },
+  { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+];
+
+const MDI_DESIGN_TABS = [
+  { key: 'mdi_hub',    label: 'MDI 핵심장치 (R-101·C-101·R-201/202·C-301/302·E-401·C-401)' },
+  { key: 'packing',    label: 'C-101·C-301·C-302·C-401 증류·회수탑 패킹/트레이 설계' },
+  { key: 'chempro',    label: '예열기(E-401)·펌프(P-101/P-302)·안전밸브(PSV-201)' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
 ];
 
@@ -143,19 +150,23 @@ export default function EquipmentDesignPage() {
       if (qTab === 'distill' && activeTab === 'distill') return;
     }
     if (activePlantId === 'hcl_synth') {
-      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'distill' || activeTab === 'cms_hub') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'distill' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('hcl_hub');
       }
     } else if (activePlantId === 'ech_gte') {
-      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'cms_hub') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('distill');
       }
     } else if (activePlantId === 'cms_plant') {
-      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'mdi_hub') {
         setActiveTab('cms_hub');
       }
+    } else if (activePlantId === 'mdi_plant') {
+      if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub') {
+        setActiveTab('mdi_hub');
+      }
     } else if (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') {
-      if (activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub') {
+      if (activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('evap');
       }
     }
@@ -255,23 +266,28 @@ export default function EquipmentDesignPage() {
   }
 
   // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공)
-  const isCmsMode = activePlantId === 'cms_plant' || activeTab === 'cms_hub';
-  const isEchMode = !isCmsMode && (activePlantId === 'ech_gte' || activeTab === 'distill');
-  const subTabs = isCmsMode
-    ? CMS_DESIGN_TABS
-    : isEchMode
-      ? ECH_DESIGN_TABS
-      : activePlantId === 'hcl_synth'
-        ? HCL1A_DESIGN_TABS
-        : CA_DESIGN_TABS;
+  const isMdiMode = activePlantId === 'mdi_plant' || activeTab === 'mdi_hub';
+  const isCmsMode = !isMdiMode && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
+  const isEchMode = !isMdiMode && !isCmsMode && (activePlantId === 'ech_gte' || activeTab === 'distill');
+  const subTabs = isMdiMode
+    ? MDI_DESIGN_TABS
+    : isCmsMode
+      ? CMS_DESIGN_TABS
+      : isEchMode
+        ? ECH_DESIGN_TABS
+        : activePlantId === 'hcl_synth'
+          ? HCL1A_DESIGN_TABS
+          : CA_DESIGN_TABS;
   const effectiveDesignTab =
-    isCmsMode && !CMS_DESIGN_TABS.some(t => t.key === activeTab)
-      ? 'cms_hub'
-      : isEchMode && !ECH_DESIGN_TABS.some(t => t.key === activeTab)
-        ? 'distill'
-        : !isCmsMode && !isEchMode && activePlantId === 'hcl_synth' && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
-          ? 'hcl_hub'
-          : activeTab;
+    isMdiMode && !MDI_DESIGN_TABS.some(t => t.key === activeTab)
+      ? 'mdi_hub'
+      : isCmsMode && !CMS_DESIGN_TABS.some(t => t.key === activeTab)
+        ? 'cms_hub'
+        : isEchMode && !ECH_DESIGN_TABS.some(t => t.key === activeTab)
+          ? 'distill'
+          : !isMdiMode && !isCmsMode && !isEchMode && activePlantId === 'hcl_synth' && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
+            ? 'hcl_hub'
+            : activeTab;
 
   const switchDesignSubTab = (key: string) => {
     setActiveTab(key);
@@ -286,7 +302,7 @@ export default function EquipmentDesignPage() {
     sheetId: string,
     nodeIdOrTag: string,
     workbenchView?: 'mesh' | 'internals' | 'thermal' | 'mechanical',
-    forcePlant?: boolean | 'ech_gte' | 'cms_plant'
+    forcePlant?: boolean | 'ech_gte' | 'cms_plant' | 'mdi_plant'
   ) => {
     if (forcePlant === true) setActivePlantId('ech_gte');
     else if (forcePlant) setActivePlantId(forcePlant);
@@ -299,7 +315,7 @@ export default function EquipmentDesignPage() {
     router.push('/material-balance');
   };
 
-  const openSimSheet = (sheetId: string, forcePlant?: boolean | 'ech_gte' | 'cms_plant') => {
+  const openSimSheet = (sheetId: string, forcePlant?: boolean | 'ech_gte' | 'cms_plant' | 'mdi_plant') => {
     if (forcePlant === true) setActivePlantId('ech_gte');
     else if (forcePlant) setActivePlantId(forcePlant);
     requestSimSheet(sheetId);
@@ -345,8 +361,196 @@ export default function EquipmentDesignPage() {
     });
   };
 
+  const openMdiChemProPump = (cfg: {
+    tag: string;
+    name: string;
+    fluidSummary: string;
+    fluidId: string;
+    T_C: number;
+    Q_m3h: number;
+    rho_kgm3: number;
+    P1_barG: number;
+    P2_barG: number;
+    eff_pct: number;
+    dsuc_mm: string;
+    ddis_mm: string;
+  }) => {
+    saveChemProHandoffPayload({
+      version: 1,
+      timestamp: Date.now(),
+      sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+      tab: 'pump',
+      equipTag: cfg.tag,
+      equipName: cfg.name,
+      detectedFluidSummary: cfg.fluidSummary,
+      pump: {
+        fluidId: cfg.fluidId,
+        T_C: cfg.T_C,
+        Q_m3h: cfg.Q_m3h,
+        rho_kgm3: cfg.rho_kgm3,
+        P1_barG: cfg.P1_barG,
+        P2_barG: cfg.P2_barG,
+        eff_pct: cfg.eff_pct,
+        dsuc_mm: cfg.dsuc_mm,
+        ddis_mm: cfg.ddis_mm,
+      },
+    });
+    setActiveDesignRequest({
+      tab: 'pump',
+      tag: cfg.tag,
+      chemproSubTab: 'pump',
+      handoff: true,
+    });
+  };
+
+  const openMdiChemProPSV = () => {
+    saveChemProHandoffPayload({
+      version: 1,
+      timestamp: Date.now(),
+      sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+      tab: 'psv',
+      equipTag: 'PSV-201',
+      equipName: '포스겐(COCl₂) 반응계 긴급 압력방출 안전밸브',
+      detectedFluidSummary: '포스겐(COCl₂) / 부생 HCl / MCB 고압 가스 (Set 4.5 barG · 145°C)',
+    });
+    setActiveDesignRequest({
+      tab: 'chempro',
+      tag: 'PSV-201',
+      chemproSubTab: 'psv',
+      handoff: true,
+    });
+  };
+
   const hubCards =
-    effectiveDesignTab === 'cms_hub'
+    effectiveDesignTab === 'mdi_hub'
+      ? [
+          {
+            key: 'mdi_100_mda',
+            sec: '100 SEC · MDA 합성 · 염수 디캔터 · 아닐린 진공회수',
+            title: 'R-101 MDA 축합반응기 · D-101/S-101 분리 · C-101 아닐린 회수탑 · P-101',
+            units: 'R-101 (95°C · 2.5 kG) · D-101 염수 디캔터 · S-101 진공탈수 · C-101 (14단 · -0.88 kG) · P-101A/B',
+            desc: '아닐린·포르말린 산촉매 축합 및 NaOH 중화 후 LLE 염수분리, 진공탈수, 미반응 아닐린 감압 회수탑 인터널 설계',
+            actions: [
+              { label: '🔧 [R-101] MDA 축합·중화 반응기 수지 확인', onClick: () => openSimNode('sub_mdi_100_mda', 'R-101', undefined, 'mdi_plant') },
+              { label: '🔧 [C-101] 아닐린 감압 회수탑(14단) 인터널·탑경 설계', onClick: () => openSimNode('sub_mdi_100_mda', 'C-101', 'internals', 'mdi_plant') },
+              {
+                label: '📐 [P-101A/B] MDA/아닐린 순환 펌프 상세설계 열기',
+                onClick: () =>
+                  openMdiChemProPump({
+                    tag: 'P-101A/B',
+                    name: 'MDA/아닐린 순환·이송 펌프',
+                    fluidSummary: '조 MDA/아닐린 유기액 (10,006 kg/h · 95°C · 3.8 kG)',
+                    fluidId: 'aniline',
+                    T_C: 95.0,
+                    Q_m3h: 10.5,
+                    rho_kgm3: 1015,
+                    P1_barG: 0.5,
+                    P2_barG: 3.8,
+                    eff_pct: 74,
+                    dsuc_mm: '80',
+                    ddis_mm: '65',
+                  }),
+              },
+            ],
+            sheetButtons: [
+              { label: '100 Sec MDA 합성 PFD 이동 →', onClick: () => openSimSheet('sub_mdi_100_mda', 'mdi_plant') },
+            ],
+          },
+          {
+            key: 'mdi_200_phos',
+            sec: '200 SEC · 포스겐(COCl₂) 제조 · 2단 포스겐화 & HCl 회수',
+            title: 'R-201 포스겐 합성 · R-202 2단 포스겐화 · S-201 · PSV-201',
+            units: 'R-201 (90°C · 3.5 kG) · R-202 (145°C · MCB 용매) · S-201 부생 HCl 분리기 · PSV-201 (API 526)',
+            desc: 'CO+Cl₂ 고정층 촉매 포스겐 합성, MCB 용매 MDA 2단 연속 포스겐화, 부생 무수 HCl(8.23 t/h) 탈거 및 안전밸브 설계',
+            actions: [
+              { label: '🔧 [R-201] CO+Cl₂ 포스겐 합성 반응기 수지 확인', onClick: () => openSimNode('sub_mdi_200_phos', 'R-201', undefined, 'mdi_plant') },
+              { label: '🔧 [R-202] 2단 연속 포스겐화 반응기(145°C) 수지 확인', onClick: () => openSimNode('sub_mdi_200_phos', 'R-202', undefined, 'mdi_plant') },
+              { label: '📐 [PSV-201] 포스겐 반응계 긴급 안전밸브(API 526) 열기', onClick: openMdiChemProPSV },
+            ],
+            sheetButtons: [
+              { label: '200 Sec 포스겐화 PFD 이동 →', onClick: () => openSimSheet('sub_mdi_200_phos', 'mdi_plant') },
+            ],
+          },
+          {
+            key: 'mdi_300_mcb',
+            sec: '300 SEC · 탈포스겐 스트리핑 & MCB 용매 진공 회수',
+            title: 'C-301 탈포스겐 스트리퍼 · C-302 MCB 진공회수탑 · P-302',
+            units: 'C-301 (14단 · 2.0 kG) · C-302 (16단 · -0.90 kG · MCB 18.8 t/h 회수) · P-302A/B',
+            desc: '과잉 포스겐 전량 회수 순환(C-301) 및 MCB 진공 회수(C-302) 다단 증류 인터널·진공 이송펌프 상세설계',
+            actions: [
+              { label: '🔧 [C-301] 탈포스겐 스트리퍼(14단) 인터널·단별 설계', onClick: () => openSimNode('sub_mdi_300_mcb', 'C-301', 'internals', 'mdi_plant') },
+              { label: '🔧 [C-302] MCB 진공 회수탑(16단) 인터널·탑경 설계', onClick: () => openSimNode('sub_mdi_300_mcb', 'C-302', 'internals', 'mdi_plant') },
+              {
+                label: '📐 [P-302A/B] 회수 MCB 용매 이송펌프 상세설계 열기',
+                onClick: () =>
+                  openMdiChemProPump({
+                    tag: 'P-302A/B',
+                    name: '회수 MCB 용매 이송·순환 펌프',
+                    fluidSummary: '회수 모노클로로벤젠 MCB (18,807 kg/h · 68°C · -0.90→3.5 kG)',
+                    fluidId: 'chlorobenzene',
+                    T_C: 68.0,
+                    Q_m3h: 17.5,
+                    rho_kgm3: 1075,
+                    P1_barG: -0.9,
+                    P2_barG: 3.5,
+                    eff_pct: 76,
+                    dsuc_mm: '100',
+                    ddis_mm: '80',
+                  }),
+              },
+            ],
+            sheetButtons: [
+              { label: '300 Sec MCB 회수 PFD 이동 →', onClick: () => openSimSheet('sub_mdi_300_mcb', 'mdi_plant') },
+            ],
+          },
+          {
+            key: 'mdi_400_purif',
+            sec: '400 SEC · 고진공 Pure 4,4\'-MDI / PMDI 정밀 분별 (100,000 TPA)',
+            title: 'E-401 박막 예열기 · C-401 고진공 분별탑 (Pure 4,500 · PMDI 8,000 kg/h)',
+            units: 'E-401 (190°C · -0.985 kG) · C-401 (16단 · 20 mbar · Mellapak) · E-402/E-403',
+            desc: '고진공 박막 증발/예열 전열 설계 및 열분해 억제를 위한 20 mbar 고진공 Pure 4,4\'-MDI / Polymeric MDI 정밀 분별탑 인터널 설계',
+            actions: [
+              { label: '🔧 [E-401] 고진공 박막 예열기 내장설계 직행', onClick: () => openSimNode('sub_mdi_400_purif', 'E-401', 'thermal', 'mdi_plant') },
+              { label: '🔧 [C-401] 고진공 Pure/PMDI 분별탑(16단) 인터널 설계', onClick: () => openSimNode('sub_mdi_400_purif', 'C-401', 'internals', 'mdi_plant') },
+              {
+                label: '📐 [E-401] 박막 예열기(TFE Preheater) 상세설계 열기',
+                onClick: () =>
+                  openEchChemProHX({
+                    sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+                    tag: 'E-401',
+                    name: '고진공 박막 예열기 (Thin-Film Preheater)',
+                    fluidSummary: '무용매 Crude MDI (12,625 kg/h, 165→190°C · 20 mbar 진공)',
+                    hotFluidId: 'steam_13k',
+                    coldFluidId: 'chlorobenzene',
+                    allocation: 'hot_shell',
+                    dofTarget: 'mh_auto',
+                    mh_kgh: 1850,
+                    Th_in: 215.0,
+                    Th_out: 210.0,
+                    mc_kgh: 12625,
+                    Tc_in: 165.0,
+                    Tc_out: 190.0,
+                    hot_mode: 'cond_full',
+                    Th_sat: 215.0,
+                    hot_hv: 1880,
+                    cold_mode: 'sensible',
+                    U_assumed: 520,
+                  }),
+              },
+            ],
+            sheetButtons: [
+              { label: '400 Sec Pure/PMDI PFD 이동 →', onClick: () => openSimSheet('sub_mdi_400_purif', 'mdi_plant') },
+              {
+                label: '단위장치 상세설계 브리지 열기 →',
+                onClick: () => {
+                  setActivePlantId('mdi_plant');
+                  router.push('/unit-equipment');
+                },
+              },
+            ],
+          },
+        ]
+      : effectiveDesignTab === 'cms_hub'
       ? [
           {
             key: 'cms_100_rxn',
@@ -608,13 +812,15 @@ export default function EquipmentDesignPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', marginRight: 4, whiteSpace: 'nowrap' }}>
-            {isCmsMode
-              ? 'PLANT 04 클로로메탄(CMS):'
-              : isEchMode
-                ? 'PLANT 03 바이오 ECH:'
-                : activePlantId === 'hcl_synth'
-                  ? 'PLANT 02 1A 염산:'
-                  : '전해공장 상세설계:'}
+            {isMdiMode
+              ? 'PLANT 05 금호미쓰이 MDI:'
+              : isCmsMode
+                ? 'PLANT 04 클로로메탄(CMS):'
+                : isEchMode
+                  ? 'PLANT 03 바이오 ECH:'
+                  : activePlantId === 'hcl_synth'
+                    ? 'PLANT 02 1A 염산:'
+                    : '전해공장 상세설계:'}
           </span>
           {subTabs.map(st => {
             const isSel = effectiveDesignTab === st.key;
@@ -641,11 +847,12 @@ export default function EquipmentDesignPage() {
           })}
         </div>
 
-        {(activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode || isCmsMode) && (
+        {(activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode || isCmsMode || isMdiMode) && (
           <button
             type="button"
             onClick={() => {
-              if (isCmsMode) setActivePlantId('cms_plant');
+              if (isMdiMode) setActivePlantId('mdi_plant');
+              else if (isCmsMode) setActivePlantId('cms_plant');
               else if (isEchMode) setActivePlantId('ech_gte');
               router.push('/material-balance');
             }}
@@ -685,7 +892,7 @@ export default function EquipmentDesignPage() {
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, background: '#F6F7F2' }}>
           <MultiEffectEvapStudio />
         </div>
-      ) : (effectiveDesignTab === 'hcl_hub' || effectiveDesignTab === 'distill' || effectiveDesignTab === 'cms_hub') ? (
+      ) : (effectiveDesignTab === 'hcl_hub' || effectiveDesignTab === 'distill' || effectiveDesignTab === 'cms_hub' || effectiveDesignTab === 'mdi_hub') ? (
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, padding: '14px 20px', background: '#F6F7F2' }}>
           <div
             style={{
@@ -703,18 +910,22 @@ export default function EquipmentDesignPage() {
           >
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A' }}>
-                {effectiveDesignTab === 'cms_hub'
-                  ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
-                  : effectiveDesignTab === 'distill'
-                    ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
-                    : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계'}
+                {effectiveDesignTab === 'mdi_hub'
+                  ? 'PLANT 05 금호미쓰이 MDI 10만톤 — 핵심장치 내장·상세설계'
+                  : effectiveDesignTab === 'cms_hub'
+                    ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
+                    : effectiveDesignTab === 'distill'
+                      ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
+                      : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계'}
               </div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-                {effectiveDesignTab === 'cms_hub'
-                  ? 'Cl₂ 220 · MCL 120 · CFM 80 T/D · 기화기(E-101) · 반응기(R-101) · 5탑(C-201~203 · C-301~302) · 제품냉각·순환펌프(E-301/P-202)'
-                  : effectiveDesignTab === 'distill'
-                    ? '70,000 TPA GTE-ECH 공정 연동 · 증류탑(C-101/C-102) · 반응기(R-101/R-201) · 열교환기(E-102/E-301)'
-                    : '실시간 PFD 유량·조성·압력 연동 내장 워크벤치 (증류탑 · 열교환기 · 급랭·심냉액화기)'}
+                {effectiveDesignTab === 'mdi_hub'
+                  ? '100,000 TPA · Pure 4,4\'-MDI 4,500 · PMDI 8,000 kg/h · 반응기(R-101/R-201/R-202) · 분리기(D-101/S-101/S-201) · 4탑(C-101/C-301/C-302/C-401) · 박막예열·펌프·PSV'
+                  : effectiveDesignTab === 'cms_hub'
+                    ? 'Cl₂ 220 · MCL 120 · CFM 80 T/D · 기화기(E-101) · 반응기(R-101) · 5탑(C-201~203 · C-301~302) · 제품냉각·순환펌프(E-301/P-202)'
+                    : effectiveDesignTab === 'distill'
+                      ? '70,000 TPA GTE-ECH 공정 연동 · 증류탑(C-101/C-102) · 반응기(R-101/R-201) · 열교환기(E-102/E-301)'
+                      : '실시간 PFD 유량·조성·압력 연동 내장 워크벤치 (증류탑 · 열교환기 · 급랭·심냉액화기)'}
               </div>
             </div>
           </div>

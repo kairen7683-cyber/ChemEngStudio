@@ -117,6 +117,31 @@ const HCL_SYNTH_EQUIPMENT: EquipmentItem[] = [
   { id: 'E325', tag: 'E-325', name: 'Spent HCl Recovery Preheater/Cooler (폐염산 회수 열교환기)', type: 'heatExchanger', section: '300', fluidKey: 'hcl_31', streamIds: [] },
 ];
 
+// PLANT 05 (금호미쓰이 MDI 10만톤 공정) 전용 정적 장치 목록 (14기)
+const MDI_PLANT_EQUIPMENT: EquipmentItem[] = [
+  // ── 100 SEC: MDA 합성 · 염수 디캔터 · 진공탈수 · 아닐린 감압회수 ──
+  { id: 'mdi_r101', tag: 'R-101',    name: 'MDA 축합·전위 및 가성중화 반응기 (95°C · 2.5 kG)',             type: 'reactor',       section: '100', streamIds: ['103', '104', '105'] },
+  { id: 'mdi_d101', tag: 'D-101',    name: '염수 수세 유수분리 디캔터 (LLE Settler · 75°C)',                type: 'separator',     section: '100', streamIds: ['105', '106', '107'] },
+  { id: 'mdi_s101', tag: 'S-101',    name: '유기층 진공 탈수 드럼 (Flash Dehydrator · 140°C / -0.80 kG)',  type: 'separator',     section: '100', streamIds: ['107', '107V', '108'] },
+  { id: 'mdi_c101', tag: 'C-101',    name: '아닐린 감압 회수탑 (14단 · -0.88 kG)',                         type: 'tower',         section: '100', streamIds: ['108', '112', '204'] },
+  { id: 'mdi_p101', tag: 'P-101A/B', name: 'MDA/아닐린 순환·이송 펌프 (Circulation Pump)',                  type: 'pump',          section: '100', streamIds: ['105', '204'] },
+
+  // ── 200 SEC: CO+Cl2 포스겐 합성 · 2단 포스겐화 · 부생 HCl 회수 ──
+  { id: 'mdi_r201',   tag: 'R-201',   name: '포스겐(COCl₂) 활성탄 촉매 합성 반응기 (90°C · 3.5 kG)',       type: 'reactor',   section: '200', streamIds: ['201', '202', '203'] },
+  { id: 'mdi_r202',   tag: 'R-202',   name: 'MDA 2단 연속 포스겐화 반응기 (145°C · MCB 용매)',             type: 'reactor',   section: '200', streamIds: ['203', '204', '205', '206'] },
+  { id: 'mdi_s201',   tag: 'S-201',   name: '부생 HCl · 포스겐 냉각 기액 분리기 (38°C · 2.0 kG)',          type: 'separator', section: '200', streamIds: ['206', '207', '301'] },
+  { id: 'mdi_psv201', tag: 'PSV-201', name: '포스겐 반응계 긴급 압력방출 안전밸브 (API 526 Orifice)',      type: 'psv',       section: '200', streamIds: ['203', '206'] },
+
+  // ── 300 SEC: 탈포스겐 스트리핑 & MCB 용매 진공 회수 ──
+  { id: 'mdi_c301', tag: 'C-301',    name: '탈포스겐(COCl₂) 회수 스트리퍼 (14단 · 2.0 kG)',                type: 'tower', section: '300', streamIds: ['301', '311', '302'] },
+  { id: 'mdi_c302', tag: 'C-302',    name: 'MCB 용매 진공 회수탑 (16단 · -0.90 kG)',                        type: 'tower', section: '300', streamIds: ['302', '312A', '401'] },
+  { id: 'mdi_p302', tag: 'P-302A/B', name: '회수 MCB 용매 이송·순환 펌프 (MCB Transfer Pump)',              type: 'pump',  section: '300', streamIds: ['312'] },
+
+  // ── 400 SEC: 고진공 박막 예열 및 Pure 4,4'-MDI / PMDI 정밀 분별 ──
+  { id: 'mdi_e401', tag: 'E-401',    name: '고진공 박막 예열기 (TFE Preheater · 190°C · -0.985 kG)',       type: 'heatExchanger', section: '400', streamIds: ['401', '401A'] },
+  { id: 'mdi_c401', tag: 'C-401',    name: '고진공 Pure 4,4\'-MDI / PMDI 분별탑 (16단 · 20 mbar)',         type: 'tower',         section: '400', streamIds: ['401A', '402A', '403A'] },
+];
+
 // ─── 메인 훅 ─────────────────────────────────────────────────────────
 export function useEquipmentList(typeFilter?: 'pump' | 'tower' | 'heatExchanger') {
   const activePlantId     = useBalanceStore(s => s.activePlantId);
@@ -134,9 +159,11 @@ export function useEquipmentList(typeFilter?: 'pump' | 'tower' | 'heatExchanger'
     const staticSource =
       activePlantId === 'hcl_synth'
         ? HCL_SYNTH_EQUIPMENT
-        : activePlantId === 'green_h2'
-          ? []
-          : STATIC_EQUIPMENT;
+        : activePlantId === 'mdi_plant'
+          ? MDI_PLANT_EQUIPMENT
+          : activePlantId === 'green_h2'
+            ? []
+            : STATIC_EQUIPMENT;
 
     const allEquipment: EquipmentItem[] = [
       ...staticSource.map(eq => {

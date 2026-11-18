@@ -8,6 +8,7 @@ import {
 import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHierarchy';
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
+import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
 import type { FlowsheetSolveResult } from '@/lib/calculations/flowsheetSolver';
 
 export interface BaselineEntryPayload {
@@ -25,12 +26,13 @@ export interface ConvergedBaselineBundle {
     hcl1A?: Record<string, BaselineEntryPayload>;
     ech?: Record<string, BaselineEntryPayload>;
     cms?: Record<string, BaselineEntryPayload>;
+    mdi?: Record<string, BaselineEntryPayload>;
   };
 }
 
 export interface ClassicPlantPresetOption {
   presetKey: string;
-  plantGroup: 'electrolysis' | 'hcl1A' | 'ech' | 'cms';
+  plantGroup: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi';
   plantLabel: string;
   sheetId: string;
   title: string;
@@ -56,25 +58,27 @@ export async function fetchConvergedBaselinesBundle(): Promise<ConvergedBaseline
 }
 
 export function getPlantSheetsByGroup(
-  group: 'electrolysis' | 'hcl1A' | 'ech' | 'cms',
+  group: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi',
   opts?: { syncMasterOnInit?: boolean }
 ): Record<string, SheetRuntimeData> {
   const syncMasterOnInit = opts?.syncMasterOnInit ?? false;
   if (group === 'hcl1A') return createInitialHcl1AHierarchySheets({ syncMasterOnInit });
   if (group === 'ech') return createInitialEchHierarchySheets({ syncMasterOnInit });
   if (group === 'cms') return createInitialCmsHierarchySheets({ syncMasterOnInit });
+  if (group === 'mdi') return createInitialMdiHierarchySheets({ syncMasterOnInit });
   return createInitialHierarchySheets({ syncMasterOnInit });
 }
 
 export function getClassicPlantPresetOptions(): ClassicPlantPresetOption[] {
   const groups: Array<{
-    group: 'electrolysis' | 'hcl1A' | 'ech' | 'cms';
+    group: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi';
     plantLabel: string;
   }> = [
     { group: 'electrolysis', plantLabel: 'PLANT 01 · 전해공장' },
     { group: 'hcl1A', plantLabel: 'PLANT 02 · 염산합성/정제' },
     { group: 'ech', plantLabel: 'PLANT 03 · ECH 공정' },
     { group: 'cms', plantLabel: 'PLANT 04 · 클로로메탄(CMS) 공정' },
+    { group: 'mdi', plantLabel: 'PLANT 05 · 금호미쓰이 MDI 공정' },
   ];
   const out: ClassicPlantPresetOption[] = [];
   for (const g of groups) {

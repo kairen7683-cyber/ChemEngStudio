@@ -112,6 +112,23 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
     ],
   },
   {
+    id: 'mdi_plant',
+    code: 'PLANT 05',
+    shortLabel: 'MDI (10만톤)',
+    title: '금호미쓰이 공정 MDI 10만톤 (MDA · 포스겐화 · Pure/PMDI)',
+    capacityBadge: '100,000 TPA · 12.5 t/h',
+    accent: '#B45309',
+    accentSoftBg: '#FFFBEB',
+    accentBorder: '#FCD34D',
+    defaultHref: '/material-balance',
+    tabs: [
+      { key: 'pfd', label: '① 계층 공정도 & 시뮬레이션', shortLabel: '① 시뮬레이션', href: '/material-balance' },
+      { key: 'design', label: '② MDI 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=mdi_hub', equipTab: 'mdi_hub' },
+      { key: 'equip', label: '③ MDI 공장 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
+      { key: 'econ', label: '④ 원단위 · 경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+    ],
+  },
+  {
     id: 'new_builder',
     code: 'SIM',
     shortLabel: '공정 시뮬레이터',
@@ -147,4 +164,23 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
 
 export function getPlantRegistryItem(id: PlantId): PlantRegistryItem {
   return PLANT_REGISTRY.find(p => p.id === id) ?? PLANT_REGISTRY.find(p => !p.hiddenFromSelector) ?? PLANT_REGISTRY[0];
+}
+
+export const PLANT_GROUP_TO_ID: Record<'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi', PlantId> = {
+  electrolysis: 'clorsim_sim',
+  hcl1A: 'hcl_synth',
+  ech: 'ech_gte',
+  cms: 'cms_plant',
+  mdi: 'mdi_plant',
+};
+
+export function isPlantAllowed(
+  plantId: string,
+  user?: { role?: string; allowed_plants?: string[] | null } | null
+): boolean {
+  if (!user) return true;
+  if (user.role === 'admin') return true;
+  if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return true;
+  if (user.allowed_plants.includes('*')) return true;
+  return user.allowed_plants.includes(plantId);
 }

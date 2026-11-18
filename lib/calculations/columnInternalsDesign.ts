@@ -650,6 +650,13 @@ const PURE_LIQ_DB: Record<SimCompKey, PureLiqProps> = {
   CH2Cl2: { rho20: 1326, dRhoDT: 1.80, sigma20: 28.1, visc20Cp: 0.44, viscActK: 850 },
   CCl4: { rho20: 1594, dRhoDT: 1.90, sigma20: 26.8, visc20Cp: 0.97, viscActK: 1250 },
   C2Cl4: { rho20: 1623, dRhoDT: 1.70, sigma20: 31.7, visc20Cp: 0.89, viscActK: 1200 },
+  COCl2: { rho20: 1381, dRhoDT: 2.15, sigma20: 20.1, visc20Cp: 0.42, viscActK: 920 },
+  HCHO: { rho20: 815, dRhoDT: 1.65, sigma20: 22.0, visc20Cp: 0.25, viscActK: 760 },
+  MCB: { rho20: 1106, dRhoDT: 1.07, sigma20: 33.2, visc20Cp: 0.80, viscActK: 1240 },
+  Aniline: { rho20: 1022, dRhoDT: 0.85, sigma20: 42.9, visc20Cp: 4.40, viscActK: 2400 },
+  MDA: { rho20: 1150, dRhoDT: 0.72, sigma20: 44.5, visc20Cp: 8.50, viscActK: 2700 },
+  MDI: { rho20: 1190, dRhoDT: 0.78, sigma20: 41.2, visc20Cp: 4.80, viscActK: 2450 },
+  PMDI: { rho20: 1235, dRhoDT: 0.75, sigma20: 43.0, visc20Cp: 195.0, viscActK: 3900 },
   CUSTOM_1: { rho20: 810, dRhoDT: 0.8, sigma20: 24.6, visc20Cp: 2.95, viscActK: 2250 },
   CUSTOM_2: { rho20: 1022, dRhoDT: 0.85, sigma20: 42.9, visc20Cp: 4.4, viscActK: 2400 },
 };

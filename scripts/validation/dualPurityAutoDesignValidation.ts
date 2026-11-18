@@ -19,7 +19,9 @@ function zeroFlows(partial: Partial<Record<SimCompKey, number>>): Record<SimComp
     Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0,
     Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0,
     THF: 0, DMF: 0, DMSO: 0, MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0,
-    FormicAcid: 0, HNO3: 0, CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+    FormicAcid: 0, HNO3: 0, CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
+    COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0,
+    CUSTOM_1: 0, CUSTOM_2: 0,
     ...partial,
   };
 }

@@ -77,6 +77,13 @@ export const MW = {
   CH2Cl2: 84.933,
   CCl4: 153.823,
   C2Cl4: 165.834,
+  COCl2: 98.916,
+  HCHO: 30.026,
+  MCB: 112.558,
+  Aniline: 93.128,
+  MDA: 198.268,
+  MDI: 250.256,
+  PMDI: 381.400,
   CUSTOM_1: 74.122,
   CUSTOM_2: 93.128,
 };

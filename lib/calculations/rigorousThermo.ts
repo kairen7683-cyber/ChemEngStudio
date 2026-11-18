@@ -106,6 +106,13 @@ export const RIGOROUS_CRIT: Record<SimCompKey, CritProps> = {
   CH2Cl2: { Tc_K: 510.00, Pc_bar: 60.80, omega: 0.199, mw: mwOf('CH2Cl2', 84.933) },
   CCl4: { Tc_K: 556.40, Pc_bar: 45.60, omega: 0.193, mw: mwOf('CCl4', 153.823) },
   C2Cl4: { Tc_K: 620.20, Pc_bar: 47.60, omega: 0.254, mw: mwOf('C2Cl4', 165.834) },
+  COCl2: { Tc_K: 455.00, Pc_bar: 56.70, omega: 0.204, mw: mwOf('COCl2', 98.916) },
+  HCHO: { Tc_K: 408.00, Pc_bar: 65.90, omega: 0.282, mw: mwOf('HCHO', 30.026) },
+  MCB: { Tc_K: 632.40, Pc_bar: 45.20, omega: 0.249, mw: mwOf('MCB', 112.558) },
+  Aniline: { Tc_K: 699.00, Pc_bar: 53.09, omega: 0.384, mw: mwOf('Aniline', 93.128) },
+  MDA: { Tc_K: 882.00, Pc_bar: 28.20, omega: 0.685, mw: mwOf('MDA', 198.268) },
+  MDI: { Tc_K: 802.00, Pc_bar: 23.40, omega: 0.610, mw: mwOf('MDI', 250.256) },
+  PMDI: { Tc_K: 945.00, Pc_bar: 16.50, omega: 0.850, mw: mwOf('PMDI', 381.400) },
   CUSTOM_1: { Tc_K: 563.05, Pc_bar: 44.23, omega: 0.59, mw: mwOf('CUSTOM_1', 74.122) },
   CUSTOM_2: { Tc_K: 699.0, Pc_bar: 53.09, omega: 0.384, mw: mwOf('CUSTOM_2', 93.128) },
 };
@@ -399,7 +406,7 @@ const VOLATILE_KEYS: SimCompKey[] = [
   'Benzene', 'Toluene', 'pXylene',
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
-  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
 ];
 const PERMANENT_SUPERCRIT_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const AQUEOUS_HENRY_CONDENSABLE_SET = new Set<SimCompKey>(['Cl2', 'CO2', 'H2S', 'SO2', 'C2H4', 'C2H6', 'C3H6', 'C3H8']);
@@ -414,7 +421,7 @@ const ALL_RIG_KEYS: SimCompKey[] = [
   'Benzene', 'Toluene', 'pXylene',
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
-  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'CUSTOM_1', 'CUSTOM_2',
+  'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
 ];
 const N_RIG = ALL_RIG_KEYS.length;
 const RIG_COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -465,7 +472,8 @@ const ZERO_RIG_TEMPLATE: Record<SimCompKey, number> = {
   Ar: 0, H2S: 0, SO2: 0, SO3: 0, iC4H10: 0, C4H8_1: 0, nC5H12: 0, nC8H18: 0,
   Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0,
   MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
-  CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+  CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
+  COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
 };
 
 const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
@@ -478,7 +486,8 @@ const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
   Ar: 1, H2S: 1, SO2: 1, SO3: 1, iC4H10: 1, C4H8_1: 1, nC5H12: 1, nC8H18: 1,
   Cyclohexane: 1, Ethylbenzene: 1, Styrene: 1, Cumene: 1, Phenol: 1, THF: 1, DMF: 1, DMSO: 1,
   MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
-  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
+  COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
 const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
@@ -491,7 +500,8 @@ const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
   Ar: 1, H2S: 1, SO2: 1, SO3: 1, iC4H10: 1, C4H8_1: 1, nC5H12: 1, nC8H18: 1,
   Cyclohexane: 1, Ethylbenzene: 1, Styrene: 1, Cumene: 1, Phenol: 1, THF: 1, DMF: 1, DMSO: 1,
   MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
-  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
+  COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
 };
 
 const _eosActKeys: SimCompKey[] = new Array<SimCompKey>(N_RIG);
@@ -622,6 +632,20 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
       return Math.pow(10, 4.219 - 1295.26 / Math.max(50, T + 218.0));
     case 'HNO3':
       return Math.pow(10, 4.685 - 1486.0 / Math.max(50, T + 228.0));
+    case 'COCl2':
+      return Math.pow(10, 4.2236 - 1030.0 / Math.max(50, T + 236.0));
+    case 'HCHO':
+      return Math.pow(10, 4.2467 - 975.0 / Math.max(40, T + 249.0));
+    case 'MCB':
+      return Math.pow(10, 4.11653 - 1435.675 / Math.max(50, T + 217.52));
+    case 'Aniline':
+      return Math.pow(10, 4.3454 - 1661.86 / Math.max(50, T + 199.1));
+    case 'MDA':
+      return Math.pow(10, 4.5781 - 2620.0 / Math.max(50, T + 175.0));
+    case 'MDI':
+      return Math.pow(10, 6.490 - 3041.0 / Math.max(60, T + 155.0));
+    case 'PMDI':
+      return Math.pow(10, 5.804 - 3450.0 / Math.max(60, T + 160.0));
     case 'CUSTOM_1':
       return Math.pow(10, 4.5461 - 1351.56 / Math.max(50, T + 179.81));
     case 'CUSTOM_2':

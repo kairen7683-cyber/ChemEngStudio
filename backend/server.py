@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -227,6 +228,12 @@ def init_db() -> str:
         """
     )
 
+    try:
+        conn.execute("ALTER TABLE users ADD COLUMN allowed_plants TEXT DEFAULT NULL")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
     defaults = {
         "registration_mode": "invite_only",
         "daily_ai_limit": "30",
@@ -313,13 +320,67 @@ def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
+def parse_allowed_plants(raw: Any) -> Optional[list[str]]:
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        items = [str(x).strip() for x in raw if isinstance(x, str) and str(x).strip()]
+    elif isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return None
+        try:
+            parsed = json.loads(s)
+        except Exception:
+            return None
+        if not isinstance(parsed, list):
+            return None
+        items = [str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()]
+    else:
+        return None
+    if not items or "*" in items:
+        return None
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped or None
+
+
+def normalize_allowed_plants_for_db(plants: Optional[list[str]]) -> Optional[str]:
+    if plants is None:
+        return None
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for p in plants:
+        if not isinstance(p, str):
+            continue
+        val = p.strip()
+        if not val:
+            continue
+        if val == "*":
+            return None
+        if not re.match(r"^[a-zA-Z0-9_-]{1,64}$", val):
+            raise HTTPException(status_code=400, detail=f"유효하지 않은 공장 ID입니다: {val}")
+        if val not in seen:
+            seen.add(val)
+            cleaned.append(val)
+    if not cleaned:
+        return None
+    return json.dumps(cleaned, ensure_ascii=False)
+
+
 def serialize_user(row: sqlite3.Row) -> dict[str, Any]:
+    raw_allowed = row["allowed_plants"] if "allowed_plants" in row.keys() else None
     return {
         "id": row["id"],
         "username": row["username"],
         "display_name": row["display_name"],
         "role": row["role"],
         "status": row["status"],
+        "allowed_plants": parse_allowed_plants(raw_allowed),
         "daily_ai_count": row["daily_ai_count"],
         "last_login_at": row["last_login_at"],
         "created_at": row["created_at"],
@@ -442,6 +503,7 @@ class AdminCreateUserPayload(BaseModel):
     display_name: str = ""
     password: str
     role: Literal["admin", "user"] = "user"
+    allowed_plants: Optional[list[str]] = None
 
 
 class AdminUpdateUserPayload(BaseModel):
@@ -449,6 +511,7 @@ class AdminUpdateUserPayload(BaseModel):
     role: Optional[Literal["admin", "user"]] = None
     new_password: Optional[str] = None
     reset_workspace: Optional[bool] = None
+    allowed_plants: Optional[list[str]] = None
 
 
 class AdminCreateInvitePayload(BaseModel):
@@ -487,6 +550,11 @@ def api_auth_status(request: Request):
             "has_server_gemini": has_gemini,
             "local_dev_bypass": False,
         }
+
+
+@app.get("/api/auth/me")
+def api_auth_me(user: sqlite3.Row = Depends(require_active_user)):
+    return {"user": serialize_user(user)}
 
 
 @app.post("/api/auth/login")
@@ -829,6 +897,32 @@ def api_admin_settings(
     return {"ok": True}
 
 
+@app.get("/api/admin/users")
+def api_admin_list_users(_admin: Optional[sqlite3.Row] = Depends(require_admin_or_master)):
+    with get_db() as conn:
+        user_rows = conn.execute(
+            """
+            SELECT u.*,
+                   COUNT(w.workspace_key) AS ws_count,
+                   COALESCE(SUM(LENGTH(w.payload_json)), 0) AS ws_bytes
+            FROM users u
+            LEFT JOIN user_workspaces w ON w.user_id = u.id
+            GROUP BY u.id
+            ORDER BY CASE u.role WHEN 'admin' THEN 0 ELSE 1 END, u.id ASC
+            """
+        ).fetchall()
+        return {
+            "users": [
+                {
+                    **serialize_user(r),
+                    "workspace_count": r["ws_count"],
+                    "workspace_bytes": r["ws_bytes"],
+                }
+                for r in user_rows
+            ]
+        }
+
+
 @app.post("/api/admin/users")
 def api_admin_create_user(
     payload: AdminCreateUserPayload,
@@ -840,18 +934,28 @@ def api_admin_create_user(
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="비밀번호는 최소 6자 이상이어야 합니다.")
     dname = payload.display_name.strip() or uname
+    allowed_db = (
+        None
+        if payload.role == "admin"
+        else normalize_allowed_plants_for_db(payload.allowed_plants)
+    )
     with get_db() as conn:
         exists = conn.execute("SELECT id FROM users WHERE username = ?", (uname,)).fetchone()
         if exists:
             raise HTTPException(status_code=409, detail="이미 존재하는 아이디입니다.")
         cur = conn.execute(
             """
-            INSERT INTO users(username, display_name, password_hash, role, status, created_at)
-            VALUES (?, ?, ?, ?, 'active', ?)
+            INSERT INTO users(username, display_name, password_hash, role, status, allowed_plants, created_at)
+            VALUES (?, ?, ?, ?, 'active', ?, ?)
             """,
-            (uname, dname, hash_password(payload.password), payload.role, iso_now()),
+            (uname, dname, hash_password(payload.password), payload.role, allowed_db, iso_now()),
         )
-        return {"ok": True, "user_id": cur.lastrowid}
+        created = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+        return {
+            "ok": True,
+            "user_id": cur.lastrowid,
+            "user": serialize_user(created) if created else None,
+        }
 
 
 @app.patch("/api/admin/users/{user_id}")
@@ -860,6 +964,7 @@ def api_admin_update_user(
     payload: AdminUpdateUserPayload,
     admin_row: Optional[sqlite3.Row] = Depends(require_admin_or_master),
 ):
+    fields_set = getattr(payload, "model_fields_set", set())
     with get_db() as conn:
         target = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         if not target:
@@ -872,6 +977,9 @@ def api_admin_update_user(
                 conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         if payload.role is not None:
             conn.execute("UPDATE users SET role = ? WHERE id = ?", (payload.role, user_id))
+        if "allowed_plants" in fields_set:
+            allowed_db = normalize_allowed_plants_for_db(payload.allowed_plants)
+            conn.execute("UPDATE users SET allowed_plants = ? WHERE id = ?", (allowed_db, user_id))
         if payload.new_password is not None:
             if len(payload.new_password) < 6:
                 raise HTTPException(status_code=400, detail="비밀번호는 6자 이상이어야 합니다.")
@@ -882,7 +990,8 @@ def api_admin_update_user(
             conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         if payload.reset_workspace:
             conn.execute("DELETE FROM user_workspaces WHERE user_id = ?", (user_id,))
-    return {"ok": True}
+        updated = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return {"ok": True, "user": serialize_user(updated) if updated else None}
 
 
 @app.delete("/api/admin/users/{user_id}")
