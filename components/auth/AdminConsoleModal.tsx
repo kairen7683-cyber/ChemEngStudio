@@ -16,6 +16,7 @@ import {
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import { PLANT_REGISTRY } from '@/lib/plantRegistry';
+import { UserOutlineIcon } from '@/components/ui/EngIcons';
 import { useAuth } from './AuthContext';
 
 const SELECTABLE_PLANTS = PLANT_REGISTRY.filter(p => !p.hiddenFromSelector && !p.isSandbox);
@@ -240,10 +241,13 @@ export function HeaderUserControls() {
           fontWeight: 700,
           cursor: 'pointer',
           whiteSpace: 'nowrap',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
         }}
       >
-        {user.role === 'admin' ? '👑 ' : '👤 '}
-        {user.display_name || user.username}
+        <UserOutlineIcon size={12} />
+        <span>{user.display_name || user.username}</span>
       </button>
 
       {user.role === 'admin' && (
@@ -614,7 +618,7 @@ export default function AdminConsoleModal() {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 15, fontWeight: 900 }}>
-              {accountModalTab === 'admin' ? '👑 관리자 콘솔' : '🔑 내 계정 및 동기화'}
+              {accountModalTab === 'admin' ? '관리자 콘솔' : '내 계정 및 동기화'}
             </span>
             <div style={{ display: 'inline-flex', gap: 4 }}>
               <button
@@ -648,7 +652,7 @@ export default function AdminConsoleModal() {
                     cursor: 'pointer',
                   }}
                 >
-                  👑 시스템 관리자
+                  시스템 관리자
                 </button>
               )}
             </div>
@@ -803,7 +807,7 @@ export default function AdminConsoleModal() {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    📋 비번 복사
+                    비번 복사
                   </button>
                 </div>
                 <button
@@ -1108,7 +1112,7 @@ export default function AdminConsoleModal() {
                           cursor: 'pointer',
                         }}
                       >
-                        📋 비번 복사
+                        비번 복사
                       </button>
                       <button
                         type="button"
@@ -1132,7 +1136,7 @@ export default function AdminConsoleModal() {
                           cursor: 'pointer',
                         }}
                       >
-                        📋 아이디+비번 함께 복사
+                        아이디+비번 함께 복사
                       </button>
                       <button
                         type="button"
@@ -1222,7 +1226,7 @@ export default function AdminConsoleModal() {
                     title="입력된 비밀번호 복사"
                     style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #93C5FD', background: '#EFF6FF', color: '#1D4ED8', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}
                   >
-                    📋 비번 복사
+                    비번 복사
                   </button>
                   <select
                     value={newUserRole}
@@ -1281,7 +1285,7 @@ export default function AdminConsoleModal() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A' }}>
-                        🏭 [{editingPlantsUser.username}] ({editingPlantsUser.display_name}) 공장 접근 권한 수정
+                        [{editingPlantsUser.username}] ({editingPlantsUser.display_name}) 공장 접근 권한 수정
                       </span>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button
@@ -1360,7 +1364,9 @@ export default function AdminConsoleModal() {
                             <b>{u.username}</b> <span style={{ color: '#64748B' }}>({u.display_name})</span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                            {u.role === 'admin' ? '👑 관리자' : '사용자'}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              {u.role === 'admin' ? <><UserOutlineIcon size={11} /> 관리자</> : '사용자'}
+                            </span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 3, justifyContent: 'center' }}>

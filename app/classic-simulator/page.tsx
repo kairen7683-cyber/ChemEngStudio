@@ -52,6 +52,16 @@ import {
   getPlantSheetsByGroup,
 } from '@/lib/classicPlantPresets';
 import {
+  SaveArchiveIcon,
+  DownloadFileIcon,
+  PfdSchematicIcon,
+  TableGridIcon,
+  SlidersParamIcon,
+  VesselEquipIcon,
+  StreamFlowIcon,
+  FlaskCompIcon,
+} from '@/components/ui/EngIcons';
+import {
   consumeUiSwitchHandoff,
   saveUiSwitchHandoff,
   setPreferredSimUiMode,
@@ -1585,9 +1595,12 @@ export default function ClassicSimulatorPage() {
               borderRadius: 4,
               border: '1px solid #CBD5E1',
               background: '#FFFFFF',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
             }}
           >
-            💾 저장·열기
+            <SaveArchiveIcon size={12} /> 저장·열기
           </button>
         </div>
       )}
@@ -1612,8 +1625,8 @@ export default function ClassicSimulatorPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
-                💾 현재 케이스 저장
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <SaveArchiveIcon size={12} /> 현재 케이스 저장
               </span>
               {activeMatchedClassicProj && (
                 <button
@@ -1685,9 +1698,12 @@ export default function ClassicSimulatorPage() {
                   background: '#FFFFFF',
                   color: '#1E293B',
                   cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
                 }}
               >
-                ⬇ JSON 파일 내보내기
+                <DownloadFileIcon size={12} /> JSON 파일 내보내기
               </button>
               <button
                 type="button"
@@ -1805,16 +1821,18 @@ export default function ClassicSimulatorPage() {
                     }}
                     onClick={() => handleOpenMdiTab(tab)}
                   >
-                    <span>
-                      {tab.kind === 'pfd'
-                        ? '📐'
-                        : tab.kind === 'summary'
-                          ? '📊'
-                          : tab.kind === 'control'
-                            ? '🖥'
-                            : tab.kind === 'block'
-                              ? '⚙'
-                              : '💧'}
+                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                      {tab.kind === 'pfd' ? (
+                        <PfdSchematicIcon size={12} />
+                      ) : tab.kind === 'summary' ? (
+                        <TableGridIcon size={12} />
+                      ) : tab.kind === 'control' ? (
+                        <SlidersParamIcon size={12} />
+                      ) : tab.kind === 'block' ? (
+                        <VesselEquipIcon size={12} />
+                      ) : (
+                        <StreamFlowIcon size={12} />
+                      )}
                     </span>
                     <span>{tab.title}</span>
                     {closable && (
@@ -2255,9 +2273,12 @@ export default function ClassicSimulatorPage() {
                       background: '#1D4ED8',
                       color: '#FFFFFF',
                       cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
                     }}
                   >
-                    🧪 전체 설정 창 열기
+                    <FlaskCompIcon size={12} /> 전체 설정 창 열기
                   </button>
                 </div>
                 <div style={{ fontSize: 10.5, color: '#475569', lineHeight: 1.45 }}>
@@ -2266,7 +2287,7 @@ export default function ClassicSimulatorPage() {
 
                 {/* 공장 프리셋 빠른 가져오기 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 7, borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>🏭 공장별 성분 가져오기</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>공장별 성분 가져오기</span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
                     {PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)).map(p => (
                       <button
@@ -3178,13 +3199,17 @@ export default function ClassicSimulatorPage() {
                         fontSize: 11,
                         fontWeight: 800,
                         borderRadius: 5,
-                        border: '1px solid #B91C1C',
-                        background: '#B91C1C',
+                        border: '1px solid #1E293B',
+                        background: '#1E293B',
                         color: '#FFFFFF',
                         cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
                       }}
                     >
-                      ⚗️ 반응기 정밀설계 워크벤치 열기 →
+                      <FlaskCompIcon size={12} /> 반응기 정밀설계 워크벤치 열기 →
                     </button>
                     <label style={{ fontSize: 10, color: '#475569' }}>
                       운전 온도 (°C)

@@ -1,5 +1,15 @@
 'use client';
 
+import {
+  FlaskCompIcon,
+  SaveArchiveIcon,
+  DownloadFileIcon,
+  PlusSquareIcon,
+  SpecControlIcon,
+  FitFrameIcon,
+  PlayTriangleIcon,
+} from '@/components/ui/EngIcons';
+
 import React from 'react';
 import type { ClassicPlantPresetOption } from '@/lib/classicPlantPresets';
 import type { SimPropertyMethod } from '@/lib/calculations/componentCatalog';
@@ -211,7 +221,10 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
                 whiteSpace: 'nowrap',
               }}
             >
-              {isSimRunning ? '⏳ Running...' : '▶ Run (F5)'}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <PlayTriangleIcon size={11} />
+                {isSimRunning ? 'Running...' : 'Run (F5)'}
+              </span>
             </button>
 
             <button
@@ -229,8 +242,8 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
 
             <span style={{ width: 1, height: 18, background: '#CBD5E1', flexShrink: 0 }} />
 
-            <button type="button" onClick={onOpenCompSetup} style={RIBBON_BTN}>
-              🧪 Components
+            <button type="button" onClick={onOpenCompSetup} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <FlaskCompIcon size={13} /> Components
             </button>
 
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
@@ -279,7 +292,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
                 }}
               >
                 <option value="" disabled>
-                  🏭 상용 공정 수렴 케이스 불러오기...
+                  예제 공정 수렴 케이스 불러오기...
                 </option>
                 {groupedPresets.map(g => (
                   <optgroup key={g.group} label={g.label}>
@@ -313,7 +326,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
               }}
             >
               <option value="" disabled>
-                📘 기초 예제...
+                기초 예제...
               </option>
               {examples.map(ex => (
                 <option key={ex.id} value={ex.id}>
@@ -392,17 +405,17 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
 
         {ribbonTab === 'flowsheet' && (
           <>
-            <button type="button" onClick={onOpenSaveBar} style={RIBBON_BTN}>
-              💾 Save Case
+            <button type="button" onClick={onOpenSaveBar} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <SaveArchiveIcon size={13} /> Save Case
             </button>
-            <button type="button" onClick={onExportJson} style={RIBBON_BTN}>
-              ⬇ Export JSON
+            <button type="button" onClick={onExportJson} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <DownloadFileIcon size={13} /> Export JSON
             </button>
-            <button type="button" onClick={onClearBlank} style={RIBBON_BTN}>
-              📄 New Blank Flowsheet
+            <button type="button" onClick={onClearBlank} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <PlusSquareIcon size={13} /> New Blank Flowsheet
             </button>
-            <button type="button" onClick={onFitView} style={RIBBON_BTN}>
-              ⤢ Align / Fit
+            <button type="button" onClick={onFitView} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <FitFrameIcon size={13} /> Align / Fit
             </button>
           </>
         )}
@@ -429,8 +442,8 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
                 <option value="direct">Direct Substitution</option>
               </select>
             </label>
-            <button type="button" onClick={onOpenOptModal} style={RIBBON_BTN}>
-              🎯 Design Spec / Sensitivity / Tear Options
+            <button type="button" onClick={onOpenOptModal} style={{ ...RIBBON_BTN, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <SpecControlIcon size={13} /> Design Spec / Sensitivity / Tear Options
             </button>
             <button
               type="button"

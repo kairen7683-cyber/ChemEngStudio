@@ -99,7 +99,7 @@ export default function PlantUnitCopyBox({
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-          📋 예제 장치 조건 불러오기
+          예제 장치 조건 불러오기
         </span>
         <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 600 }}>
           {visibleCount}건

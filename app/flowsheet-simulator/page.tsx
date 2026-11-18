@@ -87,6 +87,23 @@ import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import {
+  PfdSchematicIcon,
+  StreamFlowIcon,
+  VesselEquipIcon,
+  FitFrameIcon,
+  PlusSquareIcon,
+  FlaskCompIcon,
+  SpecControlIcon,
+  SaveArchiveIcon,
+  ColumnInternalIcon,
+  HexCircleIcon,
+  SlidersParamIcon,
+  SubprocessTreeIcon,
+  DownloadFileIcon,
+  TableGridIcon,
+  CardsStackIcon,
+} from '@/components/ui/EngIcons';
+import {
   consumeUiSwitchHandoff,
   saveUiSwitchHandoff,
   setPreferredSimUiMode,
@@ -831,7 +848,9 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
             textDecoration: 'underline',
           }}
         >
-          🔍 {data.subSheetBadge || '세부공정'}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+            <SubprocessTreeIcon size={10} /> {data.subSheetBadge || '세부공정'}
+          </span>
         </button>
       )}
 
@@ -1246,7 +1265,7 @@ const PRESETS: PresetScenario[] = [
   },
   {
     id: 'catholyte_recycle_wegstein',
-    btnLabel: '▶ 예제 3: ♻ 음극액 순환루프(Recycle) · 50% 농축 (Wegstein)',
+    btnLabel: '▶ 예제 3: 음극액 순환루프(Recycle) · 50% 농축 (Wegstein)',
     title: 'SP-220(78% 순환 피드백) → M-210 → E-210 → EL-200 전해조 → D-220 → SP-220 폐루프 수렴 + EV-300 50 wt% 가성소다 농축 (정밀 열역학 활성)',
     nodes: [
       {
@@ -1407,7 +1426,7 @@ const PRESETS: PresetScenario[] = [
   // ── 5) ECH 진공 다단 정밀증류 2탑 테스트 (NRTL · 경질 DCP 제거 + 99.9% ECH 제품탑) ──
   {
     id: 'ech_vacuum_distillation',
-    btnLabel: '🧪 [다단증류 1] ECH 진공 정밀증류 2탑 (NRTL · DCP ppm 제어)',
+    btnLabel: '[다단증류 1] ECH 진공 정밀증류 2탑 (NRTL · DCP ppm 제어)',
     title: '글리세린 기반 ECH 진공 다단 정밀증류 계통 (경질 DCP 제거탑 + 99.9% 고순도 ECH 제품탑)',
     nodes: [
       {
@@ -1516,7 +1535,7 @@ const PRESETS: PresetScenario[] = [
   // ── 6) 폐염산 압력변동 공비증류 (PSD 진공+가압 2탑 순환루프) 테스트 ──
   {
     id: 'hcl_psd_azeotropic',
-    btnLabel: '♻️ [다단증류 2] 폐염산 진공·가압 압력변동 공비증류 (PSD 루프)',
+    btnLabel: '[다단증류 2] 폐염산 진공·가압 압력변동 공비증류 (PSD 루프)',
     title: '15 wt% 희박 폐염산 진공(0.15 barA)·가압(7.0 barA) 압력변동 공비증류(PSD) 회수 시뮬레이션',
     nodes: [
       {
@@ -2053,7 +2072,7 @@ export function FlowsheetWorkspace({
       master: {
         id: 'master',
         sectionCode: 'NEW-PLANT',
-        shortTabLabel: '🏗 신규공장 빈 캔버스',
+        shortTabLabel: '기본 시뮬레이션 시트',
         title: '공정 시뮬레이터',
         subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
         parentMasterNodeIds: [],
@@ -2275,7 +2294,7 @@ export function FlowsheetWorkspace({
     window.addEventListener('mouseup', onUp);
   }, []);
 
-  // 전체 계산 장치 일괄 모드 전환 (⚡ 간편 발란스 vs 🔬 정밀 열역학)
+  // 전체 계산 장치 일괄 모드 전환 (간편 발란스 vs 정밀 열역학)
   const setAllUnitsCalcMode = useCallback((mode: UnitCalcMode) => {
     setSimDefs(prev =>
       prev.map(d => {
@@ -2594,7 +2613,7 @@ export function FlowsheetWorkspace({
       const customSubSheet: SheetRuntimeData = {
         id: newSubId,
         sectionCode: nodeDef.tag,
-        shortTabLabel: `🔧 ${nodeDef.tag} 세부`,
+        shortTabLabel: `${nodeDef.tag} 세부공정`,
         title: `${nodeDef.tag} (${nodeDef.name}) 세부 공정 시뮬레이션`,
         subtitle: '상위 마스터 도면에서 전달된 경계 유입 유량을 기반으로 내부 장치를 자유롭게 구성하세요.',
         parentMasterNodeIds: [nodeDef.id],
@@ -2748,7 +2767,7 @@ export function FlowsheetWorkspace({
                 master: {
                   id: 'master',
                   sectionCode: 'NEW-PLANT',
-                  shortTabLabel: '🏗 신규공장 빈 캔버스',
+                  shortTabLabel: '기본 시뮬레이션 시트',
                   title: '공정 시뮬레이터',
                   subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
                   parentMasterNodeIds: [],
@@ -2821,7 +2840,7 @@ export function FlowsheetWorkspace({
               master: {
                 id: 'master',
                 sectionCode: 'NEW-PLANT',
-                shortTabLabel: '🏗 신규공장 빈 캔버스',
+                shortTabLabel: '기본 시뮬레이션 시트',
                 title: '공정 시뮬레이터',
                 subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
                 parentMasterNodeIds: [],
@@ -4322,7 +4341,7 @@ export function FlowsheetWorkspace({
           : '#475569';
 
       const labelText = s
-        ? `${isTear ? '♻ 순환 ' : ''}[${e.streamNo}] ${s.totalMassKgH.toFixed(0)} kg/h · ${s.tempC}°C · ${s.pressKgcm2g}kG (${s.phase})`
+        ? `${isTear ? '[순환] ' : ''}[${e.streamNo}] ${s.totalMassKgH.toFixed(0)} kg/h · ${s.tempC}°C · ${s.pressKgcm2g}kG (${s.phase})`
         : `[${e.streamNo}]`;
 
       return {
@@ -5210,7 +5229,7 @@ export function FlowsheetWorkspace({
                 whiteSpace: 'nowrap',
               }}
             >
-              🗺️ 도면
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><PfdSchematicIcon size={12} /> 도면</span>
             </button>
             <button
               onClick={() => {
@@ -5231,7 +5250,7 @@ export function FlowsheetWorkspace({
                 whiteSpace: 'nowrap',
               }}
             >
-              📋 스트림({solved.streams.length})
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><StreamFlowIcon size={12} /> 스트림({solved.streams.length})</span>
             </button>
             <button
               onClick={() => {
@@ -5252,7 +5271,7 @@ export function FlowsheetWorkspace({
                 whiteSpace: 'nowrap',
               }}
             >
-              📊 장치({solved.units.length})
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><VesselEquipIcon size={12} /> 장치({solved.units.length})</span>
             </button>
           </div>
 
@@ -5276,7 +5295,7 @@ export function FlowsheetWorkspace({
             }}
           >
             {isSimRunning ? (
-              '⏳ 계산중...'
+              '계산중...'
             ) : (
               <>
                 <span>▶ RUN</span>
@@ -5312,7 +5331,7 @@ export function FlowsheetWorkspace({
                 flexShrink: 0,
               }}
             >
-              🎯 맞춤
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><FitFrameIcon size={12} /> 맞춤</span>
             </button>
           )}
 
@@ -5334,7 +5353,7 @@ export function FlowsheetWorkspace({
               flexShrink: 0,
             }}
           >
-            {paletteOpen ? '▼ 팔레트' : '➕ 장치추가'}
+            {paletteOpen ? '▼ 팔레트' : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><PlusSquareIcon size={11} /> 장치추가</span>}
           </button>
 
           {!isPlantSimMode && (
@@ -5357,7 +5376,7 @@ export function FlowsheetWorkspace({
               }}
             >
               <option value="" disabled>
-                📂 프리셋...
+                프리셋 불러오기...
               </option>
               <optgroup label="기본 자유설계">
                 {getAllPresets()
@@ -5445,10 +5464,10 @@ export function FlowsheetWorkspace({
               gap: 5,
             }}
           >
-            <span>🧪 성분 ({activeComponents.length}종)</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FlaskCompIcon size={11} /> 성분 ({activeComponents.length}종)</span>
             <span style={{ color: '#CBD5E1' }}>|</span>
             <span>
-              ⚗️{' '}
+              <SlidersParamIcon size={11} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }} />
               {propertyMethod === 'AUTO'
                 ? `자동(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})`
                 : propertyMethod}{' '}
@@ -5475,7 +5494,7 @@ export function FlowsheetWorkspace({
               gap: 4,
             }}
           >
-            <span>🎯 목표역산 · 민감도</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SpecControlIcon size={11} /> 목표역산 · 민감도</span>
             {designSpecs.filter(s => s.enabled).length > 0 && (
               <span
                 style={{
@@ -5507,7 +5526,7 @@ export function FlowsheetWorkspace({
               flexShrink: 0,
             }}
           >
-            💾 저장
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={11} /> 저장</span>
           </button>
         </div>
       ) : (
@@ -5646,7 +5665,7 @@ export function FlowsheetWorkspace({
                   }}
                 >
                   {isSimRunning ? (
-                    '⏳ 계산 중...'
+                    '계산 중...'
                   ) : (
                     <>
                       <span>▶ RUN (F5)</span>
@@ -5838,7 +5857,7 @@ export function FlowsheetWorkspace({
               whiteSpace: 'nowrap',
             }}
           >
-            {paletteOpen ? '▼ 팔레트' : '➕ 팔레트'}
+            {paletteOpen ? '▼ 팔레트' : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><PlusSquareIcon size={11} /> 팔레트</span>}
           </button>
 
           {isPlantSimMode ? (
@@ -5996,10 +6015,10 @@ export function FlowsheetWorkspace({
               gap: 5,
             }}
           >
-            <span>🧪 성분 ({activeComponents.length}종)</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FlaskCompIcon size={11} /> 성분 ({activeComponents.length}종)</span>
             <span style={{ color: '#CBD5E1' }}>|</span>
             <span>
-              ⚗️{' '}
+              <SlidersParamIcon size={11} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }} />
               {propertyMethod === 'AUTO'
                 ? `자동(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})`
                 : propertyMethod}{' '}
@@ -6026,7 +6045,7 @@ export function FlowsheetWorkspace({
               gap: 4,
             }}
           >
-            <span>🎯 목표역산 · 민감도</span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SpecControlIcon size={11} /> 목표역산 · 민감도</span>
             {designSpecs.filter(s => s.enabled).length > 0 && (
               <span
                 style={{
@@ -6057,7 +6076,7 @@ export function FlowsheetWorkspace({
               whiteSpace: 'nowrap',
             }}
           >
-            💾 저장 {showStorageBar ? '▲' : '▼'}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={12} /> 저장 {showStorageBar ? '▲' : '▼'}</span>
           </button>
 
           <button
@@ -6147,7 +6166,7 @@ export function FlowsheetWorkspace({
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
-                💾 현재 케이스 저장
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SaveArchiveIcon size={13} /> 현재 케이스 저장</span>
               </span>
               {activeMatchedProj && (
                 <button
@@ -6226,7 +6245,7 @@ export function FlowsheetWorkspace({
                   whiteSpace: 'nowrap',
                 }}
               >
-                ⬇ JSON 파일 내보내기
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> JSON 파일 내보내기</span>
               </button>
               <button
                 type="button"
@@ -6486,14 +6505,14 @@ export function FlowsheetWorkspace({
                             fontSize: 10.5,
                             fontWeight: 800,
                             borderRadius: 7,
-                            border: '1px solid #4338CA',
-                            background: '#EEF2FF',
-                            color: '#312E81',
+                            border: '1px solid #94A3B8',
+                            background: '#FFFFFF',
+                            color: '#0F172A',
                             cursor: 'pointer',
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          🔍 세부공정
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><SubprocessTreeIcon size={11} /> 세부공정</span>
                         </button>
                       )}
                       {selectedDef?.unitType === 'distillation' && (
@@ -6507,14 +6526,14 @@ export function FlowsheetWorkspace({
                             fontSize: 10.5,
                             fontWeight: 800,
                             borderRadius: 7,
-                            border: '1px solid #1D4ED8',
-                            background: '#EFF6FF',
-                            color: '#1E3A8A',
+                            border: '1px solid #94A3B8',
+                            background: '#FFFFFF',
+                            color: '#0F172A',
                             cursor: 'pointer',
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          🗼 컬럼설계
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><ColumnInternalIcon size={11} /> 컬럼설계</span>
                         </button>
                       )}
                       {(selectedDef?.unitType === 'hex' ||
@@ -6530,14 +6549,14 @@ export function FlowsheetWorkspace({
                             fontSize: 10.5,
                             fontWeight: 800,
                             borderRadius: 7,
-                            border: '1px solid #0F766E',
-                            background: '#F0FDFA',
-                            color: '#115E59',
+                            border: '1px solid #94A3B8',
+                            background: '#FFFFFF',
+                            color: '#0F172A',
                             cursor: 'pointer',
                             whiteSpace: 'nowrap',
                           }}
                         >
-                          🔥 열교환설계
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><HexCircleIcon size={11} /> 열교환설계</span>
                         </button>
                       )}
                       <button
@@ -6554,7 +6573,7 @@ export function FlowsheetWorkspace({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        ⚙ 조건 ▲
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SlidersParamIcon size={11} /> 조건 ▲</span>
                       </button>
                       <button
                         onClick={() => {
@@ -6942,7 +6961,7 @@ export function FlowsheetWorkspace({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        📱 카드형
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><CardsStackIcon size={11} /> 카드형</span>
                       </button>
                       <button
                         onClick={() => setMobileCardView(false)}
@@ -6958,7 +6977,7 @@ export function FlowsheetWorkspace({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        📊 표 보기
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><TableGridIcon size={11} /> 표 보기</span>
                       </button>
                     </div>
                   </div>
@@ -7076,7 +7095,7 @@ export function FlowsheetWorkspace({
                                     flexShrink: 0,
                                   }}
                                 >
-                                  ⚙ 배관속성
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><StreamFlowIcon size={11} /> 배관속성</span>
                                 </button>
                               </div>
 
@@ -7284,7 +7303,7 @@ export function FlowsheetWorkspace({
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    🗼 내장 컬럼설계
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><ColumnInternalIcon size={12} /> 내장 컬럼설계</span>
                                   </button>
                                 )}
                                 {(nDef?.unitType === 'hex' ||
@@ -7308,7 +7327,7 @@ export function FlowsheetWorkspace({
                                       cursor: 'pointer',
                                     }}
                                   >
-                                    🔥 내장 열교환설계
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><HexCircleIcon size={12} /> 내장 열교환설계</span>
                                   </button>
                                 )}
                                 <button
@@ -7328,7 +7347,7 @@ export function FlowsheetWorkspace({
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  ⚙ 운전조건·속성
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SlidersParamIcon size={11} /> 운전조건·속성</span>
                                 </button>
                               </div>
                             </div>
@@ -7394,7 +7413,7 @@ export function FlowsheetWorkspace({
                             color: u.isVisualOnly ? '#64748B' : u.calcMode === 'rigorous' ? '#5B21B6' : '#0F5338',
                           }}
                         >
-                          {u.isVisualOnly ? '🖼️ 도면' : u.calcMode === 'rigorous' ? '🔬 정밀 열역학' : '⚡ 간편 발란스'}
+                          {u.isVisualOnly ? '도면' : u.calcMode === 'rigorous' ? '정밀 열역학' : '간편 발란스'}
                         </td>
                         <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#0369A1' }}>
                           {u.detectedFluidLabel}
@@ -7492,10 +7511,10 @@ export function FlowsheetWorkspace({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 900, color: '#1A2F44', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedDef
-                      ? `⚙ [${selectedDef.tag}] ${selectedDef.name}`
+                      ? `[${selectedDef.tag}] ${selectedDef.name}`
                       : selectedEdgeDef
-                        ? `🔗 [${selectedEdgeDef.streamNo}] 배관 속성`
-                        : '⚙ 장치 · 배관 운전조건 시트'}
+                        ? `[${selectedEdgeDef.streamNo}] 배관 속성`
+                        : '장치 · 배관 운전조건 시트'}
                   </span>
                   <button
                     onClick={() => setInspectorOpen(false)}
@@ -7522,7 +7541,7 @@ export function FlowsheetWorkspace({
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
-                  🔗 선택 배관 [{selectedEdgeDef.streamNo}]
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><StreamFlowIcon size={12} /> 선택 배관 [{selectedEdgeDef.streamNo}]</span>
                 </span>
                 <button
                   onClick={() => deleteEdgeById(selectedEdgeDef.id)}
@@ -7555,7 +7574,7 @@ export function FlowsheetWorkspace({
                       fontWeight: 800,
                     }}
                   >
-                    ♻ 순환 절단 배관 (Tear Stream) · Bounded Wegstein 다변수 가속 수렴 적용
+                    순환 절단 배관 (Tear Stream) · Bounded Wegstein 다변수 가속 수렴 적용
                   </div>
                 )}
                 <div style={{ fontWeight: 800, color: '#0F172A', marginBottom: 4 }}>
@@ -7610,10 +7629,10 @@ export function FlowsheetWorkspace({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
                   {isVisualOnlyUnit(selectedDef.unitType)
-                    ? '🖼️ 도면 장치 속성'
+                    ? '도면 장치 속성'
                     : selectedDef.unitType === 'feed' || selectedDef.unitType === 'product'
                       ? '➔ 물질 스트림 조건 · 발란스'
-                      : '⚡ 장치 운전조건 · 발란스'}
+                      : '장치 운전조건 · 발란스'}
                 </span>
                 <button
                   onClick={deleteSelectedNode}
@@ -7684,7 +7703,7 @@ export function FlowsheetWorkspace({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {isSimRunning ? '⏳ 계산 중...' : '▶ RUN 실행'}
+                  {isSimRunning ? '계산 중...' : '▶ RUN 실행'}
                 </button>
               </div>
 
@@ -7722,7 +7741,7 @@ export function FlowsheetWorkspace({
                       }}
                       title="전·후단 연결 장치가 없어도 미연결 입·출구 포트에 물질 유입/유출 스트림을 자동 연결하여 단독 시뮬레이션을 즉시 실행합니다."
                     >
-                      ⚡ 입·출구 스트림 자동생성
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><StreamFlowIcon size={12} /> 입·출구 스트림 자동생성</span>
                     </button>
                   );
                 })()}
@@ -7738,7 +7757,7 @@ export function FlowsheetWorkspace({
                   }}
                 >
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>
-                    🧪 유입 배관 물질 자동 인식
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FlaskCompIcon size={12} /> 유입 배관 물질 자동 인식</span>
                   </div>
                   <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
                     {selectedUnitRes.detectedFluidLabel}
@@ -7869,7 +7888,7 @@ export function FlowsheetWorkspace({
                   }}
                 >
                   <div style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A' }}>
-                    🏗️ 계층형 세부 공정 패키지 블록 ({selectedDef.subSheetBadge || '내부 상세 도면'})
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SubprocessTreeIcon size={12} /> 계층형 세부 공정 패키지 블록 ({selectedDef.subSheetBadge || '내부 상세 도면'})</span>
                   </div>
                   <div style={{ fontSize: 10.5, color: '#475569', lineHeight: 1.4 }}>
                     캔버스에서 이 블록을 <b>더블클릭</b>하거나 아래 버튼을 누르면 내부 단위기기 시뮬레이션 화면으로 즉시 이동합니다.
@@ -7888,7 +7907,7 @@ export function FlowsheetWorkspace({
                       cursor: 'pointer',
                     }}
                   >
-                    🔍 내부 세부 공정 시뮬레이션 열기 →
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SubprocessTreeIcon size={12} /> 내부 세부 공정 시뮬레이션 열기 →</span>
                   </button>
                 </div>
               )}
@@ -7912,7 +7931,7 @@ export function FlowsheetWorkspace({
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A' }}>
-                      📐 단위 장치 상세설계 연동 (유체조건 자동전달)
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><VesselEquipIcon size={12} /> 단위 장치 상세설계 연동 (유체조건 자동전달)</span>
                     </span>
                     {selectedUnitRes && selectedUnitRes.inletMassKgH > 0 && (
                       <span
@@ -7998,7 +8017,7 @@ export function FlowsheetWorkspace({
                       cursor: 'pointer',
                     }}
                   >
-                    ➕ 이 블록의 내부 세부 플로우시트 새로 만들기
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><PlusSquareIcon size={12} /> 이 블록의 내부 세부 플로우시트 새로 만들기</span>
                   </button>
                 )}
 
@@ -8015,13 +8034,13 @@ export function FlowsheetWorkspace({
                     lineHeight: 1.45,
                   }}
                 >
-                  <b style={{ color: '#0F172A' }}>🔗 상위 풀패키지 연동 경계 스트림</b>
+                  <b style={{ color: '#0F172A', display: 'inline-flex', alignItems: 'center', gap: 4 }}><StreamFlowIcon size={12} /> 상위 풀패키지 연동 경계 스트림</b>
                   <br />
                   상위 전공정 마스터 블록(<code>{selectedDef.params.boundaryFromMasterNodeId}</code>)의 유입 유량·온도·압력이 자동 전달됩니다. 아래 값을 직접 수정하여 단독 민감도 테스트를 수행할 수도 있습니다.
                 </div>
               )}
 
-              {/* ── 장치별 2단 해석 모드 전환 스위치 (⚡ 간편 발란스 ↔ 🔬 정밀 열역학; 다단 정밀증류탑은 상시 엄밀 MESH 수행) ── */}
+              {/* ── 장치별 2단 해석 모드 전환 스위치 (간편 발란스 ↔ 정밀 열역학; 다단 정밀증류탑은 상시 엄밀 MESH 수행) ── */}
               {!isVisualOnlyUnit(selectedDef.unitType) &&
                 selectedDef.unitType !== 'distillation' &&
                 selectedDef.unitType !== 'feed' &&
@@ -8057,7 +8076,7 @@ export function FlowsheetWorkspace({
                           color: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#FFFFFF' : '#1E293B',
                         }}
                       >
-                        ⚡ 간편 발란스
+                        간편 발란스
                       </button>
                       <button
                         type="button"
@@ -8073,7 +8092,7 @@ export function FlowsheetWorkspace({
                           color: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#FFFFFF' : '#1E293B',
                         }}
                       >
-                        🔬 정밀 열역학
+                        정밀 열역학
                       </button>
                     </div>
                     <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.35 }}>
@@ -8196,7 +8215,7 @@ export function FlowsheetWorkspace({
               {/* ── B) 이온교환막 전해조 (Electrolyzer) ── */}
               {selectedDef.unitType === 'electrolyzer' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>⚡ 전해조 양극·음극 동시 수지</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><VesselEquipIcon size={12} /> 전해조 양극·음극 동시 수지</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전 전류 (kA)</label>
@@ -8226,7 +8245,7 @@ export function FlowsheetWorkspace({
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div style={{ marginTop: 4, paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        🔬 셀당 이온교환막 유효면적 (m², 전류밀도·셀전압 자동 산출)
+                        셀당 이온교환막 유효면적 (m², 전류밀도·셀전압 자동 산출)
                       </label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-ememb`}
@@ -8255,10 +8274,11 @@ export function FlowsheetWorkspace({
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
+                    <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <HexCircleIcon size={12} />
                       {selectedDef.unitType === 'liquefier'
-                        ? '❄️ 냉매 액화기 운전 · 열수지'
-                        : '🌡️ 열교환기 · 냉각기 운전 · 열수지'}
+                        ? '냉매 액화기 운전 · 열수지'
+                        : '열교환기 · 냉각기 운전 · 열수지'}
                     </div>
                     {selectedDef.params.overallU ? (
                       <span
@@ -8362,7 +8382,7 @@ export function FlowsheetWorkspace({
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div style={{ paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        🔬 총괄 오염계수 R_f (m²·h·°C/kcal · 3-Zone 전열면적 산출)
+                        총괄 오염계수 R_f (m²·h·°C/kcal · 3-Zone 전열면적 산출)
                       </label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-rfoul`}
@@ -8407,7 +8427,7 @@ export function FlowsheetWorkspace({
                         cursor: 'pointer',
                       }}
                     >
-                      🌡️ ① 열수지 · 상변화 T-Q 프로파일 열기 →
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><HexCircleIcon size={12} /> ① 열수지 · 상변화 T-Q 프로파일 열기 →</span>
                     </button>
                     <button
                       type="button"
@@ -8427,7 +8447,7 @@ export function FlowsheetWorkspace({
                         cursor: 'pointer',
                       }}
                     >
-                      🏗️ ② TEMA/판형 사이징 · 수력학 · 도면 설계 →
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><PfdSchematicIcon size={12} /> ② TEMA/판형 사이징 · 수력학 · 도면 설계 →</span>
                     </button>
                   </div>
                 </div>
@@ -8437,7 +8457,7 @@ export function FlowsheetWorkspace({
               {(selectedDef.unitType === 'compressor' || selectedDef.unitType === 'pump') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
-                    {selectedDef.unitType === 'compressor' ? '🌀 가스 압축기 승압 · 이슬점 조건' : '💧 원심 펌프 토출 조건'}
+                    {selectedDef.unitType === 'compressor' ? '가스 압축기 승압 · 이슬점 조건' : '원심 펌프 토출 조건'}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
@@ -8479,7 +8499,7 @@ export function FlowsheetWorkspace({
                       {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                         <div style={{ paddingTop: 5, borderTop: '1px dashed #CBD5E1' }}>
                           <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                            🔬 다단 압축 단수 (1~4단 · PR-EOS Z 및 Cl₂ 발화한계 110°C 검토)
+                            다단 압축 단수 (1~4단 · PR-EOS Z 및 Cl₂ 발화한계 110°C 검토)
                           </label>
                           <BufferedNumberInput
                             syncKey={`${selectedDef.id}-cstg`}
@@ -8494,7 +8514,7 @@ export function FlowsheetWorkspace({
                         </div>
                       )}
                       <div style={{ fontSize: 10.5, color: '#475569', fontWeight: 700 }}>
-                        💡 토출압 {selectedDef.params.outletPressKgcm2g ?? 3.5} kG 기준 순수 Cl₂ 액화 이슬점:{' '}
+                        토출압 {selectedDef.params.outletPressKgcm2g ?? 3.5} kG 기준 순수 Cl₂ 액화 이슬점:{' '}
                         <b style={{ color: '#0F172A' }}>{cl2DewPointTempC((selectedDef.params.outletPressKgcm2g ?? 3.5) + 1.03323).toFixed(1)} °C</b>
                       </div>
                     </>
@@ -8547,7 +8567,7 @@ export function FlowsheetWorkspace({
                     {/* 1행: 헤더 + 수렴 배지 */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
                       <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', whiteSpace: 'nowrap' }}>
-                        🗼 정밀증류탑 워크벤치
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ColumnInternalIcon size={13} /> 정밀증류탑 워크벤치</span>
                       </span>
                       <span
                         style={{
@@ -8616,7 +8636,7 @@ export function FlowsheetWorkspace({
                                   cursor: 'pointer',
                                 }}
                               >
-                                🔧 {rem.label}
+                                {rem.label}
                               </button>
                             ))}
                           </div>
@@ -8681,7 +8701,7 @@ export function FlowsheetWorkspace({
                           )}
                           {dRes.decanterWaterDrawKgH > 0.005 && (
                             <div style={{ fontSize: 9.6, fontFamily: 'JetBrains Mono, monospace', color: '#475569', fontWeight: 800 }}>
-                              💧 탑정 디캔터 수층 분리 W: {dRes.decanterWaterDrawKgH.toFixed(2)} kg/h
+                              탑정 디캔터 수층 분리 W: {dRes.decanterWaterDrawKgH.toFixed(2)} kg/h
                             </div>
                           )}
                           {dRes.shortcutDesign && (
@@ -8723,7 +8743,7 @@ export function FlowsheetWorkspace({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        🔬 ① 시뮬레이션 · 프로파일 설정 →
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SlidersParamIcon size={12} /> ① 시뮬레이션 · 프로파일 설정 →</span>
                       </button>
                       <button
                         type="button"
@@ -8744,7 +8764,7 @@ export function FlowsheetWorkspace({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        🏗️ ② 컬럼 사이징 · 인터널 설계 →
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ColumnInternalIcon size={12} /> ② 컬럼 사이징 · 인터널 설계 →</span>
                       </button>
                     </div>
                   </div>
@@ -8754,7 +8774,7 @@ export function FlowsheetWorkspace({
               {/* ── E) 건조탑 · 흡수탑 (Absorber) ── */}
               {selectedDef.unitType === 'absorber' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🗼 건조탑 · 흡수탑 발란스</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><ColumnInternalIcon size={12} /> 건조탑 · 흡수탑 발란스</div>
                   <div>
                     <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>흡수탑 열역학 해석 알고리즘</label>
                     <select
@@ -8763,7 +8783,7 @@ export function FlowsheetWorkspace({
                       style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, background: '#FFFFFF', color: '#0F172A' }}
                     >
                       <option value="kremser">Kremser / 화학반응 흡수 수지 (기본 · 황산건조/가성제해)</option>
-                      <option value="rigorous_mesh">🔬 엄밀 다단 MESH 향류 기액평형 흡수·스트리퍼</option>
+                      <option value="rigorous_mesh">엄밀 다단 MESH 향류 기액평형 흡수·스트리퍼</option>
                     </select>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 7 }}>
@@ -8811,7 +8831,7 @@ export function FlowsheetWorkspace({
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        🔬 탑 압력강하 ΔP (kg/cm² · Kremser 흡수율 및 탑경 자동 산출)
+                        탑 압력강하 ΔP (kg/cm² · Kremser 흡수율 및 탑경 자동 산출)
                       </label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-absdp`}
@@ -8915,7 +8935,7 @@ export function FlowsheetWorkspace({
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>🔬 정밀 플래시 열조건</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>정밀 플래시 열조건</label>
                       <select
                         value={selectedDef.params.flashMode ?? 'isothermal'}
                         onChange={e => updateParam('flashMode', e.target.value)}
@@ -9095,7 +9115,7 @@ export function FlowsheetWorkspace({
 
               {selectedDef.unitType === 'extractor' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🧪 향류 다단 액-액 추출탑 (LLE)</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><FlaskCompIcon size={12} /> 향류 다단 액-액 추출탑 (LLE)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>이론 추출 단수 N (단)</label>
@@ -9155,7 +9175,7 @@ export function FlowsheetWorkspace({
 
               {selectedDef.unitType === 'valve' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🔻 단열 등엔탈피 감압·교축 밸브 (H_out = H_in)</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><StreamFlowIcon size={12} /> 단열 등엔탈피 감압·교축 밸브 (H_out = H_in)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>목표 후단 압력 P_out (kg/cm²G)</label>
@@ -9201,7 +9221,7 @@ export function FlowsheetWorkspace({
                       }}
                     >
                       <span style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A' }}>
-                        🔬 정밀 반응기 모델 활성 ({String(selectedDef.params.reactorConfig.model ?? 'stoic').toUpperCase()} · {selectedDef.params.reactorConfig.thermalMode ?? 'isothermal'})
+                        정밀 반응기 모델 활성 ({String(selectedDef.params.reactorConfig.model ?? 'stoic').toUpperCase()} · {selectedDef.params.reactorConfig.thermalMode ?? 'isothermal'})
                       </span>
                       <button
                         type="button"
@@ -9236,7 +9256,7 @@ export function FlowsheetWorkspace({
                       textAlign: 'center',
                     }}
                   >
-                    ⚗️ 반응기 정밀설계 워크벤치 열기 (STOIC·평형·Gibbs·CSTR·PFR) →
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FlaskCompIcon size={12} /> 반응기 정밀설계 워크벤치 열기 (STOIC·평형·Gibbs·CSTR·PFR) →</span>
                   </button>
                   <div>
                     <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응 모델</label>
@@ -9312,7 +9332,7 @@ export function FlowsheetWorkspace({
               {/* ── 실시간 계산 지표 결과 카드 ── */}
               {selectedUnitRes && (
                 <div style={{ marginTop: 2, padding: 10, background: '#F8FAFC', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 11.5 }}>
-                  <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>📊 실시간 계산 결과</div>
+                  <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}><TableGridIcon size={12} /> 실시간 계산 결과</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
                     <span>유입 / 유출 유량:</span>
                     <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>

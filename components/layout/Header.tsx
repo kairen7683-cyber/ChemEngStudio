@@ -29,6 +29,14 @@ import {
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+import {
+  CalcShortcutIcon,
+  DocSheetIcon,
+  FlaskCompIcon,
+  FolderOpenIcon,
+  PfdSchematicIcon,
+  PlusSquareIcon,
+} from '@/components/ui/EngIcons';
 
 function formatSavedDate(raw: string): string {
   if (!raw) return '';
@@ -598,7 +606,10 @@ export default function Header() {
                     fontWeight: 700,
                   }}
                 >
-                  <span>📝 기본 시뮬레이터 작업공간 (이어하기)</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <PfdSchematicIcon size={13} />
+                    <span>기본 시뮬레이터 작업공간 (이어하기)</span>
+                  </span>
                   {isSimulatorMode && !displayCaseTitle && (
                     <span style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A' }}>✓</span>
                   )}
@@ -624,7 +635,10 @@ export default function Header() {
                     fontWeight: 700,
                   }}
                 >
-                  <span>➕ 새 빈 케이스로 시작</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <PlusSquareIcon size={13} />
+                    <span>새 빈 케이스로 시작</span>
+                  </span>
                 </button>
 
                 <button
@@ -647,7 +661,10 @@ export default function Header() {
                     fontWeight: 700,
                   }}
                 >
-                  <span>📂 JSON 케이스 파일 불러오기...</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <FolderOpenIcon size={13} />
+                    <span>JSON 케이스 파일 불러오기...</span>
+                  </span>
                 </button>
                 <input
                   ref={jsonImportRef}
@@ -950,7 +967,10 @@ export default function Header() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <span>📑 참고 · 산출물</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <DocSheetIcon size={13} />
+                <span>참고 · 산출물</span>
+              </span>
               <span style={{ fontSize: 9, opacity: 0.75 }}>{outputsMenuOpen ? '▲' : '▼'}</span>
             </button>
 
@@ -1044,7 +1064,8 @@ export default function Header() {
               gap: 4,
             }}
           >
-            <span>⚡ 단품 숏컷 계산기</span>
+            <CalcShortcutIcon size={13} />
+            <span>단품 숏컷 계산기</span>
           </button>
           <button
             type="button"
@@ -1065,7 +1086,8 @@ export default function Header() {
               gap: 4,
             }}
           >
-            <span>📚 물성 · 열역학 DB</span>
+            <FlaskCompIcon size={13} />
+            <span>물성 · 열역학 DB</span>
           </button>
 
           <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />

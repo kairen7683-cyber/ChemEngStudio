@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { DownloadFileIcon } from '@/components/ui/EngIcons';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -189,7 +190,7 @@ export function PwaInstallButton({
             boxShadow: snap.canPrompt ? '0 2px 10px rgba(6, 182, 212, 0.35)' : 'none',
           }}
         >
-          <span>📲</span>
+          <DownloadFileIcon size={12} />
           <span>앱 설치</span>
         </button>
       ) : variant === 'login' ? (
@@ -215,7 +216,7 @@ export function PwaInstallButton({
           }}
         >
           <span style={{ fontSize: 12.5, fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <span>📲</span>
+            <DownloadFileIcon size={13} />
             <span>스마트폰 · PC 앱(PWA) 바로 설치</span>
           </span>
           <span style={{ fontSize: 10.5, fontWeight: 600, color: '#BAE6FD' }}>
@@ -232,17 +233,21 @@ export function PwaInstallButton({
           style={{
             padding: '3px 8px',
             borderRadius: 6,
-            border: '1px solid #22D3EE',
-            background: '#0C4A6E',
-            color: '#E0F2FE',
+            border: '1px solid #334155',
+            background: '#1E293B',
+            color: '#E2E8F0',
             fontSize: 10.2,
-            fontWeight: 800,
+            fontWeight: 700,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
             flexShrink: 0,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
           }}
         >
-          📲 앱 설치
+          <DownloadFileIcon size={12} />
+          <span>앱 설치</span>
         </button>
       )}
 
