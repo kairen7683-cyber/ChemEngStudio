@@ -7,6 +7,7 @@
 window.App = (function () {
   let state = {
     mode: 'rigorous', // 'quick' | 'rigorous'
+    plantId: 'clorsim_sim',
     tab: 'hx',        // 'pump' | 'hx' | 'column' | 'piping' | 'vessel' | 'psv'
     subView: window.innerWidth <= 960 ? 'input' : 'all', // Mobile defaults to Step 1 ('input')
     hxDof: 'mc_auto', // 'mc_auto' | 'tco_auto' | 'tho_auto' | 'mh_auto'
@@ -15,6 +16,7 @@ window.App = (function () {
     pendingOptInputs: {},
     handoffEquip: null
   };
+  let _suppressRecalc = false;
 
   function numVal(id, fallback) {
     const el = document.getElementById(id);
@@ -842,23 +844,35 @@ window.App = (function () {
   // =========================================================================
   function getSelectedEquipInfo(tab) {
     if (state.handoffEquip && state.handoffEquip.tab === tab) {
-      return { equipTag: state.handoffEquip.equipTag, equipName: state.handoffEquip.equipName };
+      return {
+        equipTag: state.handoffEquip.equipTag,
+        equipName: state.handoffEquip.equipName,
+        unitAreaName: (typeof getActivePlantConfig === 'function' ? getActivePlantConfig().unitAreaName : undefined),
+      };
     }
+    const plant = typeof getActivePlantConfig === 'function' ? getActivePlantConfig() : null;
     const rawTag = document.getElementById('ca_equip_tag')?.value || '';
     const tag = resolveChlorAlkaliTag(rawTag);
-    const p = CA_EQUIP_PRESETS[tag];
+    const p = (plant && plant.presets[tag]) || CA_EQUIP_PRESETS[tag];
     if (p && p.tab === tab) {
-      return { equipTag: tag, equipName: p.name };
+      return { equipTag: tag, equipName: p.name, unitAreaName: plant?.unitAreaName };
+    }
+    if (plant && plant.defaultByTab && plant.defaultByTab[tab]) {
+      const defTag = plant.defaultByTab[tab];
+      const defP = plant.presets[defTag];
+      if (defP) {
+        return { equipTag: defTag, equipName: defP.name, unitAreaName: plant.unitAreaName };
+      }
     }
     const fallbackMap = {
-      hx: { equipTag: 'E-332', equipName: '열교환기 (Heat Exchanger)' },
-      pump: { equipTag: 'P-084A/B', equipName: '원심펌프 (Centrifugal Pump)' },
-      column: { equipTag: 'C-101', equipName: '이성분계 정류탑 (Distillation Column)' },
+      hx: { equipTag: 'E-101', equipName: '열교환기 (Heat Exchanger)' },
+      pump: { equipTag: 'P-101', equipName: '원심펌프 (Centrifugal Pump)' },
+      column: { equipTag: 'C-101', equipName: '증류/흡수 컬럼 (Column)' },
       piping: { equipTag: 'L-101', equipName: '공정 배관 (Process Line)' },
-      vessel: { equipTag: 'D-210', equipName: '기액분리 압력용기 (Separator)' },
+      vessel: { equipTag: 'V-101', equipName: '기액분리 압력용기 (Separator)' },
       psv: { equipTag: 'PSV-101', equipName: '압력안전밸브 (Safety Relief Valve)' }
     };
-    return fallbackMap[tab] || { equipTag: 'EQ-101', equipName: '' };
+    return { ...(fallbackMap[tab] || { equipTag: 'EQ-101', equipName: '' }), unitAreaName: plant?.unitAreaName };
   }
 
   function getInputsForTab(tab) {
@@ -1031,6 +1045,7 @@ window.App = (function () {
   }
 
   function recalc() {
+    if (_suppressRecalc) return;
     // 1. PUMP
     const pumpInp = getInputsForTab('pump');
     const pumpRes = window.ChemEngSolvers.solvePump(pumpInp, state.mode);
@@ -1623,6 +1638,25 @@ window.App = (function () {
     document.querySelectorAll('.module-panel').forEach(p => {
       p.classList.toggle('active', p.id === 'panel-' + tab);
     });
+    const handoffBanner = document.getElementById('simHandoffBanner');
+    const isHandoffTab = Boolean(state.handoffEquip && state.handoffEquip.tab === tab);
+    if (handoffBanner) {
+      handoffBanner.style.display = isHandoffTab ? 'flex' : 'none';
+    }
+    if (!isHandoffTab && typeof getActivePlantConfig === 'function') {
+      const plant = getActivePlantConfig();
+      const sel = document.getElementById('ca_equip_tag');
+      const curTag = sel ? resolveChlorAlkaliTag(sel.value) : '';
+      const curPreset = plant.presets[curTag];
+      if (!curPreset || curPreset.tab !== tab) {
+        const nextTag = plant.defaultByTab?.[tab];
+        if (nextTag && plant.presets[nextTag]) {
+          if (sel) sel.value = nextTag;
+          const stEl = document.getElementById('ca_sync_status');
+          if (stEl) stEl.textContent = `✓ [${nextTag}] ${plant.presets[nextTag].name}`;
+        }
+      }
+    }
     if (window.innerWidth <= 960 && state.subView === 'datasheet') {
       setSubView('input');
       return;
@@ -2098,10 +2132,15 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     });
 
     // URL Query Parameters & Parent App postMessage Integration (for external HTML app embedding)
-    let initialCaTag = 'E-332';
+    let initialPlantId = 'clorsim_sim';
+    let initialCaTag = '';
     let isStandaloneUnitMode = false;
     try {
       const params = new URLSearchParams(window.location.search);
+      const qPlant = params.get('plant');
+      if (qPlant) {
+        initialPlantId = normalizePlantId(qPlant);
+      }
       const qTab = params.get('tab');
       if (qTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(qTab)) {
         setTab(qTab);
@@ -2132,19 +2171,45 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       requestedSubTab = params2.get('sub') || params2.get('tab') || '';
     } catch (_) {}
 
+    setActivePlantContext(initialPlantId, {
+      tag: initialCaTag,
+      subTab: requestedSubTab,
+      skipPresetLoad: false,
+    });
+
     if (isHandoffMode) {
       if (!applySimulatorHandoff(null)) {
         recalc();
       }
     } else if (!isStandaloneUnitMode) {
-      loadChlorAlkaliPreset(initialCaTag, requestedSubTab);
+      const activeCfg = getActivePlantConfig();
+      const targetTag = initialCaTag || activeCfg.defaultByTab[requestedSubTab || state.tab || 'hx'] || activeCfg.defaultByTab.hx;
+      loadChlorAlkaliPreset(targetTag, requestedSubTab);
     } else {
+      syncAllCustomSelects();
       recalc();
     }
 
     window.addEventListener('message', e => {
       const d = e && e.data;
       if (!d || typeof d !== 'object') return;
+      if (d.type === 'CHEMPRO_SET_PLANT' && d.plantId) {
+        setActivePlantContext(d.plantId, {
+          tag: d.tag || '',
+          subTab: d.subTab || '',
+          skipPresetLoad: Boolean(d.skipPresetLoad),
+        });
+        if (!d.skipPresetLoad) {
+          const cfg = getActivePlantConfig();
+          const chosenTag = d.tag || cfg.defaultByTab[d.subTab || state.tab || 'hx'] || cfg.defaultByTab.hx;
+          if (!isStandaloneUnitMode && chosenTag) {
+            loadChlorAlkaliPreset(chosenTag, d.subTab || '');
+          } else {
+            syncAllCustomSelects();
+            recalc();
+          }
+        }
+      }
       if (d.type === 'CHEMPRO_SET_TAB' && d.tab) setTab(d.tab);
       if (d.type === 'CHEMPRO_SET_VIEW' && d.view) setSubView(d.view);
       if (d.type === 'CHEMPRO_SELECT_EQUIP_TAG' && d.tag) {
@@ -2198,7 +2263,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
   }
 
   // =========================================================================
-  // CHLOR-ALKALI PLANT PFD EQUIPMENT PRESETS & EQUIPMENT LIST SYNC
+  // MULTI-PLANT PFD EQUIPMENT PRESETS REGISTRY & EQUIPMENT LIST SYNC
   // =========================================================================
   const CA_EQUIP_PRESETS = {
     // Heat Exchangers (HEX — Excel "300 Sec" PHE & 400/600 Sec Shell&Tube 실측 기준)
@@ -2250,47 +2315,178 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     'T-730': { tab: 'column', col_mode: 'absorption', name: '폐염소 제해 / Hypo(차아염소산) 제조 1차 타워', lk: 'cl2_wet_gas', hk: 'naoh_32', P: 1.05, F: 180, Wg: 2700, Wl: 23000, Tg: 38, Tl: 25, yin: 85000, yout: 1200, m: 0.04, internals: 'packed', pack: 'pall_plastic_50', mat: 'FRP / PVC-PVDF' },
     'T-760': { tab: 'column', col_mode: 'absorption', name: '폐염소 제해 / Hypo(차아염소산) 제조 2차 최종 흡수타워', lk: 'cl2_wet_gas', hk: 'naoh_32', P: 1.03, F: 160, Wg: 2300, Wl: 18000, Tg: 30, Tl: 22, yin: 1200, yout: 1, m: 0.02, internals: 'packed', pack: 'pall_plastic_50', mat: 'FRP / PVC-PVDF' },
 
+    // Process Piping (PIP)
+    'L-104': { tab: 'piping', name: '정제 브라인 전해조 공급배관 (Brine Header)', fluid: 'brine_25', flowMode: 'liquid', T: 65, P1: 4.5, Q: 215 },
+    'L-401': { tab: 'piping', name: '습염소 가스 주헤더 배관 (Wet Cl2 Header)', fluid: 'cl2_wet_gas', flowMode: 'gas', T: 85, P1: 0.3, Q: 7450 },
+
     // Vessels & Separators (VES)
-    'D-210': { tab: 'vessel', name: '양극액 기액분리 탱크 (Anolyte Separator)', orient: 'vertical', Wg: 23470, Wl: 182000, rhoG: 3.1, rhoL: 1125, Pop: 0.4, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'Titanium Gr.2' },
-    'D-220': { tab: 'vessel', name: '음극액 기액분리 탱크 (Catholyte Separator)', orient: 'vertical', Wg: 2024, Wl: 165000, rhoG: 0.65, rhoL: 1315, Pop: 0.4, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'SS316L / Nickel' },
-    'D-341': { tab: 'vessel', name: '3효 증발기 기액분리기 (3rd Effect Vapor Sep)', orient: 'vertical', Wg: 8797, Wl: 58866, rhoG: 0.14, rhoL: 1365, Pop: 0.25, Pdes: 2.0, mat: 'SA-240-2205', matDesc: 'Duplex SS 2205' },
-    'D-331': { tab: 'vessel', name: '2효 증발기 기액분리기 (2nd Effect Vapor Sep)', orient: 'vertical', Wg: 7970, Wl: 50896, rhoG: 0.48, rhoL: 1405, Pop: 0.60, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'Nickel 200 Clad' },
-    'D-321': { tab: 'vessel', name: '1효 증발기 기액분리기 (1st Effect Vapor Sep)', orient: 'vertical', Wg: 8072, Wl: 42824, rhoG: 1.05, rhoL: 1455, Pop: 1.72, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'Nickel 200 Clad' },
-    'D-495': { tab: 'vessel', name: '액화염소 수액기 (Liq Cl2 Accumulator)', orient: 'horizontal', Wg: 1200, Wl: 19400, rhoG: 22.0, rhoL: 1420, Pop: 8.5, Pdes: 14.0, mat: 'SA-516-70', matDesc: 'LTCS (SA-516-70N)' },
-    'D-680': { tab: 'vessel', name: '고압 수소 버퍼 드럼 (H2 Header Drum)', orient: 'vertical', Wg: 580, Wl: 120, rhoG: 1.85, rhoL: 995, Pop: 23.0, Pdes: 28.0, mat: 'SA-240-316L', matDesc: 'SS316L' }
+    'D-210': { tab: 'vessel', name: '양극액 기액분리 탱크 (Anolyte Separator)', orient: 'vertical', gasFluid: 'cl2_wet_gas', liqFluid: 'anolyte_depleted', T: 87, Wg: 23470, Wl: 182000, rhoG: 3.1, rhoL: 1125, Pop: 0.4, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'Titanium Gr.2' },
+    'D-220': { tab: 'vessel', name: '음극액 기액분리 탱크 (Catholyte Separator)', orient: 'vertical', gasFluid: 'h2_wet_gas', liqFluid: 'naoh_32', T: 88, Wg: 2024, Wl: 165000, rhoG: 0.65, rhoL: 1315, Pop: 0.4, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'SS316L / Nickel' },
+    'D-341': { tab: 'vessel', name: '3효 증발기 기액분리기 (3rd Effect Vapor Sep)', orient: 'vertical', gasFluid: 'steam_lp', liqFluid: 'naoh_32', T: 68, Wg: 8797, Wl: 58866, rhoG: 0.14, rhoL: 1365, Pop: 0.25, Pdes: 2.0, mat: 'SA-240-2205', matDesc: 'Duplex SS 2205' },
+    'D-331': { tab: 'vessel', name: '2효 증발기 기액분리기 (2nd Effect Vapor Sep)', orient: 'vertical', gasFluid: 'steam_lp', liqFluid: 'naoh_42', T: 109, Wg: 7970, Wl: 50896, rhoG: 0.48, rhoL: 1405, Pop: 0.60, Pdes: 2.5, mat: 'SA-240-316L', matDesc: 'Nickel 200 Clad' },
+    'D-321': { tab: 'vessel', name: '1효 증발기 기액분리기 (1st Effect Vapor Sep)', orient: 'vertical', gasFluid: 'steam_13k', liqFluid: 'naoh_50', T: 165, Wg: 8072, Wl: 42824, rhoG: 1.05, rhoL: 1455, Pop: 1.72, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'Nickel 200 Clad' },
+    'D-495': { tab: 'vessel', name: '액화염소 수액기 (Liq Cl2 Accumulator)', orient: 'horizontal', gasFluid: 'cl2_dry_gas', liqFluid: 'liquid_cl2', T: -15, Wg: 1200, Wl: 19400, rhoG: 22.0, rhoL: 1420, Pop: 8.5, Pdes: 14.0, mat: 'SA-516-70', matDesc: 'LTCS (SA-516-70N)' },
+    'D-680': { tab: 'vessel', name: '고압 수소 버퍼 드럼 (H2 Header Drum)', orient: 'vertical', gasFluid: 'hydrogen_gas', liqFluid: 'water', T: 40, Wg: 580, Wl: 120, rhoG: 1.85, rhoL: 995, Pop: 23.0, Pdes: 28.0, mat: 'SA-240-316L', matDesc: 'SS316L' },
+
+    // Pressure Safety Valves (PSV)
+    'PSV-495': { tab: 'psv', name: '액화염소 수액드럼 안전밸브 (API 526)', fluid: 'cl2_dry_gas', scenario: 'blocked_outlet', phase: 'vapor', W: 6200, Pset: 12.0, Pback: 0.4, T: 25, mw: 70.91, k: 1.33, Z: 0.94 }
   };
 
+  const PLANT_EQUIP_REGISTRY = {
+    clorsim_sim: {
+      syncLabel: 'PLANT 01 전해공장 PFD 장치 연동:',
+      unitAreaName: 'PLANT 01 — CHLOR-ALKALI ELECTROLYSIS PLANT',
+      defaultByTab: { hx: 'E-332', pump: 'P-084A/B', column: 'T-430', piping: 'L-104', vessel: 'D-210', psv: 'PSV-495' },
+      presets: CA_EQUIP_PRESETS
+    },
+    hcl_synth: {
+      syncLabel: 'PLANT 02 고순도 염산(1A) PFD 장치 연동:',
+      unitAreaName: 'PLANT 02 — HIGH-PURITY HCl & PSD PLANT',
+      defaultByTab: { hx: 'E-102A', pump: 'P-115', column: 'C-230A', piping: 'L-220A', vessel: 'V-225', psv: 'PSV-230' },
+      presets: {
+        'E-102A': { tab: 'hx', hx_type: 'shell_tube', name: '불투명흑연 합성염산 급랭기 (Graphite HCl Quencher)', hot: 'ahcl_gas', cold: 'water', alloc: 'hot_tube', mh: 4200, Thi: 185.0, Tho: 55.0, mc: 28000, Tci: 28.0, Tco: 36.0, mat: 'Impervious Graphite / Hastelloy C-276', kw: '45' },
+        'E-225A': { tab: 'hx', hx_type: 'shell_tube', name: '5N 무수염산 R-404A 심냉 액화기 (Cryo Liquefier)', hot: 'ahcl_gas', cold: 'r404a', alloc: 'hot_tube', mh: 3600, Thi: 15.0, Tho: -22.0, mc: 9800, Tci: -35.0, Tco: -30.0, hot_mode: 'cond_full', Th_sat: -18.0, hot_xfrac: 1.0, hot_hv: 443, cold_mode: 'boil_full', Tc_sat: -33.0, cold_xfrac: 1.0, cold_hv: 192, mat: 'SS316L', kw: '16.3' },
+        'E-318A': { tab: 'hx', hx_type: 'shell_tube', name: 'PSD 폐염산 피드-탑저 열회수 예열기 (Azeo Preheater)', hot: 'hcl_20_azeo', cold: 'hcl_20_azeo', alloc: 'hot_tube', mh: 9500, Thi: 138.0, Tho: 78.0, mc: 9500, Tci: 58.0, Tco: 118.0, mat: 'Graphite / Hastelloy C-276', kw: '10.2' },
+        'E-325A': { tab: 'hx', hx_type: 'shell_tube', name: '순환 공비염산 냉각기 (Azeotropic HCl Cooler)', hot: 'hcl_20_azeo', cold: 'water', alloc: 'hot_tube', mh: 9500, Thi: 78.0, Tho: 40.0, mc: 22000, Tci: 28.0, Tco: 36.0, mat: 'Graphite / PTFE', kw: '10.2' },
+        'P-115': { tab: 'pump', name: '35% 초고순도 전자급 염산 제품 펌프', fluid: 'hcl_35_up', T: 35.0, Q: 8.5, P1: 0.2, P2: 3.6, dsuc: '77.92', ddis: '62.71', mat: 'PVDF / PTFE Lined' },
+        'P-315A': { tab: 'pump', name: '농축 폐염산 가압탑 공급 펌프 (C-310→C-320)', fluid: 'hcl_20_azeo', T: 68.0, Q: 8.8, P1: -0.85, P2: 7.2, dsuc: '77.92', ddis: '62.71', mat: 'PTFE / Tantalum' },
+        'C-110A': { tab: 'column', col_mode: 'absorption', name: '흑연 강하막 35% 염산 주흡수탑 (100 SEC)', lk: 'ahcl_gas', hk: 'hcl_35_up', P: 1.21, F: 140, Wg: 4200, Wl: 12000, Tg: 55, Tl: 30, yin: 85000, yout: 150, m: 0.15, internals: 'packed', pack: 'pall_plastic_50', mat: 'Impervious Graphite / FRP' },
+        'T-130': { tab: 'column', col_mode: 'absorption', name: '테일가스 알칼리 제해탑 (20% NaOH)', lk: 'ahcl_gas', hk: 'naoh_30', P: 1.03, F: 60, Wg: 1250, Wl: 8500, Tg: 35, Tl: 28, yin: 3500, yout: 2, m: 0.03, internals: 'packed', pack: 'pall_plastic_50', mat: 'FRP / PVDF Lined' },
+        'C-230A': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'water_hcl_azeo', name: '5N 무수염산 고압 정제탑 (200 SEC · 18.6 barA)', lk: 'ahcl_liq', hk: 'hcl_20_azeo', P: 18.6, F: 110, zF: 0.92, xD: 0.999, xB: 0.05, R_mult: 1.35, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L / Monel 400' },
+        'C-310A': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'water_hcl_azeo', name: '폐염산 진공 농축탑 (300 SEC · 0.15 barA)', lk: 'water', hk: 'hcl_20_azeo', P: 0.15, F: 420, zF: 0.65, xD: 0.995, xB: 0.12, R_mult: 1.30, q: 1.0, internals: 'packed', pack: 'pall_metal_38', mat: 'Graphite / PTFE-CS' },
+        'C-320A': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'water_hcl_azeo', name: '가압 공비회수 증류탑 (300 SEC · 7.0 barA)', lk: 'ahcl_liq', hk: 'hcl_20_azeo', P: 7.0, F: 280, zF: 0.35, xD: 0.985, xB: 0.08, R_mult: 1.40, q: 1.0, internals: 'packed', pack: 'pall_metal_38', mat: 'Graphite / PTFE-CS' },
+        'L-220A': { tab: 'piping', name: '고압 무수염산(AHCl) 압축 토출배관', fluid: 'ahcl_gas', flowMode: 'gas', T: 65, P1: 18.0, Q: 145 },
+        'L-115': { tab: 'piping', name: '35% 전자급 염산 제품 이송배관', fluid: 'hcl_35_up', flowMode: 'liquid', T: 35, P1: 3.6, Q: 8.5 },
+        'V-225': { tab: 'vessel', name: '5N 무수염산 액화 수액드럼 (200 SEC)', orient: 'horizontal', gasFluid: 'ahcl_gas', liqFluid: 'ahcl_liq', T: -20, Wg: 350, Wl: 3600, rhoG: 28.5, rhoL: 980, Pop: 17.6, Pdes: 24.0, mat: 'SA-240-316L', matDesc: 'SS316L Low-Temp' },
+        'V-310': { tab: 'vessel', name: '진공 농축탑 환류드럼 (300 SEC)', orient: 'vertical', gasFluid: 'steam_lp', liqFluid: 'water', T: 58, Wg: 420, Wl: 4800, rhoG: 0.25, rhoL: 985, Pop: -0.85, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'PTFE-Lined / SS316L' },
+        'PSV-230': { tab: 'psv', name: '5N 무수염산 고압 정제탑 안전밸브', fluid: 'ahcl_gas', scenario: 'blocked_outlet', phase: 'vapor', W: 5400, Pset: 22.0, Pback: 0.5, T: 25, mw: 36.46, k: 1.40, Z: 0.88 }
+      }
+    },
+    ech_gte: {
+      syncLabel: 'PLANT 03 바이오 ECH PFD 장치 연동:',
+      unitAreaName: 'PLANT 03 — BIO-ECH 70,000 TPA PLANT',
+      defaultByTab: { hx: 'E-102', pump: 'P-101', column: 'C-102', piping: 'L-301', vessel: 'V-202', psv: 'PSV-101' },
+      presets: {
+        'E-102': { tab: 'hx', hx_type: 'shell_tube', name: '글리세린 염소화 반응물 냉각기 (DCH Cooler)', hot: 'dch_13', cold: 'water', alloc: 'hot_tube', mh: 16517, Thi: 112.0, Tho: 55.0, mc: 48000, Tci: 30.0, Tco: 38.0, mat: 'Hastelloy C-276', kw: '10.2' },
+        'E-301': { tab: 'hx', hx_type: 'shell_tube', name: '고순도 99.9% ECH 제품 냉각기 (ECH Cooler)', hot: 'ech_pure', cold: 'water', alloc: 'hot_tube', mh: 8650, Thi: 62.0, Tho: 35.0, mc: 16000, Tci: 28.0, Tco: 33.0, mat: 'SS316L', kw: '16.3' },
+        'E-101C': { tab: 'hx', hx_type: 'shell_tube', name: 'C-101 공비탈수 탑정 응축기 (Azeo Condenser)', hot: 'dcp_12', cold: 'water', alloc: 'hot_shell', mh: 4200, Thi: 68.0, Tho: 38.0, mc: 28000, Tci: 28.0, Tco: 35.0, hot_mode: 'cond_full', Th_sat: 64.0, hot_xfrac: 1.0, hot_hv: 318, mat: 'SS316L', kw: '16.3' },
+        'P-101': { tab: 'pump', name: '조 1,3-DCH 반응액 이송 펌프 (100→200 SEC)', fluid: 'dch_13', T: 55.0, Q: 12.5, P1: 1.6, P2: 3.5, dsuc: '77.92', ddis: '62.71', mat: 'Hastelloy C-276' },
+        'P-301': { tab: 'pump', name: '고순도 99.9% 에폭시급 ECH 제품 펌프 (300 SEC)', fluid: 'ech_pure', T: 35.0, Q: 7.5, P1: -0.8, P2: 4.5, dsuc: '62.71', ddis: '52.50', mat: 'SS316L' },
+        'C-101': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'dcp_ech', name: '경질분·수분 공비탈수탑 (20단 · -0.65 kG)', lk: 'dcp_12', hk: 'ech_pure', P: 0.36, F: 115, zF: 0.18, xD: 0.96, xB: 0.005, R_mult: 1.35, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L' },
+        'C-102': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'ech_dch', name: '고순도 99.9% ECH 진공 정제탑 (26단 · 85 Torr)', lk: 'ech_pure', hk: 'dch_13', P: 0.11, F: 102, zF: 0.91, xD: 0.999, xB: 0.015, R_mult: 1.40, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L' },
+        'L-102': { tab: 'piping', name: '조 1,3-DCH 반응액 이송배관', fluid: 'dch_13', flowMode: 'liquid', T: 55, P1: 3.5, Q: 12.5 },
+        'L-301': { tab: 'piping', name: '고순도 99.9% ECH 제품 출하배관', fluid: 'ech_pure', flowMode: 'liquid', T: 35, P1: 4.5, Q: 7.5 },
+        'V-202': { tab: 'vessel', name: '조 ECH / 염수 LLE 유수분리 디캔터 (200 SEC)', orient: 'horizontal', gasFluid: 'nitrogen_gas', liqFluid: 'ech_pure', T: 55, Wg: 120, Wl: 24500, rhoG: 1.4, rhoL: 1180, Pop: 0.4, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'SS316L' },
+        'D-101': { tab: 'vessel', name: 'C-101 공비탈수 환류 유수분리 드럼', orient: 'horizontal', gasFluid: 'nitrogen_gas', liqFluid: 'dcp_12', T: 42, Wg: 180, Wl: 4200, rhoG: 0.8, rhoL: 1140, Pop: -0.65, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'SS316L' },
+        'PSV-101': { tab: 'psv', name: '글리세린 염소화 반응기 R-101 안전밸브', fluid: 'ahcl_gas', scenario: 'blocked_outlet', phase: 'vapor', W: 4800, Pset: 4.5, Pback: 0.3, T: 118, mw: 36.46, k: 1.39, Z: 0.95 }
+      }
+    },
+    cms_plant: {
+      syncLabel: 'PLANT 04 클로로메탄(CMS) PFD 장치 연동:',
+      unitAreaName: 'PLANT 04 — CHLOROMETHANES (CMS) PLANT',
+      defaultByTab: { hx: 'E-101', pump: 'P-202', column: 'C-301', piping: 'L-202', vessel: 'D-201', psv: 'PSV-101' },
+      presets: {
+        'E-101': { tab: 'hx', hx_type: 'shell_tube', name: '액화염소 가압 기화기 (Cl2 Vaporizer · 24.5 kG)', hot: 'steam_lp', cold: 'liquid_cl2', alloc: 'hot_shell', mh: 1480, Thi: 151.0, Tho: 145.0, mc: 9167, Tci: 25.0, Tco: 95.0, hot_mode: 'cond_full', Th_sat: 151.0, hot_xfrac: 1.0, hot_hv: 2108, cold_mode: 'boil_full', Tc_sat: 76.0, cold_xfrac: 1.0, cold_hv: 255, mat: 'Hastelloy C-276', kw: '10.2' },
+        'E-102': { tab: 'hx', hx_type: 'shell_tube', name: '염소화 반응생성물 냉각기 (Reactor Effluent Cooler)', hot: 'dcm', cold: 'water', alloc: 'hot_tube', mh: 22800, Thi: 120.0, Tho: 42.0, mc: 52000, Tci: 28.0, Tco: 37.0, mat: 'SS316L / Carbon Steel', kw: '16.3' },
+        'E-301': { tab: 'hx', hx_type: 'shell_tube', name: '고순도 MCL 제품 냉각기 (MCL Product Cooler)', hot: 'dcm', cold: 'water', alloc: 'hot_tube', mh: 5000, Thi: 78.0, Tho: 32.0, mc: 18500, Tci: 28.0, Tco: 34.0, mat: 'SS316L', kw: '16.3' },
+        'P-202': { tab: 'pump', name: '고압 순환 메틸클로라이드 승압 펌프 (MC Recycle)', fluid: 'methyl_chloride', T: 40.0, Q: 12.6, P1: 9.2, P2: 24.5, dsuc: '62.71', ddis: '52.50', mat: 'Carbon Steel / API 610' },
+        'P-301': { tab: 'pump', name: '고순도 MCL 제품 이송 펌프 (120 T/D)', fluid: 'dcm', T: 32.0, Q: 4.2, P1: 0.4, P2: 4.0, dsuc: '52.50', ddis: '40.89', mat: 'SS304L' },
+        'P-302': { tab: 'pump', name: '고순도 CFM 제품 이송 펌프 (80 T/D)', fluid: 'chloroform', T: 35.0, Q: 2.5, P1: 0.3, P2: 4.0, dsuc: '40.89', ddis: '26.64', mat: 'SS316L' },
+        'C-201': { tab: 'column', col_mode: 'distillation', name: '고압 무수염산 탈거탑 (60단 · 17.5 kG · 113 T/D AHCl)', lk: 'ahcl_liq', hk: 'methyl_chloride', P: 18.2, F: 390, zF: 0.33, xD: 0.999, xB: 0.001, R_mult: 1.35, q: 1.0, internals: 'tray', mat: 'PTFE-CS / Hastelloy' },
+        'C-202': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'mc_mcl', name: '미반응 MC 순환 분리탑 (50단 · 6.5 kG · MCL 무순환)', lk: 'methyl_chloride', hk: 'dcm', P: 7.4, F: 260, zF: 0.58, xD: 0.998, xB: 0.002, R_mult: 1.30, q: 1.0, internals: 'tray', mat: 'SA-516 Gr.70' },
+        'C-301': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'mcl_cfm', name: '고순도 MCL 정제탑 (80단 · MCL 120 T/D · 99.99%)', lk: 'dcm', hk: 'chloroform', P: 1.8, F: 105, zF: 0.56, xD: 0.9995, xB: 0.001, R_mult: 1.35, q: 1.0, internals: 'tray', mat: 'SS304L / CS' },
+        'C-302': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'cfm_ctc', name: '고순도 CFM 정제탑 & CTC 분리 (120단 · CFM 80 T/D)', lk: 'chloroform', hk: 'ccl4', P: 1.5, F: 46, zF: 0.82, xD: 0.9995, xB: 0.005, R_mult: 1.45, q: 1.0, internals: 'tray', mat: 'SS316L' },
+        'L-202': { tab: 'piping', name: '미반응 MC 24.5 barG 고압 순환배관', fluid: 'methyl_chloride', flowMode: 'liquid', T: 40, P1: 24.5, Q: 12.6 },
+        'L-101': { tab: 'piping', name: '고압 기화염소(Cl2) 반응기 공급배관', fluid: 'cl2_dry_gas', flowMode: 'gas', T: 95, P1: 24.2, Q: 165 },
+        'D-201': { tab: 'vessel', name: 'C-201 고압 무수염산 환류드럼 (17.5 kG)', orient: 'horizontal', gasFluid: 'ahcl_gas', liqFluid: 'ahcl_liq', T: -15, Wg: 850, Wl: 9200, rhoG: 29.0, rhoL: 960, Pop: 17.5, Pdes: 24.0, mat: 'SA-516-70', matDesc: 'LTCS (SA-516-70)' },
+        'D-202': { tab: 'vessel', name: 'C-202 미반응 MC 순환 수액드럼 (6.5 kG)', orient: 'horizontal', gasFluid: 'methyl_chloride', liqFluid: 'methyl_chloride', T: 32, Wg: 620, Wl: 13650, rhoG: 16.5, rhoL: 880, Pop: 6.5, Pdes: 12.0, mat: 'SA-516-70', matDesc: 'Carbon Steel' },
+        'PSV-101': { tab: 'psv', name: '24kG AIBN 염소화 반응기 R-101 안전밸브', fluid: 'methyl_chloride', scenario: 'blocked_outlet', phase: 'vapor', W: 12500, Pset: 27.0, Pback: 0.5, T: 125, mw: 50.49, k: 1.26, Z: 0.88 }
+      }
+    },
+    mdi_plant: {
+      syncLabel: 'PLANT 05 MDI 공정 PFD 장치 연동:',
+      unitAreaName: 'PLANT 05 — MDI 100,000 TPA PROCESS',
+      defaultByTab: { hx: 'E-401', pump: 'P-101A/B', column: 'C-401', piping: 'L-312', vessel: 'S-201', psv: 'PSV-201' },
+      presets: {
+        'E-401': { tab: 'hx', hx_type: 'shell_tube', name: '고진공 박막 예열기 (Thin-Film Preheater · 400 SEC)', hot: 'steam_13k', cold: 'mdi_pure', alloc: 'hot_shell', mh: 1850, Thi: 215.0, Tho: 210.0, mc: 12625, Tci: 165.0, Tco: 190.0, hot_mode: 'cond_full', Th_sat: 215.0, hot_xfrac: 1.0, hot_hv: 1880, mat: 'SS316L', kw: '16.3' },
+        'E-402': { tab: 'hx', hx_type: 'shell_tube', name: "Pure 4,4'-MDI 제품 냉각기 (4,500 kg/h)", hot: 'mdi_pure', cold: 'water', alloc: 'hot_tube', mh: 4500, Thi: 165.0, Tho: 48.0, mc: 22000, Tci: 30.0, Tco: 38.0, mat: 'SS316L', kw: '16.3' },
+        'E-403': { tab: 'hx', hx_type: 'shell_tube', name: 'Polymeric MDI (PMDI) 제품 냉각기 (8,000 kg/h)', hot: 'pmdi', cold: 'water', alloc: 'hot_tube', mh: 8000, Thi: 195.0, Tho: 55.0, mc: 34000, Tci: 30.0, Tco: 40.0, mat: 'SS316L', kw: '16.3' },
+        'P-101A/B': { tab: 'pump', name: 'MDA/아닐린 순환·이송 펌프 (100 SEC)', fluid: 'aniline', T: 95.0, Q: 10.5, P1: 0.5, P2: 3.8, dsuc: '77.92', ddis: '62.71', mat: 'SS316L' },
+        'P-302A/B': { tab: 'pump', name: '회수 MCB 용매 이송·순환 펌프 (300 SEC)', fluid: 'chlorobenzene', T: 68.0, Q: 17.5, P1: -0.9, P2: 3.5, dsuc: '102.26', ddis: '77.92', mat: 'SS316L (Double Mech Seal)' },
+        'P-401A/B': { tab: 'pump', name: "Pure 4,4'-MDI 제품 출하 펌프 (400 SEC)", fluid: 'mdi_pure', T: 48.0, Q: 3.9, P1: 0.2, P2: 3.5, dsuc: '52.50', ddis: '40.89', mat: 'SS316L Jacketed' },
+        'C-101': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'aniline_mda', name: '아닐린 감압 회수탑 (100 SEC · 14단 · -0.88 kG)', lk: 'aniline', hk: 'mda', P: 0.15, F: 62, zF: 0.18, xD: 0.992, xB: 0.005, R_mult: 1.30, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L' },
+        'C-301': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'phosgene_mcb', name: '탈포스겐(COCl2) 회수 스트리퍼 (300 SEC · 14단 · 2.0 kG)', lk: 'phosgene', hk: 'chlorobenzene', P: 2.95, F: 245, zF: 0.14, xD: 0.990, xB: 0.002, R_mult: 1.30, q: 1.0, internals: 'tray', mat: 'SS316L / Hastelloy C' },
+        'C-302': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'mcb_mdi', name: 'MCB 용매 진공 회수탑 (300 SEC · 16단 · -0.90 kG)', lk: 'chlorobenzene', hk: 'mdi_pure', P: 0.13, F: 215, zF: 0.78, xD: 0.998, xB: 0.003, R_mult: 1.30, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L' },
+        'C-401': { tab: 'column', col_mode: 'distillation', nrtl_preset: 'mdi_pmdi', name: "고진공 Pure 4,4'-MDI / PMDI 분별탑 (16단 · 20 mbar)", lk: 'mdi_pure', hk: 'pmdi', P: 0.08, F: 42, zF: 0.46, xD: 0.992, xB: 0.035, R_mult: 1.35, q: 1.0, internals: 'packed', pack: 'mellapak_250y', mat: 'SS316L Structured' },
+        'L-312': { tab: 'piping', name: '회수 MCB 용매 순환배관 (300→200 SEC)', fluid: 'chlorobenzene', flowMode: 'liquid', T: 68, P1: 3.5, Q: 17.5 },
+        'L-203': { tab: 'piping', name: '포스겐(COCl2) 반응 공급배관 (200 SEC)', fluid: 'phosgene', flowMode: 'gas', T: 90, P1: 3.5, Q: 680 },
+        'S-201': { tab: 'vessel', name: '부생 HCl · 포스겐 냉각 기액분리기 (200 SEC)', orient: 'vertical', gasFluid: 'phosgene', liqFluid: 'chlorobenzene', T: 38, Wg: 8230, Wl: 33590, rhoG: 5.8, rhoL: 1120, Pop: 2.0, Pdes: 6.0, mat: 'SA-240-316L', matDesc: 'SS316L / Hastelloy Trim' },
+        'D-101': { tab: 'vessel', name: '염수 수세 유수분리 디캔터 (100 SEC · 75°C)', orient: 'horizontal', gasFluid: 'nitrogen_gas', liqFluid: 'mda', T: 75, Wg: 80, Wl: 19180, rhoG: 1.2, rhoL: 1085, Pop: 1.5, Pdes: 4.5, mat: 'SA-240-316L', matDesc: 'SS316L' },
+        'S-101': { tab: 'vessel', name: '유기층 진공 탈수 드럼 (100 SEC · 140°C / -0.80 kG)', orient: 'vertical', gasFluid: 'steam_lp', liqFluid: 'mda', T: 140, Wg: 620, Wl: 10006, rhoG: 0.18, rhoL: 1045, Pop: -0.80, Pdes: 3.5, mat: 'SA-240-316L', matDesc: 'SS316L' },
+        'PSV-201': { tab: 'psv', name: '포스겐 반응계 긴급 압력방출 안전밸브 (API 526)', fluid: 'phosgene', scenario: 'blocked_outlet', phase: 'vapor', W: 8500, Pset: 4.5, Pback: 0.3, T: 145, mw: 62.5, k: 1.28, Z: 0.96 },
+        'PSV-301': { tab: 'psv', name: '탈포스겐탑 C-301 긴급 안전밸브 (API 526)', fluid: 'phosgene', scenario: 'blocked_outlet', phase: 'vapor', W: 4200, Pset: 5.0, Pback: 0.3, T: 125, mw: 98.92, k: 1.18, Z: 0.94 }
+      }
+    }
+  };
+
+  function normalizePlantId(rawId) {
+    const id = String(rawId || '').trim().toLowerCase();
+    if (id === 'hcl_synth' || id === 'hcl_1a_plant') return 'hcl_synth';
+    if (id === 'ech_gte' || id === 'ech_gte_plant') return 'ech_gte';
+    if (id === 'cms_plant') return 'cms_plant';
+    if (id === 'mdi_plant') return 'mdi_plant';
+    return 'clorsim_sim';
+  }
+
+  function getActivePlantConfig(overridePlantId) {
+    const pid = normalizePlantId(overridePlantId || state.plantId);
+    return PLANT_EQUIP_REGISTRY[pid] || PLANT_EQUIP_REGISTRY.clorsim_sim;
+  }
+
   function resolveChlorAlkaliTag(rawTag) {
-    if (!rawTag) return 'E-332';
+    const plant = getActivePlantConfig();
+    const presets = plant.presets || CA_EQUIP_PRESETS;
+    if (!rawTag) {
+      return plant.defaultByTab?.[state.tab || 'hx'] || plant.defaultByTab?.hx || 'E-332';
+    }
     const t = String(rawTag).trim();
-    if (t === 'D-940') return 'T-730';
-    if (CA_EQUIP_PRESETS[t]) return t;
-    if (CA_EQUIP_PRESETS[t + 'A/B']) return t + 'A/B';
+    if (t === 'D-940' && presets['T-730']) return 'T-730';
+    if (presets[t]) return t;
+    if (presets[t + 'A/B']) return t + 'A/B';
+    if (presets[t + 'A']) return t + 'A';
     const stripped = t.replace(/A\/B$/i, '');
-    if (CA_EQUIP_PRESETS[stripped]) return stripped;
+    if (presets[stripped]) return stripped;
+    if (CA_EQUIP_PRESETS[t] && state.plantId === 'clorsim_sim') return t;
     return t;
   }
 
-  function loadChlorAlkaliPreset(rawTag, fallbackSubTab) {
-    state.handoffEquip = null;
-    const banner = document.getElementById('simHandoffBanner');
-    if (banner) banner.style.display = 'none';
-    const tag = resolveChlorAlkaliTag(rawTag);
-    const p = CA_EQUIP_PRESETS[tag];
-    if (!p) {
-      if (fallbackSubTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(fallbackSubTab)) {
-        setTab(fallbackSubTab);
-        state.handoffEquip = { tab: fallbackSubTab, equipTag: tag, equipName: '' };
-        recalc();
-      }
-      return;
-    }
+  function rebuildPlantSyncDropdown(plant) {
     const sel = document.getElementById('ca_equip_tag');
-    if (sel && sel.value !== tag) {
-      sel.value = tag;
-    }
-    setTab(p.tab);
+    if (!sel) return;
+    const catMeta = [
+      { tab: 'hx', label: '열교환기 (Heat Exchangers — HEX)' },
+      { tab: 'pump', label: '원심 펌프 (Centrifugal Pumps — PMP)' },
+      { tab: 'column', label: '증류·흡수·건조 컬럼 (Columns — COL)' },
+      { tab: 'piping', label: '공정 배관 (Process Piping — PIP)' },
+      { tab: 'vessel', label: '압력용기 · 기액분리기 (Vessels — VES)' },
+      { tab: 'psv', label: '압력안전밸브 (Safety Valves — PSV)' }
+    ];
+    let html = '';
+    const presets = plant.presets || {};
+    catMeta.forEach(cat => {
+      const entries = Object.keys(presets).filter(k => presets[k]?.tab === cat.tab);
+      if (!entries.length) return;
+      html += `<optgroup label="${cat.label}">`;
+      entries.forEach(tag => {
+        html += `<option value="${tag}">${tag} — ${presets[tag].name}</option>`;
+      });
+      html += `</optgroup>`;
+    });
+    sel.innerHTML = html;
+  }
 
+  function applyPresetFieldsWithoutTabSwitch(tag, p) {
+    if (!p || !p.tab) return;
     if (p.tab === 'hx') {
       const hxTypeEl = document.getElementById('hx_type');
       if (hxTypeEl) hxTypeEl.value = p.hx_type || 'shell_tube';
@@ -2298,13 +2494,18 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (chevEl && p.phe_chevron) chevEl.value = p.phe_chevron;
       const pheMatEl = document.getElementById('hx_phe_mat');
       if (pheMatEl && p.phe_mat) pheMatEl.value = p.phe_mat;
-
+      const kwEl = document.getElementById('hx_kw');
+      if (kwEl && p.kw && [...kwEl.options].some(o => o.value === String(p.kw))) {
+        kwEl.value = String(p.kw);
+      } else if (kwEl && p.hx_type === 'plate_phe') {
+        kwEl.value = '70.2';
+      }
       const hotEl = document.getElementById('hx_hot_fluid');
       const coldEl = document.getElementById('hx_cold_fluid');
       const allocEl = document.getElementById('hx_allocation');
-      if (hotEl) hotEl.value = p.hot;
-      if (coldEl) coldEl.value = p.cold;
-      if (allocEl) allocEl.value = p.alloc;
+      if (hotEl && [...hotEl.options].some(o => o.value === p.hot)) hotEl.value = p.hot;
+      if (coldEl && [...coldEl.options].some(o => o.value === p.cold)) coldEl.value = p.cold;
+      if (allocEl && p.alloc) allocEl.value = p.alloc;
       setVal('hx_mh', p.mh, 0);
       setVal('hx_Thi', p.Thi, 1);
       setVal('hx_Tho', p.Tho, 1);
@@ -2315,40 +2516,53 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const cmEl = document.getElementById('hx_cold_mode');
       if (hmEl) hmEl.value = p.hot_mode || 'sensible';
       if (cmEl) cmEl.value = p.cold_mode || 'sensible';
+      syncHXPhaseDefaultsFromFluid();
       if (p.Th_sat !== undefined) setVal('hx_Th_sat', p.Th_sat, 1);
       if (p.hot_xfrac !== undefined) setVal('hx_hot_xfrac', p.hot_xfrac, 2);
       if (p.hot_hv !== undefined) setVal('hx_hot_hv', p.hot_hv, 0);
       if (p.Tc_sat !== undefined) setVal('hx_Tc_sat', p.Tc_sat, 1);
       if (p.cold_xfrac !== undefined) setVal('hx_cold_xfrac', p.cold_xfrac, 2);
       if (p.cold_hv !== undefined) setVal('hx_cold_hv', p.cold_hv, 0);
-      syncHXPhaseDefaultsFromFluid();
       onHXTypeChange();
       onHXFluidOrTempChange('temp');
+      markSolverConverged('hx');
     } else if (p.tab === 'pump') {
       const flEl = document.getElementById('pump_fluid');
-      if (flEl) flEl.value = p.fluid;
+      if (flEl && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
       setVal('pump_T', p.T, 1);
       setVal('pump_Q', p.Q, 1);
       setVal('pump_P1', p.P1, 2);
       setVal('pump_P2', p.P2, 2);
       const sucEl = document.getElementById('pump_dsuc');
       const disEl = document.getElementById('pump_ddis');
-      if (sucEl) sucEl.value = p.dsuc;
-      if (disEl) disEl.value = p.ddis;
+      if (sucEl && p.dsuc) sucEl.value = p.dsuc;
+      if (disEl && p.ddis) disEl.value = p.ddis;
       onPumpFluidChange();
     } else if (p.tab === 'column') {
+      const colMode = p.col_mode || 'absorption';
       const modeEl = document.getElementById('col_mode');
-      if (modeEl) modeEl.value = p.col_mode || 'absorption';
+      if (modeEl) modeEl.value = colMode;
+      const presetEl = document.getElementById('col_preset');
+      if (presetEl && p.nrtl_preset && window.NRTL_PRESETS?.[p.nrtl_preset]) {
+        presetEl.value = p.nrtl_preset;
+      }
       const lkEl = document.getElementById('col_lk');
       const hkEl = document.getElementById('col_hk');
       const intEl = document.getElementById('col_internals');
       const pkEl = document.getElementById('col_pack_key');
-      if (lkEl) lkEl.value = p.lk;
-      if (hkEl) hkEl.value = p.hk;
-      if (intEl) intEl.value = p.internals || 'packed';
-      if (pkEl) pkEl.value = p.pack;
+      if (lkEl && p.lk && [...lkEl.options].some(o => o.value === p.lk)) lkEl.value = p.lk;
+      if (hkEl && p.hk && [...hkEl.options].some(o => o.value === p.hk)) hkEl.value = p.hk;
+      if (intEl) intEl.value = p.internals || (colMode === 'distillation' ? 'tray' : 'packed');
+      if (pkEl && p.pack) pkEl.value = p.pack;
       setVal('col_P', p.P, 2);
       setVal('col_F', p.F || 300, 0);
+      if (p.zF !== undefined) setVal('col_zF', p.zF, 3);
+      if (p.xD !== undefined) setVal('col_xD', p.xD, 4);
+      if (p.xB !== undefined) setVal('col_xB', p.xB, 4);
+      if (p.R_mult !== undefined) setVal('col_R_mult', p.R_mult, 2);
+      if (p.q !== undefined) setVal('col_q', p.q, 2);
+      const dofEl = document.getElementById('col_dof_mode');
+      if (dofEl) dofEl.value = 'spec_purity';
       if (p.Wg !== undefined) setVal('col_gas_kgh', p.Wg, 0);
       if (p.Wl !== undefined) setVal('col_liq_kgh', p.Wl, 0);
       if (p.Tg !== undefined) setVal('col_T_gas_in', p.Tg, 1);
@@ -2357,20 +2571,128 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (p.yout !== undefined) setVal('col_y_out_ppm', p.yout, 1);
       if (p.m !== undefined) setVal('col_m', p.m, 2);
       onColumnModeChange();
+      onColumnDofModeChange();
       onColumnInternalsChange();
       onColumnFluidChange();
+      markSolverConverged('column');
+    } else if (p.tab === 'piping') {
+      const flEl = document.getElementById('pipe_fluid');
+      const fmEl = document.getElementById('pipe_flow_mode');
+      if (flEl && p.fluid && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
+      if (fmEl && p.flowMode) fmEl.value = p.flowMode;
+      setVal('pipe_T', p.T ?? 30, 1);
+      setVal('pipe_P1', p.P1 ?? 3.5, 2);
+      setVal('pipe_Q', p.Q ?? 25, 1);
+      onPipeFluidChange();
     } else if (p.tab === 'vessel') {
       const orEl = document.getElementById('ves_orient');
       const matEl = document.getElementById('ves_mat');
-      if (orEl) orEl.value = p.orient;
-      if (matEl) matEl.value = p.mat;
-      setVal('ves_Wg', p.Wg, 0);
-      setVal('ves_Wl', p.Wl, 0);
-      setVal('ves_rhoG', p.rhoG, 2);
-      setVal('ves_rhoL', p.rhoL, 0);
+      const gEl = document.getElementById('ves_gas_fluid');
+      const lEl = document.getElementById('ves_liq_fluid');
+      if (orEl && p.orient) orEl.value = p.orient;
+      if (matEl && p.mat) matEl.value = p.mat;
+      if (gEl && p.gasFluid && [...gEl.options].some(o => o.value === p.gasFluid)) gEl.value = p.gasFluid;
+      if (lEl && p.liqFluid && [...lEl.options].some(o => o.value === p.liqFluid)) lEl.value = p.liqFluid;
+      if (p.T !== undefined) setVal('ves_T_op', p.T, 1);
       setVal('ves_Pop', p.Pop, 2);
       setVal('ves_Pdes', p.Pdes, 1);
-      recalc();
+      onVesselFluidChange();
+      setVal('ves_Wg', p.Wg, 0);
+      setVal('ves_Wl', p.Wl, 0);
+      if (p.rhoG !== undefined) setVal('ves_rhoG', p.rhoG, 2);
+      if (p.rhoL !== undefined) setVal('ves_rhoL', p.rhoL, 0);
+    } else if (p.tab === 'psv') {
+      const flEl = document.getElementById('psv_fluid');
+      const scEl = document.getElementById('psv_scenario');
+      const phEl = document.getElementById('psv_phase');
+      if (flEl && p.fluid && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
+      if (scEl && p.scenario) scEl.value = p.scenario;
+      if (phEl && p.phase) phEl.value = p.phase;
+      setVal('psv_T', p.T ?? 80, 1);
+      setVal('psv_W', p.W ?? 5000, 0);
+      setVal('psv_Pset', p.Pset ?? 6.0, 2);
+      setVal('psv_Pback', p.Pback ?? 0.3, 2);
+      onPSVFluidChange();
+      if (p.mw !== undefined) setVal('psv_mw', p.mw, 2);
+      if (p.k !== undefined) setVal('psv_k', p.k, 2);
+      if (p.Z !== undefined) setVal('psv_Z', p.Z, 2);
+    }
+  }
+
+  function setActivePlantContext(plantId, opts) {
+    const prevPid = state.plantId;
+    const pid = normalizePlantId(plantId);
+    state.plantId = pid;
+    const plant = PLANT_EQUIP_REGISTRY[pid] || PLANT_EQUIP_REGISTRY.clorsim_sim;
+    if (typeof window !== 'undefined') {
+      window.ACTIVE_PLANT_UNIT_AREA = plant.unitAreaName;
+    }
+    const lblEl = document.getElementById('ca_plant_sync_label');
+    if (lblEl) lblEl.textContent = plant.syncLabel;
+    rebuildPlantSyncDropdown(plant);
+
+    const allTabs = ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'];
+    const tabsToSeed = !opts?.skipPresetLoad
+      ? allTabs
+      : prevPid !== pid
+        ? allTabs.filter(tKey => tKey !== state.handoffEquip?.tab)
+        : [];
+
+    if (tabsToSeed.length > 0) {
+      _suppressRecalc = true;
+      try {
+        tabsToSeed.forEach(tKey => {
+          const defTag = plant.defaultByTab?.[tKey];
+          if (defTag && plant.presets[defTag]) {
+            applyPresetFieldsWithoutTabSwitch(defTag, plant.presets[defTag]);
+          }
+        });
+      } finally {
+        _suppressRecalc = false;
+      }
+      if (opts?.skipPresetLoad && typeof syncAllCustomSelects === 'function') {
+        syncAllCustomSelects();
+      }
+    }
+
+    const activeTab = opts?.subTab || state.tab || 'hx';
+    const selTag = opts?.tag || plant.defaultByTab?.[activeTab] || plant.defaultByTab?.hx || '';
+    const sel = document.getElementById('ca_equip_tag');
+    if (sel && selTag && [...sel.options].some(o => o.value === selTag)) {
+      sel.value = selTag;
+    }
+    const st = document.getElementById('ca_sync_status');
+    const matchedPreset = plant.presets[selTag];
+    if (st && matchedPreset) {
+      st.textContent = `✓ [${selTag}] ${matchedPreset.name}`;
+    }
+  }
+
+  function loadChlorAlkaliPreset(rawTag, fallbackSubTab) {
+    state.handoffEquip = null;
+    const banner = document.getElementById('simHandoffBanner');
+    if (banner) banner.style.display = 'none';
+    const plant = getActivePlantConfig();
+    const tag = resolveChlorAlkaliTag(rawTag);
+    const p = plant.presets[tag] || CA_EQUIP_PRESETS[tag];
+    if (!p) {
+      if (fallbackSubTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(fallbackSubTab)) {
+        setTab(fallbackSubTab);
+        state.handoffEquip = { tab: fallbackSubTab, equipTag: tag, equipName: '' };
+        recalc();
+      }
+      return;
+    }
+    const sel = document.getElementById('ca_equip_tag');
+    if (sel && [...sel.options].some(o => o.value === tag) && sel.value !== tag) {
+      sel.value = tag;
+    }
+    setTab(p.tab);
+    _suppressRecalc = true;
+    try {
+      applyPresetFieldsWithoutTabSwitch(tag, p);
+    } finally {
+      _suppressRecalc = false;
     }
     syncAllCustomSelects();
     recalc();
@@ -2380,9 +2702,10 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
 
   function saveToChlorAlkaliEquipList() {
     recalc();
-    const rawTag = document.getElementById('ca_equip_tag')?.value || 'E-332';
+    const plant = getActivePlantConfig();
+    const rawTag = document.getElementById('ca_equip_tag')?.value || plant.defaultByTab?.[state.tab || 'hx'] || 'E-332';
     const tag = resolveChlorAlkaliTag(rawTag);
-    const preset = CA_EQUIP_PRESETS[tag] || {};
+    const preset = plant.presets[tag] || CA_EQUIP_PRESETS[tag] || {};
     const saveTag = tag.replace(/A\/B$/i, '');
     const tab = state.tab;
     let payload = { tag: saveTag, rawTag: tag, tab, name: preset.name };
@@ -2431,12 +2754,12 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         operPress: `${(numVal('col_P', 1.1) - 1.013).toFixed(2)}`,
         designTemp: `${Math.ceil((Math.max(r.T_top_C, r.T_bot_C) + 25) / 10) * 10}`,
         designPress: '3.5',
-        material: preset.mat || 'FRP / Ceramic',
+        material: preset.mat || 'SS316L / Internals',
         capacity: isAbs
           ? `ID ${(r.D_col_m * 1000).toFixed(0)} mm × H ${r.H_tangent_m.toFixed(1)} m (Bed ${r.H_pack_m?.toFixed(2)} m, ${r.packSpec.name})`
           : `ID ${(r.D_col_m * 1000).toFixed(0)} mm × H ${r.H_tangent_m.toFixed(1)} m (${r.internals === 'packed' ? r.packSpec.name : `${r.N_actual} Trays`})`,
         remarks: isAbs
-          ? `제거율=${r.removal_pct.toFixed(2)}% (${r.yin_ppm}→${r.yout_ppm}ppm), N_OG=${r.N_OG.toFixed(2)}, HTU=${r.HTU_m.toFixed(2)}m, ΔP=${r.dP_total_mbar.toFixed(1)} mbar [ChemPro 흡수/건조탑 설계완료]`
+          ? `제거율=${r.removal_pct.toFixed(2)}% (${r.yin_ppm}→${r.yout_ppm}ppm), N_OG=${r.N_OG.toFixed(2)}, HTU=${r.HTU_m.toFixed(2)}m, ΔP=${r.dP_total_mbar.toFixed(1)} mbar [ChemPro 설계완료]`
           : `Flood=${numVal('col_flood', 80)}%, ΔP=${r.dP_total_mbar.toFixed(1)} mbar [ChemPro 설계완료]`
       };
     } else if (tab === 'vessel' && state.lastResults.vessel) {
@@ -2448,6 +2771,24 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         material: preset.matDesc || r.matName,
         capacity: `ID ${(r.D_m * 1000).toFixed(0)} mm × L ${(r.L_m * 1000).toFixed(0)} mm (${r.V_total_m3.toFixed(1)} m³, t=${r.t_adopt_mm || r.t_shell_mm.toFixed(1)}mm)`,
         remarks: `ASME Sec.VIII Div.1 t_req=${r.t_shell_mm.toFixed(1)}mm, Weight=${r.W_empty_kg.toFixed(0)}kg [ChemPro 설계완료]`
+      };
+    } else if (tab === 'piping' && state.lastResults.piping) {
+      const r = state.lastResults.piping;
+      payload = {
+        ...payload,
+        operTemp: `${numVal('pipe_T', 30)}`,
+        operPress: `${numVal('pipe_P1', 3.5)}`,
+        capacity: `NPS ${r.selected.nps} (ID ${r.selected.id_mm.toFixed(1)} mm · v=${r.selected.v.toFixed(2)} m/s)`,
+        remarks: `추천 NPS ${r.recommended.nps}, ΔP=${r.selected.dP_total_bar.toFixed(3)} bar [ChemPro Piping 설계완료]`
+      };
+    } else if (tab === 'psv' && state.lastResults.psv) {
+      const r = state.lastResults.psv;
+      payload = {
+        ...payload,
+        operTemp: `${numVal('psv_T', 80)}`,
+        operPress: `${numVal('psv_Pset', 6.0)}`,
+        capacity: `API 526 '${r.selectedOrifice.letter}' Orifice (${r.selectedOrifice.size} · ${r.selectedOrifice.area_mm2.toFixed(1)} mm²)`,
+        remarks: `A_req=${r.A_req_mm2.toFixed(1)} mm², W=${r.W_kgh.toFixed(0)} kg/h, P_set=${r.P_set_barG.toFixed(1)} barG [ChemPro API 520 설계완료]`
       };
     }
 
@@ -2876,8 +3217,26 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (pp.rho_kgm3 !== undefined && pp.rho_kgm3 > 0) {
         setVal('pipe_rho', pp.rho_kgm3, 2);
       }
+    } else if (tab === 'psv' && p.psv) {
+      const pv = p.psv;
+      if (pv.fluidId) setSelectSafe('psv_fluid', pv.fluidId);
+      if (pv.scenario) setSelectSafe('psv_scenario', pv.scenario === 'blocked' ? 'blocked_outlet' : pv.scenario);
+      if (pv.phase) setSelectSafe('psv_phase', pv.phase);
+      setVal('psv_T', pv.T_C, 1);
+      setVal('psv_W', pv.W_kgh, 0);
+      setVal('psv_Pset', pv.Pset_barG, 2);
+      setVal('psv_Pback', pv.Pback_barG, 2);
+      onPSVFluidChange();
+      if (pv.mw !== undefined) setVal('psv_mw', pv.mw, 2);
+      if (pv.k !== undefined) setVal('psv_k', pv.k, 2);
+      if (pv.Awet_m2 !== undefined) setVal('psv_Awet', pv.Awet_m2, 1);
+      if (pv.hv_kJkg !== undefined) setVal('psv_hv', pv.hv_kJkg, 0);
+      if (pv.Z !== undefined) setVal('psv_Z', pv.Z, 2);
     }
 
+    if (p.plantId) {
+      setActivePlantContext(p.plantId, { tag: p.equipTag, subTab: tab, skipPresetLoad: true });
+    }
     syncAllCustomSelects();
     recalc();
     return true;
@@ -2885,6 +3244,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
 
   return {
     applySimulatorHandoff,
+    setActivePlantContext,
     loadChlorAlkaliPreset,
     saveToChlorAlkaliEquipList,
     buildCADcraftDXFString,

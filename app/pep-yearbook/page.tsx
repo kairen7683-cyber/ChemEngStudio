@@ -193,9 +193,9 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   mdi_plant: {
     key: 'mdi_plant',
     code: 'PEP-MDI-05',
-    name: '금호미쓰이 공정 MDI 10만톤 통합 플랜트 (MDA · 포스겐화 · Pure/PMDI)',
+    name: 'MDI 10만톤 통합 플랜트 (MDA · 포스겐화 · Pure/PMDI)',
     product: 'Pure 4,4\'-MDI (4,500 kg/h · 36%) + Polymeric MDI (8,000 kg/h · 64%) · 합계 12,500 kg/h (100,000 MT/yr) + 부생 무수 HCl 0.659 t/t-MDI',
-    licensor: 'Kumho Mitsui Chemicals (KMCI) / Mitsui Phosgenation Process',
+    licensor: '2-Stage Liquid-Phase Phosgenation Process',
     baseCap_tpy: 100000,
     baseCapex_musd: 145.0,
     scaleExponent: 0.65,

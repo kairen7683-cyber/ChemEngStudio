@@ -98,7 +98,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
     { group: 'hcl1A', label: 'PLANT 02 · 염산합성/정제 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'hcl1A') },
     { group: 'ech', label: 'PLANT 03 · ECH 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'ech') },
     { group: 'cms', label: 'PLANT 04 · 클로로메탄(CMS) 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'cms') },
-    { group: 'mdi', label: 'PLANT 05 · 금호미쓰이 MDI 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'mdi') },
+    { group: 'mdi', label: 'PLANT 05 · MDI 통합 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'mdi') },
   ];
 
   return (

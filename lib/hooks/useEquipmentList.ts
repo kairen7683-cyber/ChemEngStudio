@@ -117,7 +117,34 @@ const HCL_SYNTH_EQUIPMENT: EquipmentItem[] = [
   { id: 'E325', tag: 'E-325', name: 'Spent HCl Recovery Preheater/Cooler (폐염산 회수 열교환기)', type: 'heatExchanger', section: '300', fluidKey: 'hcl_31', streamIds: [] },
 ];
 
-// PLANT 05 (금호미쓰이 MDI 10만톤 공정) 전용 정적 장치 목록 (14기)
+// PLANT 03 (Bio-ECH 70,000 TPA) 전용 정적 장치 목록
+const ECH_GTE_EQUIPMENT: EquipmentItem[] = [
+  { id: 'ech_r101', tag: 'R-101', name: '글리세린 염산 촉매 반응기 (DCH 합성 · 112°C)', type: 'reactor',       section: '100', fluidKey: 'dch_13',   streamIds: ['101', '104'] },
+  { id: 'ech_e102', tag: 'E-102', name: 'DCH 반응물 냉각기 (112→55°C · CW)',              type: 'heatExchanger', section: '100', fluidKey: 'dch_13',   streamIds: ['104', '105'] },
+  { id: 'ech_p101', tag: 'P-101', name: '조 DCH 반응액 이송 펌프',                        type: 'pump',          section: '100', fluidKey: 'dch_13',   streamIds: ['105'] },
+  { id: 'ech_r201', tag: 'R-201', name: 'NaOH 비누화 · ECH 고리화 반응기 (68°C)',       type: 'reactor',       section: '200', fluidKey: 'ech_pure', streamIds: ['201', '203'] },
+  { id: 'ech_v202', tag: 'V-202', name: '조 ECH / 염수 LLE 유수분리 디캔터',              type: 'separator',     section: '200', fluidKey: 'ech_pure', streamIds: ['203', '204'] },
+  { id: 'ech_c101', tag: 'C-101', name: '경질분·수분 공비탈수 증류탑 (20단 · -0.65 kG)', type: 'tower',         section: '300', fluidKey: 'ech_pure', streamIds: ['301', '302'] },
+  { id: 'ech_c102', tag: 'C-102', name: '99.9% ECH 제품 진공 정제탑 (26단 · -0.92 kG)',  type: 'tower',         section: '300', fluidKey: 'ech_pure', streamIds: ['302', '303'] },
+  { id: 'ech_e301', tag: 'E-301', name: '고순도 99.9% ECH 제품 냉각기 (62→35°C · CW)',  type: 'heatExchanger', section: '300', fluidKey: 'ech_pure', streamIds: ['303'] },
+  { id: 'ech_p301', tag: 'P-301', name: '99.9% 에폭시급 ECH 제품 이송 펌프',              type: 'pump',          section: '300', fluidKey: 'ech_pure', streamIds: ['303'] },
+];
+
+// PLANT 04 (클로로메탄 CMS · MCL 120 + CFM 80 T/D) 전용 정적 장치 목록
+const CMS_PLANT_EQUIPMENT: EquipmentItem[] = [
+  { id: 'cms_e101', tag: 'E-101', name: '액화염소(Cl₂) 가압 기화기 (25→95°C · 24.5 kG)',  type: 'heatExchanger', section: '100', fluidKey: 'cl2_gas', streamIds: ['101'] },
+  { id: 'cms_r101', tag: 'R-101', name: 'AIBN 라디칼 염소화 고압 반응기 (120°C · 24 kG)',   type: 'reactor',       section: '100', fluidKey: 'CH3Cl',   streamIds: ['103', '104'] },
+  { id: 'cms_e102', tag: 'E-102', name: '염소화 반응생성물 냉각기 (120→38°C · CW)',        type: 'heatExchanger', section: '100', fluidKey: 'CH2Cl2',  streamIds: ['104'] },
+  { id: 'cms_c201', tag: 'C-201', name: '고압 무수염산(AHCl) 탈거탑 (60단 · 17.5 kG)',       type: 'tower',         section: '200', fluidKey: 'HCl',     streamIds: ['201', '202'] },
+  { id: 'cms_c202', tag: 'C-202', name: '미반응 MC 순환 분리탑 (50단 · 6.5 kG · MCL 무순환)', type: 'tower',       section: '200', fluidKey: 'CH3Cl',   streamIds: ['202', '203'] },
+  { id: 'cms_p202', tag: 'P-202', name: '순환 메틸클로라이드(MC) 승압 펌프 (9.2→24.5 kG)',  type: 'pump',          section: '200', fluidKey: 'CH3Cl',   streamIds: ['203'] },
+  { id: 'cms_c203', tag: 'C-203', name: 'Azeo 공비·경질 분리탑 (30단 · 2.2 kG)',             type: 'tower',         section: '200', fluidKey: 'CH2Cl2',  streamIds: ['204'] },
+  { id: 'cms_c301', tag: 'C-301', name: '고순도 MCL 제품 정제탑 (80단 · 120 T/D · 99.99%)',  type: 'tower',         section: '300', fluidKey: 'CH2Cl2',  streamIds: ['301', '302'] },
+  { id: 'cms_e301', tag: 'E-301', name: '고순도 MCL 제품 냉각기 (78→32°C · CW)',              type: 'heatExchanger', section: '300', fluidKey: 'CH2Cl2',  streamIds: ['302'] },
+  { id: 'cms_c302', tag: 'C-302', name: 'CFM 정제탑 & CTC/헤비 폐기분리 (120단 · 80 T/D)',  type: 'tower',         section: '300', fluidKey: 'CHCl3',   streamIds: ['303', '304'] },
+];
+
+// PLANT 05 (MDI 10만톤 통합 공정) 전용 정적 장치 목록 (14기)
 const MDI_PLANT_EQUIPMENT: EquipmentItem[] = [
   // ── 100 SEC: MDA 합성 · 염수 디캔터 · 진공탈수 · 아닐린 감압회수 ──
   { id: 'mdi_r101', tag: 'R-101',    name: 'MDA 축합·전위 및 가성중화 반응기 (95°C · 2.5 kG)',             type: 'reactor',       section: '100', streamIds: ['103', '104', '105'] },
@@ -159,11 +186,15 @@ export function useEquipmentList(typeFilter?: 'pump' | 'tower' | 'heatExchanger'
     const staticSource =
       activePlantId === 'hcl_synth'
         ? HCL_SYNTH_EQUIPMENT
-        : activePlantId === 'mdi_plant'
-          ? MDI_PLANT_EQUIPMENT
-          : activePlantId === 'green_h2'
-            ? []
-            : STATIC_EQUIPMENT;
+        : activePlantId === 'ech_gte'
+          ? ECH_GTE_EQUIPMENT
+          : activePlantId === 'cms_plant'
+            ? CMS_PLANT_EQUIPMENT
+            : activePlantId === 'mdi_plant'
+              ? MDI_PLANT_EQUIPMENT
+              : activePlantId === 'green_h2'
+                ? []
+                : STATIC_EQUIPMENT;
 
     const allEquipment: EquipmentItem[] = [
       ...staticSource.map(eq => {

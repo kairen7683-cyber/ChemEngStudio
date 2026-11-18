@@ -672,7 +672,8 @@ function buildMdiAuxiliaryRows(scale: number): ScopedEquipRow[] {
       handoffPayload: {
         version: 1,
         timestamp: Date.now(),
-        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        sourceLabel: 'PLANT 05 MDI',
+        plantId: 'mdi_plant',
         tab: 'pump',
         equipTag: 'P-101A/B',
         equipName: 'MDA/아닐린 순환·이송 펌프',
@@ -728,7 +729,8 @@ function buildMdiAuxiliaryRows(scale: number): ScopedEquipRow[] {
       handoffPayload: {
         version: 1,
         timestamp: Date.now(),
-        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        sourceLabel: 'PLANT 05 MDI',
+        plantId: 'mdi_plant',
         tab: 'pump',
         equipTag: 'P-302A/B',
         equipName: '회수 MCB 용매 이송·순환 펌프',
@@ -784,11 +786,24 @@ function buildMdiAuxiliaryRows(scale: number): ScopedEquipRow[] {
       handoffPayload: {
         version: 1,
         timestamp: Date.now(),
-        sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+        sourceLabel: 'PLANT 05 MDI',
+        plantId: 'mdi_plant',
         tab: 'psv',
         equipTag: 'PSV-201',
         equipName: '포스겐 반응계 긴급 압력방출 안전밸브',
         detectedFluidSummary: `포스겐/HCl 반응가스 (Set 4.5 barG · ${psvRelieve.toFixed(0)} kg/h)`,
+        psv: {
+          fluidId: 'phosgene',
+          scenario: 'blocked_outlet',
+          phase: 'vapor',
+          W_kgh: 8500,
+          Pset_barG: 4.5,
+          Pback_barG: 0.3,
+          T_C: 145,
+          mw: 62.5,
+          k: 1.28,
+          Z: 0.96,
+        },
       },
       datasheetProcessRows: [
         { label: '방출 시나리오', value: 'R-201/R-202 냉각상실 · Blocked Outlet (제해탑 직결)' },
@@ -921,7 +936,7 @@ export default function PlantScopedEquipmentList() {
         savedStamp = '클로로메탄(CMS · MCL 120 + CFM 80 T/D) 표준 초기 시뮬레이션 패키지 기준';
       } else if (activePlantId === 'mdi_plant') {
         sheets = createInitialMdiHierarchySheets({ syncMasterOnInit: true });
-        savedStamp = '금호미쓰이 MDI 10만톤 (Pure 4,500 · PMDI 8,000 kg/h) 표준 초기 시뮬레이션 패키지 기준';
+        savedStamp = 'MDI 10만톤 (Pure 4,500 · PMDI 8,000 kg/h) 표준 초기 시뮬레이션 패키지 기준';
       } else {
         sheets = {};
         savedStamp = '신규 빌더 캔버스 (배치된 장치 실시간 반영)';

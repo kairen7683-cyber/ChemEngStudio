@@ -1756,7 +1756,7 @@ window.ChemEngSolvers = (function () {
             <td style="text-align:center;">GEMINI FLASH</td>
             <td style="text-align:center;">${dateStr}</td>
             <td style="text-align:center;color:#38bdf8;font-weight:800;">AI OPT.</td>
-            <td colspan="2"><b>UNIT / AREA:</b> CHLOR-ALKALI PLANT</td>
+            <td colspan="2"><b>UNIT / AREA:</b> ${(typeof window !== 'undefined' && window.ACTIVE_PLANT_UNIT_AREA) || 'CHEMICAL PROCESS PLANT'}</td>
             <td colspan="2"><b>SERVICE:</b> <b>${serviceName}</b></td>
             <td colspan="2"><b>INSTALLED BY:</b> EPC CONTRACTOR</td>
           </tr>
@@ -1911,7 +1911,7 @@ window.ChemEngSolvers = (function () {
             <tr>
               <td class="ln">16</td>
               <td colspan="2"><b>Plate Thickness & Material</b></td>
-              <td colspan="4" class="val-hi">Thickness t_p = ${res.phe_tp_mm} mm · Material: Titanium Gr.1 / Nickel 200 / Hastelloy C-276 (Chlor-Alkali Spec)</td>
+              <td colspan="4" class="val-hi">Thickness t_p = ${res.phe_tp_mm} mm · Material: Titanium Gr.1 / Nickel 200 / Hastelloy C-276 (Process Duty Spec)</td>
             </tr>
             <tr>
               <td class="ln">17</td>

@@ -1,7 +1,7 @@
 {
   "version": "2.0.0",
-  "updated_at": "2026-11-07T10:56:30.232Z",
-  "count": 179,
+  "updated_at": "2026-11-18T08:00:00.000Z",
+  "count": 185,
   "compounds": [
     {
       "id": "naoh_32",
@@ -4667,6 +4667,166 @@
         1780,
         232
       ]
+    },
+    {
+      "id": "formalin_37",
+      "name": "[MDI공장] 포르말린 37% 수용액 (Formalin 37wt%)",
+      "formula": "CH₂O(aq)",
+      "cas": "50-00-0",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 21.2,
+      "tb": 97.5,
+      "tc": 373,
+      "pc": 210,
+      "omega": 0.34,
+      "rho20": 1090,
+      "drho": -0.65,
+      "mu20": 2.2,
+      "muB": 1950,
+      "cp20": 3.35,
+      "k20": 0.48,
+      "hv": 1950,
+      "sigma": 62,
+      "fouling": 0.00025,
+      "antoine": [
+        7.92,
+        1680,
+        228
+      ]
+    },
+    {
+      "id": "co_gas",
+      "name": "[MDI공장] 일산화탄소 원료가스 (CO Gas)",
+      "formula": "CO",
+      "cas": "630-08-0",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 28.01,
+      "tb": -191.5,
+      "tc": -140.3,
+      "pc": 34.94,
+      "omega": 0.045,
+      "rho20": 1.165,
+      "drho": -0.004,
+      "mu20": 0.0175,
+      "muB": 150,
+      "cp20": 1.04,
+      "k20": 0.025,
+      "hv": 216,
+      "sigma": 0.1,
+      "fouling": 0.00009,
+      "antoine": [
+        6.6942,
+        291.74,
+        267.99
+      ]
+    },
+    {
+      "id": "phosgene",
+      "name": "[MDI공장] 포스겐 (Phosgene, COCl₂)",
+      "formula": "COCl₂",
+      "cas": "75-44-5",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 98.92,
+      "tb": 8.2,
+      "tc": 181.85,
+      "pc": 56.7,
+      "omega": 0.204,
+      "rho20": 1381,
+      "drho": -2.35,
+      "mu20": 0.36,
+      "muB": 920,
+      "cp20": 1.03,
+      "cp_vap": 0.6,
+      "k20": 0.115,
+      "hv": 247,
+      "sigma": 19.8,
+      "fouling": 0.0002,
+      "antoine": [
+        6.8429,
+        941.25,
+        230
+      ]
+    },
+    {
+      "id": "mda",
+      "name": "[MDI공장] 4,4'-메틸렌디아닐린 (4,4'-MDA)",
+      "formula": "C₁₃H₁₄N₂",
+      "cas": "101-77-9",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 198.27,
+      "tb": 398,
+      "tc": 608.85,
+      "pc": 28.2,
+      "omega": 0.685,
+      "rho20": 1095,
+      "drho": -0.72,
+      "mu20": 42,
+      "muB": 3600,
+      "cp20": 1.92,
+      "cp_vap": 1.3,
+      "k20": 0.158,
+      "hv": 412,
+      "sigma": 45.5,
+      "fouling": 0.00035,
+      "antoine": [
+        7.65,
+        2850,
+        200
+      ]
+    },
+    {
+      "id": "mdi_pure",
+      "name": "[MDI공장] 4,4'-Pure MDI 모노머 (Monomeric MDI)",
+      "formula": "C₁₅H₁₀N₂O₂",
+      "cas": "101-68-8",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 250.26,
+      "tb": 314,
+      "tc": 528.85,
+      "pc": 23.4,
+      "omega": 0.61,
+      "rho20": 1192,
+      "drho": -0.82,
+      "mu20": 18.5,
+      "muB": 2950,
+      "cp20": 1.8,
+      "cp_vap": 1.21,
+      "k20": 0.145,
+      "hv": 348,
+      "sigma": 42,
+      "fouling": 0.0003,
+      "antoine": [
+        7.55,
+        2400,
+        200
+      ]
+    },
+    {
+      "id": "pmdi",
+      "name": "[MDI공장] 폴리머릭 MDI (Polymeric / Crude MDI)",
+      "formula": "PMDI",
+      "cas": "9016-87-9",
+      "category": "★ MDI 공정 전용 물질 (MDA / Phosgene / Isocyanate)",
+      "mw": 381.4,
+      "tb": 435,
+      "tc": 671.85,
+      "pc": 16.5,
+      "omega": 0.85,
+      "rho20": 1232,
+      "drho": -0.78,
+      "mu20": 185,
+      "muB": 4200,
+      "cp20": 1.84,
+      "cp_vap": 1.25,
+      "k20": 0.148,
+      "hv": 315,
+      "sigma": 44.5,
+      "fouling": 0.00045,
+      "antoine": [
+        7.8,
+        3120,
+        200
+      ]
     }
   ],
   "nrtl_presets": {
@@ -4777,6 +4937,60 @@
       "a21": -180,
       "alpha": 0.2,
       "azeotrope": "최대공비점 주의 (진공 22.9wt% ↔ 가압 17.5wt%)"
+    },
+    "aniline_mda": {
+      "name": "아닐린 / 4,4'-MDA (MDI C-101 아닐린 감압 회수탑)",
+      "lk": "aniline",
+      "hk": "mda",
+      "a12": 65,
+      "a21": -28,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (15 kPa 진공 · 비점차 214°C)"
+    },
+    "phosgene_mcb": {
+      "name": "포스겐(COCl₂) / MCB 용매 (MDI C-301 탈포스겐 스트리퍼)",
+      "lk": "phosgene",
+      "hk": "chlorobenzene",
+      "a12": 38,
+      "a21": -15,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (COCl₂ 탑정 전량 회수 순환)"
+    },
+    "mcb_mdi": {
+      "name": "모노클로로벤젠(MCB) / Crude MDI (MDI C-302 진공 용매회수탑)",
+      "lk": "chlorobenzene",
+      "hk": "mdi_pure",
+      "a12": 82,
+      "a21": -34,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (10 kPa 진공 · 무용매 Crude MDI 생산)"
+    },
+    "mdi_pmdi": {
+      "name": "4,4'-Pure MDI / PMDI (MDI C-401 20 mbar 고진공 분별탑)",
+      "lk": "mdi_pure",
+      "hk": "pmdi",
+      "a12": 45,
+      "a21": -18,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (20 mbar 고진공 박막 분별)"
+    },
+    "mc_mcl": {
+      "name": "메틸클로라이드(MC) / 염화메틸렌(MCL) (CMS C-202 MC 순환탑)",
+      "lk": "methyl_chloride",
+      "hk": "dcm",
+      "a12": 24,
+      "a21": -10,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (6.5 barG 가압 운전 · 상대휘발도 α≈4.2)"
+    },
+    "cfm_ctc": {
+      "name": "클로로포름(CFM) / 사염화탄소(CTC) (CMS C-302 120단 정제탑)",
+      "lk": "chloroform",
+      "hk": "ccl4",
+      "a12": 52,
+      "a21": -14,
+      "alpha": 0.3,
+      "azeotrope": "공비점 없음 (상대휘발도 α≈1.52 · 다단 정밀분별)"
     }
   },
   "asme_materials": {

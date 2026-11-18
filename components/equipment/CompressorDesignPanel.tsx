@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   solveCompressorDesign,
   type CompressorInputs,
@@ -8,9 +8,11 @@ import {
   type CompressorSolveResult,
 } from '@/lib/calculations/compressorDesign';
 import { type SimCompKey } from '@/lib/calculations/flowsheetSolver';
+import { useBalanceStore } from '@/lib/stores/balanceStore';
 
 interface PresetOption {
   id: string;
+  plantIds: string[];
   name: string;
   desc: string;
   inputs: CompressorInputs;
@@ -19,6 +21,7 @@ interface PresetOption {
 const PRESETS: PresetOption[] = [
   {
     id: 'C470',
+    plantIds: ['clorsim', 'clorsim_sim'],
     name: 'C-470 염소 가스 건조 압축기 (Plant 01)',
     desc: '400구역 건조 염소(Cl2) 2단 원심식 압축 (0.15 → 3.2 kg/cm²G)',
     inputs: {
@@ -41,6 +44,7 @@ const PRESETS: PresetOption[] = [
   },
   {
     id: 'C620',
+    plantIds: ['clorsim', 'clorsim_sim'],
     name: 'C-620 고압 수소 압축기 (Plant 01)',
     desc: '600구역 전해 수소(H2) 3단 왕복동식 고압 충전 압축 (0.20 → 23.0 kg/cm²G)',
     inputs: {
@@ -63,7 +67,55 @@ const PRESETS: PresetOption[] = [
     },
   },
   {
+    id: 'C220A',
+    plantIds: ['hcl_synth'],
+    name: 'C-220A 5N 무수 염화수소 압축기 (Plant 02)',
+    desc: '200구역 반도체급 5N AHCl 2단 왕복동식 압축 (0.20 → 14.5 kg/cm²G)',
+    inputs: {
+      tag: 'C-220A',
+      name: 'Ultra-Pure 5N AHCl Reciprocating Compressor',
+      type: 'reciprocating',
+      moleFrac: { HCl: 0.999, H2: 0.001 } as Record<SimCompKey, number>,
+      massFlowKgH: 4800,
+      suctionPressKgcm2g: 0.20,
+      suctionTempC: 32.0,
+      dischargePressKgcm2g: 14.5,
+      numStages: 2,
+      mechanicalEfficiency: 0.96,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 35.0,
+      interstagePressureDropBar: 0.25,
+      clearanceFraction: 0.12,
+      strokeMm: 220,
+      recipSpeedRpm: 420,
+    },
+  },
+  {
+    id: 'B130',
+    plantIds: ['hcl_synth'],
+    name: 'B-130 테일가스 송풍기 (Plant 02)',
+    desc: '100구역 합성로·스크러버 미반응 H2/HCl 테일가스 승압 (0.02 → 1.40 kg/cm²G)',
+    inputs: {
+      tag: 'B-130',
+      name: 'Tail-Gas Recycle Blower',
+      type: 'centrifugal',
+      moleFrac: { H2: 0.65, N2: 0.25, HCl: 0.10 } as Record<SimCompKey, number>,
+      massFlowKgH: 650,
+      suctionPressKgcm2g: 0.02,
+      suctionTempC: 35.0,
+      dischargePressKgcm2g: 1.40,
+      numStages: 1,
+      polytropicEfficiency: 0.74,
+      mechanicalEfficiency: 0.97,
+      motorEfficiency: 0.94,
+      intercoolerExitTempC: 38.0,
+      interstagePressureDropBar: 0.15,
+      speedRpm: 6800,
+    },
+  },
+  {
     id: 'C301',
+    plantIds: ['ech_gte'],
     name: 'C-301 프로필렌 냉동 압축기 (Plant 03)',
     desc: 'Plant 03 프로필렌(C3H6) 냉동 사이클 2단 원심식 압축 (0.50 → 15.0 kg/cm²G)',
     inputs: {
@@ -84,15 +136,146 @@ const PRESETS: PresetOption[] = [
       speedRpm: 9500,
     },
   },
+  {
+    id: 'VP102',
+    plantIds: ['ech_gte'],
+    name: 'VP-102 C-102 고진공 정제탑 진공 부스터 (Plant 03)',
+    desc: '300구역 85 Torr 진공 증류계 비응축가스 배기 2단 압축 (-0.88 → 0.25 kg/cm²G)',
+    inputs: {
+      tag: 'VP-102',
+      name: 'ECH Vacuum Distillation Booster',
+      type: 'centrifugal',
+      moleFrac: { ECH: 0.45, N2: 0.40, H2O: 0.15 } as Record<SimCompKey, number>,
+      massFlowKgH: 320,
+      suctionPressKgcm2g: -0.88,
+      suctionTempC: 38.0,
+      dischargePressKgcm2g: 0.25,
+      numStages: 2,
+      polytropicEfficiency: 0.72,
+      mechanicalEfficiency: 0.96,
+      motorEfficiency: 0.93,
+      intercoolerExitTempC: 40.0,
+      interstagePressureDropBar: 0.10,
+      speedRpm: 5400,
+    },
+  },
+  {
+    id: 'K201_CMS',
+    plantIds: ['cms_plant'],
+    name: 'K-201 미반응 CH₃Cl 순환 가스 압축기 (Plant 04)',
+    desc: '200구역 메틸클로라이드(MC) 고압 리사이클 2단 원심 압축 (4.50 → 24.0 kg/cm²G)',
+    inputs: {
+      tag: 'K-201',
+      name: 'Methyl Chloride Recycle Centrifugal Compressor',
+      type: 'centrifugal',
+      moleFrac: { CH3Cl: 0.96, HCl: 0.04 } as Record<SimCompKey, number>,
+      massFlowKgH: 7400,
+      suctionPressKgcm2g: 4.50,
+      suctionTempC: 42.0,
+      dischargePressKgcm2g: 24.0,
+      numStages: 2,
+      polytropicEfficiency: 0.78,
+      mechanicalEfficiency: 0.98,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 40.0,
+      interstagePressureDropBar: 0.30,
+      speedRpm: 8900,
+    },
+  },
+  {
+    id: 'K101_CMS',
+    plantIds: ['cms_plant'],
+    name: 'K-101 기화 염소(Cl₂) 반응기 승압기 (Plant 04)',
+    desc: '100구역 기화 염소 R-101 공급 승압 2단 원심 압축 (8.00 → 24.8 kg/cm²G)',
+    inputs: {
+      tag: 'K-101',
+      name: 'Chlorine Feed Booster Compressor',
+      type: 'centrifugal',
+      moleFrac: { Cl2: 0.995, N2: 0.005 } as Record<SimCompKey, number>,
+      massFlowKgH: 9167,
+      suctionPressKgcm2g: 8.00,
+      suctionTempC: 65.0,
+      dischargePressKgcm2g: 24.8,
+      numStages: 2,
+      polytropicEfficiency: 0.76,
+      mechanicalEfficiency: 0.98,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 45.0,
+      interstagePressureDropBar: 0.25,
+      speedRpm: 7600,
+    },
+  },
+  {
+    id: 'K201_MDI',
+    plantIds: ['mdi_plant'],
+    name: 'K-201 원료 CO 포스겐 합성 압축기 (Plant 05)',
+    desc: '200구역 일산화탄소(CO) 포스겐 합성계 2단 왕복동 가압 압축 (1.50 → 12.0 kg/cm²G)',
+    inputs: {
+      tag: 'K-201',
+      name: 'CO Feed Compressor for Phosgene Synthesis',
+      type: 'reciprocating',
+      moleFrac: { CO: 0.995, N2: 0.005 } as Record<SimCompKey, number>,
+      massFlowKgH: 3150,
+      suctionPressKgcm2g: 1.50,
+      suctionTempC: 35.0,
+      dischargePressKgcm2g: 12.0,
+      numStages: 2,
+      mechanicalEfficiency: 0.96,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 38.0,
+      interstagePressureDropBar: 0.25,
+      clearanceFraction: 0.10,
+      strokeMm: 240,
+      recipSpeedRpm: 440,
+    },
+  },
+  {
+    id: 'VP401_MDI',
+    plantIds: ['mdi_plant'],
+    name: 'VP-401 고진공 Pure/PMDI 분별 진공 부스터 (Plant 05)',
+    desc: '400구역 20 mbar 고진공 박막·분별탑 진공 배기 2단 압축 (-0.98 → 0.15 kg/cm²G)',
+    inputs: {
+      tag: 'VP-401',
+      name: 'High-Vacuum MDI Fractionation Booster',
+      type: 'centrifugal',
+      moleFrac: { MCB: 0.35, N2: 0.55, COCl2: 0.10 } as Record<SimCompKey, number>,
+      massFlowKgH: 480,
+      suctionPressKgcm2g: -0.98,
+      suctionTempC: 45.0,
+      dischargePressKgcm2g: 0.15,
+      numStages: 2,
+      polytropicEfficiency: 0.71,
+      mechanicalEfficiency: 0.96,
+      motorEfficiency: 0.94,
+      intercoolerExitTempC: 40.0,
+      interstagePressureDropBar: 0.10,
+      speedRpm: 5800,
+    },
+  },
 ];
 
 export default function CompressorDesignPanel() {
-  const [selectedPresetId, setSelectedPresetId] = useState<string>('C470');
-  const [inputs, setInputs] = useState<CompressorInputs>(PRESETS[0].inputs);
+  const activePlantId = useBalanceStore(s => s.activePlantId);
+  const plantPresets = useMemo(() => {
+    if (!activePlantId || activePlantId === 'new_builder') return PRESETS;
+    const matched = PRESETS.filter(p => p.plantIds.includes(activePlantId));
+    return matched.length > 0 ? matched : PRESETS;
+  }, [activePlantId]);
+
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(() => plantPresets[0]?.id || 'C470');
+  const [inputs, setInputs] = useState<CompressorInputs>(() => plantPresets[0]?.inputs || PRESETS[0].inputs);
+
+  useEffect(() => {
+    const first = plantPresets[0];
+    if (first && !plantPresets.some(p => p.id === selectedPresetId)) {
+      setSelectedPresetId(first.id);
+      setInputs(first.inputs);
+    }
+  }, [plantPresets, selectedPresetId]);
 
   const handleSelectPreset = (id: string) => {
     setSelectedPresetId(id);
-    const p = PRESETS.find(item => item.id === id);
+    const p = plantPresets.find(item => item.id === id);
     if (p) setInputs(p.inputs);
   };
 
@@ -155,7 +338,7 @@ export default function CompressorDesignPanel() {
 
       {/* Preset Selector */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', overflowX: 'auto', paddingBottom: '4px' }}>
-        {PRESETS.map(preset => {
+        {plantPresets.map(preset => {
           const isSelected = selectedPresetId === preset.id;
           return (
             <button

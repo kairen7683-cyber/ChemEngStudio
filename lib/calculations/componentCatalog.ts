@@ -835,7 +835,7 @@ export const PLANT_COMPONENT_PRESETS: PlantComponentPreset[] = [
   {
     plantId: 'mdi_plant',
     code: 'PLANT 05',
-    labelKo: '금호미쓰이 MDI 10만톤 (MDA · 포스겐화 · Pure/PMDI)',
+    labelKo: 'MDI 10만톤 통합 공정 (MDA · 포스겐화 · Pure/PMDI)',
     descKo: '아닐린·포르말린 축합, CO+Cl₂ 포스겐 합성, MCB 용매 포스겐화, MCB 회수 및 고진공 MDI/PMDI 정밀분별 13종',
     components: ['Aniline', 'HCHO', 'HCl', 'NaOH', 'NaCl', 'H2O', 'CO', 'Cl2', 'COCl2', 'MCB', 'MDA', 'MDI', 'PMDI'],
     defaultMethod: 'NRTL',

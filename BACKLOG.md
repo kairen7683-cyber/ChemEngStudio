@@ -4,7 +4,7 @@
 
 ---
 
-## 1. [Done · 2026-11-18] Plant 05: 금호미쓰이 공정 기반 100,000 MT/yr MDI 통합 플랜트 추가
+## 1. [Done · 2026-11-18] Plant 05: 100,000 MT/yr MDI 통합 플랜트 추가
 
 - **구현 내용**:
   - 7종 신규 성분(`COCl2`, `HCHO`, `MCB`, `Aniline`, `MDA`, `MDI`, `PMDI`) 열역학·임계·증기압(DIPPR-101)·UNIFAC·생성깁스에너지·촉매반응 프리셋·LLE 분배·물성 DB 전수 확장 (총 `77`개 `SimCompKey`)

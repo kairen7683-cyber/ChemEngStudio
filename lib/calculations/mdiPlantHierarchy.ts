@@ -1,5 +1,5 @@
 // ============================================================================
-// PLANT 05 — 금호미쓰이 공정 MDI 10만톤 (100,000 TPA · 12,500 kg/h) 5-Sheet 상용 계층 공정
+// PLANT 05 — 액상 2단 포스겐화 통합 공정 MDI 10만톤 (100,000 TPA · 12,500 kg/h) 5-Sheet 상용 계층 공정
 // ============================================================================
 // Master : Aniline + Formalin(37%) + HCl/NaOH → MDA 합성·중화(R-101) → 염수분리(D-101)
 //          → 진공 아닐린 회수(C-101) → CO+Cl2 포스겐 합성(R-201)
@@ -137,7 +137,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
   id: 'master',
   sectionCode: 'MASTER MDI',
   shortTabLabel: '전체 통합 공정 (Master)',
-  title: 'PLANT 05 — 금호미쓰이 MDI 10만톤 통합 공정 (Pure MDI 108 · PMDI 192 T/D)',
+  title: 'PLANT 05 — MDI 10만톤 통합 공정 (Pure MDI 108 · PMDI 192 T/D)',
   subtitle: '100 SEC(MDA 축합·염수디캔터·아닐린회수) → 200 SEC(포스겐 합성·2단 포스겐화) → 300 SEC(탈포스겐·MCB 회수) → 400 SEC(Pure/Polymeric MDI 진공 분별)',
   parentMasterNodeIds: [],
   nodes: [

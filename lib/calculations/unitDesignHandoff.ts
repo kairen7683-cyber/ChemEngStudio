@@ -25,7 +25,8 @@ export type ChemProTargetTab = 'hx' | 'pump' | 'column' | 'vessel' | 'piping' | 
 export interface ChemProSimHandoffPayload {
   version: 1;
   timestamp: number;
-  sourceLabel: string; // 예: 'PLANT 02 전해공장 시뮬레이터' | '신규공장 플로우시트 빌더' | 'PLANT 01 전해공장 PFD'
+  plantId?: string;
+  sourceLabel: string; // 예: 'PLANT 02 염산합성 시뮬레이터' | 'PLANT 05 MDI' | 'PLANT 01 전해공장 PFD'
   tab: ChemProTargetTab;
   equipTag: string;
   equipName: string;
@@ -115,6 +116,22 @@ export interface ChemProSimHandoffPayload {
     Q_m3h: number;
     rho_kgm3: number;
   };
+
+  // 6) API 520 / 526 안전밸브 (tab === 'psv')
+  psv?: {
+    fluidId: string;
+    scenario: string;
+    phase: 'vapor' | 'steam' | 'liquid';
+    W_kgh: number;
+    Pset_barG: number;
+    Pback_barG: number;
+    T_C: number;
+    mw?: number;
+    k?: number;
+    Awet_m2?: number;
+    hv_kJkg?: number;
+    Z?: number;
+  };
 }
 
 export interface UnitDesignRouteAction {
@@ -191,6 +208,24 @@ export function mapSimFlowsToChemProFluid(
   const wFeCl2 = flows.FeCl2 / tot;
   const wPAC = flows.PAC / tot;
   const wNaClO3 = flows.NaClO3 / tot;
+  const wCOCl2 = flows.COCl2 / tot;
+  const wHCHO = flows.HCHO / tot;
+  const wMCB = flows.MCB / tot;
+  const wAniline = flows.Aniline / tot;
+  const wMDA = flows.MDA / tot;
+  const wMDI = flows.MDI / tot;
+  const wPMDI = flows.PMDI / tot;
+  const wCO = flows.CO / tot;
+
+  if (wPMDI >= 0.45 && wMCB < 0.25 && wMDI < 0.45) return 'pmdi';
+  if (wMDI >= 0.45 && wMCB < 0.25) return 'mdi_pure';
+  if (wMDI + wPMDI >= 0.35 && wMCB < 0.25) return wMDI >= wPMDI ? 'mdi_pure' : 'pmdi';
+  if (wMDA >= 0.35 && wAniline < 0.30) return 'mda';
+  if (wMCB >= 0.25) return 'chlorobenzene';
+  if (wAniline >= 0.20) return 'aniline';
+  if (wCOCl2 >= 0.25) return 'phosgene';
+  if (wHCHO >= 0.08) return 'formalin_37';
+  if (wCO >= 0.30 || (phase === 'G' && wCO >= 0.15)) return 'co_gas';
 
   if (wCH3Cl >= 0.30) return 'methyl_chloride';
   if (wCH2Cl2 >= 0.30) return 'dcm';
@@ -759,7 +794,27 @@ export function buildChemProHandoffPayload(
     const wInCH3Cl = sumInFlows.CH3Cl / totInFlow;
     const wInCH2Cl2 = sumInFlows.CH2Cl2 / totInFlow;
     const wInCHCl3 = sumInFlows.CHCl3 / totInFlow;
-    if (sumInFlows.HCl > 1 && sumInFlows.H2O > 1) {
+    if (sumInFlows.MDA > 50 && sumInFlows.Aniline > 10 && sumInFlows.COCl2 < 1) {
+      lkFluidId = 'aniline';
+      hkFluidId = 'mda';
+      lkKey = 'Aniline';
+      hkKey = 'MDA';
+    } else if (sumInFlows.COCl2 > 100 && sumInFlows.MCB > 100) {
+      lkFluidId = 'phosgene';
+      hkFluidId = 'chlorobenzene';
+      lkKey = 'COCl2';
+      hkKey = 'MCB';
+    } else if (sumInFlows.MCB > 100 && (sumInFlows.MDI > 100 || sumInFlows.PMDI > 100) && sumInFlows.COCl2 <= 100) {
+      lkFluidId = 'chlorobenzene';
+      hkFluidId = 'mdi_pure';
+      lkKey = 'MCB';
+      hkKey = 'MDI';
+    } else if (sumInFlows.MDI > 100 && sumInFlows.PMDI > 100 && sumInFlows.MCB <= 100) {
+      lkFluidId = 'mdi_pure';
+      hkFluidId = 'pmdi';
+      lkKey = 'MDI';
+      hkKey = 'PMDI';
+    } else if (sumInFlows.HCl > 1 && sumInFlows.H2O > 1) {
       if (topP < -0.1) {
         lkFluidId = 'water';
         hkFluidId = 'hcl_20_azeo';

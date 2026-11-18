@@ -58,12 +58,13 @@ const PLANT02_SIM_MENUS = [
 ];
 
 const PLANT03_SUB_MENUS: NavMenuItem[] = [
-  { key: 'pfd',     label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
-  { key: 'hcl_hub', label: '1A 증류탑·액화기 내장설계',      badge: 'MESH/HX' },
-  { key: 'packing', label: '100/300 염산 흡수·제해탑 설계',  badge: 'COL' },
-  { key: 'chempro', label: '펌프·압력용기·배관 상세설계',    badge: 'PMP/VSL' },
-  { key: 'equip',   label: '1A 전공정 기기목록 & 시트',      badge: 'LIST' },
-  { key: 'econ',    label: '1A 원단위 · 경제성 분석',        badge: 'ECON',    href: '/pep-yearbook' },
+  { key: 'pfd',        label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
+  { key: 'hcl_hub',    label: '1A 증류탑·액화기 내장설계',      badge: 'MESH/HX' },
+  { key: 'packing',    label: '100/300 염산 흡수·제해탑 설계',  badge: 'COL' },
+  { key: 'chempro',    label: '펌프·압력용기·배관 상세설계',    badge: 'PMP/VSL' },
+  { key: 'compressor', label: '공정가스 압축기 상세설계',       badge: 'COMP' },
+  { key: 'equip',      label: '1A 전공정 기기목록 & 시트',      badge: 'LIST' },
+  { key: 'econ',       label: '1A 원단위 · 경제성 분석',        badge: 'ECON',    href: '/pep-yearbook' },
 ];
 
 const PLANT03_HCL1A_MENUS = [
@@ -74,10 +75,13 @@ const PLANT03_HCL1A_MENUS = [
 ];
 
 const PLANT04_ECH_SUB_MENUS: NavMenuItem[] = [
-  { key: 'pfd',     label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
-  { key: 'chempro', label: '펌프·열교환기·증류탑 설계',      badge: 'DESIGN' },
-  { key: 'equip',   label: 'ECH 전공정 기기목록 & 시트',     badge: 'LIST' },
-  { key: 'econ',    label: 'ECH 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
+  { key: 'pfd',        label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
+  { key: 'distill',    label: 'ECH 핵심장치 내장설계',          badge: 'RXN/COL' },
+  { key: 'packing',    label: 'C-101·C-102 진공 패킹타워 설계', badge: 'COL' },
+  { key: 'chempro',    label: '열교환기·펌프·용기 상세설계',    badge: 'HX/PMP' },
+  { key: 'compressor', label: '공정가스 압축기 상세설계',       badge: 'COMP' },
+  { key: 'equip',      label: 'ECH 전공정 기기목록 & 시트',     badge: 'LIST' },
+  { key: 'econ',       label: 'ECH 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
 ];
 
 const PLANT04_ECH_SHEETS = [
@@ -105,12 +109,13 @@ const CMS_SHEETS = [
 ];
 
 const MDI_SUB_MENUS: NavMenuItem[] = [
-  { key: 'pfd',     label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
-  { key: 'mdi_hub', label: 'MDI 핵심장치 내장설계',          badge: 'RXN/COL' },
-  { key: 'packing', label: 'C-101·301·302·401 증류탑 설계',  badge: 'COL' },
-  { key: 'chempro', label: '예열기·냉각기·펌프·안전밸브',    badge: 'HX/PMP' },
-  { key: 'equip',   label: 'MDI 전공정 기기목록 & 시트',     badge: 'LIST' },
-  { key: 'econ',    label: 'MDI 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
+  { key: 'pfd',        label: '공정도 (PFD) & 시뮬레이션',      badge: 'M&EB',    isPfd: true },
+  { key: 'mdi_hub',    label: 'MDI 핵심장치 내장설계',          badge: 'RXN/COL' },
+  { key: 'packing',    label: 'C-101·301·302·401 증류탑 설계',  badge: 'COL' },
+  { key: 'chempro',    label: '예열기·냉각기·펌프·안전밸브',    badge: 'HX/PMP' },
+  { key: 'compressor', label: 'CO 압축기·고진공 펌프 설계',     badge: 'COMP' },
+  { key: 'equip',      label: 'MDI 전공정 기기목록 & 시트',     badge: 'LIST' },
+  { key: 'econ',       label: 'MDI 원단위 · 경제성 분석',       badge: 'ECON',    href: '/pep-yearbook' },
 ];
 
 const MDI_SHEETS = [
@@ -1132,7 +1137,7 @@ export default function Sidebar() {
     </>
   );
 
-  // PLANT 05 (금호미쓰이 MDI 10만톤) 전용 운전변수 + 실시간 Pure/PMDI·부생HCl·MCB 수지 대시보드
+  // PLANT 05 (MDI 10만톤 통합 공정) 전용 운전변수 + 실시간 Pure/PMDI·부생HCl·MCB 수지 대시보드
   const renderMdiOperatingAndKpi = () => (
     <>
       <div style={{ padding: '6px 14px 0' }}>
@@ -2016,7 +2021,7 @@ export default function Sidebar() {
       )}
 
       {/* ═══════════════════════════════════════════════════════════════════════
-          PLANT 05 (금호미쓰이 MDI 10만톤 공정) 좌측 사이드 패널
+          PLANT 05 (MDI 10만톤 통합 공정) 좌측 사이드 패널
           ═══════════════════════════════════════════════════════════════════════ */}
       {!collapsed && activePlantId === 'mdi_plant' && (
         <>
@@ -2031,7 +2036,7 @@ export default function Sidebar() {
                   letterSpacing: '0.5px',
                 }}
               >
-                PLANT 05 · 금호미쓰이 MDI
+                PLANT 05 · MDI 공정
               </span>
               <span
                 style={{

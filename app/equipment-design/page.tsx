@@ -58,6 +58,7 @@ const MDI_DESIGN_TABS = [
 
 interface EchHxHandoffConfig {
   sourceLabel?: string;
+  plantId?: string;
   tag: string;
   name: string;
   fluidSummary: string;
@@ -85,6 +86,7 @@ function saveEchChemProHXHandoff(cfg: EchHxHandoffConfig) {
     version: 1,
     timestamp: Date.now(),
     sourceLabel: cfg.sourceLabel ?? 'PLANT 03 바이오 ECH',
+    ...(cfg.plantId ? { plantId: cfg.plantId } : {}),
     tab: 'hx',
     equipTag: cfg.tag,
     equipName: cfg.name,
@@ -112,18 +114,27 @@ function saveEchChemProHXHandoff(cfg: EchHxHandoffConfig) {
   });
 }
 
+function getDefaultChemProTag(plantId: string): string {
+  if (plantId === 'hcl_synth') return 'E-102A';
+  if (plantId === 'ech_gte') return 'E-102';
+  if (plantId === 'cms_plant') return 'E-101';
+  if (plantId === 'mdi_plant') return 'E-401';
+  return 'E-332';
+}
+
 export default function EquipmentDesignPage() {
   const router = useRouter();
   const { activePlantId, setActivePlantId, requestSimSheet, requestSimNodeAction } = useBalanceStore();
   const activeTab = usePFDStore(s => s.equipSubTab || 'evap');
   const setActiveTab = usePFDStore(s => s.setEquipSubTab);
-  const [chemproTag, setChemproTag] = useState<string>('E-332');
+  const [chemproTag, setChemproTag] = useState<string>(() => getDefaultChemProTag(activePlantId));
   const [chemproSubTab, setChemproSubTab] = useState<string>('');
   const [chemproHandoff, setChemproHandoff] = useState<boolean>(false);
   const activeDesignRequest = usePFDStore(s => s.activeDesignRequest);
   const setActiveDesignRequest = usePFDStore(s => s.setActiveDesignRequest);
   const setEquipmentSpecOverride = usePFDStore(s => s.setEquipmentSpecOverride);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const lastSyncedPlantRef = useRef<string>(activePlantId);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -141,9 +152,19 @@ export default function EquipmentDesignPage() {
     }
   }, [setActiveTab]);
 
-  // 공장 전환 시 다른 공장의 전용 설계 탭이 남지 않도록 자동 정합성 보정
+  // 공장 전환 시 다른 공장의 전용 설계 탭(및 전해 전용 설계기준)이 남지 않도록 자동 정합성 보정
   useEffect(() => {
-    if (activeTab === 'equip' || activeTab === 'standards') return;
+    if (activeTab === 'equip') return;
+    const isElectrolysis = activePlantId === 'clorsim' || activePlantId === 'clorsim_sim';
+    if (activeTab === 'standards' && !isElectrolysis) {
+      if (activePlantId === 'hcl_synth') setActiveTab('hcl_hub');
+      else if (activePlantId === 'ech_gte') setActiveTab('distill');
+      else if (activePlantId === 'cms_plant') setActiveTab('cms_hub');
+      else if (activePlantId === 'mdi_plant') setActiveTab('mdi_hub');
+      else setActiveTab('chempro');
+      return;
+    }
+    if (activeTab === 'standards') return;
     if (typeof window !== 'undefined') {
       const qTab = new URLSearchParams(window.location.search).get('tab');
       if (qTab && VALID_TABS.includes(qTab) && qTab !== activeTab) return;
@@ -171,6 +192,20 @@ export default function EquipmentDesignPage() {
       }
     }
   }, [activePlantId, activeTab, setActiveTab]);
+
+  // 활성 공장 전환 시 ChemPro 상세설계 기본 장치 태그·유체·드롭다운 즉시 동기화
+  useEffect(() => {
+    if (lastSyncedPlantRef.current === activePlantId) return;
+    lastSyncedPlantRef.current = activePlantId;
+    const defaultTag = getDefaultChemProTag(activePlantId);
+    setChemproTag(defaultTag);
+    setChemproSubTab('');
+    setChemproHandoff(false);
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, tag: defaultTag },
+      '*'
+    );
+  }, [activePlantId]);
 
   useEffect(() => {
     if (activeDesignRequest?.tab) {
@@ -215,12 +250,17 @@ export default function EquipmentDesignPage() {
       if (d.type === 'CHEMPRO_READY') {
         if (chemproHandoff) {
           iframeRef.current?.contentWindow?.postMessage(
+            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, skipPresetLoad: true },
+            '*'
+          );
+          iframeRef.current?.contentWindow?.postMessage(
             { type: 'CHEMPRO_APPLY_SIM_HANDOFF' },
             '*'
           );
-        } else if (chemproTag) {
+        } else {
+          const targetTag = chemproTag || getDefaultChemProTag(activePlantId);
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SELECT_EQUIP_TAG', tag: chemproTag, subTab: chemproSubTab },
+            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, tag: targetTag, subTab: chemproSubTab },
             '*'
           );
         }
@@ -245,7 +285,7 @@ export default function EquipmentDesignPage() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [setEquipmentSpecOverride, chemproTag, chemproSubTab, chemproHandoff]);
+  }, [setEquipmentSpecOverride, activePlantId, chemproTag, chemproSubTab, chemproHandoff]);
 
   // 1) 장치목록 탭: 선택된 공장의 장치목록만 정확히 출력
   if (activeTab === 'equip') {
@@ -256,8 +296,8 @@ export default function EquipmentDesignPage() {
     );
   }
 
-  // 2) 설계기준 탭
-  if (activeTab === 'standards') {
+  // 2) 설계기준 탭 (전해공장 전용 — 타 공정에서는 자동 제외)
+  if (activeTab === 'standards' && (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim')) {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F6F7F2' }}>
         <DesignStandards />
@@ -337,12 +377,13 @@ export default function EquipmentDesignPage() {
       version: 1,
       timestamp: Date.now(),
       sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+      plantId: 'cms_plant',
       tab: 'pump',
       equipTag: 'P-202',
       equipName: '고압 순환 메틸클로라이드 승압펌프 (MC Recycle Pump)',
       detectedFluidSummary: '순환 액상 메틸클로라이드 (CH₃Cl · 24 kG 승압)',
       pump: {
-        fluidId: 'vcm',
+        fluidId: 'methyl_chloride',
         T_C: 40.0,
         Q_m3h: 12.6,
         rho_kgm3: 880,
@@ -378,7 +419,8 @@ export default function EquipmentDesignPage() {
     saveChemProHandoffPayload({
       version: 1,
       timestamp: Date.now(),
-      sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+      sourceLabel: 'PLANT 05 MDI',
+      plantId: 'mdi_plant',
       tab: 'pump',
       equipTag: cfg.tag,
       equipName: cfg.name,
@@ -407,11 +449,24 @@ export default function EquipmentDesignPage() {
     saveChemProHandoffPayload({
       version: 1,
       timestamp: Date.now(),
-      sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+      sourceLabel: 'PLANT 05 MDI',
+      plantId: 'mdi_plant',
       tab: 'psv',
       equipTag: 'PSV-201',
       equipName: '포스겐(COCl₂) 반응계 긴급 압력방출 안전밸브',
       detectedFluidSummary: '포스겐(COCl₂) / 부생 HCl / MCB 고압 가스 (Set 4.5 barG · 145°C)',
+      psv: {
+        fluidId: 'phosgene',
+        scenario: 'blocked_outlet',
+        phase: 'vapor',
+        W_kgh: 8500,
+        Pset_barG: 4.5,
+        Pback_barG: 0.3,
+        T_C: 145,
+        mw: 62.5,
+        k: 1.28,
+        Z: 0.96,
+      },
     });
     setActiveDesignRequest({
       tab: 'chempro',
@@ -516,12 +571,13 @@ export default function EquipmentDesignPage() {
                 label: '📐 [E-401] 박막 예열기(TFE Preheater) 상세설계 열기',
                 onClick: () =>
                   openEchChemProHX({
-                    sourceLabel: 'PLANT 05 금호미쓰이 MDI',
+                    sourceLabel: 'PLANT 05 MDI',
+                    plantId: 'mdi_plant',
                     tag: 'E-401',
                     name: '고진공 박막 예열기 (Thin-Film Preheater)',
                     fluidSummary: '무용매 Crude MDI (12,625 kg/h, 165→190°C · 20 mbar 진공)',
                     hotFluidId: 'steam_13k',
-                    coldFluidId: 'chlorobenzene',
+                    coldFluidId: 'mdi_pure',
                     allocation: 'hot_shell',
                     dofTarget: 'mh_auto',
                     mh_kgh: 1850,
@@ -535,6 +591,30 @@ export default function EquipmentDesignPage() {
                     hot_hv: 1880,
                     cold_mode: 'sensible',
                     U_assumed: 520,
+                  }),
+              },
+              {
+                label: '📐 [E-402] Pure MDI 제품 냉각기 상세설계 열기',
+                onClick: () =>
+                  openEchChemProHX({
+                    sourceLabel: 'PLANT 05 MDI',
+                    plantId: 'mdi_plant',
+                    tag: 'E-402',
+                    name: 'Pure 4,4\'-MDI 제품 급랭·냉각기 (Product Cooler)',
+                    fluidSummary: 'Pure 4,4\'-MDI (4,500 kg/h, 195→65°C · 순환수/냉수)',
+                    hotFluidId: 'mdi_pure',
+                    coldFluidId: 'water',
+                    allocation: 'hot_tube',
+                    dofTarget: 'mc_auto',
+                    mh_kgh: 4500,
+                    Th_in: 195.0,
+                    Th_out: 65.0,
+                    mc_kgh: 14500,
+                    Tc_in: 45.0,
+                    Tc_out: 62.0,
+                    hot_mode: 'sensible',
+                    cold_mode: 'sensible',
+                    U_assumed: 410,
                   }),
               },
             ],
@@ -566,6 +646,7 @@ export default function EquipmentDesignPage() {
                 onClick: () =>
                   openEchChemProHX({
                     sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+                    plantId: 'cms_plant',
                     tag: 'E-101',
                     name: '액체염소 기화기 (Cl₂ Vaporizer)',
                     fluidSummary: '액화염소 (9,167 kg/h, 25→95°C 기화 · 24.5 kG)',
@@ -623,6 +704,7 @@ export default function EquipmentDesignPage() {
                 onClick: () =>
                   openEchChemProHX({
                     sourceLabel: 'PLANT 04 클로로메탄(CMS)',
+                    plantId: 'cms_plant',
                     tag: 'E-301',
                     name: '고순도 MCL 제품 냉각기 (MCL Cooler)',
                     fluidSummary: '정제 메틸렌클로라이드 (5,000 kg/h, 78→32°C · CW)',
@@ -697,6 +779,7 @@ export default function EquipmentDesignPage() {
                 label: '📐 [E-102] TEMA 열교환기 상세설계 열기',
                 onClick: () =>
                   openEchChemProHX({
+                    plantId: 'ech_gte',
                     tag: 'E-102',
                     name: '글리세린 염소화 반응물 냉각기',
                     fluidSummary: '조 DCH 반응액 (16,517 kg/h, 112→55°C)',
@@ -714,6 +797,7 @@ export default function EquipmentDesignPage() {
                 label: '📐 [E-301] 고순도 ECH 냉각기 상세설계 열기',
                 onClick: () =>
                   openEchChemProHX({
+                    plantId: 'ech_gte',
                     tag: 'E-301',
                     name: '고순도 99.9% ECH 제품 냉각기',
                     fluidSummary: '정제 ECH (8,650 kg/h, 62→35°C)',
@@ -813,7 +897,7 @@ export default function EquipmentDesignPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', marginRight: 4, whiteSpace: 'nowrap' }}>
             {isMdiMode
-              ? 'PLANT 05 금호미쓰이 MDI:'
+              ? 'PLANT 05 MDI:'
               : isCmsMode
                 ? 'PLANT 04 클로로메탄(CMS):'
                 : isEchMode
@@ -879,7 +963,7 @@ export default function EquipmentDesignPage() {
         <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#F6F7F2' }}>
           <iframe
             ref={iframeRef}
-            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261111b&tag=${encodeURIComponent(chemproTag)}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}`}
+            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261118a&plant=${encodeURIComponent(activePlantId)}&tag=${encodeURIComponent(chemproTag)}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}`}
             title="Integrated Equipment Design Studio"
             style={{ width: '100%', height: '100%', border: 'none', background: '#F6F7F2' }}
           />
@@ -911,7 +995,7 @@ export default function EquipmentDesignPage() {
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A' }}>
                 {effectiveDesignTab === 'mdi_hub'
-                  ? 'PLANT 05 금호미쓰이 MDI 10만톤 — 핵심장치 내장·상세설계'
+                  ? 'PLANT 05 MDI 10만톤 — 핵심장치 내장·상세설계'
                   : effectiveDesignTab === 'cms_hub'
                     ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
                     : effectiveDesignTab === 'distill'

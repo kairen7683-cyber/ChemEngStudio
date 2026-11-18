@@ -115,7 +115,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
     id: 'mdi_plant',
     code: 'PLANT 05',
     shortLabel: 'MDI (10만톤)',
-    title: '금호미쓰이 공정 MDI 10만톤 (MDA · 포스겐화 · Pure/PMDI)',
+    title: 'MDI 10만톤 통합 공정 (MDA · 포스겐화 · Pure/PMDI)',
     capacityBadge: '100,000 TPA · 12.5 t/h',
     accent: '#B45309',
     accentSoftBg: '#FFFBEB',

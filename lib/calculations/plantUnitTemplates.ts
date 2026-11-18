@@ -385,7 +385,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c101_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-101',
     name: '아닐린 감압 회수탑 (14단 · -0.88 kG)',
     unitType: 'distillation',
@@ -418,7 +418,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c301_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-301',
     name: '탈포스겐(COCl₂) 회수 스트리퍼 (14단 · 2.0 kG)',
     unitType: 'distillation',
@@ -451,7 +451,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c302_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-302',
     name: 'MCB 용매 진공 회수탑 (16단 · -0.90 kG)',
     unitType: 'distillation',
@@ -484,7 +484,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c401_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-401',
     name: '고진공 Pure 4,4\'-MDI / PMDI 분별탑 (16단 · 20 mbar)',
     unitType: 'distillation',
@@ -1066,7 +1066,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r101_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-101',
     name: 'MDA 축합·전위 및 가성중화 반응기 (95°C · 2.5 kG)',
     unitType: 'reactor',
@@ -1087,7 +1087,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r201_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-201',
     name: '포스겐(COCl₂) 활성탄 고정층 합성 반응기 (90°C · 3.5 kG)',
     unitType: 'reactor',
@@ -1108,7 +1108,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r202_mdi',
-    plantLabel: 'PLANT 05 금호미쓰이 MDI',
+    plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-202',
     name: 'MDA 2단 연속 포스겐화 반응기 (145°C · MCB 용매)',
     unitType: 'reactor',

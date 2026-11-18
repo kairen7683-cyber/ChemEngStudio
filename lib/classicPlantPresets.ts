@@ -78,7 +78,7 @@ export function getClassicPlantPresetOptions(): ClassicPlantPresetOption[] {
     { group: 'hcl1A', plantLabel: 'PLANT 02 · 염산합성/정제' },
     { group: 'ech', plantLabel: 'PLANT 03 · ECH 공정' },
     { group: 'cms', plantLabel: 'PLANT 04 · 클로로메탄(CMS) 공정' },
-    { group: 'mdi', plantLabel: 'PLANT 05 · 금호미쓰이 MDI 공정' },
+    { group: 'mdi', plantLabel: 'PLANT 05 · MDI 통합 공정' },
   ];
   const out: ClassicPlantPresetOption[] = [];
   for (const g of groups) {

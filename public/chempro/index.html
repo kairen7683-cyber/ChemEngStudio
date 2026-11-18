@@ -37,14 +37,14 @@
         </div>
       </div>
       <div class="db-sync-pill" id="dbStatusBadge">
-        <span class="dot dot-emerald"></span>151종 물성 DB (전해공장 전용 물질 포함)
+        <span class="dot dot-emerald"></span>185종 물성 DB (전 공정 전용 물질 포함)
       </div>
     </div>
 
-    <!-- Chlor-Alkali Plant PFD Equipment Sync Bar -->
+    <!-- Multi-Plant PFD Equipment Sync Bar -->
     <div id="caPlantSyncBar" style="display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:8px 14px; background:#F6F7F2; border-top:1px solid rgba(26,47,68,0.22); border-bottom:1px solid rgba(26,47,68,0.22);">
       <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-        <span style="font-size:11px; font-weight:800; color:#1A2F44; letter-spacing:0.3px;">전해공장 PFD 장치 연동:</span>
+        <span id="ca_plant_sync_label" style="font-size:11px; font-weight:800; color:#1A2F44; letter-spacing:0.3px;">공정 PFD 장치 연동:</span>
         <select id="ca_equip_tag" onchange="App.loadChlorAlkaliPreset(this.value)" style="background:#FFFFFF; color:#18181B; border:1px solid #DFDCD4; border-radius:6px; padding:5px 10px; font-size:11px; font-family:monospace; min-width:140px; max-width:100%; flex:1;">
           <optgroup label="열교환기 (Heat Exchangers — HEX, 판형 PHE & 다관원통형 TEMA)">
             <option value="E-332" selected>E-332 — 1효 가성소다 열회수 예열기 (PHE 판형, L11→L12 / L8→L10, 54 m²)</option>
@@ -163,7 +163,7 @@
           </div>
 
           <div class="fluid-selector-box">
-            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: R-134a, R-404A, R-507A, 염소, 스팀, 가성소다)..." oninput="App.filterHXFluidSelects(this.value)" />
+            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 스팀, 냉각수, MCB, 아닐린, MDI, ECH, 염화메틸렌, 염산)..." oninput="App.filterHXFluidSelects(this.value)" />
             <div class="form-grid cols-3">
               <div class="field">
                 <label><span class="dot dot-coral"></span>고온측 (Hot) <span class="unit">Fluid</span></label>
@@ -545,7 +545,7 @@
           </div>
 
           <div class="fluid-selector-box">
-            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 벤젠, 황산, 원유, 공정수)..." oninput="App.filterFluidSelect('pump_fluid', this.value)" />
+            <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 벤젠, 염산, MCB, 아닐린, ECH, DCH, 원유, 공정수)..." oninput="App.filterFluidSelect('pump_fluid', this.value)" />
             <div class="form-grid">
               <div class="field">
                 <label>이송 유체 (Fluid) <span class="unit">DB</span></label>
@@ -1522,7 +1522,7 @@
       <div class="cs-sheet-header">
         <div>
           <div class="cs-sheet-title" id="csModalTitle">화학물질 / 공정 유체 선택</div>
-          <div class="cs-sheet-sub" id="csModalSubtitle">142종 표준 물성 데이터베이스 · 항목 클릭 시 즉시 반영</div>
+          <div class="cs-sheet-sub" id="csModalSubtitle">185종 표준 물성 데이터베이스 · 항목 클릭 시 즉시 반영</div>
         </div>
         <button type="button" class="cs-close-btn" onclick="App.closeCustomSelectModal()">닫기 [ESC]</button>
       </div>
@@ -1557,12 +1557,12 @@
     </div>
   </div>
 
-  <script src="exceljs.min.js?v=20261111b"></script>
-  <script src="chem_db.js?v=20261111b"></script>
-  <script src="unified_kernel.js?v=20261115a"></script>
-  <script src="eng_solvers.js?v=20261115a"></script>
-  <script src="excel_exporter.js?v=20261111b"></script>
-  <script src="app.js?v=20261111b"></script>
+  <script src="exceljs.min.js?v=20261118a"></script>
+  <script src="chem_db.js?v=20261118a"></script>
+  <script src="unified_kernel.js?v=20261118a"></script>
+  <script src="eng_solvers.js?v=20261118a"></script>
+  <script src="excel_exporter.js?v=20261118a"></script>
+  <script src="app.js?v=20261118a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {

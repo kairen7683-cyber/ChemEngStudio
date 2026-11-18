@@ -2031,7 +2031,7 @@ export function FlowsheetWorkspace({
   // - PLANT 02 (hcl_1a_plant): 1A 초고순도·무수염산 & 폐염산 공비증류(PSD) 마스터 + 3개 하위 세부공정 시트
   // - PLANT 03 (ech_gte_plant): ECH 70,000 TPA (GTE 글리세린 공정) 마스터 + 3개 하위 세부공정 시트
   // - PLANT 04 (cms_plant): 클로로메탄(CMS · MCL 120 + CFM 80 T/D) 마스터 + 3개 하위 세부공정 시트
-  // - PLANT 05 (mdi_plant): 금호미쓰이 공정 MDI 10만톤 마스터 + 4개 하위 세부공정 시트
+  // - PLANT 05 (mdi_plant): MDI 10만톤 통합 공정 마스터 + 4개 하위 세부공정 시트
   // - 공정 시뮬레이터 (new_plant_builder): 깔끔한 빈 캔버스로 시작 (상단 프리셋/저장 프로젝트에서 선택 불러오기 가능)
   const [initialSheets] = useState<Record<string, SheetRuntimeData>>(() => {
     if (isElectrolyzerMode) {
@@ -4834,7 +4834,7 @@ export function FlowsheetWorkspace({
             : isCmsMode
               ? `PLANT 04 클로로메탄(CMS) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
               : isMdiMode
-                ? `PLANT 05 금호미쓰이 MDI (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+                ? `PLANT 05 MDI (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
                 : '공정 시뮬레이터';
       const payload = buildChemProHandoffPayload(
         targetDef,
@@ -5231,7 +5231,7 @@ export function FlowsheetWorkspace({
                 </optgroup>
               )}
               {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
-                <optgroup label="PLANT 05 · 금호미쓰이 MDI 공정">
+                <optgroup label="PLANT 05 · MDI 통합 공정">
                   {getAllPresets()
                     .filter(p => p.group === 'plant06')
                     .map(p => (
@@ -5669,7 +5669,7 @@ export function FlowsheetWorkspace({
                     : isCmsMode
                       ? '66,000 TPA (MCL 120 + CFM 80 T/D) 클로로메탄(CMS) 전공정 도면을 초기 설계값으로 복원합니다.'
                       : isMdiMode
-                        ? '100,000 TPA (Pure MDI 108 + PMDI 192 T/D) 금호미쓰이 MDI 전공정 도면을 초기 설계값으로 복원합니다.'
+                        ? '100,000 TPA (Pure MDI 108 + PMDI 192 T/D) MDI 전공정 도면을 초기 설계값으로 복원합니다.'
                         : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
               }
               style={{
@@ -5763,7 +5763,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
                 {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
-                  <optgroup label="PLANT 05 · 금호미쓰이 MDI 공정 — 단위공정 단독 프리셋">
+                  <optgroup label="PLANT 05 · MDI 통합 공정 — 단위공정 단독 프리셋">
                     {getAllPresets()
                       .filter(p => p.group === 'plant06')
                       .map(p => (

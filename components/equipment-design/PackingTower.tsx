@@ -43,13 +43,29 @@ const grid3: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repe
 
 type FluidMode = 'preset' | 'manual';
 
+function getDefaultTowerTagForPlant(plantId?: string): string {
+  switch (plantId) {
+    case 'hcl_synth':
+      return 'C-110';
+    case 'ech_gte':
+      return 'C-101';
+    case 'cms_plant':
+      return 'C-201';
+    case 'mdi_plant':
+      return 'C-101';
+    default:
+      return 'T-430';
+  }
+}
+
 export default function PackingTower() {
   const activePlantId = useBalanceStore(s => s.activePlantId);
+  const isElectrolysisPlant = activePlantId === 'clorsim' || activePlantId === 'clorsim_sim';
   const towers  = useEquipmentList('tower');
   const streams = useBalanceStore(s => s.result.streams);
   const { setEquipmentSpecOverride, activeDesignRequest, setActiveDesignRequest } = usePFDStore();
 
-  const [selectedTag, setSelectedTag]   = useState<string>(activePlantId === 'hcl_synth' ? 'T-130' : 'T-430');
+  const [selectedTag, setSelectedTag]   = useState<string>(() => getDefaultTowerTagForPlant(activePlantId));
   const [mode, setMode]                 = useState<TowerMode>('absorption');
   const [temp, setTemp]                 = useState(14);
   const [pressure, setPressure]         = useState(101.3);
@@ -118,13 +134,13 @@ export default function PackingTower() {
   };
 
   // 태그 선택 시 현재 Material Balance 공정 조건을 자동으로 로드하고 초기 계산 수행
-  const handleTagSelect = (tag: string) => {
+  const handleTagSelect = (tag: string, plantOverride?: string) => {
     setSelectedTag(tag);
     setSavedNotice('');
     setError('');
     if (!tag) return;
 
-    const preset = getTowerProcessPreset(tag, streams);
+    const preset = getTowerProcessPreset(tag, streams, plantOverride ?? activePlantId);
     const validPacking = PACKING_DB.some(p => p.key === preset.packingKey)
       ? preset.packingKey
       : 'pall_50';
@@ -258,19 +274,17 @@ export default function PackingTower() {
 
   useEffect(() => {
     if (activeDesignRequest && activeDesignRequest.tab === 'packing') {
-      handleTagSelect(activeDesignRequest.tag);
+      handleTagSelect(activeDesignRequest.tag, activePlantId);
       setActiveDesignRequest(null);
     } else {
       const validForPlant = towers.some(t => t.tag === selectedTag);
       const targetTag = validForPlant
         ? selectedTag
-        : activePlantId === 'hcl_synth'
-          ? 'T-130'
-          : towers[0]?.tag ?? 'T-430';
-      handleTagSelect(targetTag);
+        : towers[0]?.tag ?? getDefaultTowerTagForPlant(activePlantId);
+      handleTagSelect(targetTag, activePlantId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDesignRequest, activePlantId]);
+  }, [activeDesignRequest, activePlantId, towers]);
 
   useEffect(() => {
     if (!results) return;
@@ -453,17 +467,37 @@ export default function PackingTower() {
                   { tag: 'C-310', label: 'C-310 폐염산 진공 농축탑' },
                   { tag: 'C-320', label: 'C-320 가압 공비탈기 증류탑' },
                 ]
-              : [
-                  { tag: 'T-280', label: 'T-280 감압탈염소탑' },
-                  { tag: 'T-410', label: 'T-410 Cl₂ 1차 수세탑' },
-                  { tag: 'T-420', label: 'T-420 Cl₂ 2차 냉수세정탑' },
-                  { tag: 'T-430', label: 'T-430 황산건조 1단(60%·테라렛)' },
-                  { tag: 'T-440', label: 'T-440 황산건조 2단(91%·라시히링)' },
-                  { tag: 'T-450', label: 'T-450 황산건조 3단(94%·테라렛)' },
-                  { tag: 'T-610', label: 'T-610 H₂ 가성소다 제거탑' },
-                  { tag: 'T-730', label: 'T-730 Hypo 제조 1차 타워' },
-                  { tag: 'T-760', label: 'T-760 Hypo 제조 2차 타워' },
-                ]
+              : activePlantId === 'ech_gte'
+                ? [
+                    { tag: 'C-101', label: 'C-101 경질분·수분 공비탈수탑 (20단 · -0.65 kG)' },
+                    { tag: 'C-102', label: 'C-102 99.9% ECH 제품 진공 정제탑 (26단 · -0.92 kG)' },
+                  ]
+                : activePlantId === 'cms_plant'
+                  ? [
+                      { tag: 'C-201', label: 'C-201 고압 무수 HCl 탈거탑 (60단 · 17.5 kG)' },
+                      { tag: 'C-202', label: 'C-202 미반응 MC 순환탑 (50단 · 6.5 kG)' },
+                      { tag: 'C-203', label: 'C-203 Azeo 공비·경질 분리탑 (30단)' },
+                      { tag: 'C-301', label: 'C-301 고순도 MCL 정제탑 (80단 · 120 T/D)' },
+                      { tag: 'C-302', label: 'C-302 CFM 정제·CTC 분리탑 (120단 · 80 T/D)' },
+                    ]
+                  : activePlantId === 'mdi_plant'
+                    ? [
+                        { tag: 'C-101', label: 'C-101 아닐린 감압 회수탑 (14단 · -0.88 kG)' },
+                        { tag: 'C-301', label: 'C-301 탈포스겐 회수 스트리퍼 (14단 · 2.0 kG)' },
+                        { tag: 'C-302', label: 'C-302 MCB 용매 진공 회수탑 (16단 · -0.90 kG)' },
+                        { tag: 'C-401', label: "C-401 고진공 Pure 4,4'-MDI / PMDI 분별탑 (16단 · 20 mbar)" },
+                      ]
+                    : [
+                        { tag: 'T-280', label: 'T-280 감압탈염소탑' },
+                        { tag: 'T-410', label: 'T-410 Cl₂ 1차 수세탑' },
+                        { tag: 'T-420', label: 'T-420 Cl₂ 2차 냉수세정탑' },
+                        { tag: 'T-430', label: 'T-430 황산건조 1단(60%·테라렛)' },
+                        { tag: 'T-440', label: 'T-440 황산건조 2단(91%·라시히링)' },
+                        { tag: 'T-450', label: 'T-450 황산건조 3단(94%·테라렛)' },
+                        { tag: 'T-610', label: 'T-610 H₂ 가성소다 제거탑' },
+                        { tag: 'T-730', label: 'T-730 Hypo 제조 1차 타워' },
+                        { tag: 'T-760', label: 'T-760 Hypo 제조 2차 타워' },
+                      ]
             ).map(item => {
               const active = selectedTag === item.tag;
               return (
@@ -503,7 +537,8 @@ export default function PackingTower() {
         )}
       </div>
 
-      {/* ── 📚 표 1.39 식염전해 황산탈수탑 표준 설계기준 레퍼런스 카드 ── */}
+      {/* ── 📚 표 1.39 식염전해 황산탈수탑 표준 설계기준 레퍼런스 카드 (전해공장 전용) ── */}
+      {isElectrolysisPlant && (
       <div style={{
         ...card,
         background: '#FAFBF8',
@@ -576,6 +611,7 @@ export default function PackingTower() {
           💡 <strong>설계 주기(注):</strong> 충진재의 종류(No.1·No.3 탑 <strong>1B 테라렛 H_OG=1.1~1.4m, K_Ga=27~32</strong> vs No.2 탑 <strong>2B 라시히링 H_OG=4.4m, K_Ga=8.4</strong>)에 따른 물질전달 성능 차이가 뚜렷하게 확인됩니다.
         </div>
       </div>
+      )}
 
       {/* ── 업데이트 알림 배너 ──────────────────────────────────────── */}
       {savedNotice && (
@@ -785,7 +821,7 @@ export default function PackingTower() {
               {[
                 { key: 'stages', label: '이론단수 직접 입력' },
                 { key: 'kremser', label: 'Kremser 방정식 계산' },
-                { key: 'hog', label: '표 1.39 황산탈수탑 (N_OG · H_OG · K_Ga)' },
+                { key: 'hog', label: isElectrolysisPlant ? '표 1.39 황산탈수탑 (N_OG · H_OG · K_Ga)' : '전달단위수 모델 (N_OG · H_OG · K_Ga)' },
               ].map(({ key, label }) => (
                 <button key={key} onClick={() => setSeparationMode(key as 'stages' | 'kremser' | 'hog')}
                   style={{ ...btn(separationMode === key ? '#202C3C' : '#475569'), padding: '5px 12px', fontSize: 11 }}>
@@ -833,13 +869,13 @@ export default function PackingTower() {
                       onChange={e => setYOut(+e.target.value)} style={inp} />
                   </div>
                   <div>
-                    <label style={labelSt}>평형 수분 몰분율 yᵢ (H₂SO₄ 상)</label>
+                    <label style={labelSt}>{isElectrolysisPlant ? '평형 수분 몰분율 yᵢ (H₂SO₄ 상)' : '평형 기상 몰분율 yᵢ*'}</label>
                     <input type="number" value={yEq} step={0.00001}
                       onChange={e => setYEq(+e.target.value)} style={inp} />
                   </div>
                 </div>
                 <div style={{ fontSize: 10.5, color: '#3F3F46', marginTop: 8, background: '#F8FAFC', padding: '6px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                  📐 <strong>표 1.39 물질전달 산식:</strong>{' '}
+                  📐 <strong>{isElectrolysisPlant ? '표 1.39 물질전달 산식:' : '총괄 기상 전달단위 산식:'}</strong>{' '}
                   <code>N_OG = ln((y₁ - yᵢ) / (y₂ - yᵢ))</code> |{' '}
                   <code>H_OG = Z / N_OG</code> |{' '}
                   <code>K_Ga = (G_M · N_OG) / (S · Z) = G_M / (S · H_OG)</code>
@@ -885,7 +921,7 @@ export default function PackingTower() {
               </div>
               <div style={grid2}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#52525B', marginBottom: 8 }}>물질전달 (표 1.39 기준 포함)</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#52525B', marginBottom: 8 }}>{isElectrolysisPlant ? '물질전달 (표 1.39 기준 포함)' : '물질전달 해석 결과'}</div>
                   {[
                     ['L/G 질량비', results.L_G_ratio.toFixed(1)],
                     ['액체 비유량 (L\')', `${Math.round(results.liquidMassFlux_kgm2h).toLocaleString()} kg/m²·h`],

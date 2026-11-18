@@ -1533,7 +1533,7 @@ canvas.dwg-canvas {
 }
 
 /* ==========================================================================
-   ASPEN / HTRI STYLE RIGOROUS SOLVER TRIGGER BAR & LIVE CONVERGENCE MODAL
+   RIGOROUS MESH / HTRI STYLE SOLVER TRIGGER BAR & LIVE CONVERGENCE MODAL
    ========================================================================== */
 .solver-trigger-bar {
   margin-top: 12px;

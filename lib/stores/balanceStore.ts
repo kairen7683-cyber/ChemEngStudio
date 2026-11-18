@@ -299,7 +299,7 @@ interface BalanceStore {
   cmsPlantSummary: CmsPlantKpiSummary;
   cmsPlantSyncSeq: number;
 
-  // PLANT 05 (금호미쓰이 MDI 10만톤 공정 — Pure 4,4'-MDI 4,500 kg/h · PMDI 8,000 kg/h)
+  // PLANT 05 (MDI 10만톤 통합 공정 — Pure 4,4'-MDI 4,500 kg/h · PMDI 8,000 kg/h)
   mdiPlantInputs: MdiPlantOperatingInputs;
   mdiPlantSummary: MdiPlantKpiSummary;
   mdiPlantSyncSeq: number;

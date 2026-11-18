@@ -64,7 +64,7 @@ export default function MaterialBalancePage() {
           <ElectrolyzerPlantSimulator key="plant05_cms" workspaceMode="cms_plant" embeddedInPlant={true} />
         </div>
       ) : plantId === 'mdi_plant' ? (
-        /* ── PLANT 05: 금호미쓰이 MDI 10만톤 통합 공정 시뮬레이터 (Pure 4,500 + PMDI 8,000 kg/h) ── */
+        /* ── PLANT 05: MDI 10만톤 통합 공정 시뮬레이터 (Pure 4,500 + PMDI 8,000 kg/h) ── */
         <div style={{ flex: 1, minHeight: 0, width: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div
             style={{
@@ -80,7 +80,7 @@ export default function MaterialBalancePage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 10, fontWeight: 900, padding: '2px 7px', borderRadius: 5, background: '#B45309', color: '#FFFFFF' }}>
-                  PLANT 05 · 금호미쓰이 MDI 100,000 TPA
+                  PLANT 05 · MDI 100,000 TPA
                 </span>
                 <span style={{ fontSize: 11, fontWeight: 800, color: '#78350F' }}>
                   Pure 4,4&apos;-MDI 4,500 kg/h (108 T/D) · PMDI 8,000 kg/h (192 T/D)

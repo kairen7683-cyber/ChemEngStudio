@@ -64,6 +64,15 @@ export const HX_FLUIDS: HXFluidSpec[] = [
   { key: 'dch_13',        nameKo: '조 1,3-DCH 반응 혼합액',    nameEn: 'Crude 1,3-DCH Mix',    phase: 'L',          rho_kgm3: 1295, cp_kJkgK: 1.85, mu_mPas: 2.60,  k_WmK: 0.16, defaultFouling: 0.00022 },
   { key: 'ech_pure',      nameKo: '고순도 ECH (에피클로로히드린)', nameEn: 'Epichlorohydrin 99.9%', phase: 'L',       rho_kgm3: 1181, cp_kJkgK: 1.48, mu_mPas: 1.03,  k_WmK: 0.14, defaultFouling: 0.00012 },
   { key: 'glycerol',      nameKo: '정제 글리세린 (GTE 원료)',  nameEn: 'Refined Glycerol',     phase: 'L',          rho_kgm3: 1238, cp_kJkgK: 2.52, mu_mPas: 81.0,  k_WmK: 0.29, defaultFouling: 0.00025 },
+  { key: 'hcl_31',        nameKo: '염산 31~35 wt% (HCl(aq))',  nameEn: 'Hydrochloric Acid 35%', phase: 'L',         rho_kgm3: 1174, cp_kJkgK: 2.43, mu_mPas: 2.10,  k_WmK: 0.44, defaultFouling: 0.00018 },
+  { key: 'ahcl_liq',      nameKo: '5N 액화 무수염산 (AHCl)',  nameEn: 'Liquid Anhydrous HCl', phase: 'L',          rho_kgm3: 1005, cp_kJkgK: 1.62, mu_mPas: 0.19,  k_WmK: 0.24, defaultFouling: 0.00012 },
+  { key: 'dcm',           nameKo: '염화메틸렌 (MCL · CH₂Cl₂)', nameEn: 'Methylene Chloride',   phase: 'L',          rho_kgm3: 1326, cp_kJkgK: 1.19, mu_mPas: 0.44,  k_WmK: 0.14, defaultFouling: 0.00015 },
+  { key: 'chloroform',    nameKo: '클로로포름 (CFM · CHCl₃)',  nameEn: 'Chloroform',           phase: 'L',          rho_kgm3: 1483, cp_kJkgK: 0.96, mu_mPas: 0.57,  k_WmK: 0.12, defaultFouling: 0.00015 },
+  { key: 'methyl_chloride',nameKo:'메틸클로라이드 (MC · CH₃Cl)',nameEn:'Methyl Chloride',     phase: 'L',          rho_kgm3: 915,  cp_kJkgK: 1.59, mu_mPas: 0.18,  k_WmK: 0.14, defaultFouling: 0.00015 },
+  { key: 'aniline',       nameKo: '아닐린 (Aniline · C₆H₅NH₂)', nameEn: 'Aniline',             phase: 'L',          rho_kgm3: 1022, cp_kJkgK: 2.06, mu_mPas: 4.40,  k_WmK: 0.17, defaultFouling: 0.00020 },
+  { key: 'mcb',           nameKo: '모노클로로벤젠 (MCB)',      nameEn: 'Monochlorobenzene',    phase: 'L',          rho_kgm3: 1106, cp_kJkgK: 1.34, mu_mPas: 0.80,  k_WmK: 0.13, defaultFouling: 0.00015 },
+  { key: 'mdi_pure',      nameKo: "4,4'-Pure MDI 모노머",     nameEn: "4,4'-Pure MDI",        phase: 'L',          rho_kgm3: 1192, cp_kJkgK: 1.80, mu_mPas: 18.5,  k_WmK: 0.15, defaultFouling: 0.00025 },
+  { key: 'pmdi',          nameKo: '폴리머릭 / 조 MDI (PMDI)',  nameEn: 'Polymeric MDI',        phase: 'L',          rho_kgm3: 1232, cp_kJkgK: 1.84, mu_mPas: 185.0, k_WmK: 0.15, defaultFouling: 0.00035 },
 ];
 
 export const HX_MATERIALS = [
@@ -695,6 +704,73 @@ export function getHXProcessPreset(tag: string, streams: StreamData[]): Partial<
         designTemp_C: 110, designPress_kgcm2g: 28.0,
         streamInfo: `Stream [610→611] 건조 H₂ 제품 (${Math.round(s610?.total_kgh ?? s609?.total_kgh ?? 550).toLocaleString()} kg/h, 80→40°C)`,
       };
+    case 'E-101':
+      return {
+        tag: 'E-101', serviceName: 'Liquid Cl₂ Pressurized Vaporizer (액화염소 가압 기화기)', section: '100',
+        dofMode: 'calc_mh',
+        hotFluidKey: 'steam_lp', mh_kgh: 1480, Th_in_C: 151, Th_out_C: 145, Ph_kgcm2g: 4.0, hotCondensingFrac: 1,
+        coldFluidKey: 'cl2_liq', mc_kgh: 9167, Tc_in_C: 25, Tc_out_C: 95, Pc_kgcm2g: 24.5,
+        n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 4.5, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00009, rfs: 0.00018, material: 'Hastelloy C-276',
+        designTemp_C: 175, designPress_kgcm2g: 28.0,
+        streamInfo: 'PLANT 04 CMS [E-101] 액화염소 가압 기화 (9,167 kg/h, 25→95°C · 24.5 kG · LP Steam)',
+      };
+    case 'E-102A':
+      return {
+        tag: 'E-102A', serviceName: 'Impervious Graphite HCl Gas Quencher (흑연 합성염산 급랭기)', section: '100',
+        dofMode: 'calc_mc',
+        hotFluidKey: 'hcl_31', mh_kgh: 4200, Th_in_C: 185, Th_out_C: 55, Ph_kgcm2g: 0.3, hotCondensingFrac: 0.2,
+        coldFluidKey: 'cooling_water', mc_kgh: 28000, Tc_in_C: 28, Tc_out_C: 36, Pc_kgcm2g: 3.5,
+        n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 4.0, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00018, rfs: 0.00018, material: 'Hastelloy C-276',
+        designTemp_C: 210, designPress_kgcm2g: 2.5,
+        streamInfo: 'PLANT 02 1A 염산 [R-101A→E-102A] HCl 합성가스 급냉 (4,200 kg/h, 185→55°C · CW)',
+      };
+    case 'E-225A':
+      return {
+        tag: 'E-225A', serviceName: '5N AHCl Cryogenic Liquefier (무수염산 R-404A 심냉 액화기)', section: '200',
+        dofMode: 'calc_mc',
+        hotFluidKey: 'ahcl_liq', mh_kgh: 3600, Th_in_C: 15, Th_out_C: -22, Ph_kgcm2g: 17.6, hotCondensingFrac: 0.98,
+        coldFluidKey: 'r404a', mc_kgh: 9800, Tc_in_C: -35, Tc_out_C: -30, Pc_kgcm2g: 1.5,
+        n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 4.5, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00012, rfs: 0.00009, material: 'SS 316L',
+        designTemp_C: 50, designPress_kgcm2g: 24.0,
+        streamInfo: 'PLANT 02 1A 5N AHCl 심냉 액화기 (3,600 kg/h, 15→-22°C · R-404A)',
+      };
+    case 'E-318A':
+    case 'E-325A':
+      return {
+        tag, serviceName: `${tag} PSD Azeotropic Feed-Bottoms Preheater (폐염산 회수 열교환기)`, section: '300',
+        dofMode: 'calc_mc',
+        hotFluidKey: 'hcl_31', mh_kgh: 9500, Th_in_C: 138, Th_out_C: 72, Ph_kgcm2g: 6.0, hotCondensingFrac: 0,
+        coldFluidKey: 'cooling_water', mc_kgh: 24000, Tc_in_C: 30, Tc_out_C: 42, Pc_kgcm2g: 3.5,
+        n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 4.2, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00020, rfs: 0.00018, material: 'Hastelloy C-276',
+        designTemp_C: 175, designPress_kgcm2g: 10.0,
+        streamInfo: 'PLANT 02 1A PSD 300 Sec [C-310A↔C-320A] 폐염산 가압 열회수/냉각 (9,500 kg/h)',
+      };
+    case 'E-401':
+      return {
+        tag: 'E-401', serviceName: 'Crude MDI High-Vacuum Thin-Film Preheater (고진공 박막 예열기)', section: '400',
+        dofMode: 'calc_mh',
+        hotFluidKey: 'steam_mp', mh_kgh: 1850, Th_in_C: 215, Th_out_C: 210, Ph_kgcm2g: 20.0, hotCondensingFrac: 1,
+        coldFluidKey: 'mdi_pure', mc_kgh: 12625, Tc_in_C: 165, Tc_out_C: 190, Pc_kgcm2g: -0.985,
+        n_shell: 1, n_passes: 1, do_mm: 25.4, tw_mm: 2.11, L_m: 4.0, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00025, rfs: 0.00009, material: 'SS 316L',
+        designTemp_C: 230, designPress_kgcm2g: 22.0,
+        streamInfo: 'PLANT 05 MDI [C-302→E-401] 무용매 조 MDI 박막 예열 (12,625 kg/h, 165→190°C · 20 mbar)',
+      };
+    case 'E-402':
+      return {
+        tag: 'E-402', serviceName: "Pure 4,4'-MDI Product Cooler (Pure MDI 제품 냉각기)", section: '400',
+        dofMode: 'calc_mc',
+        hotFluidKey: 'mdi_pure', mh_kgh: 4500, Th_in_C: 165, Th_out_C: 55, Ph_kgcm2g: 0.5, hotCondensingFrac: 0,
+        coldFluidKey: 'cooling_water', mc_kgh: 22000, Tc_in_C: 30, Tc_out_C: 38, Pc_kgcm2g: 3.5,
+        n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 3.6, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
+        rft: 0.00020, rfs: 0.00018, material: 'SS 316L',
+        designTemp_C: 200, designPress_kgcm2g: 4.5,
+        streamInfo: "PLANT 05 MDI [C-401→E-402] Pure 4,4'-MDI 4,500 kg/h 냉각 (165→55°C · CW)",
+      };
     case 'E-102':
       return {
         tag: 'E-102', serviceName: 'DCH Reaction Effluent Cooler (글리세린 염소화 반응물 냉각기)', section: '100',
@@ -704,18 +780,18 @@ export function getHXProcessPreset(tag: string, streams: StreamData[]): Partial<
         n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 4.5, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
         rft: 0.00018, rfs: 0.00022, material: 'Hastelloy C-276',
         designTemp_C: 150, designPress_kgcm2g: 6.0,
-        streamInfo: 'PLANT 04 [R-101→E-102] 글리세린 염소화 조 DCH 반응액 냉각 (16,517 kg/h, 112→55°C · CW)',
+        streamInfo: 'PLANT 03 [R-101→E-102] 글리세린 염소화 조 DCH 반응액 냉각 (16,517 kg/h, 112→55°C · CW)',
       };
     case 'E-301':
       return {
-        tag: 'E-301', serviceName: 'Purified ECH Product Cooler (고순도 ECH 제품 냉각기)', section: '300',
+        tag: 'E-301', serviceName: 'Purified Product Cooler (정제 제품 냉각기)', section: '300',
         dofMode: 'calc_mc',
         hotFluidKey: 'ech_pure', mh_kgh: 8650, Th_in_C: 62, Th_out_C: 35, Ph_kgcm2g: 0.3, hotCondensingFrac: 0,
         coldFluidKey: 'cooling_water', mc_kgh: 16000, Tc_in_C: 28, Tc_out_C: 33, Pc_kgcm2g: 3.5,
         n_shell: 1, n_passes: 2, do_mm: 19.05, tw_mm: 2.11, L_m: 3.6, layoutAngle: 30, baffleCutPct: 25, overdesignPct: 15,
         rft: 0.00015, rfs: 0.00012, material: 'SS 316L',
         designTemp_C: 110, designPress_kgcm2g: 4.5,
-        streamInfo: 'PLANT 04 [C-102→E-301] 99.9% 에폭시급 ECH 제품 냉각 (8,650 kg/h, 62→35°C · CW)',
+        streamInfo: 'PLANT 03 [C-102→E-301] 99.9% 에폭시급 ECH 제품 냉각 (8,650 kg/h, 62→35°C · CW)',
       };
     default:
       return {
@@ -760,7 +836,7 @@ export interface TowerProcessPreset {
   streamInfo: string;
 }
 
-export function getTowerProcessPreset(tag: string, streams: StreamData[]): TowerProcessPreset {
+export function getTowerProcessPreset(tag: string, streams: StreamData[], activePlantId?: string): TowerProcessPreset {
   const findStream = (id: string) => streams.find(s => s.id === id);
   const s102 = findStream('102');
   const s218 = findStream('218');
@@ -1030,6 +1106,32 @@ export function getTowerProcessPreset(tag: string, streams: StreamData[]): Tower
       };
     }
     case 'C-101': {
+      if (activePlantId === 'mdi_plant') {
+        return {
+          tag: 'C-101',
+          serviceName: 'Aniline Vacuum Recovery Column (아닐린 감압 회수탑 · 14단 · -0.88 kG)',
+          section: '100',
+          mode: 'stripping',
+          temp_C: 118,
+          pressure_kPa: 15.0,
+          operPress_kgcm2g: '-0.88',
+          designTemp_C: '220',
+          designPress_kgcm2g: 'FV/3.5',
+          material: 'SS 316L',
+          gasFluidKey: 'aniline_vap',
+          gasFlow_kgh: 1450,
+          liqFluidKey: 'MDA',
+          liqFlow_kgh: 9910,
+          packingKey: 'mellapak_250y',
+          floodFrac: 0.72,
+          separationMode: 'stages',
+          stages: 14,
+          yIn: 0.035,
+          yOut: 0.002,
+          absA: 1.5,
+          streamInfo: 'PLANT 05 MDI [100 SEC] 진공 -0.88 kG (15 kPa) · 14단 · R=1.5 · 미반응 아닐린 탑정 회수 및 Crude MDA 정제',
+        };
+      }
       return {
         tag: 'C-101',
         serviceName: 'ECH Light-Ends & Azeotropic Dehydration Column (저비점·수분 공비탈수탑)',
@@ -1041,7 +1143,7 @@ export function getTowerProcessPreset(tag: string, streams: StreamData[]): Tower
         designTemp_C: '130',
         designPress_kgcm2g: 'FV/3.5',
         material: 'SS 316L',
-        gasFluidKey: 'cl2_gas',
+        gasFluidKey: 'dcp_vap',
         gasFlow_kgh: 2070,
         liqFluidKey: 'ech_pure',
         liqFlow_kgh: 8860,
@@ -1052,7 +1154,7 @@ export function getTowerProcessPreset(tag: string, streams: StreamData[]): Tower
         yIn: 0.032,
         yOut: 0.0005,
         absA: 1.5,
-        streamInfo: 'PLANT 04 진공 -0.65 kG (36.3 kPa) · 20단 · R=2.2 · 탑정 DCP/H₂O 공비탈수 (디캔터)',
+        streamInfo: 'PLANT 03 Bio-ECH [300 SEC] 진공 -0.65 kG (36.3 kPa) · 20단 · R=2.2 · 탑정 DCP/H₂O 공비탈수 (디캔터)',
       };
     }
     case 'C-102': {
@@ -1067,7 +1169,7 @@ export function getTowerProcessPreset(tag: string, streams: StreamData[]): Tower
         designTemp_C: '150',
         designPress_kgcm2g: 'FV/3.5',
         material: 'SS 316L',
-        gasFluidKey: 'cl2_gas',
+        gasFluidKey: 'ech_vap',
         gasFlow_kgh: 29450,
         liqFluidKey: 'ech_pure',
         liqFlow_kgh: 20800,
@@ -1078,7 +1180,215 @@ export function getTowerProcessPreset(tag: string, streams: StreamData[]): Tower
         yIn: 0.955,
         yOut: 0.001,
         absA: 1.4,
-        streamInfo: 'PLANT 04 고진공 -0.92 kG (11.1 kPa / 85 Torr) · 26단 · R=2.4 · 탑정 99.9% 에폭시급 ECH',
+        streamInfo: 'PLANT 03 Bio-ECH [300 SEC] 고진공 -0.92 kG (11.1 kPa / 85 Torr) · 26단 · R=2.4 · 탑정 99.9% 에폭시급 ECH',
+      };
+    }
+    case 'C-201': {
+      return {
+        tag: 'C-201',
+        serviceName: 'High-Pressure AHCl Stripper Column (고압 무수염산 탈거탑 · 60단 · 17.5 kG)',
+        section: '200',
+        mode: 'stripping',
+        temp_C: 25,
+        pressure_kPa: 1815.0,
+        operPress_kgcm2g: '17.5',
+        designTemp_C: '130',
+        designPress_kgcm2g: '24.0',
+        material: 'CS + PTFE lining / Hastelloy C-276',
+        gasFluidKey: 'hcl_gas',
+        gasFlow_kgh: 4720,
+        liqFluidKey: 'CH3Cl',
+        liqFlow_kgh: 14200,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.72,
+        separationMode: 'stages',
+        stages: 60,
+        yIn: 0.24,
+        yOut: 0.0002,
+        absA: 1.6,
+        streamInfo: 'PLANT 04 CMS [200 SEC] 17.5 kG · 60단 · 부생 무수 HCl (113 T/D) 고압 탈거 분리',
+      };
+    }
+    case 'C-202': {
+      return {
+        tag: 'C-202',
+        serviceName: 'Unreacted MC Recycle Column (미반응 메틸클로라이드 순환탑 · 50단 · 6.5 kG)',
+        section: '200',
+        mode: 'stripping',
+        temp_C: 42,
+        pressure_kPa: 740.0,
+        operPress_kgcm2g: '6.5',
+        designTemp_C: '140',
+        designPress_kgcm2g: '12.0',
+        material: 'Carbon Steel (SA-516 Gr.70)',
+        gasFluidKey: 'CH3Cl',
+        gasFlow_kgh: 13650,
+        liqFluidKey: 'CH2Cl2',
+        liqFlow_kgh: 18500,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.74,
+        separationMode: 'stages',
+        stages: 50,
+        yIn: 0.58,
+        yOut: 0.0005,
+        absA: 1.5,
+        streamInfo: 'PLANT 04 CMS [200 SEC] 6.5 kG · 50단 · 미반응 MC 전량 순환 (MCL 무순환)',
+      };
+    }
+    case 'C-203': {
+      return {
+        tag: 'C-203',
+        serviceName: 'CMS Azeo / Light-Ends Removal Column (공비·경질 분리탑 · 30단 · 2.2 kG)',
+        section: '200',
+        mode: 'stripping',
+        temp_C: 48,
+        pressure_kPa: 317.0,
+        operPress_kgcm2g: '2.2',
+        designTemp_C: '125',
+        designPress_kgcm2g: '6.0',
+        material: 'SS 316L',
+        gasFluidKey: 'dcm_vap',
+        gasFlow_kgh: 3800,
+        liqFluidKey: 'CH2Cl2',
+        liqFlow_kgh: 9200,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.72,
+        separationMode: 'stages',
+        stages: 30,
+        yIn: 0.04,
+        yOut: 0.0001,
+        absA: 1.5,
+        streamInfo: 'PLANT 04 CMS [200 SEC] 2.2 kG · 30단 · 수분/경질 클로로메탄 퍼지 분리',
+      };
+    }
+    case 'C-301': {
+      if (activePlantId === 'mdi_plant') {
+        return {
+          tag: 'C-301',
+          serviceName: 'Dephosgenation Stripper Column (탈포스겐 회수 스트리퍼 · 14단 · 2.0 kG)',
+          section: '300',
+          mode: 'stripping',
+          temp_C: 112,
+          pressure_kPa: 297.0,
+          operPress_kgcm2g: '2.0',
+          designTemp_C: '215',
+          designPress_kgcm2g: '6.0',
+          material: 'SS 316L / Hastelloy C-276',
+          gasFluidKey: 'COCl2',
+          gasFlow_kgh: 2200,
+          liqFluidKey: 'MCB',
+          liqFlow_kgh: 18900,
+          packingKey: 'mellapak_250y',
+          floodFrac: 0.70,
+          separationMode: 'stages',
+          stages: 14,
+          yIn: 0.095,
+          yOut: 0.0004,
+          absA: 1.6,
+          streamInfo: 'PLANT 05 MDI [300 SEC] 2.0 kG · 14단 · R=1.6 · 과잉 포스겐(COCl₂) 전량 탈기 회수 순환',
+        };
+      }
+      return {
+        tag: 'C-301',
+        serviceName: 'High-Purity MCL Fractionator (MCL 제품 정제탑 · 80단 · 120 T/D · 99.99%)',
+        section: '300',
+        mode: 'stripping',
+        temp_C: 46,
+        pressure_kPa: 145.0,
+        operPress_kgcm2g: '0.45',
+        designTemp_C: '130',
+        designPress_kgcm2g: '4.5',
+        material: 'SS 304L / Carbon Steel',
+        gasFluidKey: 'dcm_vap',
+        gasFlow_kgh: 14800,
+        liqFluidKey: 'CH2Cl2',
+        liqFlow_kgh: 12400,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.75,
+        separationMode: 'stages',
+        stages: 80,
+        yIn: 0.56,
+        yOut: 0.0001,
+        absA: 1.5,
+        streamInfo: 'PLANT 04 CMS [300 SEC] 0.45 kG · 80단 · 탑정 99.99% MCL 120 T/D 생산',
+      };
+    }
+    case 'C-302': {
+      if (activePlantId === 'mdi_plant') {
+        return {
+          tag: 'C-302',
+          serviceName: 'MCB Vacuum Solvent Recovery Column (MCB 용매 진공 회수탑 · 16단 · -0.90 kG)',
+          section: '300',
+          mode: 'stripping',
+          temp_C: 88,
+          pressure_kPa: 13.0,
+          operPress_kgcm2g: '-0.90',
+          designTemp_C: '220',
+          designPress_kgcm2g: 'FV/3.5',
+          material: 'SS 316L',
+          gasFluidKey: 'mcb_vap',
+          gasFlow_kgh: 18807,
+          liqFluidKey: 'MCB',
+          liqFlow_kgh: 19200,
+          packingKey: 'mellapak_250y',
+          floodFrac: 0.72,
+          separationMode: 'stages',
+          stages: 16,
+          yIn: 0.75,
+          yOut: 0.0005,
+          absA: 1.5,
+          streamInfo: 'PLANT 05 MDI [300 SEC] 진공 -0.90 kG (13 kPa) · 16단 · 탑정 MCB 18.8 t/h 회수 / 탑저 무용매 Crude MDI',
+        };
+      }
+      return {
+        tag: 'C-302',
+        serviceName: 'CFM Product & CTC/Heavies Column (CFM 정제탑 · 120단 · 80 T/D)',
+        section: '300',
+        mode: 'stripping',
+        temp_C: 66,
+        pressure_kPa: 132.0,
+        operPress_kgcm2g: '0.30',
+        designTemp_C: '140',
+        designPress_kgcm2g: '4.0',
+        material: 'SS 316L',
+        gasFluidKey: 'cfm_vap',
+        gasFlow_kgh: 11200,
+        liqFluidKey: 'CHCl3',
+        liqFlow_kgh: 9800,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.75,
+        separationMode: 'stages',
+        stages: 120,
+        yIn: 0.82,
+        yOut: 0.0001,
+        absA: 1.5,
+        streamInfo: 'PLANT 04 CMS [300 SEC] 0.30 kG · 120단 · 탑정 99.99% CFM 80 T/D & 탑저 CTC/헤비 18 T/D 폐기',
+      };
+    }
+    case 'C-401': {
+      return {
+        tag: 'C-401',
+        serviceName: "High-Vacuum Pure 4,4'-MDI / PMDI Fractionator (고진공 분별탑 · 16단 · 20 mbar)",
+        section: '400',
+        mode: 'stripping',
+        temp_C: 192,
+        pressure_kPa: 2.0,
+        operPress_kgcm2g: '-0.99',
+        designTemp_C: '240',
+        designPress_kgcm2g: 'FV/2.5',
+        material: 'SS 316L (Structured Packing Mellapak 250Y)',
+        gasFluidKey: 'mdi_vap',
+        gasFlow_kgh: 11250,
+        liqFluidKey: 'PMDI',
+        liqFlow_kgh: 14750,
+        packingKey: 'mellapak_250y',
+        floodFrac: 0.70,
+        separationMode: 'stages',
+        stages: 16,
+        yIn: 0.45,
+        yOut: 0.008,
+        absA: 1.5,
+        streamInfo: "PLANT 05 MDI [400 SEC] 고진공 20 mbar (-0.99 kG) · 16단 · Pure 4,4'-MDI 4,500 kg/h + PMDI 8,000 kg/h 정밀 분별",
       };
     }
     default: {
@@ -1117,7 +1427,7 @@ export interface PumpProcessPreset {
   streamInfo: string;
 }
 
-export function getPumpProcessPreset(tag: string, streams: StreamData[]): PumpProcessPreset {
+export function getPumpProcessPreset(tag: string, streams: StreamData[], activePlantId?: string): PumpProcessPreset {
   const findStream = (id: string) => streams.find(s => s.id === id);
   const norm = tag.toUpperCase().replace(/A\/B|C\/D/g, '').trim();
 
@@ -1145,17 +1455,48 @@ export function getPumpProcessPreset(tag: string, streams: StreamData[]): PumpPr
     'P-494': { streamId: '421', fluidKey: 'cl2_gas',  Ps_kPaG: 290,Pd_kPaG: 650, Hs_m: 3.0, Hd_m: 12, dnSuc: 80,  dnDis: 50, mat: 'LTCS / Hast. C', name: '액화염소 이송펌프', sec: '400' },
     'P-496': { streamId: '425', fluidKey: 'cl2_gas',  Ps_kPaG: 290,Pd_kPaG: 1200,Hs_m: 3.0, Hd_m: 15, dnSuc: 80,  dnDis: 50, mat: 'LTCS / Hast. C', name: '액화염소 출하펌프', sec: '400' },
     'P-613': { streamId: '604', fluidKey: 'process_water', Ps_kPaG: 10, Pd_kPaG: 250, Hs_m: 2.5, Hd_m: 10, dnSuc: 50, dnDis: 40, mat: '316L SS', name: '수소 응축수 드레인펌프', sec: '600' },
-    'P-101': {
-      streamId: 'E-105', fluidKey: 'dch_13', Ps_kPaG: 160, Pd_kPaG: 320, Hs_m: 3.5, Hd_m: 14,
-      dnSuc: 80, dnDis: 65, mat: 'Hastelloy C-276', name: 'DCH 반응액 이송 펌프 (100→200 Sec)', sec: '100',
-      defaultFlowKgh: 16114, defaultTempC: 55, defaultRho: 1295,
-      defaultStreamInfo: 'PLANT 04 [100→200 Sec] 조 DCH 반응액 이송 (16,114 kg/h = 12.4 m³/h @ 55°C)',
+    'P-101': activePlantId === 'mdi_plant'
+      ? {
+          streamId: '105', fluidKey: 'aniline', Ps_kPaG: 50, Pd_kPaG: 380, Hs_m: 3.5, Hd_m: 15,
+          dnSuc: 80, dnDis: 65, mat: 'SS 316L', name: 'MDA/아닐린 순환·이송 펌프 (100 SEC)', sec: '100',
+          defaultFlowKgh: 10006, defaultTempC: 95, defaultRho: 1015,
+          defaultStreamInfo: 'PLANT 05 MDI [100 SEC] 조 MDA/아닐린 이송 (10,006 kg/h = 10.5 m³/h @ 95°C)',
+        }
+      : {
+          streamId: 'E-105', fluidKey: 'dch_13', Ps_kPaG: 160, Pd_kPaG: 320, Hs_m: 3.5, Hd_m: 14,
+          dnSuc: 80, dnDis: 65, mat: 'Hastelloy C-276', name: 'DCH 반응액 이송 펌프 (100→200 Sec)', sec: '100',
+          defaultFlowKgh: 16114, defaultTempC: 55, defaultRho: 1295,
+          defaultStreamInfo: 'PLANT 03 Bio-ECH [100→200 Sec] 조 DCH 반응액 이송 (16,114 kg/h = 12.4 m³/h @ 55°C)',
+        },
+    'P-115': {
+      streamId: '115', fluidKey: 'hcl_31', Ps_kPaG: 20, Pd_kPaG: 360, Hs_m: 3.0, Hd_m: 14,
+      dnSuc: 80, dnDis: 65, mat: 'FRP / PVDF lining', name: '35% 전자급 염산 제품 이송 펌프', sec: '100',
+      defaultFlowKgh: 9800, defaultTempC: 35, defaultRho: 1174,
+      defaultStreamInfo: 'PLANT 02 1A 염산 [100 SEC] 35% 전자급 염산 제품 이송 (9,800 kg/h @ 35°C)',
+    },
+    'P-202': {
+      streamId: '203', fluidKey: 'methyl_chloride', Ps_kPaG: 920, Pd_kPaG: 2450, Hs_m: 4.0, Hd_m: 18,
+      dnSuc: 65, dnDis: 50, mat: 'Carbon Steel / API 610', name: '고압 순환 메틸클로라이드 승압 펌프 (MC Recycle)', sec: '200',
+      defaultFlowKgh: 11088, defaultTempC: 40, defaultRho: 880,
+      defaultStreamInfo: 'PLANT 04 CMS [200→100 SEC] 순환 메틸클로라이드 24.5 kG 승압 (11,088 kg/h = 12.6 m³/h)',
     },
     'P-301': {
       streamId: 'E-303', fluidKey: 'ech_pure', Ps_kPaG: -80, Pd_kPaG: 450, Hs_m: 3.0, Hd_m: 18,
       dnSuc: 65, dnDis: 50, mat: '316L SS', name: '고순도 ECH 제품 이송 펌프 (99.9%)', sec: '300',
       defaultFlowKgh: 8650, defaultTempC: 35, defaultRho: 1170,
-      defaultStreamInfo: 'PLANT 04 [300 Sec] 99.9% 에폭시급 ECH 제품 이송 (8,650 kg/h = 7.4 m³/h @ 35°C)',
+      defaultStreamInfo: 'PLANT 03 Bio-ECH [300 Sec] 99.9% 에폭시급 ECH 제품 이송 (8,650 kg/h = 7.4 m³/h @ 35°C)',
+    },
+    'P-302': {
+      streamId: '312', fluidKey: 'mcb', Ps_kPaG: -90, Pd_kPaG: 350, Hs_m: 3.5, Hd_m: 16,
+      dnSuc: 100, dnDis: 80, mat: 'SS 316L (Double Seal)', name: '회수 MCB 용매 이송·순환 펌프', sec: '300',
+      defaultFlowKgh: 18807, defaultTempC: 68, defaultRho: 1075,
+      defaultStreamInfo: 'PLANT 05 MDI [300 SEC] 회수 모노클로로벤젠 MCB 이송 (18,807 kg/h = 17.5 m³/h @ 68°C)',
+    },
+    'P-315': {
+      streamId: '315', fluidKey: 'hcl_31', Ps_kPaG: -85, Pd_kPaG: 720, Hs_m: 3.5, Hd_m: 18,
+      dnSuc: 80, dnDis: 65, mat: 'PTFE-lined / Ta', name: '농축 폐염산 가압 이송 펌프 (C-310A→C-320A)', sec: '300',
+      defaultFlowKgh: 9500, defaultTempC: 68, defaultRho: 1098,
+      defaultStreamInfo: 'PLANT 02 1A PSD [300 SEC] 농축 공비염산 가압 이송 (9,500 kg/h, -0.85→7.2 kG)',
     },
   };
 
