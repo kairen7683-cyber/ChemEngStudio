@@ -94,6 +94,7 @@ import {
 import {
   PENDING_CASE_LOAD_KEY,
   LOAD_SAVED_CASE_EVENT,
+  PROJECTS_UPDATED_EVENT,
   OPEN_SHORTCUT_CALC_EVENT,
   consumePendingCaseLoad,
   getActiveCaseTitle,
@@ -110,17 +111,11 @@ import {
 
 // ── 모드별 분리 영구 자동저장 키 (PLANT 01 ↔ PLANT 02 ↔ PLANT 03 ↔ PLANT 04 ↔ PLANT 05 ↔ 공정 시뮬레이터 완전 격리) ──
 const PLANT02_AUTO_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
-const PLANT02_SLOTS_SAVE_KEY = 'chemplant-plant02-electrolyzer-slots-v1';
 const PLANT03_AUTO_SAVE_KEY = 'chemplant-plant03-hcl1a-v2';
-const PLANT03_SLOTS_SAVE_KEY = 'chemplant-plant03-hcl1a-slots-v1';
 const PLANT04_AUTO_SAVE_KEY = 'chemplant-plant04-ech-v1';
-const PLANT04_SLOTS_SAVE_KEY = 'chemplant-plant04-ech-slots-v1';
 const PLANT05_AUTO_SAVE_KEY = 'chemplant-plant05-cms-v2';
-const PLANT05_SLOTS_KEY = 'chemplant-plant05-cms-slots-v2';
 const PLANT06_AUTO_SAVE_KEY = 'chemplant-plant06-mdi-v1';
-const PLANT06_SLOTS_KEY = 'chemplant-plant06-mdi-slots-v1';
 const BUILDER_AUTO_SAVE_KEY = 'chemplant-newplant-builder-v1';
-const BUILDER_SLOTS_SAVE_KEY = 'chemplant-newplant-builder-slots-v1';
 
 // ── 포트 방향 판별 (양방향 드래그 연결 시 자동 입·출구 정렬용) ──
 const INLET_PORT_SET = new Set<string>(['in', 'anode_in', 'cathode_in', 'liq_in', 'util_in', 'solvent']);
@@ -1820,12 +1815,6 @@ function mergeSheetFeedComponents(defs: FlowNodeDef[], base: SimCompKey[]): SimC
   return Array.from(set);
 }
 
-interface NamedSlot {
-  name: string;
-  savedAt: string;
-  state: SavedFlowsheetState;
-}
-
 interface NamedProjectItem {
   id: string;
   name: string;
@@ -1977,17 +1966,6 @@ export function FlowsheetWorkspace({
           : isMdiMode
             ? PLANT06_AUTO_SAVE_KEY
             : BUILDER_AUTO_SAVE_KEY;
-  const SLOTS_SAVE_KEY = isElectrolyzerMode
-    ? PLANT02_SLOTS_SAVE_KEY
-    : isHcl1AMode
-      ? PLANT03_SLOTS_SAVE_KEY
-      : isEchGteMode
-        ? PLANT04_SLOTS_SAVE_KEY
-        : isCmsMode
-          ? PLANT05_SLOTS_KEY
-          : isMdiMode
-            ? PLANT06_SLOTS_KEY
-            : BUILDER_SLOTS_SAVE_KEY;
   const PROJECTS_SAVE_KEY = isElectrolyzerMode
     ? 'chemplant-plant02-projects-v1'
     : isHcl1AMode
@@ -2315,16 +2293,15 @@ export function FlowsheetWorkspace({
     );
   }, []);
 
-  // 자동저장 상태 및 슬롯/프로젝트 모달 상태
+  // 자동저장 상태 및 케이스 저장 모달 상태
   const [hydrated, setHydrated] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<string>('');
-  const [slots, setSlots] = useState<Record<string, NamedSlot>>({});
   const [namedProjects, setNamedProjects] = useState<NamedProjectItem[]>([]);
+  const [activeCaseName, setActiveCaseName] = useState<string | null>(null);
   const [projectNameInput, setProjectNameInput] = useState<string>('');
   const [showStorageBar, setShowStorageBar] = useState(false);
 
   const rfWrapperRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
 
   // 현재 캔버스 위치를 추출하는 헬퍼
@@ -2990,10 +2967,6 @@ export function FlowsheetWorkspace({
           }
         }
       }
-      const rawSlots = localStorage.getItem(SLOTS_SAVE_KEY);
-      if (rawSlots) {
-        setSlots(JSON.parse(rawSlots));
-      }
       const rawProjects = localStorage.getItem(PROJECTS_SAVE_KEY);
       if (rawProjects) {
         const parsedProjs = JSON.parse(rawProjects);
@@ -3001,6 +2974,8 @@ export function FlowsheetWorkspace({
           setNamedProjects(parsedProjs);
         }
       }
+      const curTitle = getActiveCaseTitle();
+      setActiveCaseName(curTitle && curTitle.plantId === workspacePlantId ? curTitle.title : null);
     } catch {
       // 파싱 실패 시 기본값 유지
     }
@@ -3071,7 +3046,30 @@ export function FlowsheetWorkspace({
     return () => {
       alive = false;
     };
-  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, isMdiMode, isPlantSimMode, workspaceMode, workspacePlantId]);
+  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, isMdiMode, isPlantSimMode, workspaceMode, workspacePlantId]);
+
+  // 상단 [내 케이스] 드롭다운 삭제·전환 시 현재 저장 목록 및 활성 케이스명 즉시 동기화
+  useEffect(() => {
+    const syncProjectsAndTitle = () => {
+      try {
+        const rawProjects = localStorage.getItem(PROJECTS_SAVE_KEY);
+        if (rawProjects) {
+          const parsedProjs = JSON.parse(rawProjects);
+          if (Array.isArray(parsedProjs)) {
+            setNamedProjects(parsedProjs);
+          }
+        } else {
+          setNamedProjects([]);
+        }
+      } catch {
+        // ignore
+      }
+      const curTitle = getActiveCaseTitle();
+      setActiveCaseName(curTitle && curTitle.plantId === workspacePlantId ? curTitle.title : null);
+    };
+    window.addEventListener(PROJECTS_UPDATED_EVENT, syncProjectsAndTitle);
+    return () => window.removeEventListener(PROJECTS_UPDATED_EVENT, syncProjectsAndTitle);
+  }, [PROJECTS_SAVE_KEY, workspacePlantId]);
 
   const switchToClassicUi = useCallback(() => {
     const positions = extractCurrentPositions(rfNodes);
@@ -3858,45 +3856,7 @@ export function FlowsheetWorkspace({
     };
   }, []);
 
-  // ── 슬롯 저장 / 불러오기 / JSON 내보내기 & 가져오기 ──
-  const saveToSlot = (slotKey: string, defaultLabel: string) => {
-    const positions = extractCurrentPositions(rfNodes);
-    const syncedSheets = isMultiSheetMode
-      ? {
-          ...hierarchySheets,
-          [activeSheetId]: {
-            ...(hierarchySheets[activeSheetId] ?? initialSheets.master),
-            simDefs,
-            positions,
-            flowEdges,
-          },
-        }
-      : hierarchySheets;
-    const nowStr = new Date().toLocaleString('ko-KR', { hour12: false });
-    const nextSlots: Record<string, NamedSlot> = {
-      ...slots,
-      [slotKey]: {
-        name: defaultLabel,
-        savedAt: nowStr,
-        state: {
-          version: 5,
-          savedAt: nowStr,
-          presetId,
-          simDefs,
-          positions,
-          flowEdges,
-          hierarchySheets: syncedSheets,
-          activeSheetId,
-          boundarySyncEnabled,
-        },
-      },
-    };
-    setSlots(nextSlots);
-    try {
-      localStorage.setItem(SLOTS_SAVE_KEY, JSON.stringify(nextSlots));
-    } catch { /* ignore */ }
-  };
-
+  // ── 케이스 이름 지정 저장 / 덮어쓰기 / JSON 내보내기 ──
   const buildCurrentSavedState = (nowStr: string): SavedFlowsheetState => {
     const positions = extractCurrentPositions(rfNodes);
     const activeCached =
@@ -3964,7 +3924,9 @@ export function FlowsheetWorkspace({
       localStorage.setItem(PROJECTS_SAVE_KEY, JSON.stringify(next));
     } catch { /* ignore */ }
     setActiveCaseTitle(item.name, workspacePlantId);
+    setActiveCaseName(item.name);
     notifyProjectsUpdated();
+    setShowStorageBar(false);
   };
 
   const overwriteNamedProject = (projId: string) => {
@@ -3987,22 +3949,10 @@ export function FlowsheetWorkspace({
     } catch { /* ignore */ }
     if (targetProj) {
       setActiveCaseTitle(targetProj.name, workspacePlantId);
+      setActiveCaseName(targetProj.name);
     }
     notifyProjectsUpdated();
-  };
-
-  const deleteNamedProject = (projId: string) => {
-    const deletedProj = namedProjects.find(p => p.id === projId);
-    const next = namedProjects.filter(p => p.id !== projId);
-    setNamedProjects(next);
-    try {
-      localStorage.setItem(PROJECTS_SAVE_KEY, JSON.stringify(next));
-    } catch { /* ignore */ }
-    const curTitle = getActiveCaseTitle();
-    if (deletedProj && curTitle && curTitle.plantId === workspacePlantId && curTitle.title === deletedProj.name) {
-      setActiveCaseTitle(null, workspacePlantId);
-    }
-    notifyProjectsUpdated();
+    setShowStorageBar(false);
   };
 
   const loadFromStateObject = (st: SavedFlowsheetState) => {
@@ -4082,29 +4032,7 @@ export function FlowsheetWorkspace({
   };
 
   const exportJsonFile = () => {
-    const positions = extractCurrentPositions(rfNodes);
-    const syncedSheets = isMultiSheetMode
-      ? {
-          ...hierarchySheets,
-          [activeSheetId]: {
-            ...(hierarchySheets[activeSheetId] ?? initialSheets.master),
-            simDefs,
-            positions,
-            flowEdges,
-          },
-        }
-      : hierarchySheets;
-    const payload: SavedFlowsheetState = {
-      version: 5,
-      savedAt: new Date().toISOString(),
-      presetId,
-      simDefs,
-      positions,
-      flowEdges,
-      hierarchySheets: syncedSheets,
-      activeSheetId,
-      boundarySyncEnabled,
-    };
+    const payload = buildCurrentSavedState(new Date().toISOString());
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4112,24 +4040,6 @@ export function FlowsheetWorkspace({
     a.download = `ChemPlant_FullPackage_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const handleImportJsonFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result)) as SavedFlowsheetState;
-        if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
-          loadFromStateObject(parsed);
-        }
-      } catch {
-        alert('유효한 플로우시트 JSON 파일이 아닙니다.');
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
   };
 
   // 단위 예제 프리셋 로드
@@ -4256,103 +4166,6 @@ export function FlowsheetWorkspace({
     setSelectedEdgeId(null);
     setActiveCaseTitle(null, workspacePlantId);
     setTimeout(() => rfInstance?.fitView({ padding: 0.16, duration: 240 }), 60);
-  };
-
-  // 전 공장(01/02/03/04/05) 100% 수렴 기본 케이스 즉시 복원
-  const restoreConvergedPlantCase = async (targetPlant: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi') => {
-    const bundle = convergedBaselinesRef.current ?? (await loadConvergedBaselines());
-    if (bundle) convergedBaselinesRef.current = bundle;
-    const pBaselines = bundle?.plants[targetPlant];
-    const needSync = !pBaselines;
-    const rawSheets =
-      targetPlant === 'hcl1A'
-        ? createInitialHcl1AHierarchySheets({ syncMasterOnInit: needSync })
-        : targetPlant === 'ech'
-          ? createInitialEchHierarchySheets({ syncMasterOnInit: needSync })
-          : targetPlant === 'cms'
-            ? createInitialCmsHierarchySheets({ syncMasterOnInit: needSync })
-            : targetPlant === 'mdi'
-              ? createInitialMdiHierarchySheets({ syncMasterOnInit: needSync })
-              : createInitialHierarchySheets({ syncMasterOnInit: needSync });
-    const sheets: Record<string, SheetRuntimeData> = { ...rawSheets };
-    if (pBaselines) {
-      for (const [sid, sh] of Object.entries(sheets)) {
-        const bEntry = pBaselines[sid];
-        if (bEntry) {
-          sheets[sid] = {
-            ...sh,
-            simDefs: bEntry.simDefs.map(d => ({ ...d, params: { ...d.params } })),
-            flowEdges: bEntry.flowEdges.map(e => ({ ...e })),
-            cachedSolvedMeta: {
-              result: bEntry.result,
-              elapsedMs: bEntry.elapsedMs,
-              lastRunTime: bEntry.lastRunTime,
-              runCount: bEntry.runCount,
-            },
-          };
-        }
-      }
-    }
-    const modeForComps =
-      targetPlant === 'hcl1A'
-        ? 'hcl_1a_plant'
-        : targetPlant === 'ech'
-          ? 'ech_gte_plant'
-          : targetPlant === 'cms'
-            ? 'cms_plant'
-            : targetPlant === 'mdi'
-              ? 'mdi_plant'
-              : 'electrolyzer_plant';
-    const nextMethod: SimPropertyMethod =
-      targetPlant === 'cms' ? 'PR' : targetPlant === 'mdi' ? 'NRTL' : 'AUTO';
-    const nextComps = mergeSheetFeedComponents(sheets.master.simDefs, getPlantDefaultComponents(modeForComps));
-    const nextDefs = sheets.master.simDefs.map(d => ({ ...d, params: { ...d.params } }));
-    const nextEdges = sheets.master.flowEdges.map(e => ({ ...e }));
-
-    skipNextDirtyRef.current = true;
-    setActiveComponents(nextComps);
-    setPropertyMethod(nextMethod);
-    setPresetId(
-      targetPlant === 'hcl1A'
-        ? 'full_hcl_1a_plant'
-        : targetPlant === 'ech'
-          ? 'full_ech_gte_plant'
-          : targetPlant === 'cms'
-            ? 'full_cms_plant'
-            : targetPlant === 'mdi'
-              ? 'full_mdi_plant'
-              : 'full_electrolyzer_plant'
-    );
-    setHierarchySheets(sheets);
-    setActiveSheetId('master');
-    setBoundarySyncBanner([]);
-    setSimDefs(nextDefs);
-    setRfNodes(
-      nextDefs.map((d, idx) => ({
-        id: d.id,
-        type: 'flowUnit',
-        position: { ...(sheets.master.positions?.[d.id] ?? { x: 80 + idx * 175, y: 140 }) },
-        data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
-      }))
-    );
-    setFlowEdges(nextEdges);
-    const mCached = sheets.master.cachedSolvedMeta;
-    if (mCached && !mCached.result.convergence.isIdle) {
-      setSolvedMeta({
-        result: mCached.result,
-        elapsedMs: mCached.elapsedMs,
-        runCount: mCached.runCount,
-        lastRunTime: mCached.lastRunTime,
-      });
-      setIsSimDirty(false);
-    } else {
-      runSimulationNow(nextDefs, nextEdges, nextMethod, nextComps);
-    }
-    setSelectedNodeId(nextDefs[0]?.id ?? null);
-    setSelectedEdgeId(null);
-    setShowStorageBar(false);
-    setActiveCaseTitle(null, workspacePlantId);
-    setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
   };
 
   const clearCanvas = () => {
@@ -6244,7 +6057,7 @@ export function FlowsheetWorkspace({
               whiteSpace: 'nowrap',
             }}
           >
-            💾 저장·불러오기 {showStorageBar ? '▲' : '▼'}
+            💾 저장 {showStorageBar ? '▲' : '▼'}
           </button>
 
           <button
@@ -6313,25 +6126,49 @@ export function FlowsheetWorkspace({
         </div>
       )}
 
-      {/* ── 확장형 프로젝트 저장/불러오기 · 빠른 슬롯 · JSON 백업 바 ── */}
-      {showStorageBar && (
-        <div
-          style={{
-            padding: '10px 14px',
-            background: '#F8FAFC',
-            borderBottom: '1px solid #CBD5E1',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            flexShrink: 0,
-          }}
-        >
-          {/* 1행: 이름 지정 시뮬레이션 저장 + JSON 내보내기/불러오기 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+      {/* ── 케이스 저장 및 JSON 백업 바 ── */}
+      {showStorageBar && (() => {
+        const activeMatchedProj = activeCaseName
+          ? namedProjects.find(p => p.name === activeCaseName)
+          : undefined;
+        return (
+          <div
+            style={{
+              padding: '8px 14px',
+              background: '#F8FAFC',
+              borderBottom: '1px solid #CBD5E1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
-                {isPlantSimMode ? '💾 운전 Case 저장·불러오기' : '💾 시뮬레이션 저장·불러오기'}
+                💾 현재 케이스 저장
               </span>
+              {activeMatchedProj && (
+                <button
+                  type="button"
+                  onClick={() => overwriteNamedProject(activeMatchedProj.id)}
+                  style={{
+                    height: 27,
+                    padding: '0 10px',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    borderRadius: 5,
+                    border: '1px solid #1E3A8A',
+                    background: '#1E3A8A',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  덮어쓰기 (&quot;{activeMatchedProj.name}&quot;)
+                </button>
+              )}
               <input
                 type="text"
                 value={projectNameInput}
@@ -6339,11 +6176,7 @@ export function FlowsheetWorkspace({
                 onKeyDown={e => {
                   if (e.key === 'Enter') saveNamedProject();
                 }}
-                placeholder={
-                  isPlantSimMode
-                    ? '운전 Case명 입력 (예: 120% 증산안, 여름철 CW 32°C)'
-                    : '시뮬레이션명 입력 (예: ECH 2탑 테스트)'
-                }
+                placeholder="새 케이스 이름 입력 (예: ECH 2탑 테스트)"
                 style={{
                   height: 27,
                   padding: '0 9px',
@@ -6352,11 +6185,12 @@ export function FlowsheetWorkspace({
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
                   color: '#0F172A',
-                  minWidth: 220,
+                  minWidth: 210,
                   outline: 'none',
                 }}
               />
               <button
+                type="button"
                 onClick={saveNamedProject}
                 style={{
                   height: 27,
@@ -6371,72 +6205,17 @@ export function FlowsheetWorkspace({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {isPlantSimMode ? '+ 현재 운전 Case 저장' : '+ 새 이름으로 저장'}
+                + 새 이름으로 저장
               </button>
-              {isPlantSimMode && (
-                <button
-                  onClick={() => {
-                    activateFullPlantPackage(true);
-                    setShowStorageBar(false);
-                  }}
-                  title="설계 기준안(Base Case)으로 전체 공정 조건을 복원합니다."
-                  style={{
-                    height: 27,
-                    padding: '0 10px',
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                    borderRadius: 5,
-                    border: '1px solid #0F766E',
-                    background: '#CCFBF1',
-                    color: '#115E59',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  🏛️ Base Case 복원
-                </button>
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>기본 수렴 케이스:</span>
-                {(
-                  [
-                    { key: 'electrolysis', label: 'PLANT 01 전해' },
-                    { key: 'hcl1A', label: 'PLANT 02 1A 염산' },
-                    { key: 'ech', label: 'PLANT 03 ECH' },
-                    { key: 'cms', label: 'PLANT 04 CMS' },
-                    { key: 'mdi', label: 'PLANT 05 MDI' },
-                  ] as const
-                )
-                  .filter(item => isPlantAllowed(PLANT_GROUP_TO_ID[item.key], user))
-                  .map(item => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => restoreConvergedPlantCase(item.key)}
-                    style={{
-                      height: 25,
-                      padding: '0 8px',
-                      fontSize: 10,
-                      fontWeight: 800,
-                      borderRadius: 5,
-                      border: '1px solid #93C5FD',
-                      background: '#EFF6FF',
-                      color: '#1D4ED8',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    ✓ {item.label}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
+                type="button"
                 onClick={exportJsonFile}
                 style={{
-                  padding: '4px 9px',
+                  height: 27,
+                  padding: '0 9px',
                   fontSize: 10.5,
                   fontWeight: 700,
                   borderRadius: 5,
@@ -6444,172 +6223,33 @@ export function FlowsheetWorkspace({
                   background: '#FFFFFF',
                   color: '#1E293B',
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                ⬇ JSON 내보내기
+                ⬇ JSON 파일 내보내기
               </button>
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={() => setShowStorageBar(false)}
+                title="저장 바 닫기"
                 style={{
-                  padding: '4px 9px',
-                  fontSize: 10.5,
+                  height: 27,
+                  padding: '0 8px',
+                  fontSize: 11,
                   fontWeight: 700,
                   borderRadius: 5,
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
-                  color: '#1E293B',
+                  color: '#64748B',
                   cursor: 'pointer',
                 }}
               >
-                📂 JSON 불러오기
+                ✕
               </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImportJsonFile}
-                style={{ display: 'none' }}
-              />
             </div>
           </div>
-
-          {/* 2행: 저장된 프로젝트 목록 */}
-          {namedProjects.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#475569' }}>저장 목록 ({namedProjects.length}):</span>
-              {namedProjects.map(proj => (
-                <div
-                  key={proj.id}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    background: '#FFFFFF',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: 6,
-                    padding: '3px 7px',
-                  }}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#0F172A' }}>{proj.name}</span>
-                  <span style={{ fontSize: 9.5, color: '#64748B', fontFamily: 'JetBrains Mono, monospace' }}>
-                    ({proj.nodeCount}블록·{proj.edgeCount}선)
-                  </span>
-                  <button
-                    onClick={() => {
-                      loadFromStateObject(proj.state);
-                      setActiveCaseTitle(proj.name, workspacePlantId);
-                      setShowStorageBar(false);
-                    }}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: '1px solid #1D4ED8',
-                      background: '#EFF6FF',
-                      color: '#1D4ED8',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    불러오기
-                  </button>
-                  <button
-                    onClick={() => overwriteNamedProject(proj.id)}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: '1px solid #CBD5E1',
-                      background: '#F8FAFC',
-                      color: '#334155',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    덮어쓰기
-                  </button>
-                  <button
-                    onClick={() => deleteNamedProject(proj.id)}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 5px',
-                      borderRadius: 4,
-                      border: 'none',
-                      background: 'transparent',
-                      color: '#94A3B8',
-                      cursor: 'pointer',
-                    }}
-                    title="삭제"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* 3행: 빠른 슬롯 1~3 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B' }}>
-              빠른 슬롯:
-            </span>
-            {(['slot1', 'slot2', 'slot3'] as const).map((sk, i) => {
-              const saved = slots[sk];
-              return (
-                <div
-                  key={sk}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    background: '#FFFFFF',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: 6,
-                    padding: '2px 7px',
-                  }}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>
-                    슬롯 {i + 1} {saved ? `(${saved.savedAt.slice(-8)})` : '(비어있음)'}
-                  </span>
-                  <button
-                    onClick={() => saveToSlot(sk, `프로젝트 슬롯 ${i + 1}`)}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '2px 6px',
-                      borderRadius: 4,
-                      border: '1px solid #334155',
-                      background: '#334155',
-                      color: '#FFFFFF',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    저장
-                  </button>
-                  {saved && (
-                    <button
-                      onClick={() => loadFromStateObject(saved.state)}
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        padding: '2px 6px',
-                        borderRadius: 4,
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#1E293B',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      열기
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 메인 워크스페이스 (중앙 풀폭 캔버스 + 하단 가로형 장치모델 팔레트 + 스트림표 | 우측 슬림 속성창) ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>

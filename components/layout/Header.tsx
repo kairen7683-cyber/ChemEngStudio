@@ -17,6 +17,7 @@ import {
 } from '@/lib/simUiHandoff';
 import {
   listAllSavedUserCases,
+  deleteSavedUserCase,
   stagePendingCaseLoad,
   setActiveCaseTitle,
   getActiveCaseTitle,
@@ -58,6 +59,7 @@ export default function Header() {
   const caseTriggerRef = useRef<HTMLButtonElement | null>(null);
   const outputsDropdownRef = useRef<HTMLDivElement | null>(null);
   const outputsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const jsonImportRef = useRef<HTMLInputElement | null>(null);
 
   const {
     activePlantId,
@@ -296,6 +298,51 @@ export default function Header() {
     setActiveCaseTitle(null, plantId);
     setActivePlantId(plantId);
     router.push('/material-balance');
+  };
+
+  const handleImportJsonCase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        const actualState = parsed?.state ?? parsed;
+        if (
+          !actualState ||
+          !Array.isArray(actualState.simDefs) ||
+          !Array.isArray(actualState.flowEdges)
+        ) {
+          alert('유효한 시뮬레이션 JSON 파일이 아닙니다.');
+          return;
+        }
+        const baseName = file.name.replace(/\.json$/i, '') || '불러온 케이스';
+        const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
+        setCaseMenuOpen(false);
+        setActiveCaseTitle(baseName, targetPlantId);
+        stagePendingCaseLoad({
+          action: 'load_project',
+          targetPlantId,
+          uiMode: simUiMode,
+          caseName: baseName,
+          rawProject: {
+            id: `import_${Date.now()}`,
+            name: baseName,
+            savedAt: new Date().toLocaleString('ko-KR', { hour12: false }),
+            state: actualState,
+          },
+        });
+        setActivePlantId(targetPlantId);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+        }
+        router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
+      } catch {
+        alert('JSON 파일을 해석하지 못했습니다.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleWorkspaceTabClick = (tab: PlantWorkspaceTab) => {
@@ -580,6 +627,36 @@ export default function Header() {
                   <span>➕ 새 빈 케이스로 시작</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => jsonImportRef.current?.click()}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 7,
+                    border: '1px dashed #CBD5E1',
+                    background: '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                    color: '#334155',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>📂 JSON 케이스 파일 불러오기...</span>
+                </button>
+                <input
+                  ref={jsonImportRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleImportJsonCase}
+                  style={{ display: 'none' }}
+                />
+
                 {savedCases.length > 0 ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
                     {savedCases.map(item => {
@@ -587,70 +664,105 @@ export default function Header() {
                         displayCaseTitle === item.name && item.targetPlantId === activePlantId;
                       const dateStr = formatSavedDate(item.savedAt);
                       return (
-                        <button
+                        <div
                           key={item.uid}
-                          type="button"
-                          onClick={() => handleOpenSavedCase(item)}
                           style={{
                             width: '100%',
-                            padding: '6px 9px',
+                            padding: '4px 6px',
                             borderRadius: 7,
                             border: isActive ? '1.5px solid #1E3A8A' : '1px solid transparent',
                             background: isActive ? '#F8FAFC' : '#FFFFFF',
-                            cursor: 'pointer',
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 8,
-                            textAlign: 'left',
+                            gap: 4,
                           }}
                         >
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: isActive ? 800 : 700,
-                                color: '#0F172A',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {item.name}
-                            </div>
-                            <div
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                marginTop: 2,
-                                fontSize: 9.8,
-                                color: '#64748B',
-                                fontWeight: 600,
-                              }}
-                            >
-                              <span
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSavedCase(item)}
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              padding: '2px 4px',
+                              border: 'none',
+                              background: 'transparent',
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              textAlign: 'left',
+                            }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div
                                 style={{
-                                  padding: '0.5px 5px',
-                                  borderRadius: 4,
-                                  background: '#F1F5F9',
-                                  border: '1px solid #CBD5E1',
-                                  color: '#334155',
-                                  fontWeight: 700,
+                                  fontSize: 11.5,
+                                  fontWeight: isActive ? 800 : 700,
+                                  color: '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
-                                {item.scopeLabel}
-                              </span>
-                              <span>장치 {item.nodeCount}개</span>
-                              {dateStr ? <span>· {dateStr}</span> : null}
+                                {item.name}
+                              </div>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  marginTop: 2,
+                                  fontSize: 9.8,
+                                  color: '#64748B',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    padding: '0.5px 5px',
+                                    borderRadius: 4,
+                                    background: '#F1F5F9',
+                                    border: '1px solid #CBD5E1',
+                                    color: '#334155',
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  {item.scopeLabel}
+                                </span>
+                                <span>장치 {item.nodeCount}개</span>
+                                {dateStr ? <span>· {dateStr}</span> : null}
+                              </div>
                             </div>
-                          </div>
-                          {isActive && (
-                            <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A', flexShrink: 0 }}>
-                              ✓
-                            </span>
-                          )}
-                        </button>
+                            {isActive && (
+                              <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A', flexShrink: 0 }}>
+                                ✓
+                              </span>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            title="저장 케이스 삭제"
+                            onClick={e => {
+                              e.stopPropagation();
+                              deleteSavedUserCase(item);
+                              refreshCaseState();
+                            }}
+                            style={{
+                              padding: '4px 6px',
+                              borderRadius: 5,
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#94A3B8',
+                              fontSize: 11,
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       );
                     })}
                   </div>

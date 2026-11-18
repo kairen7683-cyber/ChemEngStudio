@@ -193,6 +193,33 @@ export function notifyProjectsUpdated(): void {
   }
 }
 
+export function deleteSavedUserCase(entry: UnifiedSavedCaseEntry): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage.getItem(entry.storageKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const filtered = parsed.filter(
+          item => item && String(item.id) !== String(entry.projectId)
+        );
+        window.localStorage.setItem(entry.storageKey, JSON.stringify(filtered));
+      }
+    }
+    const curTitle = getActiveCaseTitle();
+    if (
+      curTitle &&
+      curTitle.title === entry.name &&
+      curTitle.plantId === entry.targetPlantId
+    ) {
+      window.localStorage.removeItem(ACTIVE_CASE_TITLE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+  notifyProjectsUpdated();
+}
+
 export function setActiveCaseTitle(title: string | null, plantId: PlantId): void {
   if (typeof window === 'undefined') return;
   try {

@@ -59,6 +59,7 @@ import {
 import {
   PENDING_CASE_LOAD_KEY,
   LOAD_SAVED_CASE_EVENT,
+  PROJECTS_UPDATED_EVENT,
   OPEN_SHORTCUT_CALC_EVENT,
   consumePendingCaseLoad,
   getActiveCaseTitle,
@@ -406,6 +407,7 @@ export default function ClassicSimulatorPage() {
   const [showExplorer, setShowExplorer] = useState(true);
   const [showProjectBar, setShowProjectBar] = useState(false);
   const [savedProjects, setSavedProjects] = useState<SavedClassicProject[]>([]);
+  const [activeClassicCaseName, setActiveClassicCaseName] = useState<string | null>(null);
   const [projectNameInput, setProjectNameInput] = useState('');
   const [hydrated, setHydrated] = useState(false);
 
@@ -424,7 +426,6 @@ export default function ClassicSimulatorPage() {
 
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const rfWrapperRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const feedSummary = useMemo(() => {
     const flows: Partial<Record<SimCompKey, number>> = {};
@@ -611,10 +612,32 @@ export default function ClassicSimulatorPage() {
         const arr = JSON.parse(rawProjs);
         if (Array.isArray(arr)) setSavedProjects(arr);
       }
+      const curTitle = getActiveCaseTitle();
+      setActiveClassicCaseName(curTitle && curTitle.plantId === 'classic_sim' ? curTitle.title : null);
     } catch {
       /* ignore */
     }
     setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    const syncClassicProjects = () => {
+      try {
+        const rawProjs = localStorage.getItem(CLASSIC_PROJECTS_KEY);
+        if (rawProjs) {
+          const arr = JSON.parse(rawProjs);
+          setSavedProjects(Array.isArray(arr) ? arr : []);
+        } else {
+          setSavedProjects([]);
+        }
+      } catch {
+        // ignore
+      }
+      const curTitle = getActiveCaseTitle();
+      setActiveClassicCaseName(curTitle && curTitle.plantId === 'classic_sim' ? curTitle.title : null);
+    };
+    window.addEventListener(PROJECTS_UPDATED_EVENT, syncClassicProjects);
+    return () => window.removeEventListener(PROJECTS_UPDATED_EVENT, syncClassicProjects);
   }, []);
 
   // 도면/입력 변경 시 Dirty 표시
@@ -1195,7 +1218,42 @@ export default function ClassicSimulatorPage() {
       /* ignore */
     }
     setActiveCaseTitle(item.name, 'classic_sim');
+    setActiveClassicCaseName(item.name);
     notifyProjectsUpdated();
+    setShowProjectBar(false);
+  };
+
+  const overwriteClassicProject = (projId: string) => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    rfNodes.forEach(n => {
+      positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+    });
+    const targetProj = savedProjects.find(p => p.id === projId);
+    const next = savedProjects.map(p =>
+      p.id === projId
+        ? {
+            ...p,
+            savedAt: new Date().toLocaleString('ko-KR', { hour12: false }),
+            simDefs,
+            positions,
+            flowEdges,
+            thermoMethod,
+            activeComponents,
+          }
+        : p
+    );
+    setSavedProjects(next);
+    try {
+      localStorage.setItem(CLASSIC_PROJECTS_KEY, JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+    if (targetProj) {
+      setActiveCaseTitle(targetProj.name, 'classic_sim');
+      setActiveClassicCaseName(targetProj.name);
+    }
+    notifyProjectsUpdated();
+    setShowProjectBar(false);
   };
 
   const loadSavedProject = (p: SavedClassicProject) => {
@@ -1233,22 +1291,6 @@ export default function ClassicSimulatorPage() {
     setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
   };
 
-  const deleteSavedProject = (id: string) => {
-    const deleted = savedProjects.find(p => p.id === id);
-    const next = savedProjects.filter(p => p.id !== id);
-    setSavedProjects(next);
-    try {
-      localStorage.setItem(CLASSIC_PROJECTS_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore */
-    }
-    const curTitle = getActiveCaseTitle();
-    if (deleted && curTitle && curTitle.plantId === 'classic_sim' && curTitle.title === deleted.name) {
-      setActiveCaseTitle(null, 'classic_sim');
-    }
-    notifyProjectsUpdated();
-  };
-
   const exportJson = () => {
     const positions: Record<string, { x: number; y: number }> = {};
     rfNodes.forEach(n => {
@@ -1263,33 +1305,6 @@ export default function ClassicSimulatorPage() {
     a.download = `ClassicSim_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const importJson = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => {
-      try {
-        const parsed = JSON.parse(String(r.result));
-        if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
-          loadSavedProject({
-            id: 'import',
-            name: f.name,
-            savedAt: '',
-            simDefs: parsed.simDefs,
-            positions: parsed.positions ?? {},
-            flowEdges: parsed.flowEdges,
-            thermoMethod: normalizePropertyMethod(parsed.thermoMethod),
-            activeComponents: Array.isArray(parsed.activeComponents) ? parsed.activeComponents : undefined,
-          });
-        }
-      } catch {
-        alert('유효한 시뮬레이션 JSON 파일이 아닙니다.');
-      }
-    };
-    r.readAsText(f);
-    e.target.value = '';
   };
 
   const selectedBlock = selectedKind === 'block' ? simDefs.find(d => d.id === selectedId) ?? null : null;
@@ -1577,21 +1592,48 @@ export default function ClassicSimulatorPage() {
         </div>
       )}
 
-      {/* ── 저장/열기 바 ── */}
-      {showProjectBar && (
-        <div
-          style={{
-            padding: '8px 12px',
-            background: '#F8FAFC',
-            borderBottom: '1px solid #CBD5E1',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 6,
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
+      {/* ── 케이스 저장 및 JSON 백업 바 ── */}
+      {showProjectBar && (() => {
+        const activeMatchedClassicProj = activeClassicCaseName
+          ? savedProjects.find(p => p.name === activeClassicCaseName)
+          : undefined;
+        return (
+          <div
+            style={{
+              padding: '8px 12px',
+              background: '#F8FAFC',
+              borderBottom: '1px solid #CBD5E1',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 6,
+              flexShrink: 0,
+            }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
+                💾 현재 케이스 저장
+              </span>
+              {activeMatchedClassicProj && (
+                <button
+                  type="button"
+                  onClick={() => overwriteClassicProject(activeMatchedClassicProj.id)}
+                  style={{
+                    height: 26,
+                    padding: '0 10px',
+                    fontSize: 11,
+                    fontWeight: 800,
+                    borderRadius: 5,
+                    border: '1px solid #1E3A8A',
+                    background: '#1E3A8A',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                  }}
+                >
+                  덮어쓰기 (&quot;{activeMatchedClassicProj.name}&quot;)
+                </button>
+              )}
               <input
                 type="text"
                 value={projectNameInput}
@@ -1599,7 +1641,7 @@ export default function ClassicSimulatorPage() {
                 onKeyDown={e => {
                   if (e.key === 'Enter') saveProject();
                 }}
-                placeholder="시뮬레이션 이름 입력..."
+                placeholder="새 케이스 이름 입력..."
                 style={{
                   height: 26,
                   padding: '0 8px',
@@ -1607,10 +1649,12 @@ export default function ClassicSimulatorPage() {
                   borderRadius: 5,
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
+                  color: '#0F172A',
                   minWidth: 190,
                 }}
               />
               <button
+                type="button"
                 onClick={saveProject}
                 style={{
                   height: 26,
@@ -1624,91 +1668,49 @@ export default function ClassicSimulatorPage() {
                   cursor: 'pointer',
                 }}
               >
-                + 저장
+                + 새 이름으로 저장
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <button
+                type="button"
                 onClick={exportJson}
                 style={{
-                  padding: '3px 8px',
+                  height: 26,
+                  padding: '0 9px',
                   fontSize: 10.5,
                   fontWeight: 700,
                   borderRadius: 5,
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
+                  color: '#1E293B',
                   cursor: 'pointer',
                 }}
               >
-                ⬇ JSON 내보내기
+                ⬇ JSON 파일 내보내기
               </button>
               <button
-                onClick={() => fileInputRef.current?.click()}
+                type="button"
+                onClick={() => setShowProjectBar(false)}
+                title="저장 바 닫기"
                 style={{
-                  padding: '3px 8px',
-                  fontSize: 10.5,
+                  height: 26,
+                  padding: '0 8px',
+                  fontSize: 11,
                   fontWeight: 700,
                   borderRadius: 5,
                   border: '1px solid #CBD5E1',
                   background: '#FFFFFF',
+                  color: '#64748B',
                   cursor: 'pointer',
                 }}
               >
-                📂 JSON 열기
+                ✕
               </button>
-              <input ref={fileInputRef} type="file" accept=".json" onChange={importJson} style={{ display: 'none' }} />
             </div>
           </div>
-          {savedProjects.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {savedProjects.map(p => (
-                <div
-                  key={p.id}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    background: '#FFFFFF',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: 5,
-                    padding: '2px 7px',
-                    fontSize: 11,
-                  }}
-                >
-                  <b>{p.name}</b>
-                  <button
-                    onClick={() => loadSavedProject(p)}
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: '1px 6px',
-                      borderRadius: 4,
-                      border: '1px solid #1D4ED8',
-                      background: '#EFF6FF',
-                      color: '#1D4ED8',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    열기
-                  </button>
-                  <button
-                    onClick={() => deleteSavedProject(p.id)}
-                    style={{
-                      fontSize: 10,
-                      border: 'none',
-                      background: 'transparent',
-                      color: '#94A3B8',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── 메인 3단 워크스페이스: 좌측 탐색 트리 | 중앙 PFD+팔레트 | 우측 입력/결과 폼 ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>

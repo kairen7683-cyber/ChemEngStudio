@@ -393,7 +393,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
         {ribbonTab === 'flowsheet' && (
           <>
             <button type="button" onClick={onOpenSaveBar} style={RIBBON_BTN}>
-              💾 Save / Cases
+              💾 Save Case
             </button>
             <button type="button" onClick={onExportJson} style={RIBBON_BTN}>
               ⬇ Export JSON
