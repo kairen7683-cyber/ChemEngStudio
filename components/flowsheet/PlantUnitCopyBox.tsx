@@ -7,6 +7,8 @@ import {
   cloneUnitParams,
   type PlantUnitTemplate,
 } from '@/lib/calculations/plantUnitTemplates';
+import { useAuth } from '@/components/auth/AuthContext';
+import { isPlantAllowed } from '@/lib/plantRegistry';
 
 interface PlantUnitCopyBoxProps {
   unitType: FlowUnitType;
@@ -23,7 +25,14 @@ export default function PlantUnitCopyBox({
   nodeKey,
   onCopyParams,
 }: PlantUnitCopyBoxProps) {
-  const templates = useMemo(() => getPlantTemplatesForUnitType(unitType), [unitType]);
+  const { user } = useAuth();
+  const templates = useMemo(
+    () =>
+      getPlantTemplatesForUnitType(unitType).filter(
+        (tpl) => tpl.plantId !== 'green_h2' && isPlantAllowed(tpl.plantId, user)
+      ),
+    [unitType, user]
+  );
   const scopeKey = `${nodeKey}::${unitType}`;
   const [uiState, setUiState] = useState<{
     scope: string;
@@ -82,7 +91,7 @@ export default function PlantUnitCopyBox({
         padding: '8px 10px',
         borderRadius: 6,
         background: '#F8FAFC',
-        border: '1px solid #CBD5E1',
+        border: '1px solid #E2E8F0',
         display: 'flex',
         flexDirection: 'column',
         gap: 5,
@@ -90,7 +99,7 @@ export default function PlantUnitCopyBox({
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-          📋 타 공정 장치 조건 복사
+          📋 예제 장치 조건 불러오기
         </span>
         <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 600 }}>
           {visibleCount}건
@@ -116,8 +125,8 @@ export default function PlantUnitCopyBox({
                 style={{
                   padding: '2px 6px',
                   borderRadius: 4,
-                  border: active ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
-                  background: active ? '#1E3A8A' : '#FFFFFF',
+                  border: active ? '1px solid #1E293B' : '1px solid #E2E8F0',
+                  background: active ? '#1E293B' : '#FFFFFF',
                   color: active ? '#FFFFFF' : '#475569',
                   fontSize: 9.5,
                   fontWeight: active ? 800 : 600,
@@ -140,9 +149,9 @@ export default function PlantUnitCopyBox({
           height: 28,
           padding: '0 7px',
           borderRadius: 5,
-          border: '1px solid #94A3B8',
+          border: '1px solid #CBD5E1',
           background: '#FFFFFF',
-          color: '#0F172A',
+          color: '#1E293B',
           fontSize: 11,
           fontWeight: 600,
           cursor: 'pointer',
@@ -176,12 +185,12 @@ export default function PlantUnitCopyBox({
           type="checkbox"
           checked={includeInlet}
           onChange={(e) => setIncludeInlet(e.target.checked)}
-          style={{ margin: 0, cursor: 'pointer' }}
+          style={{ margin: 0, cursor: 'pointer', accentColor: '#1E3A8A' }}
         />
         <span>유입(Inlet) 조건 함께 복사</span>
       </label>
 
-      <div style={{ fontSize: 9.5, color: copiedNotice ? '#059669' : '#64748B', fontWeight: copiedNotice ? 700 : 500, lineHeight: 1.35 }}>
+      <div style={{ fontSize: 9.5, color: copiedNotice ? '#1E3A8A' : '#64748B', fontWeight: copiedNotice ? 700 : 500, lineHeight: 1.35 }}>
         {copiedNotice ||
           (includeInlet ? '운전조건 + 유입 조건 동시 반영' : '장치 운전조건만 반영')}
       </div>

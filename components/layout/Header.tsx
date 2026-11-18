@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
@@ -15,30 +15,89 @@ import {
   setPreferredSimUiMode,
   type SimUiMode,
 } from '@/lib/simUiHandoff';
+import {
+  listAllSavedUserCases,
+  stagePendingCaseLoad,
+  setActiveCaseTitle,
+  getActiveCaseTitle,
+  PROJECTS_UPDATED_EVENT,
+  LOAD_SAVED_CASE_EVENT,
+  OPEN_SHORTCUT_CALC_EVENT,
+  type UnifiedSavedCaseEntry,
+} from '@/lib/caseManagerBridge';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+
+function formatSavedDate(raw: string): string {
+  if (!raw) return '';
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw.slice(0, 16);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
 
 export default function Header() {
   const pathname = usePathname() || '/';
   const router = useRouter();
   const { user } = useAuth();
+
   const [isMobile, setIsMobile] = useState(false);
   const [simUiMode, setSimUiMode] = useState<SimUiMode>('modern');
-  const [plantMenuOpen, setPlantMenuOpen] = useState(false);
-  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 42, left: 16 });
-  const plantDropdownRef = useRef<HTMLDivElement | null>(null);
-  const plantTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const [caseMenuOpen, setCaseMenuOpen] = useState(false);
+  const [outputsMenuOpen, setOutputsMenuOpen] = useState(false);
+  const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
+  const [outputsMenuPos, setOutputsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 260 });
+  const [savedCases, setSavedCases] = useState<UnifiedSavedCaseEntry[]>([]);
+  const [activeCaseInfo, setActiveCaseInfo] = useState<{ title: string; plantId: PlantId } | null>(null);
+
+  const caseDropdownRef = useRef<HTMLDivElement | null>(null);
+  const caseTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const outputsDropdownRef = useRef<HTMLDivElement | null>(null);
+  const outputsTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const {
+    activePlantId,
+    setActivePlantId,
+    hydrateActivePlant,
+    lastPlantReturnHref,
+    setLastPlantReturnHref,
+  } = useBalanceStore();
+  const equipSubTab = usePFDStore(s => s.equipSubTab || 'evap');
+  const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
+
+  const refreshCaseState = useCallback(() => {
+    setSavedCases(listAllSavedUserCases(pid => isPlantAllowed(pid, user)));
+    setActiveCaseInfo(getActiveCaseTitle());
+  }, [user]);
 
   useEffect(() => {
-    if (!plantMenuOpen) return;
+    refreshCaseState();
+    if (typeof window === 'undefined') return;
+    const onProjectsUpdated = () => refreshCaseState();
+    window.addEventListener(PROJECTS_UPDATED_EVENT, onProjectsUpdated);
+    return () => window.removeEventListener(PROJECTS_UPDATED_EVENT, onProjectsUpdated);
+  }, [refreshCaseState]);
+
+  useEffect(() => {
+    if (!caseMenuOpen && !outputsMenuOpen) return;
     const onDocDown = (e: MouseEvent) => {
-      if (plantDropdownRef.current && !plantDropdownRef.current.contains(e.target as Node)) {
-        setPlantMenuOpen(false);
+      const target = e.target as Node;
+      if (caseMenuOpen && caseDropdownRef.current && !caseDropdownRef.current.contains(target)) {
+        setCaseMenuOpen(false);
+      }
+      if (outputsMenuOpen && outputsDropdownRef.current && !outputsDropdownRef.current.contains(target)) {
+        setOutputsMenuOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPlantMenuOpen(false);
+      if (e.key === 'Escape') {
+        setCaseMenuOpen(false);
+        setOutputsMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', onDocDown);
     document.addEventListener('keydown', onKey);
@@ -46,7 +105,7 @@ export default function Header() {
       document.removeEventListener('mousedown', onDocDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [plantMenuOpen]);
+  }, [caseMenuOpen, outputsMenuOpen]);
 
   useEffect(() => {
     const syncMob = () => {
@@ -56,17 +115,6 @@ export default function Header() {
     window.addEventListener('resize', syncMob);
     return () => window.removeEventListener('resize', syncMob);
   }, []);
-
-  const {
-    activePlantId,
-    lastCommercialPlantId,
-    setActivePlantId,
-    hydrateActivePlant,
-    lastPlantReturnHref,
-    setLastPlantReturnHref,
-  } = useBalanceStore();
-  const equipSubTab = usePFDStore(s => s.equipSubTab || 'evap');
-  const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
 
   // 클라이언트 마운트 시 저장된 활성 공장 및 선호 시뮬레이터 UI 복원
   useEffect(() => {
@@ -87,27 +135,11 @@ export default function Header() {
     }
   }, [pathname, activePlantId, setActivePlantId]);
 
-  const handleSelectSimUiMode = (targetUi: SimUiMode) => {
-    setPreferredSimUiMode(targetUi);
-    setSimUiMode(targetUi);
-    const onSimulatorPage =
-      pathname.startsWith('/flowsheet-simulator') || pathname.startsWith('/classic-simulator');
-    if (onSimulatorPage && typeof window !== 'undefined') {
-      const currentUi: SimUiMode = pathname.startsWith('/classic-simulator') ? 'classic' : 'modern';
-      if (currentUi === targetUi) return;
-      window.dispatchEvent(
-        new CustomEvent('chemplant:request-ui-switch', { detail: { targetUi } })
-      );
-      return;
-    }
-    handleSelectPlant(targetUi === 'classic' ? 'classic_sim' : 'new_builder');
-  };
-
   const allowedCommercialPlants = PLANT_REGISTRY.filter(
     p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
   );
 
-  // 계정에 할당된 공장 목록 기준으로 허용되지 않은 상용 공장에 머무르지 않도록 자동 전환
+  // 계정에 할당된 공장 목록 기준으로 허용되지 않은 예제 공장에 머무르지 않도록 자동 전환
   useEffect(() => {
     if (!user) return;
     const curMeta = getPlantRegistryItem(activePlantId);
@@ -125,16 +157,35 @@ export default function Header() {
 
   const plantMeta = getPlantRegistryItem(activePlantId);
   const isSimulatorMode = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
-  const safeCommercialId = isPlantAllowed(lastCommercialPlantId, user)
-    ? lastCommercialPlantId
-    : (allowedCommercialPlants[0]?.id ?? lastCommercialPlantId);
-  const dropdownPlantMeta = getPlantRegistryItem(isSimulatorMode ? safeCommercialId : activePlantId);
   const isUnitCalcTool = pathname.startsWith('/unit-equipment');
   const isPropDbTool = pathname.startsWith('/property-db');
   const isGlobalToolMode = isUnitCalcTool || isPropDbTool;
-  const isCommercialPlantActive = !isSimulatorMode && !isGlobalToolMode;
+  const isSimulatorRoute =
+    pathname === '/' ||
+    pathname.startsWith('/material-balance') ||
+    pathname.startsWith('/flowsheet-simulator') ||
+    pathname.startsWith('/classic-simulator');
 
-  // 현재 활성 워크스페이스 탭 판별
+  const effectiveUi: SimUiMode = pathname.startsWith('/classic-simulator')
+    ? 'classic'
+    : pathname.startsWith('/flowsheet-simulator') ||
+        pathname === '/' ||
+        pathname.startsWith('/material-balance')
+      ? 'modern'
+      : simUiMode;
+
+  const displayCaseTitle =
+    activeCaseInfo &&
+    (activeCaseInfo.plantId === activePlantId ||
+      ((activeCaseInfo.plantId === 'new_builder' || activeCaseInfo.plantId === 'classic_sim') &&
+        isSimulatorMode))
+      ? activeCaseInfo.title
+      : null;
+
+  const caseTriggerLabel = isSimulatorMode
+    ? `내 케이스 · ${displayCaseTitle || '기본 작업공간'}`
+    : `[예제] ${plantMeta.code} · ${plantMeta.shortLabel}`;
+
   const getActiveWorkspaceTabKey = (): PlantWorkspaceTab['key'] => {
     if (pathname.startsWith('/pep-yearbook')) return 'econ';
     if (pathname.startsWith('/special-process')) return 'design';
@@ -143,7 +194,6 @@ export default function Header() {
     }
     return 'pfd';
   };
-
   const currentTabKey = getActiveWorkspaceTabKey();
 
   const handleSelectPlant = (nextId: PlantId) => {
@@ -158,13 +208,11 @@ export default function Header() {
     }
     setActivePlantId(nextId);
 
-    // 도구함 화면이거나 샌드박스/표준 시뮬레이터 선택 시 즉시 해당 기본 시뮬레이터 화면으로 진입
     if (isGlobalToolMode || nextMeta.isSandbox) {
       router.push(nextMeta.defaultHref);
       return;
     }
 
-    // 현재 보고 있던 탭 성격(공정도 / 상세설계 / 장치목록 / 경제성)이 새 공장에도 있으면 유지, 없으면 기본 화면으로 이동
     const matchingTab = nextMeta.tabs.find(t => t.key === currentTabKey);
     if (matchingTab) {
       if (matchingTab.equipTab) {
@@ -176,7 +224,82 @@ export default function Header() {
     }
   };
 
+  const handleSelectSimUiMode = (targetUi: SimUiMode) => {
+    setPreferredSimUiMode(targetUi);
+    setSimUiMode(targetUi);
+    const onSimulatorPage =
+      pathname.startsWith('/flowsheet-simulator') ||
+      pathname.startsWith('/classic-simulator') ||
+      pathname === '/' ||
+      pathname.startsWith('/material-balance');
+    if (onSimulatorPage && typeof window !== 'undefined') {
+      const currentUi: SimUiMode = pathname.startsWith('/classic-simulator') ? 'classic' : 'modern';
+      if (currentUi === targetUi) return;
+      window.dispatchEvent(
+        new CustomEvent('chemplant:request-ui-switch', { detail: { targetUi } })
+      );
+      return;
+    }
+    handleSelectPlant(targetUi === 'classic' ? 'classic_sim' : 'new_builder');
+  };
+
+  const handleOpenDefaultWorkspace = () => {
+    const targetId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
+    setCaseMenuOpen(false);
+    setActiveCaseTitle(null, targetId);
+    setActivePlantId(targetId);
+    router.push(targetId === 'classic_sim' ? '/classic-simulator' : '/flowsheet-simulator');
+  };
+
+  const handleStartNewBlankCase = () => {
+    const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
+    setCaseMenuOpen(false);
+    setActiveCaseTitle(null, targetPlantId);
+    stagePendingCaseLoad({
+      action: 'new_blank',
+      targetPlantId,
+      uiMode: simUiMode,
+    });
+    setActivePlantId(targetPlantId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+    }
+    router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
+  };
+
+  const handleOpenSavedCase = (item: UnifiedSavedCaseEntry) => {
+    setCaseMenuOpen(false);
+    setActiveCaseTitle(item.name, item.targetPlantId);
+    stagePendingCaseLoad({
+      action: 'load_project',
+      targetPlantId: item.targetPlantId,
+      uiMode: item.uiMode,
+      caseName: item.name,
+      rawProject: item.rawProject,
+    });
+    setActivePlantId(item.targetPlantId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+    }
+    router.push(
+      item.uiMode === 'classic'
+        ? '/classic-simulator'
+        : item.targetPlantId === 'new_builder'
+          ? '/flowsheet-simulator'
+          : '/material-balance'
+    );
+  };
+
+  const handleSelectExamplePlant = (plantId: PlantId) => {
+    if (!isPlantAllowed(plantId, user)) return;
+    setCaseMenuOpen(false);
+    setActiveCaseTitle(null, plantId);
+    setActivePlantId(plantId);
+    router.push('/material-balance');
+  };
+
   const handleWorkspaceTabClick = (tab: PlantWorkspaceTab) => {
+    setOutputsMenuOpen(false);
     if (tab.equipTab) {
       setEquipSubTab(tab.equipTab);
     }
@@ -192,16 +315,44 @@ export default function Header() {
     router.push(toolHref);
   };
 
-  const handleReturnToPlant = () => {
-    const fallback = plantMeta.defaultHref;
-    const target =
-      lastPlantReturnHref &&
-      !lastPlantReturnHref.startsWith('/unit-equipment') &&
-      !lastPlantReturnHref.startsWith('/property-db')
-        ? lastPlantReturnHref
-        : fallback;
-    router.push(target);
+  const handleOpenShortcutCalc = () => {
+    if (isSimulatorRoute && typeof window !== 'undefined') {
+      const curSearch = window.location.search;
+      const returnUrl = pathname === '/' ? plantMeta.defaultHref : `${pathname}${curSearch}`;
+      setLastPlantReturnHref(returnUrl);
+      window.dispatchEvent(new CustomEvent(OPEN_SHORTCUT_CALC_EVENT));
+      return;
+    }
+    handleOpenToolbox('/unit-equipment');
   };
+
+  const handleReturnToPlant = () => {
+    if (activePlantId === 'classic_sim') {
+      router.push('/classic-simulator');
+      return;
+    }
+    if (activePlantId === 'new_builder') {
+      const validSimReturn =
+        lastPlantReturnHref === '/' || lastPlantReturnHref.startsWith('/flowsheet-simulator');
+      router.push(validSimReturn ? lastPlantReturnHref : '/flowsheet-simulator');
+      return;
+    }
+    const validExampleReturn =
+      lastPlantReturnHref === '/' || lastPlantReturnHref.startsWith('/material-balance');
+    router.push(validExampleReturn ? lastPlantReturnHref : '/material-balance');
+  };
+
+  const auxPageTitle = isUnitCalcTool
+    ? '단품 숏컷 설계 도구'
+    : isPropDbTool
+      ? '물성 · 열역학 DB'
+      : pathname.startsWith('/pep-yearbook')
+        ? '원단위 · 경제성 · 벤치마크'
+        : pathname.startsWith('/equipment-design')
+          ? equipSubTab === 'equip'
+            ? '공장 장치목록'
+            : '핵심장치 상세설계'
+          : '보조 엔지니어링 도구';
 
   return (
     <header
@@ -211,19 +362,18 @@ export default function Header() {
         flexDirection: 'column',
         flexShrink: 0,
         zIndex: 100,
-        background: '#FFFFFF',
-        borderBottom: '1px solid #CBD5E1',
+        background: '#0F172A',
       }}
     >
-      {/* ── 1단 글로벌 바: 좌측 [플랫폼 로고 + 공장/프로젝트 선택기] · 우측 [독립 엔지니어링 도구함] ── */}
+      {/* ── 1단 글로벌 바: 모노크롬 다크 슬레이트 ── */}
       <div
         className="no-scrollbar"
         style={{
           width: '100%',
           minHeight: 40,
           padding: '4px 12px',
-          background: '#142435',
-          borderBottom: '1px solid #243B53',
+          background: '#0F172A',
+          borderBottom: '1px solid #334155',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -232,7 +382,7 @@ export default function Header() {
           scrollbarWidth: 'none',
         }}
       >
-        {/* 좌측: 로고 + 공장 스위처 */}
+        {/* 좌측: 로고 + 케이스/예제 선택 + UI 스타일 + 참고/산출물 */}
         <div
           style={{
             display: 'flex',
@@ -244,7 +394,7 @@ export default function Header() {
           <button
             type="button"
             onClick={() => router.push(plantMeta.defaultHref)}
-            title="현재 선택된 공장의 메인 공정도 화면으로 이동"
+            title="시뮬레이터 메인 화면으로 이동"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -258,14 +408,14 @@ export default function Header() {
           >
             <img
               src="/icon-192-v2.png"
-              alt="ChemEng Studio"
+              alt="ChemPlant Studio"
               style={{
                 width: 26,
                 height: 26,
                 borderRadius: 6,
                 objectFit: 'cover',
                 flexShrink: 0,
-                border: '1px solid rgba(56, 189, 248, 0.35)',
+                border: '1px solid #334155',
               }}
             />
             {!isMobile && (
@@ -287,103 +437,83 @@ export default function Header() {
 
           {!isMobile && (
             <>
-              <span style={{ width: 1, height: 18, background: '#334E68', flexShrink: 0 }} />
-
+              <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
               <span
                 style={{
-                  fontSize: 10,
-                  fontWeight: 800,
+                  fontSize: 10.5,
+                  fontWeight: 700,
                   color: '#94A3B8',
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
                 }}
               >
-                대상 공장:
+                케이스:
               </span>
             </>
           )}
 
-          <div ref={plantDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+          {/* 통합 작업 케이스 / 예제 드롭다운 */}
+          <div ref={caseDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
-              ref={plantTriggerRef}
+              ref={caseTriggerRef}
               type="button"
               onClick={() => {
-                if (!plantMenuOpen && plantTriggerRef.current) {
-                  const rect = plantTriggerRef.current.getBoundingClientRect();
-                  setMenuPos({
-                    top: rect.bottom + 6,
-                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 340)),
-                  });
+                if (!caseMenuOpen) {
+                  refreshCaseState();
+                  if (caseTriggerRef.current) {
+                    const rect = caseTriggerRef.current.getBoundingClientRect();
+                    setCaseMenuPos({
+                      top: rect.bottom + 6,
+                      left: Math.max(8, Math.min(rect.left, window.innerWidth - 356)),
+                    });
+                  }
                 }
-                setPlantMenuOpen(v => !v);
+                setOutputsMenuOpen(false);
+                setCaseMenuOpen(v => !v);
               }}
-              title="상용 공정 플랜트 선택"
+              title="작업 케이스 또는 내장 예제 공장 열기"
               style={{
                 padding: '4px 10px',
-                borderRadius: 7,
-                border: isCommercialPlantActive ? '1.5px solid #60A5FA' : '1px solid #334E68',
-                background: isCommercialPlantActive ? '#FFFFFF' : '#1A2F44',
-                color: isCommercialPlantActive ? '#0F172A' : '#E2E8F0',
+                borderRadius: 6,
+                border: caseMenuOpen ? '1px solid #64748B' : '1px solid #334155',
+                background: '#1E293B',
+                color: '#F8FAFC',
                 fontSize: 11.5,
-                fontWeight: isCommercialPlantActive ? 900 : 700,
+                fontWeight: 700,
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 6,
                 whiteSpace: 'nowrap',
-                boxShadow: isCommercialPlantActive ? '0 1px 3px rgba(0,0,0,0.18)' : 'none',
+                maxWidth: isMobile ? 200 : 280,
               }}
             >
-              <span
-                style={{
-                  fontSize: 9.5,
-                  fontWeight: 800,
-                  padding: '1px 6px',
-                  borderRadius: 4,
-                  background: isCommercialPlantActive ? '#1E293B' : 'rgba(255,255,255,0.14)',
-                  color: '#FFFFFF',
-                }}
-              >
-                {dropdownPlantMeta.code}
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {caseTriggerLabel}
               </span>
-              <span>{dropdownPlantMeta.shortLabel}</span>
-              {dropdownPlantMeta.isDev && (
-                <span
-                  style={{
-                    fontSize: 8.5,
-                    fontWeight: 800,
-                    padding: '0.5px 4px',
-                    borderRadius: 4,
-                    background: '#FEF3C7',
-                    color: '#92400E',
-                  }}
-                >
-                  개발중
-                </span>
-              )}
-              <span style={{ fontSize: 10, opacity: 0.75, marginLeft: 2 }}>
-                {plantMenuOpen ? '▲' : '▼'}
+              <span style={{ fontSize: 9.5, opacity: 0.75, flexShrink: 0 }}>
+                {caseMenuOpen ? '▲' : '▼'}
               </span>
             </button>
 
-            {plantMenuOpen && (
+            {caseMenuOpen && (
               <div
                 style={{
                   position: 'fixed',
-                  top: menuPos.top,
-                  left: menuPos.left,
-                  width: 332,
-                  maxHeight: '75vh',
+                  top: caseMenuPos.top,
+                  left: caseMenuPos.left,
+                  width: 348,
+                  maxHeight: '78vh',
                   overflowY: 'auto',
                   background: '#FFFFFF',
                   border: '1px solid #CBD5E1',
                   borderRadius: 10,
-                  boxShadow: '0 14px 32px rgba(15, 23, 42, 0.28)',
-                  padding: 6,
+                  boxShadow: '0 14px 32px rgba(15, 23, 42, 0.24)',
+                  padding: 8,
                   zIndex: 9999,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 3,
+                  gap: 4,
                 }}
               >
                 <div
@@ -391,255 +521,410 @@ export default function Header() {
                     fontSize: 10,
                     fontWeight: 800,
                     color: '#64748B',
-                    padding: '4px 8px 2px',
-                    letterSpacing: '0.3px',
+                    padding: '2px 6px',
+                    letterSpacing: '0.2px',
                   }}
                 >
-                  상용 공정 플랜트 ({allowedCommercialPlants.length})
+                  내 작업 케이스
                 </div>
-                {allowedCommercialPlants.length === 0 ? (
-                  <div style={{ padding: '10px 10px', fontSize: 11, color: '#64748B', lineHeight: 1.45 }}>
-                    할당된 상용 공장이 없습니다. 상단의 공정 시뮬레이터 및 독립 도구함(단품 계산기·물성 DB)은 자유롭게 이용하실 수 있습니다.
-                  </div>
-                ) : (
-                allowedCommercialPlants.map(p => {
-                  const selected = isCommercialPlantActive && p.id === activePlantId;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setPlantMenuOpen(false);
-                        handleSelectPlant(p.id);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '7px 9px',
-                        borderRadius: 7,
-                        border: selected ? '1.5px solid #2563EB' : '1px solid transparent',
-                        background: selected ? '#EFF6FF' : '#FFFFFF',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 8,
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                        <span
+
+                <button
+                  type="button"
+                  onClick={handleOpenDefaultWorkspace}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 7,
+                    border:
+                      isSimulatorMode && !displayCaseTitle
+                        ? '1.5px solid #1E3A8A'
+                        : '1px solid #E2E8F0',
+                    background: isSimulatorMode && !displayCaseTitle ? '#F8FAFC' : '#FFFFFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                    color: '#0F172A',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>📝 기본 시뮬레이터 작업공간 (이어하기)</span>
+                  {isSimulatorMode && !displayCaseTitle && (
+                    <span style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A' }}>✓</span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleStartNewBlankCase}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 7,
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                    color: '#1E293B',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span>➕ 새 빈 케이스로 시작</span>
+                </button>
+
+                {savedCases.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
+                    {savedCases.map(item => {
+                      const isActive =
+                        displayCaseTitle === item.name && item.targetPlantId === activePlantId;
+                      const dateStr = formatSavedDate(item.savedAt);
+                      return (
+                        <button
+                          key={item.uid}
+                          type="button"
+                          onClick={() => handleOpenSavedCase(item)}
                           style={{
-                            fontSize: 9.2,
-                            fontWeight: 800,
-                            padding: '2px 6px',
-                            borderRadius: 4,
-                            background: selected ? '#1E40AF' : '#1E293B',
-                            color: '#FFFFFF',
-                            flexShrink: 0,
+                            width: '100%',
+                            padding: '6px 9px',
+                            borderRadius: 7,
+                            border: isActive ? '1.5px solid #1E3A8A' : '1px solid transparent',
+                            background: isActive ? '#F8FAFC' : '#FFFFFF',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            textAlign: 'left',
                           }}
                         >
-                          {p.code}
-                        </span>
-                        <div style={{ minWidth: 0 }}>
-                          <div
-                            style={{
-                              fontSize: 12,
-                              fontWeight: selected ? 900 : 700,
-                              color: '#0F172A',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 5,
-                            }}
-                          >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {p.shortLabel}
-                            </span>
-                            {p.isDev && (
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: 11.5,
+                                fontWeight: isActive ? 800 : 700,
+                                color: '#0F172A',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {item.name}
+                            </div>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                marginTop: 2,
+                                fontSize: 9.8,
+                                color: '#64748B',
+                                fontWeight: 600,
+                              }}
+                            >
                               <span
                                 style={{
-                                  fontSize: 8.5,
-                                  fontWeight: 800,
-                                  padding: '0.5px 4px',
+                                  padding: '0.5px 5px',
                                   borderRadius: 4,
-                                  background: '#FEF3C7',
-                                  color: '#92400E',
+                                  background: '#F1F5F9',
+                                  border: '1px solid #CBD5E1',
+                                  color: '#334155',
+                                  fontWeight: 700,
                                 }}
                               >
-                                개발중
+                                {item.scopeLabel}
                               </span>
-                            )}
+                              <span>장치 {item.nodeCount}개</span>
+                              {dateStr ? <span>· {dateStr}</span> : null}
+                            </div>
                           </div>
-                          <div style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>
-                            {p.capacityBadge}
+                          {isActive && (
+                            <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A', flexShrink: 0 }}>
+                              ✓
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ padding: '6px 8px', fontSize: 10.5, color: '#94A3B8' }}>
+                    저장된 사용자 케이스가 없습니다.
+                  </div>
+                )}
+
+                {allowedCommercialPlants.length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: '#64748B',
+                        padding: '2px 6px',
+                        letterSpacing: '0.2px',
+                      }}
+                    >
+                      내장 예제 공장 (참고 케이스) ({allowedCommercialPlants.length})
+                    </div>
+                    {allowedCommercialPlants.map(p => {
+                      const selected = !isSimulatorMode && p.id === activePlantId;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleSelectExamplePlant(p.id)}
+                          style={{
+                            width: '100%',
+                            padding: '6px 9px',
+                            borderRadius: 7,
+                            border: selected ? '1.5px solid #1E3A8A' : '1px solid transparent',
+                            background: selected ? '#F8FAFC' : '#FFFFFF',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            textAlign: 'left',
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                            <span
+                              style={{
+                                fontSize: 9.2,
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                background: selected ? '#1E3A8A' : '#1E293B',
+                                color: '#FFFFFF',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {p.code}
+                            </span>
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  fontSize: 11.8,
+                                  fontWeight: selected ? 800 : 700,
+                                  color: '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {p.shortLabel}
+                              </div>
+                              <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 600 }}>
+                                {p.capacityBadge}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                      {selected && (
-                        <span style={{ fontSize: 12, fontWeight: 900, color: '#2563EB', flexShrink: 0 }}>
-                          ✓
-                        </span>
-                      )}
-                    </button>
-                  );
-                })
+                          {selected && (
+                            <span style={{ fontSize: 11.5, fontWeight: 900, color: '#1E3A8A', flexShrink: 0 }}>
+                              ✓
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </>
                 )}
               </div>
             )}
           </div>
 
-          <span style={{ width: 1, height: 18, background: '#334E68', flexShrink: 0, marginLeft: 2 }} />
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
 
-          {!isMobile && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 800,
-                color: '#94A3B8',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              시뮬레이터:
-            </span>
-          )}
-
-          {(() => {
-            const isSimActive =
-              !isGlobalToolMode && (activePlantId === 'new_builder' || activePlantId === 'classic_sim');
-            const effectiveUi: SimUiMode =
-              pathname.startsWith('/classic-simulator')
-                ? 'classic'
-                : pathname.startsWith('/flowsheet-simulator')
-                  ? 'modern'
-                  : simUiMode;
-            return (
-              <div
+          {/* 보기: [모던 UI | 클래식 UI] */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {!isMobile && (
+              <span
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  flexShrink: 0,
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  color: '#94A3B8',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => handleSelectPlant(effectiveUi === 'classic' ? 'classic_sim' : 'new_builder')}
-                  title="공정 시뮬레이터 열기"
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: 7,
-                    border: isSimActive ? '1.5px solid #60A5FA' : '1px solid #334E68',
-                    background: isSimActive ? '#FFFFFF' : '#1A2F44',
-                    color: isSimActive ? '#0F172A' : '#E2E8F0',
-                    fontSize: 11.2,
-                    fontWeight: isSimActive ? 900 : 700,
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    whiteSpace: 'nowrap',
-                    boxShadow: isSimActive ? '0 1px 3px rgba(0,0,0,0.18)' : 'none',
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 8.8,
-                      fontWeight: 800,
-                      padding: '1px 5px',
-                      borderRadius: 4,
-                      background: isSimActive ? '#1D4ED8' : 'rgba(255,255,255,0.14)',
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    SIM
-                  </span>
-                  <span>공정 시뮬레이터</span>
-                </button>
+                보기:
+              </span>
+            )}
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                background: '#0F172A',
+                border: '1px solid #334155',
+                borderRadius: 6,
+                padding: 2,
+                gap: 2,
+              }}
+              title="시뮬레이터 인터페이스 스타일 선택 (모던 UI / 클래식 UI)"
+            >
+              <button
+                type="button"
+                onClick={() => handleSelectSimUiMode('modern')}
+                style={{
+                  padding: '2.5px 8px',
+                  borderRadius: 4,
+                  border: 'none',
+                  background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
+                  color: effectiveUi === 'modern' ? '#FFFFFF' : '#94A3B8',
+                  fontSize: 10.5,
+                  fontWeight: effectiveUi === 'modern' ? 800 : 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                모던 UI
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectSimUiMode('classic')}
+                style={{
+                  padding: '2.5px 8px',
+                  borderRadius: 4,
+                  border: 'none',
+                  background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
+                  color: effectiveUi === 'classic' ? '#FFFFFF' : '#94A3B8',
+                  fontSize: 10.5,
+                  fontWeight: effectiveUi === 'classic' ? 800 : 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                클래식 UI
+              </button>
+            </div>
+          </div>
 
+          {/* 참고 · 산출물 드롭다운 */}
+          <div ref={outputsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              ref={outputsTriggerRef}
+              type="button"
+              onClick={() => {
+                if (!outputsMenuOpen && outputsTriggerRef.current) {
+                  const rect = outputsTriggerRef.current.getBoundingClientRect();
+                  setOutputsMenuPos({
+                    top: rect.bottom + 6,
+                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 260)),
+                  });
+                }
+                setCaseMenuOpen(false);
+                setOutputsMenuOpen(v => !v);
+              }}
+              title="현재 컨텍스트의 참고 자료 및 산출물 화면 이동"
+              style={{
+                padding: '4px 9px',
+                borderRadius: 6,
+                border: outputsMenuOpen ? '1px solid #64748B' : '1px solid #334155',
+                background: '#1E293B',
+                color: '#E2E8F0',
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span>📑 참고 · 산출물</span>
+              <span style={{ fontSize: 9, opacity: 0.75 }}>{outputsMenuOpen ? '▲' : '▼'}</span>
+            </button>
+
+            {outputsMenuOpen && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: outputsMenuPos.top,
+                  left: outputsMenuPos.left,
+                  width: 244,
+                  background: '#FFFFFF',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 9,
+                  boxShadow: '0 14px 28px rgba(15, 23, 42, 0.22)',
+                  padding: 6,
+                  zIndex: 9999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                }}
+              >
                 <div
                   style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    background: '#0F172A',
-                    border: '1px solid #334E68',
-                    borderRadius: 7,
-                    padding: 2,
-                    gap: 2,
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: '#64748B',
+                    padding: '3px 8px 4px',
                   }}
-                  title="시뮬레이터 인터페이스 스타일 선택 (모던 웹 UI / 클래식 데스크톱 UI)"
                 >
-                  <button
-                    type="button"
-                    onClick={() => handleSelectSimUiMode('modern')}
-                    style={{
-                      padding: '2.5px 7px',
-                      borderRadius: 5,
-                      border: 'none',
-                      background: effectiveUi === 'modern' ? '#2563EB' : 'transparent',
-                      color: effectiveUi === 'modern' ? '#FFFFFF' : '#94A3B8',
-                      fontSize: 10.2,
-                      fontWeight: effectiveUi === 'modern' ? 800 : 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    모던 UI
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleSelectSimUiMode('classic')}
-                    style={{
-                      padding: '2.5px 7px',
-                      borderRadius: 5,
-                      border: 'none',
-                      background: effectiveUi === 'classic' ? '#0284C7' : 'transparent',
-                      color: effectiveUi === 'classic' ? '#FFFFFF' : '#94A3B8',
-                      fontSize: 10.2,
-                      fontWeight: effectiveUi === 'classic' ? 800 : 600,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    클래식 UI
-                  </button>
+                  참고 · 산출물 이동
                 </div>
+                {plantMeta.tabs.map(tab => {
+                  const active = !isGlobalToolMode && currentTabKey === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => handleWorkspaceTabClick(tab)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 9px',
+                        borderRadius: 6,
+                        border: active ? '1px solid #1E3A8A' : '1px solid transparent',
+                        background: active ? '#F8FAFC' : '#FFFFFF',
+                        color: active ? '#1E3A8A' : '#1E293B',
+                        fontSize: 11.5,
+                        fontWeight: active ? 800 : 600,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <span>{tab.label}</span>
+                      {active && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
+                    </button>
+                  );
+                })}
               </div>
-            );
-          })()}
+            )}
+          </div>
         </div>
 
-        {/* 우측: 독립 엔지니어링 도구함 (공장 컨텍스트와 분리된 단품 계산기 & 물성 DB) */}
+        {/* 우측: 독립 엔지니어링 도구함 & 계정 */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 5,
+            gap: 6,
             flexShrink: 0,
             paddingLeft: 8,
           }}
         >
-          <span
-            style={{
-              fontSize: 9.8,
-              fontWeight: 700,
-              color: '#94A3B8',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            독립 도구함:
-          </span>
           <button
             type="button"
-            onClick={() => handleOpenToolbox('/unit-equipment')}
-            title="플로우시트 연결 없이 빠르게 계산하는 단품 장치 숏컷 설계 도구 (열교환기·펌프·배관·용기·PSV)"
+            onClick={handleOpenShortcutCalc}
+            title="단품 장치 숏컷 설계 도구 (열교환기·펌프·컬럼·용기·배관·PSV)"
             style={{
               padding: '4px 9px',
               borderRadius: 6,
-              border: isUnitCalcTool ? '1.5px solid #93C5FD' : '1px solid #334E68',
-              background: isUnitCalcTool ? '#2563EB' : '#1A2F44',
-              color: '#FFFFFF',
+              border: '1px solid #334155',
+              background: isUnitCalcTool ? '#1E3A8A' : '#1E293B',
+              color: '#F8FAFC',
               fontSize: 10.8,
-              fontWeight: isUnitCalcTool ? 900 : 700,
+              fontWeight: 700,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               display: 'inline-flex',
@@ -652,15 +937,15 @@ export default function Header() {
           <button
             type="button"
             onClick={() => handleOpenToolbox('/property-db')}
-            title="현재 선택된 공장의 핵심 유체를 우선 표시하는 열역학 모델 · 물성 계산 DB"
+            title="열역학 모델 · 순수·혼합물 물성 계산 DB"
             style={{
               padding: '4px 9px',
               borderRadius: 6,
-              border: isPropDbTool ? '1.5px solid #93C5FD' : '1px solid #334E68',
-              background: isPropDbTool ? '#2563EB' : '#1A2F44',
-              color: '#FFFFFF',
+              border: '1px solid #334155',
+              background: isPropDbTool ? '#1E3A8A' : '#1E293B',
+              color: '#F8FAFC',
               fontSize: 10.8,
-              fontWeight: isPropDbTool ? 900 : 700,
+              fontWeight: 700,
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               display: 'inline-flex',
@@ -671,133 +956,59 @@ export default function Header() {
             <span>📚 물성 · 열역학 DB</span>
           </button>
 
-          <span style={{ width: 1, height: 18, background: '#334E68', flexShrink: 0, marginLeft: 2 }} />
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />
           <HeaderUserControls />
         </div>
       </div>
 
-      {/* ── 2단 컨텍스트 워크스페이스 바: 선택된 공장의 전용 업무 탭만 표시 ── */}
-      <div
-        className="no-scrollbar"
-        style={{
-          width: '100%',
-          minHeight: 34,
-          padding: '0 12px',
-          background: isGlobalToolMode ? '#EFF6FF' : '#F8FAFC',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 10,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-        }}
-      >
-        {isGlobalToolMode ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap', padding: '4px 0' }}>
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 900,
-                  padding: '2px 7px',
-                  borderRadius: 4,
-                  background: '#1E3A8A',
-                  color: '#FFFFFF',
-                }}
-              >
-                독립 엔지니어링 도구함
-              </span>
-              <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0F172A' }}>
-                {isUnitCalcTool
-                  ? '단품 장치 숏컷 설계 (열교환기 · 펌프 · 컬럼 · 용기 · 배관 · 안전밸브)'
-                  : '물질별 적합 열역학 모델 & 순수·전해질·냉매 물성 계산기'}
-              </span>
-              <span style={{ fontSize: 10.5, color: '#475569' }}>
-                · 현재 작업 중인 기준 공장: <b style={{ color: '#1E3A8A' }}>[{plantMeta.code}] {plantMeta.shortLabel}</b>
-              </span>
-            </div>
+      {/* ── 2단 컨텍스트 바: 비-시뮬레이터 보조 화면에서만 슬림 모노크롬 바 표시 ── */}
+      {!isSimulatorRoute && (
+        <div
+          className="no-scrollbar"
+          style={{
+            width: '100%',
+            minHeight: 32,
+            padding: '4px 12px',
+            background: '#F8FAFC',
+            borderBottom: '1px solid #E2E8F0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            overflowX: 'auto',
+            scrollbarWidth: 'none',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0F172A' }}>
+              {auxPageTitle}
+            </span>
+            <span style={{ color: '#CBD5E1' }}>·</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>
+              {caseTriggerLabel}
+            </span>
+          </div>
 
-            <button
-              type="button"
-              onClick={handleReturnToPlant}
-              style={{
-                padding: '4px 11px',
-                borderRadius: 5,
-                border: '1px solid #1E3A8A',
-                background: '#1E3A8A',
-                color: '#FFFFFF',
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              ← [{plantMeta.code}] {plantMeta.shortLabel} 공정 화면으로 복귀
-            </button>
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-              {/* 현재 선택된 공장 타이틀 (불필요한 박스/배지 제거) */}
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0F172A' }}>
-                  {plantMeta.title}
-                </span>
-                {plantMeta.capacityBadge ? (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: '#64748B',
-                      fontFamily: 'JetBrains Mono, monospace',
-                    }}
-                  >
-                    {plantMeta.capacityBadge}
-                  </span>
-                ) : null}
-              </div>
-
-              <span style={{ width: 1, height: 15, background: '#CBD5E1', flexShrink: 0 }} />
-
-              {/* 선택된 공장 전용 워크스페이스 탭 (밑줄형 클린 탭) */}
-              <nav style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {plantMeta.tabs.map(tab => {
-                  const active = currentTabKey === tab.key;
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => handleWorkspaceTabClick(tab)}
-                      style={{
-                        height: 32,
-                        padding: '0 8px',
-                        border: 'none',
-                        borderBottom: active ? '2px solid #1D4ED8' : '2px solid transparent',
-                        background: 'transparent',
-                        color: active ? '#1D4ED8' : '#475569',
-                        fontSize: 11.5,
-                        fontWeight: active ? 800 : 600,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
-          </>
-        )}
-      </div>
+          <button
+            type="button"
+            onClick={handleReturnToPlant}
+            style={{
+              padding: '3px 10px',
+              borderRadius: 6,
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#1E293B',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            ← 시뮬레이터로 복귀
+          </button>
+        </div>
+      )}
     </header>
   );
 }

@@ -2246,3 +2246,64 @@ body.standalone-mode #caPlantSyncBar {
     padding: 6px 10px !important;
   }
 }
+
+/* Per-Equipment-Tab Simulator / Built-in Example Sync Bar */
+#caPlantSyncBar {
+  display: none !important;
+}
+
+.unit-case-sync-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  margin-bottom: 10px;
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 6px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+
+.unit-case-sync-label {
+  font-weight: 700;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.unit-case-sync-select {
+  flex: 1;
+  min-width: 170px;
+  height: 28px;
+  border: 1px solid #CBD5E1 !important;
+  border-radius: 5px;
+  background: #FFFFFF !important;
+  color: #0F172A !important;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 8px;
+}
+
+.unit-case-sync-btn {
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 5px;
+  border: 1px solid #1E3A8A;
+  background: #1E3A8A;
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.unit-case-sync-btn:hover {
+  background: #1E40AF;
+}
+
+@media (max-width: 540px) {
+  .unit-case-sync-select {
+    min-width: 0;
+    width: 100%;
+  }
+}

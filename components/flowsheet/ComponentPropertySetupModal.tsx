@@ -27,6 +27,8 @@ import {
   getActiveCustomSlotSpec,
   resetCustomSlot,
 } from '@/lib/calculations/customComponentEngine';
+import { useAuth } from '@/components/auth/AuthContext';
+import { isPlantAllowed } from '@/lib/plantRegistry';
 
 export interface ComponentPropertySetupModalProps {
   open: boolean;
@@ -59,11 +61,18 @@ export default function ComponentPropertySetupModal({
   currentPlantContext,
   onApply,
 }: ComponentPropertySetupModalProps) {
+  const { user } = useAuth();
+  const allowedPlantPresets = useMemo(
+    () => PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)),
+    [user]
+  );
   const isPlantCtx =
-    currentPlantContext === 'electrolyzer_plant' ||
-    currentPlantContext === 'hcl_1a_plant' ||
-    currentPlantContext === 'ech_gte_plant' ||
-    currentPlantContext === 'cms_plant';
+    allowedPlantPresets.length > 0 &&
+    (currentPlantContext === 'electrolyzer_plant' ||
+      currentPlantContext === 'hcl_1a_plant' ||
+      currentPlantContext === 'ech_gte_plant' ||
+      currentPlantContext === 'cms_plant' ||
+      currentPlantContext === 'mdi_plant');
 
   const [sourceTab, setSourceTab] = useState<'general' | 'plant' | 'custom'>(isPlantCtx ? 'plant' : 'general');
   const [draftComps, setDraftComps] = useState<SimCompKey[]>(activeComponents);
@@ -375,22 +384,24 @@ export default function ComponentPropertySetupModal({
                 >
                   🌐 범용 ({SIM_COMPS.length}종)
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSourceTab('plant')}
-                  style={{
-                    padding: isMobile ? '5px 8px' : '5px 10px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: sourceTab === 'plant' ? '#0F5338' : 'transparent',
-                    color: sourceTab === 'plant' ? '#FFFFFF' : '#334155',
-                    fontSize: isMobile ? 10.8 : 11.2,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
-                  🏭 공장 표준
-                </button>
+                {allowedPlantPresets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSourceTab('plant')}
+                    style={{
+                      padding: isMobile ? '5px 8px' : '5px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: sourceTab === 'plant' ? '#0F5338' : 'transparent',
+                      color: sourceTab === 'plant' ? '#FFFFFF' : '#334155',
+                      fontSize: isMobile ? 10.8 : 11.2,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🏭 공장 표준
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setSourceTab('custom')}
@@ -954,7 +965,7 @@ export default function ComponentPropertySetupModal({
                 <div style={{ fontSize: 10.5, color: '#64748B' }}>
                   공장별 표준 성분 프리셋 (로드 후 범용 탭에서 추가/편집 가능)
                 </div>
-                {PLANT_COMPONENT_PRESETS.map(preset => {
+                {allowedPlantPresets.map(preset => {
                   const isExact =
                     preset.components.length === draftComps.length &&
                     preset.components.every(c => draftComps.includes(c));

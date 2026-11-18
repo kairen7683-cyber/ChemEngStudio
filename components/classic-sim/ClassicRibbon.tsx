@@ -99,7 +99,7 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
     { group: 'ech', label: 'PLANT 03 · ECH 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'ech') },
     { group: 'cms', label: 'PLANT 04 · 클로로메탄(CMS) 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'cms') },
     { group: 'mdi', label: 'PLANT 05 · MDI 통합 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'mdi') },
-  ];
+  ].filter(g => g.items.length > 0);
 
   return (
     <div style={{ background: '#F3F4F6', borderBottom: '1px solid #CBD5E1', flexShrink: 0 }}>
@@ -258,38 +258,40 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
 
             <span style={{ width: 1, height: 18, background: '#CBD5E1', flexShrink: 0 }} />
 
-            <select
-              defaultValue=""
-              onChange={e => {
-                if (e.target.value) onSelectPlantPreset(e.target.value);
-                e.target.value = '';
-              }}
-              style={{
-                height: 25,
-                padding: '0 7px',
-                fontSize: 10.8,
-                fontWeight: 700,
-                borderRadius: 4,
-                border: '1px solid #93C5FD',
-                background: '#EFF6FF',
-                color: '#1E3A8A',
-                maxWidth: 230,
-                cursor: 'pointer',
-              }}
-            >
-              <option value="" disabled>
-                🏭 상용 공정 수렴 케이스 불러오기...
-              </option>
-              {groupedPresets.map(g => (
-                <optgroup key={g.group} label={g.label}>
-                  {g.items.map(it => (
-                    <option key={it.presetKey} value={it.presetKey}>
-                      {it.title}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            {groupedPresets.length > 0 && (
+              <select
+                defaultValue=""
+                onChange={e => {
+                  if (e.target.value) onSelectPlantPreset(e.target.value);
+                  e.target.value = '';
+                }}
+                style={{
+                  height: 25,
+                  padding: '0 7px',
+                  fontSize: 10.8,
+                  fontWeight: 700,
+                  borderRadius: 4,
+                  border: '1px solid #93C5FD',
+                  background: '#EFF6FF',
+                  color: '#1E3A8A',
+                  maxWidth: 230,
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="" disabled>
+                  🏭 상용 공정 수렴 케이스 불러오기...
+                </option>
+                {groupedPresets.map(g => (
+                  <optgroup key={g.group} label={g.label}>
+                    {g.items.map(it => (
+                      <option key={it.presetKey} value={it.presetKey}>
+                        {it.title}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            )}
 
             <select
               defaultValue=""

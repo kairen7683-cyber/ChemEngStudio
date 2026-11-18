@@ -1,7 +1,9 @@
 'use client';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthContext';
+import { PLANT_REGISTRY, isPlantAllowed } from '@/lib/plantRegistry';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { saveChemProHandoffPayload } from '@/lib/calculations/unitDesignHandoff';
@@ -124,6 +126,14 @@ function getDefaultChemProTag(plantId: string): string {
 
 export default function EquipmentDesignPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const allowedPlants = useMemo(
+    () =>
+      PLANT_REGISTRY.filter(
+        p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+      ).map(p => p.id),
+    [user]
+  );
   const { activePlantId, setActivePlantId, requestSimSheet, requestSimNodeAction } = useBalanceStore();
   const activeTab = usePFDStore(s => s.equipSubTab || 'evap');
   const setActiveTab = usePFDStore(s => s.setEquipSubTab);
@@ -135,6 +145,7 @@ export default function EquipmentDesignPage() {
   const setEquipmentSpecOverride = usePFDStore(s => s.setEquipmentSpecOverride);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastSyncedPlantRef = useRef<string>(activePlantId);
+  const lastSyncedAllowedRef = useRef<string>(allowedPlants.join(','));
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -197,15 +208,26 @@ export default function EquipmentDesignPage() {
   useEffect(() => {
     if (lastSyncedPlantRef.current === activePlantId) return;
     lastSyncedPlantRef.current = activePlantId;
+    lastSyncedAllowedRef.current = allowedPlants.join(',');
     const defaultTag = getDefaultChemProTag(activePlantId);
     setChemproTag(defaultTag);
     setChemproSubTab('');
     setChemproHandoff(false);
     iframeRef.current?.contentWindow?.postMessage(
-      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, tag: defaultTag },
+      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, tag: defaultTag },
       '*'
     );
-  }, [activePlantId]);
+  }, [activePlantId, allowedPlants]);
+
+  useEffect(() => {
+    const key = allowedPlants.join(',');
+    if (lastSyncedAllowedRef.current === key) return;
+    lastSyncedAllowedRef.current = key;
+    iframeRef.current?.contentWindow?.postMessage(
+      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, skipPresetLoad: true },
+      '*'
+    );
+  }, [allowedPlants, activePlantId]);
 
   useEffect(() => {
     if (activeDesignRequest?.tab) {
@@ -250,7 +272,7 @@ export default function EquipmentDesignPage() {
       if (d.type === 'CHEMPRO_READY') {
         if (chemproHandoff) {
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, skipPresetLoad: true },
+            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, skipPresetLoad: true },
             '*'
           );
           iframeRef.current?.contentWindow?.postMessage(
@@ -260,7 +282,7 @@ export default function EquipmentDesignPage() {
         } else {
           const targetTag = chemproTag || getDefaultChemProTag(activePlantId);
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, tag: targetTag, subTab: chemproSubTab },
+            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, tag: targetTag, subTab: chemproSubTab },
             '*'
           );
         }
@@ -285,7 +307,7 @@ export default function EquipmentDesignPage() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [setEquipmentSpecOverride, activePlantId, chemproTag, chemproSubTab, chemproHandoff]);
+  }, [setEquipmentSpecOverride, activePlantId, allowedPlants, chemproTag, chemproSubTab, chemproHandoff]);
 
   // 1) 장치목록 탭: 선택된 공장의 장치목록만 정확히 출력
   if (activeTab === 'equip') {
@@ -963,7 +985,7 @@ export default function EquipmentDesignPage() {
         <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#F6F7F2' }}>
           <iframe
             ref={iframeRef}
-            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261118a&plant=${encodeURIComponent(activePlantId)}&tag=${encodeURIComponent(chemproTag)}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}`}
+            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261118b&plant=${encodeURIComponent(activePlantId)}&tag=${encodeURIComponent(chemproTag)}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}`}
             title="Integrated Equipment Design Studio"
             style={{ width: '100%', height: '100%', border: 'none', background: '#F6F7F2' }}
           />

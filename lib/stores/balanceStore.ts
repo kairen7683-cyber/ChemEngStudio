@@ -392,9 +392,9 @@ export const useBalanceStore = create<BalanceStore>((set, get) => {
   const initMdiSum = calculateMdiPlantSummary(defaultMdiPlantInputs);
 
   return {
-    activePlantId: 'clorsim_sim',
+    activePlantId: 'new_builder',
     lastCommercialPlantId: 'clorsim_sim',
-    lastPlantReturnHref: '/material-balance',
+    lastPlantReturnHref: '/flowsheet-simulator',
     expansionScaleFactor: 1.0,
     simActiveSheetId: 'master',
     simRequestedSheetId: null,

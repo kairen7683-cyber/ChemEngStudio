@@ -380,9 +380,9 @@ export function getUnitDesignRouteInfo(
         kind: 'electrolyzer_sub',
         buttonLabel: '⚡ 전해조 세부 스택·순환루프 참조 시뮬 열기 →',
         subHint: '전해조는 열교환기가 아닌 전용 멤브레인 셀 전압·패러데이 수지 모듈에서 해석합니다.',
-        accentColor: '#0F766E',
-        bgGradient: 'linear-gradient(135deg, #F0FDFA 0%, #ECFDF5 100%)',
-        borderColor: '#5EEAD4',
+        accentColor: '#1E3A8A',
+        bgGradient: '#F8FAFC',
+        borderColor: '#E2E8F0',
       };
     }
     return null;
@@ -397,9 +397,9 @@ export function getUnitDesignRouteInfo(
         ? '❄️ 이 유체·상변화 조건으로 액화기(HEX) 상세설계 →'
         : '🔥 이 유체·온도 조건으로 열교환기(HEX) 상세설계 →',
       subHint: '현재 유입 유량·조성·입출구 온도·냉매·잠열(3-Zone) 조건을 단위장치 설계에 그대로 반영하여 전열면적·튜브수를 즉시 계산합니다.',
-      accentColor: '#B45309',
-      bgGradient: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
-      borderColor: '#FCD34D',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -409,9 +409,9 @@ export function getUnitDesignRouteInfo(
       chemproTab: 'pump',
       buttonLabel: '🔧 이 유량·양정 조건으로 원심펌프(PUMP) 상세설계 →',
       subHint: '실시간 액상 유량(m³/h)·밀도·흡입/토출 압력·온도를 그대로 물고 넘어가 양정·축동력·NPSHa를 계산합니다.',
-      accentColor: '#1D4ED8',
-      bgGradient: 'linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%)',
-      borderColor: '#93C5FD',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -421,9 +421,9 @@ export function getUnitDesignRouteInfo(
       chemproTab: 'column',
       buttonLabel: '🏗️ 내장 컬럼 사이징 & 인터널(트레이·충진물) 개념설계 열기 →',
       subHint: '다성분 MESH 수렴의 단별(Stage 2~N-1) 기액유량·밀도·표면장력·점도를 실시간 연동하여 트레이(Sieve/Valve)·충진탑 탑경, 범람율, 압손, 섬프·노즐 개념디자인을 빌더 안에서 즉시 수행합니다.',
-      accentColor: '#4338CA',
-      bgGradient: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)',
-      borderColor: '#A5B4FC',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -433,9 +433,9 @@ export function getUnitDesignRouteInfo(
       chemproTab: 'column',
       buttonLabel: '🗼 이 기액 유량·농도로 흡수·패킹컬럼(COL) 상세설계 →',
       subHint: '가스/흡수액 유량·온도·압력·입출구 농도(ppm)를 그대로 물고 넘어가 탑경(GPDC)·패킹 높이(HTU·NTU)·차압을 계산합니다.',
-      accentColor: '#5B21B6',
-      bgGradient: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%)',
-      borderColor: '#C4B5FD',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
       secondaryAction: isElectrolyzerPlantMode
         ? {
             label: '전해공장 전용 패킹타워(황산건조/제해) 사이징 열기 →',
@@ -453,8 +453,8 @@ export function getUnitDesignRouteInfo(
       buttonLabel: '🛢️ 이 기액유량·압력으로 기액분리기·용기(VES) 설계 →',
       subHint: '기상/액상 유량·밀도·운전압력을 그대로 전달하여 Souders-Brown 직경 및 ASME Sec.VIII 두께를 계산합니다.',
       accentColor: '#1E3A8A',
-      bgGradient: 'linear-gradient(135deg, #EFF6FF 0%, #E0E7FF 100%)',
-      borderColor: '#A5B4FC',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -463,9 +463,9 @@ export function getUnitDesignRouteInfo(
       kind: isElectrolyzerPlantMode ? 'plant_evap' : 'evap_special',
       buttonLabel: '🔥 다중효용 강하막 증발농축 상세설계 열기 →',
       subHint: '가성소다 BPE(비점상승)·총괄열전달·강하막 튜브 적심률(Γ) 전용 증발농축 설계 화면으로 이동합니다.',
-      accentColor: '#9A3412',
-      bgGradient: 'linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 100%)',
-      borderColor: '#FDBA74',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -474,9 +474,9 @@ export function getUnitDesignRouteInfo(
       kind: 'plant_brine',
       buttonLabel: '🧪 브라인 포화조·캔들필터·킬레이트탑 상세설계 →',
       subHint: '원염 포화조 상승유속·캔들필터 여과면적·이온교환수지탑(SV/BV) 전용 사이징 화면으로 이동합니다.',
-      accentColor: '#0369A1',
-      bgGradient: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
-      borderColor: '#7DD3FC',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 
@@ -486,9 +486,9 @@ export function getUnitDesignRouteInfo(
       chemproTab: 'piping',
       buttonLabel: '💨 토출 고압가스 배관(PIPE) 유속·차압 상세설계 →',
       subHint: '압축 토출 가스의 실제 유량·온도·압력·기체밀도를 배관 설계 모듈로 전달하여 적정 관경(NPS)과 마하수를 계산합니다.',
-      accentColor: '#0369A1',
-      bgGradient: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
-      borderColor: '#7DD3FC',
+      accentColor: '#1E3A8A',
+      bgGradient: '#F8FAFC',
+      borderColor: '#E2E8F0',
     };
   }
 

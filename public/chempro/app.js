@@ -14,9 +14,26 @@ window.App = (function () {
     pipeSelectedIdx: undefined,
     lastResults: {},
     pendingOptInputs: {},
-    handoffEquip: null
+    handoffEquip: null,
+    liveCandidates: [],
+    allowedPlants: null,
+    selectedTagByTab: {}
   };
   let _suppressRecalc = false;
+
+  function escHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function hasSelectOption(el, val) {
+    if (!el || val === undefined || val === null) return false;
+    if (!el.options) return true;
+    return [...el.options].some(o => o.value === String(val));
+  }
 
   function numVal(id, fallback) {
     const el = document.getElementById(id);
@@ -86,7 +103,7 @@ window.App = (function () {
   // Sync or create the Synthetix Telemetry custom trigger button replacing native Android <select>
   function syncCustomSelectTrigger(selectId) {
     const sel = document.getElementById(selectId);
-    if (!sel) return;
+    if (!sel || !sel.parentNode) return;
 
     let btn = document.getElementById('cs_trig_' + selectId);
     if (!btn) {
@@ -115,7 +132,8 @@ window.App = (function () {
       }
     }
 
-    const opt = sel.options[sel.selectedIndex] || sel.options[0];
+    const opts = sel.options || [];
+    const opt = opts[sel.selectedIndex] || opts[0];
     const txt = opt ? opt.textContent : '-';
     btn.innerHTML = `
       <div class="cs-trig-main">
@@ -126,8 +144,11 @@ window.App = (function () {
   }
 
   function syncAllCustomSelects() {
+    if (typeof document.querySelectorAll !== 'function') return;
     document.querySelectorAll('select').forEach(sel => {
-      if (sel.id && sel.id !== 'ca_equip_tag') syncCustomSelectTrigger(sel.id);
+      if (sel.id && sel.id !== 'ca_equip_tag' && !sel.id.startsWith('unit_sync_')) {
+        syncCustomSelectTrigger(sel.id);
+      }
     });
   }
 
@@ -851,11 +872,18 @@ window.App = (function () {
       };
     }
     const plant = typeof getActivePlantConfig === 'function' ? getActivePlantConfig() : null;
-    const rawTag = document.getElementById('ca_equip_tag')?.value || '';
+    const rawTag = document.getElementById('ca_equip_tag')?.value || state.selectedTagByTab?.[tab] || '';
     const tag = resolveChlorAlkaliTag(rawTag);
     const p = (plant && plant.presets[tag]) || CA_EQUIP_PRESETS[tag];
     if (p && p.tab === tab) {
       return { equipTag: tag, equipName: p.name, unitAreaName: plant?.unitAreaName };
+    }
+    if (state.selectedTagByTab?.[tab] && plant && plant.presets[state.selectedTagByTab[tab]]) {
+      const sTag = state.selectedTagByTab[tab];
+      const sP = plant.presets[sTag];
+      if (sP && sP.tab === tab) {
+        return { equipTag: sTag, equipName: sP.name, unitAreaName: plant.unitAreaName };
+      }
     }
     if (plant && plant.defaultByTab && plant.defaultByTab[tab]) {
       const defTag = plant.defaultByTab[tab];
@@ -1044,6 +1072,16 @@ window.App = (function () {
     return {};
   }
 
+  function setElText(id, txt) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = txt;
+  }
+
+  function setElHtml(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
   function recalc() {
     if (_suppressRecalc) return;
     // 1. PUMP
@@ -1054,8 +1092,8 @@ window.App = (function () {
     if (pumpTitleEl) {
       pumpTitleEl.textContent = `${pumpRes.equipTag} ${pumpRes.equipName ? `(${pumpRes.equipName})` : '원심펌프'} 수렴 텔레메트리`;
     }
-    document.getElementById('pump_impeller_badge').textContent = `${pumpRes.impellerType} · Ns=${pumpRes.Ns.toFixed(1)}`;
-    document.getElementById('pump_kpis').innerHTML = `
+    setElText('pump_impeller_badge', `${pumpRes.impellerType} · Ns=${pumpRes.Ns.toFixed(1)}`);
+    setElHtml('pump_kpis', `
       <div class="kpi-box highlight">
         <div class="kpi-label">총 요구 양정 (TDH)</div>
         <div class="kpi-val">${pumpRes.H_total_m.toFixed(2)}<span class="kpi-unit">m</span></div>
@@ -1076,7 +1114,7 @@ window.App = (function () {
         <div class="kpi-val">${pumpRes.Q_mcsf_m3h.toFixed(1)}<span class="kpi-unit">m³/h</span></div>
         <div class="kpi-sub">바이패스 오리피스 내경 d0 = ${pumpRes.d_orifice_mm.toFixed(1)} mm</div>
       </div>
-    `;
+    `);
     renderWarnings('pump_warnings', pumpRes.warnings);
     renderIterTable('pump_iter_table', pumpRes.iterations);
     if (state.tab === 'pump') window.ChemEngSolvers.drawPumpCanvas(document.getElementById('canvas_pump'), pumpRes);
@@ -1142,13 +1180,13 @@ window.App = (function () {
     }
 
     const isPHE = hxRes.hxType === 'plate_phe';
-    document.getElementById('hx_converge_badge').textContent = isPHE
+    setElText('hx_converge_badge', isPHE
       ? `수렴 완료 (CHEVRON PHE · ${hxRes.iterations.length}회 반복)`
-      : `수렴 완료 (BELL-DELAWARE · ${hxRes.iterations.length}회 반복)`;
-    document.getElementById('hx_ft_label').textContent = isPHE
+      : `수렴 완료 (BELL-DELAWARE · ${hxRes.iterations.length}회 반복)`);
+    setElText('hx_ft_label', isPHE
       ? `PHE (${hxRes.phe_beta_deg}° Chevron) · LMTD ${hxRes.lmtd.toFixed(1)}°C · Ft ${hxRes.Ft.toFixed(3)} · CMTD ${hxRes.CMTD.toFixed(1)}°C`
-      : `TEMA ${hxRes.tema_type} · LMTD ${hxRes.lmtd.toFixed(1)}°C · Ft ${hxRes.Ft.toFixed(3)} · CMTD ${hxRes.CMTD.toFixed(1)}°C`;
-    document.getElementById('hx_kpis').innerHTML = `
+      : `TEMA ${hxRes.tema_type} · LMTD ${hxRes.lmtd.toFixed(1)}°C · Ft ${hxRes.Ft.toFixed(3)} · CMTD ${hxRes.CMTD.toFixed(1)}°C`);
+    setElHtml('hx_kpis', `
       <div class="kpi-box highlight">
         <div class="kpi-label">전열부하 Q & 유효 온도차 CMTD</div>
         <div class="kpi-val">${hxRes.Q_kW.toFixed(1)}<span class="kpi-unit">kW</span></div>
@@ -1169,7 +1207,7 @@ window.App = (function () {
         <div class="kpi-val">${isPHE ? `${hxRes.N_plates}<span class="kpi-unit">Plates</span> / ${hxRes.L_pack_mm}<span class="kpi-unit">mm</span>` : `${hxRes.N_tubes}<span class="kpi-unit">EA</span> / Ø${hxRes.D_shell_mm.toFixed(0)}<span class="kpi-unit">mm</span>`}</div>
         <div class="kpi-sub">${isPHE ? `${hxRes.N_channels} Channels (b=${hxRes.phe_b_mm}mm) · Wp ${hxRes.Wp_mm}×Lp ${hxRes.Lp_mm}mm` : `OD ${hxRes.do_mm}mm × L ${hxRes.L_m}m · 진동비 f_vs/f_n = ${hxRes.vibRatio.toFixed(2)}`}</div>
       </div>
-    `;
+    `);
 
     // Stitch Hydraulic Pressure Drop Gauges (#hx_dp_gauges)
     const dpGauges = document.getElementById('hx_dp_gauges');
@@ -1325,22 +1363,22 @@ window.App = (function () {
         );
       }
     }
-    document.getElementById('col_vle_badge').textContent = isAbs
+    setElText('col_vle_badge', isAbs
       ? `GPDC & 물질전달 수렴 (N_OG=${colRes.N_OG.toFixed(2)}, 제거율 ${colRes.removal_pct.toFixed(2)}%)`
-      : (colRes.azeotropeX ? `[WARN] 공비점 감지 (x≈${colRes.azeotropeX.toFixed(2)})` : `NRTL 기포점 수렴 (α=${colRes.alpha.toFixed(2)})`);
+      : (colRes.azeotropeX ? `[WARN] 공비점 감지 (x≈${colRes.azeotropeX.toFixed(2)})` : `NRTL 기포점 수렴 (α=${colRes.alpha.toFixed(2)})`));
     const colCanvasTitle = document.getElementById('col_canvas_title');
     if (colCanvasTitle) {
       colCanvasTitle.textContent = isAbs
         ? '기상 용질 농도 프로파일 (y_ppm vs 패킹 베드 높이 z/Z)'
         : '비이상 NRTL 기액평형(VLE) 곡선 및 McCabe-Thiele 계단 작도';
     }
-    document.getElementById('col_alpha_label').textContent = isAbs
+    setElText('col_alpha_label', isAbs
       ? `${colRes.packSpec.name} · In ${colRes.y_in_ppm.toLocaleString()} ppm → Out ${colRes.y_out_ppm} ppm`
-      : `${colRes.internals === 'packed' ? colRes.packSpec.name : colRes.internalsSummary} · T_top=${colRes.T_top_C.toFixed(1)}°C ~ T_bot=${colRes.T_bot_C.toFixed(1)}°C`;
+      : `${colRes.internals === 'packed' ? colRes.packSpec.name : colRes.internalsSummary} · T_top=${colRes.T_top_C.toFixed(1)}°C ~ T_bot=${colRes.T_bot_C.toFixed(1)}°C`);
 
     const isPacked = isAbs || colRes.internals === 'packed';
     if (isAbs) {
-      document.getElementById('col_kpis').innerHTML = `
+      setElHtml('col_kpis', `
         <div class="kpi-box highlight">
           <div class="kpi-label">총 패킹 충전 높이 (Z) 및 베드 수</div>
           <div class="kpi-val">${colRes.H_pack_total_m.toFixed(2)}<span class="kpi-unit">m</span> (${colRes.N_beds} Beds)</div>
@@ -1361,9 +1399,9 @@ window.App = (function () {
           <div class="kpi-val">${colRes.y_out_ppm}<span class="kpi-unit">ppm</span> / ${colRes.Qc_kW.toFixed(1)}<span class="kpi-unit">kW</span></div>
           <div class="kpi-sub">입구 ${colRes.y_in_ppm.toLocaleString()} ppm → 제거량 ${colRes.m_abs_kgh.toFixed(2)} kg/h (L/G=${colRes.LG_mass_ratio.toFixed(2)})</div>
         </div>
-      `;
+      `);
     } else {
-      document.getElementById('col_kpis').innerHTML = `
+      setElHtml('col_kpis', `
         <div class="kpi-box highlight">
           <div class="kpi-label">${isPacked ? '총 패킹 충전 높이 & 베드 분할' : '실제 단수 (N_act) 및 최적 원료단'}</div>
           <div class="kpi-val">${isPacked ? `${colRes.H_pack_total_m.toFixed(1)}<span class="kpi-unit">m</span> (${colRes.N_beds} Beds)` : `${colRes.N_actual}<span class="kpi-unit">단</span> (Feed #${colRes.feed_stage_actual})`}</div>
@@ -1384,7 +1422,7 @@ window.App = (function () {
           <div class="kpi-val">${colRes.Qc_kW.toFixed(0)} / ${colRes.Qr_kW.toFixed(0)}<span class="kpi-unit">kW</span></div>
           <div class="kpi-sub">${isPacked ? `환류비 R=${colRes.R.toFixed(2)} (R_min ${colRes.Rmin.toFixed(2)}) · GPDC 수렴` : `Weep 안전비 ${colRes.weep_ratio.toFixed(2)}x · DC백업 ${colRes.dc_backup_pct.toFixed(1)}%`}${colRes.dofMode === 'spec_n_rr' ? ` · xD=${colRes.xD.toFixed(3)} / xB=${colRes.xB.toFixed(4)}` : ''}${colRes.S > 0 ? ` · 측류 S=${colRes.S.toFixed(1)} (xS=${(colRes.xS_mol ?? 0).toFixed(3)}, #${colRes.sideCutStage})` : ''}</div>
         </div>
-      `;
+      `);
     }
     renderWarnings('col_warnings', colRes.warnings);
     renderIterTable('col_iter_table', colRes.iterations);
@@ -1402,8 +1440,8 @@ window.App = (function () {
       setVal('pipe_Q', pipeRes.Q_m3h, 1);
     }
     const sel = pipeRes.selected;
-    document.getElementById('pipe_rec_badge').textContent = `선택: NPS ${sel.nps} (추천: NPS ${pipeRes.recommended.nps})`;
-    document.getElementById('pipe_kpis').innerHTML = `
+    setElText('pipe_rec_badge', `선택: NPS ${sel.nps} (추천: NPS ${pipeRes.recommended.nps})`);
+    setElHtml('pipe_kpis', `
       <div class="kpi-box highlight">
         <div class="kpi-label">선정 배관 규격 (ANSI / ASME NPS)</div>
         <div class="kpi-val">NPS ${sel.nps}<span class="kpi-unit">(Sch ${pipeInp.schedule || '40'})</span></div>
@@ -1424,7 +1462,7 @@ window.App = (function () {
         <div class="kpi-val">${Math.round(sel.Re).toLocaleString()}</div>
         <div class="kpi-sub">f = ${sel.f.toFixed(4)} · Mach = ${sel.mach.toFixed(3)} · Φ²_LO = ${sel.phi2_LM.toFixed(2)}</div>
       </div>
-    `;
+    `);
     renderWarnings('pipe_warnings', pipeRes.warnings);
 
     let pHtml = `<thead><tr><th>ANSI/ASME 호칭경</th><th>내경(mm)</th><th>유속(m/s)</th><th>ΔP/100m(bar)</th><th>총 ΔP(bar)</th><th>상태</th></tr></thead><tbody>`;
@@ -1444,7 +1482,7 @@ window.App = (function () {
       </tr>`;
     });
     pHtml += `</tbody>`;
-    document.getElementById('pipe_cand_table').innerHTML = pHtml;
+    setElHtml('pipe_cand_table', pHtml);
     if (state.tab === 'piping') window.ChemEngSolvers.drawPipingCanvas(document.getElementById('canvas_piping'), pipeRes);
 
     // 5. PRESSURE VESSEL & KO DRUM
@@ -1455,8 +1493,8 @@ window.App = (function () {
     if (vesTitleEl) {
       vesTitleEl.textContent = `${vesRes.equipTag} ${vesRes.equipName ? `(${vesRes.equipName})` : '압력용기'} 수렴 텔레메트리`;
     }
-    document.getElementById('ves_ld_label').textContent = `형상비 L/D = ${vesRes.LD_ratio.toFixed(2)} · K_v = ${vesRes.Kv_base.toFixed(3)} m/s`;
-    document.getElementById('ves_kpis').innerHTML = `
+    setElText('ves_ld_label', `형상비 L/D = ${vesRes.LD_ratio.toFixed(2)} · K_v = ${vesRes.Kv_base.toFixed(3)} m/s`);
+    setElHtml('ves_kpis', `
       <div class="kpi-box highlight">
         <div class="kpi-label">용기 내경 (ID) × 직관부 길이 (T/T)</div>
         <div class="kpi-val">${vesRes.D_m.toFixed(2)}<span class="kpi-unit">m</span> × ${vesRes.L_m.toFixed(2)}<span class="kpi-unit">m</span></div>
@@ -1477,7 +1515,7 @@ window.App = (function () {
         <div class="kpi-val">${(vesRes.W_empty_kg / 1000).toFixed(1)} / ${(vesRes.W_oper_kg / 1000).toFixed(1)}<span class="kpi-unit">ton</span></div>
         <div class="kpi-sub">수압시험 만수 중량 ${(vesRes.W_hydro_kg / 1000).toFixed(1)} ton</div>
       </div>
-    `;
+    `);
     renderWarnings('ves_warnings', vesRes.warnings);
     renderIterTable('ves_iter_table', vesRes.iterations);
     if (state.tab === 'vessel') window.ChemEngSolvers.drawVesselCanvas(document.getElementById('canvas_vessel'), vesRes);
@@ -1493,9 +1531,9 @@ window.App = (function () {
     if (psvInp.scenario === 'fire_case') {
       setVal('psv_W', psvRes.W_kgh, 0);
     }
-    document.getElementById('psv_orifice_badge').textContent = `API 526 '${psvRes.selectedOrifice.letter}' Orifice (${psvRes.selectedOrifice.size})`;
-    document.getElementById('psv_flow_badge').textContent = psvRes.isCritical ? `임계 유동 (Sonic, r_c=${psvRes.r_crit.toFixed(3)})` : `아임계 유동 (Subsonic)`;
-    document.getElementById('psv_kpis').innerHTML = `
+    setElText('psv_orifice_badge', `API 526 '${psvRes.selectedOrifice.letter}' Orifice (${psvRes.selectedOrifice.size})`);
+    setElText('psv_flow_badge', psvRes.isCritical ? `임계 유동 (Sonic, r_c=${psvRes.r_crit.toFixed(3)})` : `아임계 유동 (Subsonic)`);
+    setElHtml('psv_kpis', `
       <div class="kpi-box highlight">
         <div class="kpi-label">API 526 표준 오리피스 선정</div>
         <div class="kpi-val">'${psvRes.selectedOrifice.letter}'<span class="kpi-unit">(${psvRes.selectedOrifice.size})</span></div>
@@ -1516,7 +1554,7 @@ window.App = (function () {
         <div class="kpi-val">${psvRes.P1_barA.toFixed(2)}<span class="kpi-unit">bar.a</span></div>
         <div class="kpi-sub">과압 ${psvRes.overpress_pct}% · 배압비 P2/P1 = ${(psvRes.backPressRatio * 100).toFixed(1)}%</div>
       </div>
-    `;
+    `);
     renderWarnings('psv_warnings', psvRes.warnings);
     renderIterTable('psv_iter_table', psvRes.iterations);
     if (state.tab === 'psv') window.ChemEngSolvers.drawPSVCanvas(document.getElementById('canvas_psv'), psvRes);
@@ -1543,7 +1581,7 @@ window.App = (function () {
     if (state.subView && state.subView !== 'all') {
       classes.push('subview-' + state.subView);
     }
-    document.body.className = classes.join(' ');
+    if (document.body) document.body.className = classes.join(' ');
   }
 
   function setMode(mode) {
@@ -1616,15 +1654,17 @@ window.App = (function () {
   function setSubView(subview) {
     state.subView = subview || 'all';
     applyBodyClasses();
-    document.querySelectorAll('.subview-btn').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-subview') === state.subView);
-    });
+    if (typeof document.querySelectorAll === 'function') {
+      document.querySelectorAll('.subview-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-subview') === state.subView);
+      });
+    }
     updateWorkflowBottomBar();
     setTimeout(() => {
       recalc();
-      if (state.subView === 'datasheet' && document.body.classList.contains('subview-datasheet') === false) {
+      if (state.subView === 'datasheet' && document.body?.classList?.contains('subview-datasheet') === false) {
         scrollToDatasheet();
-      } else {
+      } else if (typeof window.scrollTo === 'function') {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     }, 20);
@@ -1632,12 +1672,14 @@ window.App = (function () {
 
   function setTab(tab) {
     state.tab = tab;
-    document.querySelectorAll('.tab-btn').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-tab') === tab);
-    });
-    document.querySelectorAll('.module-panel').forEach(p => {
-      p.classList.toggle('active', p.id === 'panel-' + tab);
-    });
+    if (typeof document.querySelectorAll === 'function') {
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+      });
+      document.querySelectorAll('.module-panel').forEach(p => {
+        p.classList.toggle('active', p.id === 'panel-' + tab);
+      });
+    }
     const handoffBanner = document.getElementById('simHandoffBanner');
     const isHandoffTab = Boolean(state.handoffEquip && state.handoffEquip.tab === tab);
     if (handoffBanner) {
@@ -1646,10 +1688,10 @@ window.App = (function () {
     if (!isHandoffTab && typeof getActivePlantConfig === 'function') {
       const plant = getActivePlantConfig();
       const sel = document.getElementById('ca_equip_tag');
-      const curTag = sel ? resolveChlorAlkaliTag(sel.value) : '';
+      const curTag = sel ? resolveChlorAlkaliTag(sel.value) : (state.selectedTagByTab?.[tab] || '');
       const curPreset = plant.presets[curTag];
       if (!curPreset || curPreset.tab !== tab) {
-        const nextTag = plant.defaultByTab?.[tab];
+        const nextTag = state.selectedTagByTab?.[tab] || plant.defaultByTab?.[tab];
         if (nextTag && plant.presets[nextTag]) {
           if (sel) sel.value = nextTag;
           const stEl = document.getElementById('ca_sync_status');
@@ -2176,6 +2218,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       subTab: requestedSubTab,
       skipPresetLoad: false,
     });
+    rebuildPerTabSyncDropdowns();
 
     if (isHandoffMode) {
       if (!applySimulatorHandoff(null)) {
@@ -2194,6 +2237,9 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const d = e && e.data;
       if (!d || typeof d !== 'object') return;
       if (d.type === 'CHEMPRO_SET_PLANT' && d.plantId) {
+        if (Array.isArray(d.allowedPlants)) {
+          state.allowedPlants = d.allowedPlants;
+        }
         setActivePlantContext(d.plantId, {
           tag: d.tag || '',
           subTab: d.subTab || '',
@@ -2209,6 +2255,14 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
             recalc();
           }
         }
+        rebuildPerTabSyncDropdowns();
+      }
+      if (d.type === 'CHEMPRO_SYNC_UNIT_CANDIDATES') {
+        state.liveCandidates = Array.isArray(d.candidates) ? d.candidates : [];
+        if (Array.isArray(d.allowedPlants)) {
+          state.allowedPlants = d.allowedPlants;
+        }
+        rebuildPerTabSyncDropdowns();
       }
       if (d.type === 'CHEMPRO_SET_TAB' && d.tab) setTab(d.tab);
       if (d.type === 'CHEMPRO_SET_VIEW' && d.view) setSubView(d.view);
@@ -2429,13 +2483,152 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     }
   };
 
+  const ORDERED_SYNC_PLANT_IDS = ['clorsim_sim', 'hcl_synth', 'ech_gte', 'cms_plant', 'mdi_plant'];
+  const PLANT_DISPLAY_NAMES = {
+    clorsim_sim: 'PLANT 01 전해 시뮬레이터',
+    hcl_synth: 'PLANT 02 1A 염산·회수',
+    ech_gte: 'PLANT 03 ECH (7만톤)',
+    cms_plant: 'PLANT 04 클로로메탄 (CMS)',
+    mdi_plant: 'PLANT 05 MDI (10만톤)'
+  };
+
   function normalizePlantId(rawId) {
     const id = String(rawId || '').trim().toLowerCase();
     if (id === 'hcl_synth' || id === 'hcl_1a_plant') return 'hcl_synth';
     if (id === 'ech_gte' || id === 'ech_gte_plant') return 'ech_gte';
     if (id === 'cms_plant') return 'cms_plant';
     if (id === 'mdi_plant') return 'mdi_plant';
+    if (id === 'clorsim' || id === 'clorsim_sim') return 'clorsim_sim';
+    if (Array.isArray(state.allowedPlants) && state.allowedPlants.length > 0) {
+      const firstAllowed = state.allowedPlants.find(pid => PLANT_EQUIP_REGISTRY[pid]);
+      if (firstAllowed) return firstAllowed;
+    }
     return 'clorsim_sim';
+  }
+
+  function rebuildPerTabSyncDropdowns(opts) {
+    if (opts && typeof opts === 'object') {
+      if (Array.isArray(opts.candidates)) state.liveCandidates = opts.candidates;
+      if (Array.isArray(opts.allowedPlants)) state.allowedPlants = opts.allowedPlants;
+      if (opts.plantId) state.plantId = normalizePlantId(opts.plantId);
+    }
+
+    const tabs = ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'];
+    const permittedPlantIds = ORDERED_SYNC_PLANT_IDS.filter(
+      pid => !Array.isArray(state.allowedPlants) || state.allowedPlants.includes(pid)
+    );
+    const activePidNorm = normalizePlantId(state.plantId);
+    const liveList = Array.isArray(state.liveCandidates) ? state.liveCandidates : [];
+
+    tabs.forEach(tKey => {
+      const sel = document.getElementById('unit_sync_' + tKey);
+      if (!sel) return;
+
+      const liveEntries = [];
+      liveList.forEach((c, idx) => {
+        if (c && c.payload && c.payload.tab === tKey) {
+          liveEntries.push({ c, idx });
+        }
+      });
+
+      let html = '';
+      let firstVal = '';
+      let defaultActiveVal = '';
+      const activeDefaultTag = PLANT_EQUIP_REGISTRY[activePidNorm]?.defaultByTab?.[tKey] || '';
+
+      if (liveEntries.length > 0) {
+        html += `<optgroup label="현재 시뮬레이터 케이스">`;
+        liveEntries.forEach(({ c, idx }) => {
+          const val = `cand:${idx}`;
+          if (!firstVal) firstVal = val;
+          const label = c.label || `[${c.payload.equipTag || 'UNIT'}] ${c.payload.equipName || ''}`;
+          html += `<option value="${escHtml(val)}">${escHtml(label)}</option>`;
+        });
+        html += `</optgroup>`;
+      }
+
+      permittedPlantIds.forEach(pid => {
+        const reg = PLANT_EQUIP_REGISTRY[pid];
+        if (!reg || !reg.presets) return;
+        const matched = [];
+        Object.keys(reg.presets).forEach(tag => {
+          const preset = reg.presets[tag];
+          if (preset && preset.tab === tKey) {
+            matched.push([pid, tag, preset]);
+          }
+        });
+        if (!matched.length) return;
+        const plantName = PLANT_DISPLAY_NAMES[pid] || reg.unitAreaName || pid;
+        const groupLabel =
+          permittedPlantIds.length === 1
+            ? `내장 예제 장치 (${plantName})`
+            : `내장 예제: ${plantName}`;
+        html += `<optgroup label="${escHtml(groupLabel)}">`;
+        matched.forEach(([_pid, tag, preset]) => {
+          const val = `preset:${pid}:${tag}`;
+          if (!firstVal) firstVal = val;
+          if (pid === activePidNorm && tag === activeDefaultTag && !defaultActiveVal) {
+            defaultActiveVal = val;
+          }
+          html += `<option value="${escHtml(val)}">[${escHtml(tag)}] ${escHtml(preset.name || tag)}</option>`;
+        });
+        html += `</optgroup>`;
+      });
+
+      if (!html) {
+        html = `<option value="">불러올 장치가 없습니다 (케이스/허용 공정 없음)</option>`;
+      }
+
+      sel.innerHTML = html;
+      if (liveEntries.length > 0) {
+        const handoffMatch =
+          state.handoffEquip && state.handoffEquip.tab === tKey
+            ? liveEntries.find(e => e.c?.payload?.equipTag === state.handoffEquip.equipTag)
+            : null;
+        sel.value = handoffMatch ? `cand:${handoffMatch.idx}` : `cand:${liveEntries[0].idx}`;
+      } else if (defaultActiveVal) {
+        sel.value = defaultActiveVal;
+      } else if (firstVal) {
+        sel.value = firstVal;
+      } else {
+        sel.value = '';
+      }
+    });
+  }
+
+  function applyPerTabUnitSync(tKey) {
+    const sel = document.getElementById('unit_sync_' + tKey);
+    const val = sel && sel.value ? String(sel.value) : '';
+    if (!val) return false;
+
+    if (val.startsWith('cand:')) {
+      const idx = Number(val.slice(5));
+      const cand =
+        Number.isInteger(idx) && idx >= 0 && Array.isArray(state.liveCandidates)
+          ? state.liveCandidates[idx]
+          : null;
+      if (cand && cand.payload) {
+        applySimulatorHandoff(cand.payload);
+        if (state.tab !== tKey) setTab(tKey);
+        return true;
+      }
+      return false;
+    }
+
+    if (val.startsWith('preset:')) {
+      const rest = val.slice(7);
+      const i = rest.indexOf(':');
+      if (i <= 0) return false;
+      const pid = rest.slice(0, i);
+      const tag = rest.slice(i + 1);
+      setActivePlantContext(pid, { tag, subTab: tKey, skipPresetLoad: true });
+      loadChlorAlkaliPreset(tag, tKey);
+      if (state.tab !== tKey) setTab(tKey);
+      recalc();
+      return true;
+    }
+
+    return false;
   }
 
   function getActivePlantConfig(overridePlantId) {
@@ -2495,7 +2688,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const pheMatEl = document.getElementById('hx_phe_mat');
       if (pheMatEl && p.phe_mat) pheMatEl.value = p.phe_mat;
       const kwEl = document.getElementById('hx_kw');
-      if (kwEl && p.kw && [...kwEl.options].some(o => o.value === String(p.kw))) {
+      if (kwEl && p.kw && hasSelectOption(kwEl, p.kw)) {
         kwEl.value = String(p.kw);
       } else if (kwEl && p.hx_type === 'plate_phe') {
         kwEl.value = '70.2';
@@ -2503,8 +2696,8 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const hotEl = document.getElementById('hx_hot_fluid');
       const coldEl = document.getElementById('hx_cold_fluid');
       const allocEl = document.getElementById('hx_allocation');
-      if (hotEl && [...hotEl.options].some(o => o.value === p.hot)) hotEl.value = p.hot;
-      if (coldEl && [...coldEl.options].some(o => o.value === p.cold)) coldEl.value = p.cold;
+      if (hotEl && hasSelectOption(hotEl, p.hot)) hotEl.value = p.hot;
+      if (coldEl && hasSelectOption(coldEl, p.cold)) coldEl.value = p.cold;
       if (allocEl && p.alloc) allocEl.value = p.alloc;
       setVal('hx_mh', p.mh, 0);
       setVal('hx_Thi', p.Thi, 1);
@@ -2528,7 +2721,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       markSolverConverged('hx');
     } else if (p.tab === 'pump') {
       const flEl = document.getElementById('pump_fluid');
-      if (flEl && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
+      if (flEl && hasSelectOption(flEl, p.fluid)) flEl.value = p.fluid;
       setVal('pump_T', p.T, 1);
       setVal('pump_Q', p.Q, 1);
       setVal('pump_P1', p.P1, 2);
@@ -2550,8 +2743,8 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const hkEl = document.getElementById('col_hk');
       const intEl = document.getElementById('col_internals');
       const pkEl = document.getElementById('col_pack_key');
-      if (lkEl && p.lk && [...lkEl.options].some(o => o.value === p.lk)) lkEl.value = p.lk;
-      if (hkEl && p.hk && [...hkEl.options].some(o => o.value === p.hk)) hkEl.value = p.hk;
+      if (lkEl && p.lk && hasSelectOption(lkEl, p.lk)) lkEl.value = p.lk;
+      if (hkEl && p.hk && hasSelectOption(hkEl, p.hk)) hkEl.value = p.hk;
       if (intEl) intEl.value = p.internals || (colMode === 'distillation' ? 'tray' : 'packed');
       if (pkEl && p.pack) pkEl.value = p.pack;
       setVal('col_P', p.P, 2);
@@ -2578,7 +2771,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     } else if (p.tab === 'piping') {
       const flEl = document.getElementById('pipe_fluid');
       const fmEl = document.getElementById('pipe_flow_mode');
-      if (flEl && p.fluid && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
+      if (flEl && p.fluid && hasSelectOption(flEl, p.fluid)) flEl.value = p.fluid;
       if (fmEl && p.flowMode) fmEl.value = p.flowMode;
       setVal('pipe_T', p.T ?? 30, 1);
       setVal('pipe_P1', p.P1 ?? 3.5, 2);
@@ -2591,8 +2784,8 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const lEl = document.getElementById('ves_liq_fluid');
       if (orEl && p.orient) orEl.value = p.orient;
       if (matEl && p.mat) matEl.value = p.mat;
-      if (gEl && p.gasFluid && [...gEl.options].some(o => o.value === p.gasFluid)) gEl.value = p.gasFluid;
-      if (lEl && p.liqFluid && [...lEl.options].some(o => o.value === p.liqFluid)) lEl.value = p.liqFluid;
+      if (gEl && p.gasFluid && hasSelectOption(gEl, p.gasFluid)) gEl.value = p.gasFluid;
+      if (lEl && p.liqFluid && hasSelectOption(lEl, p.liqFluid)) lEl.value = p.liqFluid;
       if (p.T !== undefined) setVal('ves_T_op', p.T, 1);
       setVal('ves_Pop', p.Pop, 2);
       setVal('ves_Pdes', p.Pdes, 1);
@@ -2605,7 +2798,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const flEl = document.getElementById('psv_fluid');
       const scEl = document.getElementById('psv_scenario');
       const phEl = document.getElementById('psv_phase');
-      if (flEl && p.fluid && [...flEl.options].some(o => o.value === p.fluid)) flEl.value = p.fluid;
+      if (flEl && p.fluid && hasSelectOption(flEl, p.fluid)) flEl.value = p.fluid;
       if (scEl && p.scenario) scEl.value = p.scenario;
       if (phEl && p.phase) phEl.value = p.phase;
       setVal('psv_T', p.T ?? 80, 1);
@@ -2644,6 +2837,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         tabsToSeed.forEach(tKey => {
           const defTag = plant.defaultByTab?.[tKey];
           if (defTag && plant.presets[defTag]) {
+            state.selectedTagByTab[tKey] = defTag;
             applyPresetFieldsWithoutTabSwitch(defTag, plant.presets[defTag]);
           }
         });
@@ -2657,8 +2851,11 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
 
     const activeTab = opts?.subTab || state.tab || 'hx';
     const selTag = opts?.tag || plant.defaultByTab?.[activeTab] || plant.defaultByTab?.hx || '';
+    if (selTag && plant.presets[selTag]) {
+      state.selectedTagByTab[plant.presets[selTag].tab] = selTag;
+    }
     const sel = document.getElementById('ca_equip_tag');
-    if (sel && selTag && [...sel.options].some(o => o.value === selTag)) {
+    if (sel && selTag && hasSelectOption(sel, selTag)) {
       sel.value = selTag;
     }
     const st = document.getElementById('ca_sync_status');
@@ -2683,8 +2880,9 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       }
       return;
     }
+    state.selectedTagByTab[p.tab] = tag;
     const sel = document.getElementById('ca_equip_tag');
-    if (sel && [...sel.options].some(o => o.value === tag) && sel.value !== tag) {
+    if (sel && hasSelectOption(sel, tag) && sel.value !== tag) {
       sel.value = tag;
     }
     setTab(p.tab);
@@ -3108,7 +3306,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     const setSelectSafe = (id, val) => {
       const el = document.getElementById(id);
       if (!el || val === undefined || val === null) return;
-      if ([...el.options].some(o => o.value === String(val))) {
+      if (hasSelectOption(el, val)) {
         el.value = String(val);
       }
     };
@@ -3246,6 +3444,8 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     applySimulatorHandoff,
     setActivePlantContext,
     loadChlorAlkaliPreset,
+    rebuildPerTabSyncDropdowns,
+    applyPerTabUnitSync,
     saveToChlorAlkaliEquipList,
     buildCADcraftDXFString,
     buildDatasheetText,

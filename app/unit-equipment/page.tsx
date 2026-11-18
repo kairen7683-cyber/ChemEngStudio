@@ -1,14 +1,14 @@
 'use client';
 
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useAuth } from '@/components/auth/AuthContext';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
-import { getPlantRegistryItem } from '@/lib/plantRegistry';
+import { PLANT_REGISTRY, getPlantRegistryItem, isPlantAllowed } from '@/lib/plantRegistry';
 import {
   CHEMPRO_SIM_HANDOFF_KEY,
   ChemProSimHandoffPayload,
   buildChemProHandoffPayload,
-  saveChemProHandoffPayload,
 } from '@/lib/calculations/unitDesignHandoff';
 import {
   FlowNodeDef,
@@ -31,19 +31,47 @@ const PLANT04_SAVE_KEY = 'chemplant-plant04-ech-v1';
 const PLANT05_SAVE_KEY = 'chemplant-plant05-cms-v2';
 const PLANT06_MDI_SAVE_KEY = 'chemplant-plant06-mdi-v1';
 const BUILDER_SAVE_KEY = 'chemplant-newplant-builder-v1';
+const CLASSIC_SAVE_KEY = 'chemplant-classic-sim-auto-v1';
 
 interface PlantBridgeCandidate {
   id: string;
   label: string;
   summary: string;
+  group: 'case' | 'example';
   payload: ChemProSimHandoffPayload;
+}
+
+function getTabKoLabel(tab: ChemProSimHandoffPayload['tab']): string {
+  switch (tab) {
+    case 'hx':
+      return '열교환기';
+    case 'pump':
+      return '펌프';
+    case 'column':
+      return '탑/흡수/증류';
+    case 'vessel':
+      return '분리기/용기';
+    case 'psv':
+      return '안전밸브';
+    default:
+      return '배관';
+  }
 }
 
 function UnitEquipmentInner() {
   const searchParams = useSearchParams();
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const { user } = useAuth();
   const { activePlantId, balance } = useBalanceStore();
   const plantMeta = getPlantRegistryItem(activePlantId);
+
+  const allowedPlants = useMemo(
+    () =>
+      PLANT_REGISTRY.filter(
+        p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+      ).map(p => p.id),
+    [user]
+  );
 
   const [fallbackState, setFallbackState] = useState<{
     tab: string | null;
@@ -51,24 +79,10 @@ function UnitEquipmentInner() {
     ts: string;
   }>({ tab: null, handoff: false, ts: '' });
 
-  const [manualOverride, setManualOverride] = useState<{
-    tab: string;
-    ts: string;
-  } | null>(null);
-
-  const [bridgeCollapsed, setBridgeCollapsed] = useState<boolean>(false);
   const [candidates, setCandidates] = useState<PlantBridgeCandidate[]>([]);
-  const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
-  const [appliedBanner, setAppliedBanner] = useState<string>('');
-  const prevPlantRef = useRef<string>(activePlantId);
 
-  // 정적 배포(GitHub Pages) 또는 직접 이동 시 쿼리 누락 대비 최근 시뮬레이터 핸드오프 자동 복원 (타 공정 이력 차단)
+  // 정적 배포(GitHub Pages) 또는 직접 이동 시 쿼리 누락 대비 최근 시뮬레이터 핸드오프 자동 복원 (타 공정·미허용 공정 차단)
   useEffect(() => {
-    if (prevPlantRef.current !== activePlantId) {
-      prevPlantRef.current = activePlantId;
-      setManualOverride(null);
-      setAppliedBanner('');
-    }
     const qTab = searchParams?.get('tab');
     const qHandoff = searchParams?.get('handoff') === '1';
     if (qTab && qHandoff) return;
@@ -87,20 +101,66 @@ function UnitEquipmentInner() {
         sourceLabel?: string;
       };
       const normPlant = (pid?: string) => (pid === 'clorsim_sim' ? 'clorsim' : pid || '');
-      if (parsed.plantId && normPlant(parsed.plantId) !== normPlant(activePlantId)) {
-        setFallbackState({ tab: null, handoff: false, ts: '' });
-        return;
-      }
-      if (!parsed.plantId && parsed.sourceLabel) {
+      const isHandoffPlantAllowed = (pid: string): boolean => {
+        if (pid === 'new_builder' || pid === 'classic_sim') return true;
+        if (pid === 'clorsim') {
+          return isPlantAllowed('clorsim', user) || isPlantAllowed('clorsim_sim', user);
+        }
+        return isPlantAllowed(pid, user);
+      };
+
+      if (parsed.plantId) {
+        if (
+          normPlant(parsed.plantId) !== normPlant(activePlantId) ||
+          !isHandoffPlantAllowed(parsed.plantId)
+        ) {
+          setFallbackState({ tab: null, handoff: false, ts: '' });
+          return;
+        }
+      } else if (parsed.sourceLabel) {
         const srcCode = parsed.sourceLabel.match(/^PLANT\s+\d+/i)?.[0]?.toUpperCase();
         const expCode = (activePlantId === 'clorsim' ? 'PLANT 01' : plantMeta.code)
           ?.match(/^PLANT\s+\d+/i)?.[0]
           ?.toUpperCase();
-        if (srcCode && expCode && srcCode !== expCode) {
+        const inferredFromLabel =
+          srcCode === 'PLANT 01'
+            ? 'clorsim_sim'
+            : srcCode === 'PLANT 02'
+              ? 'hcl_synth'
+              : srcCode === 'PLANT 03'
+                ? 'ech_gte'
+                : srcCode === 'PLANT 04'
+                  ? 'cms_plant'
+                  : srcCode === 'PLANT 05'
+                    ? 'mdi_plant'
+                    : parsed.sourceLabel === 'electrolyzer_plant'
+                      ? 'clorsim_sim'
+                      : parsed.sourceLabel === 'hcl_1a_plant'
+                        ? 'hcl_synth'
+                        : parsed.sourceLabel === 'ech_gte_plant'
+                          ? 'ech_gte'
+                          : parsed.sourceLabel === 'cms_plant'
+                            ? 'cms_plant'
+                            : parsed.sourceLabel === 'mdi_plant'
+                              ? 'mdi_plant'
+                              : '';
+        if (inferredFromLabel) {
+          if (
+            normPlant(inferredFromLabel) !== normPlant(activePlantId) ||
+            !isHandoffPlantAllowed(inferredFromLabel)
+          ) {
+            setFallbackState({ tab: null, handoff: false, ts: '' });
+            return;
+          }
+        } else if (srcCode && expCode && srcCode !== expCode) {
+          setFallbackState({ tab: null, handoff: false, ts: '' });
+          return;
+        } else if (!srcCode && !plantMeta.isSandbox) {
           setFallbackState({ tab: null, handoff: false, ts: '' });
           return;
         }
       }
+
       const ageMs = Date.now() - Number(parsed.timestamp || 0);
       if (parsed?.tab && ageMs >= 0 && ageMs < 15 * 60 * 1000) {
         setFallbackState({
@@ -108,22 +168,21 @@ function UnitEquipmentInner() {
           handoff: true,
           ts: String(parsed.timestamp || ''),
         });
-        if (parsed.equipTag) {
-          setAppliedBanner(`[${parsed.equipTag}] ${parsed.equipName || ''} 운전조건 자동 전달됨`);
-        }
       } else {
         setFallbackState({ tab: null, handoff: false, ts: '' });
       }
     } catch {
       setFallbackState({ tab: null, handoff: false, ts: '' });
     }
-  }, [searchParams, activePlantId, plantMeta.code]);
+  }, [searchParams, activePlantId, plantMeta.code, plantMeta.isSandbox, user]);
 
-  // 현재 선택된 공장(activePlantId)의 실시간 스트림·장치 조건 후보 목록 구성
+  // 현재 선택된 공장/시뮬레이터(activePlantId)의 실시간 스트림·장치 조건 후보 목록 구성
   useEffect(() => {
-    setAppliedBanner('');
-
     if (activePlantId === 'clorsim') {
+      if (!(isPlantAllowed('clorsim', user) || isPlantAllowed('clorsim_sim', user))) {
+        setCandidates([]);
+        return;
+      }
       const list: PlantBridgeCandidate[] = [];
       const findS = (sid: string) => balance.streams.find(s => s.id === sid);
 
@@ -137,6 +196,7 @@ function UnitEquipmentInner() {
           id: 'p1-p140',
           label: `[P-140] 정제 브라인 공급펌프 (Stream 104 · ${sBrine.total_kgh.toFixed(0)} kg/h)`,
           summary: `${tBrine.toFixed(1)}°C · ${pBrine} kG · Q=${qM3h.toFixed(1)} m³/h`,
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -168,6 +228,7 @@ function UnitEquipmentInner() {
           id: 'p1-e210',
           label: `[E-210] 습염소가스 1차 티타늄 냉각기 (Stream 217 · ${sCl2.total_kgh.toFixed(0)} kg/h)`,
           summary: `입구 ${tCl2.toFixed(1)}°C → 40.0°C · 냉각수(CW)`,
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -204,6 +265,7 @@ function UnitEquipmentInner() {
           id: 'p1-e220',
           label: `[E-220] 32% 가성소다 판형 냉각기 (Stream L1 · ${sNaoh.total_kgh.toFixed(0)} kg/h)`,
           summary: `입구 ${tNaoh.toFixed(1)}°C → 45.0°C · 판형(PHE)`,
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -242,6 +304,7 @@ function UnitEquipmentInner() {
           id: 'p1-pipe220',
           label: `[PIPE-220] 음극 수소가스 주배관 사이징 (Stream 220 · ${sH2.total_kgh.toFixed(0)} kg/h)`,
           summary: `${tH2.toFixed(1)}°C · ${pH2} kG · 기상 배관`,
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -264,7 +327,72 @@ function UnitEquipmentInner() {
       }
 
       setCandidates(list);
-      setSelectedCandidateId(list[0]?.id || '');
+      return;
+    }
+
+    if (activePlantId === 'classic_sim') {
+      const classicList: PlantBridgeCandidate[] = [];
+      if (typeof window !== 'undefined') {
+        try {
+          const raw = window.localStorage.getItem(CLASSIC_SAVE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw) as {
+              simDefs?: FlowNodeDef[];
+              flowEdges?: FlowEdgeDef[];
+              lastSolvedMeta?: {
+                result?: ReturnType<typeof createIdleFlowsheetResult>;
+              };
+            };
+            const simDefs = Array.isArray(parsed?.simDefs) ? parsed.simDefs : [];
+            const flowEdges = Array.isArray(parsed?.flowEdges) ? parsed.flowEdges : [];
+            if (simDefs.length > 0) {
+              const solved =
+                parsed?.lastSolvedMeta?.result &&
+                Array.isArray(parsed.lastSolvedMeta.result.streams) &&
+                Array.isArray(parsed.lastSolvedMeta.result.units)
+                  ? parsed.lastSolvedMeta.result
+                  : createIdleFlowsheetResult(simDefs, flowEdges);
+              const unitMap = new Map(solved.units.map(u => [u.nodeId, u]));
+              const seenTags = new Set<string>();
+              for (const def of simDefs) {
+                const tagKey = (def.tag || def.id || '').trim();
+                if (!tagKey || seenTags.has(tagKey)) continue;
+                const uRes = unitMap.get(def.id);
+                const rawPayload = buildChemProHandoffPayload(
+                  def,
+                  flowEdges,
+                  solved.streams,
+                  uRes,
+                  '현재 클래식 케이스'
+                );
+                if (!rawPayload) continue;
+                seenTags.add(tagKey);
+                const payload: ChemProSimHandoffPayload = {
+                  ...rawPayload,
+                  plantId: 'classic_sim',
+                };
+                const flowTxt = uRes?.inletMassKgH ? `${uRes.inletMassKgH.toFixed(0)} kg/h` : '-';
+                const tabKo = getTabKoLabel(payload.tab);
+                classicList.push({
+                  id: `classic-${def.id}`,
+                  label: `[${def.tag}] ${def.name} (${tabKo} · ${flowTxt})`,
+                  summary: `현재 클래식 케이스 · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
+                  group: 'case',
+                  payload,
+                });
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+      setCandidates(classicList);
+      return;
+    }
+
+    if (activePlantId !== 'new_builder' && !isPlantAllowed(activePlantId, user)) {
+      setCandidates([]);
       return;
     }
 
@@ -370,12 +498,16 @@ function UnitEquipmentInner() {
         const tagKey = (def.tag || def.id || '').trim();
         if (!tagKey || seenTags.has(tagKey)) continue;
         const uRes = unitMap.get(def.id);
+        const sourceLbl =
+          activePlantId === 'new_builder'
+            ? `현재 시뮬레이터 케이스 · ${sh.shortTabLabel || sh.title}`
+            : `${plantMeta.code} ${plantMeta.shortLabel} · ${sh.shortTabLabel || sh.title}`;
         const rawPayload = buildChemProHandoffPayload(
           def,
           sh.flowEdges,
           solved.streams,
           uRes,
-          `${plantMeta.code} ${plantMeta.shortLabel} · ${sh.shortTabLabel || sh.title}`
+          sourceLbl
         );
         if (!rawPayload) continue;
         seenTags.add(tagKey);
@@ -384,22 +516,12 @@ function UnitEquipmentInner() {
           plantId: activePlantId,
         };
         const flowTxt = uRes?.inletMassKgH ? `${uRes.inletMassKgH.toFixed(0)} kg/h` : '-';
-        const tabKo =
-          payload.tab === 'hx'
-            ? '열교환기'
-            : payload.tab === 'pump'
-              ? '펌프'
-              : payload.tab === 'column'
-                ? '탑/흡수/증류'
-                : payload.tab === 'vessel'
-                  ? '분리기/용기'
-                  : payload.tab === 'psv'
-                    ? '안전밸브'
-                    : '배관';
+        const tabKo = getTabKoLabel(payload.tab);
         extracted.push({
           id: `${sh.id}-${def.id}`,
           label: `[${def.tag}] ${def.name} (${tabKo} · ${flowTxt})`,
-          summary: `${sh.sectionCode || sh.id} · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
+          summary: `${activePlantId === 'new_builder' ? '현재 시뮬레이터 케이스' : (sh.sectionCode || sh.id)} · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
+          group: 'case',
           payload,
         });
       }
@@ -411,6 +533,7 @@ function UnitEquipmentInner() {
           id: 'mdi-aux-p101',
           label: '[P-101A/B] MDA/아닐린 순환·이송 펌프 (펌프 · 10,006 kg/h)',
           summary: '100 SEC · 정제 조 MDA/아닐린 (95°C · 0.5→3.8 barG)',
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -437,6 +560,7 @@ function UnitEquipmentInner() {
           id: 'mdi-aux-p302',
           label: '[P-302A/B] 회수 MCB 용매 이송펌프 (펌프 · 18,807 kg/h)',
           summary: '300 SEC · 모노클로로벤젠 MCB (68°C · -0.9→3.5 barG)',
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -463,6 +587,7 @@ function UnitEquipmentInner() {
           id: 'mdi-aux-psv201',
           label: '[PSV-201] 포스겐 반응계 긴급 안전밸브 (안전밸브 · API 526)',
           summary: '200 SEC · 포스겐/HCl 고압 가스계 (Set 4.5 barG · 145°C)',
+          group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
@@ -490,194 +615,64 @@ function UnitEquipmentInner() {
     }
 
     setCandidates(extracted);
-    setSelectedCandidateId(extracted[0]?.id || '');
-  }, [activePlantId, balance.streams, plantMeta.code, plantMeta.shortLabel]);
+  }, [activePlantId, balance.streams, plantMeta.code, plantMeta.shortLabel, user]);
 
-  const effectiveTab =
-    manualOverride?.tab || searchParams?.get('tab') || fallbackState.tab || 'hx';
-  const effectiveHandoff =
-    Boolean(manualOverride) || searchParams?.get('handoff') === '1' || fallbackState.handoff;
-  const effectiveTs =
-    manualOverride?.ts || searchParams?.get('ts') || fallbackState.ts;
+  const effectiveTab = searchParams?.get('tab') || fallbackState.tab || 'hx';
+  const effectiveHandoff = searchParams?.get('handoff') === '1' || fallbackState.handoff;
+  const effectiveTs = searchParams?.get('ts') || fallbackState.ts;
+
+  const postSyncToIframe = useCallback(() => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(
+      {
+        type: 'CHEMPRO_SET_PLANT',
+        plantId: activePlantId,
+        allowedPlants,
+        skipPresetLoad: effectiveHandoff,
+      },
+      '*'
+    );
+    win.postMessage(
+      {
+        type: 'CHEMPRO_SYNC_UNIT_CANDIDATES',
+        candidates,
+        allowedPlants,
+        activePlantId,
+      },
+      '*'
+    );
+    if (effectiveHandoff) {
+      win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
+    }
+  }, [activePlantId, allowedPlants, candidates, effectiveHandoff]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       const d = e?.data;
       if (!d || typeof d !== 'object') return;
       if (d.type === 'CHEMPRO_READY') {
-        iframeRef.current?.contentWindow?.postMessage(
-          { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, skipPresetLoad: effectiveHandoff },
-          '*'
-        );
-        if (effectiveHandoff) {
-          iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_APPLY_SIM_HANDOFF' },
-            '*'
-          );
-        }
+        postSyncToIframe();
       }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [activePlantId, effectiveHandoff, effectiveTs]);
+  }, [postSyncToIframe]);
 
-  const handleApplySelectedCandidate = () => {
-    const found = candidates.find(c => c.id === selectedCandidateId);
-    if (!found) return;
-    const nowTs = Date.now();
-    const nextPayload: ChemProSimHandoffPayload = {
-      ...found.payload,
-      plantId: found.payload.plantId || activePlantId,
-      timestamp: nowTs,
-    };
-    saveChemProHandoffPayload(nextPayload);
-    setManualOverride({ tab: nextPayload.tab, ts: String(nowTs) });
-    setAppliedBanner(`[${nextPayload.equipTag}] ${nextPayload.equipName} 조건이 계산기에 자동 입력되었습니다.`);
-    window.setTimeout(() => {
-      iframeRef.current?.contentWindow?.postMessage(
-        { type: 'CHEMPRO_APPLY_SIM_HANDOFF' },
-        '*'
-      );
-    }, 220);
-  };
-
-  const selectedCandidate = useMemo(
-    () => candidates.find(c => c.id === selectedCandidateId) ?? null,
-    [candidates, selectedCandidateId]
-  );
+  useEffect(() => {
+    postSyncToIframe();
+  }, [candidates, allowedPlants, activePlantId, postSyncToIframe]);
 
   const iframeSrc = useMemo(
     () =>
       `${BASE_PATH}/chempro/index.html?embed=1&standalone=1&plant=${encodeURIComponent(activePlantId)}&tab=${encodeURIComponent(effectiveTab)}${
         effectiveHandoff ? '&handoff=1' : ''
-      }${effectiveTs ? `&ts=${encodeURIComponent(effectiveTs)}` : ''}&v=20261118a`,
+      }${effectiveTs ? `&ts=${encodeURIComponent(effectiveTs)}` : ''}&v=20261118b`,
     [activePlantId, effectiveTab, effectiveHandoff, effectiveTs]
   );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', background: '#F6F7F2', overflow: 'hidden' }}>
-      {/* 활성 공장 스트림·장치 빠른 조건 불러오기 브리지 바 */}
-      {candidates.length > 0 && (
-        <div
-          style={{
-            padding: bridgeCollapsed ? '4px 14px' : '7px 14px',
-            background: '#F8FAFC',
-            borderBottom: '1px solid #CBD5E1',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            flexWrap: 'wrap',
-            flexShrink: 0,
-          }}
-        >
-          {bridgeCollapsed ? (
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
-              🔗 [{plantMeta.code} {plantMeta.shortLabel}] 공정 장치 조건 불러오기 바 접힘
-              {appliedBanner ? ` · ${appliedBanner}` : ''}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-              <span
-                style={{
-                  padding: '2px 7px',
-                  borderRadius: 5,
-                  background: plantMeta.accentSoftBg,
-                  border: `1px solid ${plantMeta.accentBorder}`,
-                  color: plantMeta.accent,
-                  fontSize: 10.5,
-                  fontWeight: 900,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                🔗 {plantMeta.code} 실시간 연동
-              </span>
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B', whiteSpace: 'nowrap' }}>
-                공정 장치 운전조건 불러오기:
-              </span>
-              <select
-                value={selectedCandidateId}
-                onChange={e => setSelectedCandidateId(e.target.value)}
-                style={{
-                  height: 29,
-                  minWidth: 280,
-                  maxWidth: 430,
-                  padding: '0 8px',
-                  borderRadius: 5,
-                  border: '1px solid #94A3B8',
-                  background: '#FFFFFF',
-                  color: '#0F172A',
-                  fontSize: 11,
-                  fontWeight: 800,
-                }}
-              >
-                {candidates.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleApplySelectedCandidate}
-                style={{
-                  height: 29,
-                  padding: '0 11px',
-                  borderRadius: 5,
-                  border: '1px solid #1E3A8A',
-                  background: '#1E3A8A',
-                  color: '#FFFFFF',
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                ⚡ 현재 계산기에 유량·온도·압력 자동입력
-              </button>
-              {selectedCandidate && (
-                <span style={{ fontSize: 10.5, color: '#475569', fontWeight: 600 }}>
-                  ({selectedCandidate.summary})
-                </span>
-              )}
-              {appliedBanner && (
-                <span
-                  style={{
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    background: '#ECFDF5',
-                    border: '1px solid #6EE7B7',
-                    color: '#065F46',
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                  }}
-                >
-                  ✓ {appliedBanner}
-                </span>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setBridgeCollapsed(v => !v)}
-            style={{
-              padding: '3px 8px',
-              borderRadius: 4,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#475569',
-              fontSize: 10,
-              fontWeight: 800,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {bridgeCollapsed ? '연동 바 펼치기 ▼' : '접기 ▲'}
-          </button>
-        </div>
-      )}
-
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         <iframe
           ref={iframeRef}

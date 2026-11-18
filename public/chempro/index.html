@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icon-512.png" />
   <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
-  <link rel="stylesheet" href="styles.css?v=20261111b" />
+  <link rel="stylesheet" href="styles.css?v=20261118b" />
 </head>
 <body class="mode-rigorous">
   <script>
@@ -160,6 +160,11 @@
           <div class="card-header">
             <div class="card-title"><span class="dot dot-coral"></span>고온/저온 유체 지정 및 열수지 수렴</div>
             <span class="card-badge">TEMA R/C/B · Bell-Delaware</span>
+          </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_hx">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_hx" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('hx')">열교환기 조건 불러오기</button>
           </div>
 
           <div class="fluid-selector-box">
@@ -543,6 +548,11 @@
             <div class="card-title"><span class="dot dot-cyan"></span>펌프 운전 유체 및 공정 경계조건</div>
             <span class="card-badge">API 610 / ANSI HI 9.6.7</span>
           </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_pump">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_pump" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('pump')">펌프 조건 불러오기</button>
+          </div>
 
           <div class="fluid-selector-box">
             <input type="text" class="fluid-search-input" placeholder="유체 검색 (예: 벤젠, 염산, MCB, 아닐린, ECH, DCH, 원유, 공정수)..." oninput="App.filterFluidSelect('pump_fluid', this.value)" />
@@ -710,6 +720,11 @@
           <div class="card-header">
             <div class="card-title"><span class="dot dot-emerald"></span>다성분 정류탑 단수·탑경 및 수력학 설계</div>
             <span class="card-badge">FUG · McCabe-Thiele · NRTL/Antoine</span>
+          </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_column">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_column" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('column')">컬럼·탑 조건 불러오기</button>
           </div>
 
           <div class="form-grid cols-2" style="display:none;">
@@ -1072,6 +1087,11 @@
             <div class="card-title"><span class="dot dot-amber"></span>배관 유체 지정 · 상상태 및 자유도 설정</div>
             <span class="card-badge">ASME B31.3 · API RP 14E</span>
           </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_piping">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_piping" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('piping')">배관 조건 불러오기</button>
+          </div>
 
           <div class="fluid-selector-box">
             <input type="text" class="fluid-search-input" placeholder="유체 검색..." oninput="App.filterFluidSelect('pipe_fluid', this.value)" />
@@ -1224,6 +1244,11 @@
             <div class="card-title"><span class="dot dot-cyan"></span>압력용기 · 기액분리기(KO Drum) 설계 조건</div>
             <span class="card-badge">ASME Sec. VIII Div. 1 · GPSA</span>
           </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_vessel">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_vessel" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('vessel')">압력용기·분리기 조건 불러오기</button>
+          </div>
 
           <div class="fluid-selector-box">
             <input type="text" class="fluid-search-input" placeholder="유체 검색..." oninput="App.filterVesselFluidSelects(this.value)" />
@@ -1358,6 +1383,11 @@
           <div class="card-header">
             <div class="card-title"><span class="dot dot-coral"></span>안전밸브(PSV) 방출 유체 및 비상 시나리오 설정</div>
             <span class="card-badge">API 520 / 521 / 526</span>
+          </div>
+          <div class="unit-case-sync-bar" id="unit_sync_bar_psv">
+            <span class="unit-case-sync-label">공정 조건 불러오기:</span>
+            <select id="unit_sync_psv" class="unit-case-sync-select"></select>
+            <button type="button" class="unit-case-sync-btn" onclick="App.applyPerTabUnitSync('psv')">안전밸브 조건 불러오기</button>
           </div>
 
           <div class="fluid-selector-box">
@@ -1557,12 +1587,12 @@
     </div>
   </div>
 
-  <script src="exceljs.min.js?v=20261118a"></script>
-  <script src="chem_db.js?v=20261118a"></script>
-  <script src="unified_kernel.js?v=20261118a"></script>
-  <script src="eng_solvers.js?v=20261118a"></script>
-  <script src="excel_exporter.js?v=20261118a"></script>
-  <script src="app.js?v=20261118a"></script>
+  <script src="exceljs.min.js?v=20261118b"></script>
+  <script src="chem_db.js?v=20261118b"></script>
+  <script src="unified_kernel.js?v=20261118b"></script>
+  <script src="eng_solvers.js?v=20261118b"></script>
+  <script src="excel_exporter.js?v=20261118b"></script>
+  <script src="app.js?v=20261118b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {

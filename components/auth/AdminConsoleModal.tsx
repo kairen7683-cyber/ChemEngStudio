@@ -181,15 +181,15 @@ export function HeaderUserControls() {
 
   const syncBadge = (() => {
     if (localDevBypass) {
-      return { text: '로컬 개발', bg: '#1E293B', color: '#94A3B8', border: '#334155' };
+      return { text: '로컬 개발', dot: '#64748B' };
     }
     if (syncStatus === 'saving') {
-      return { text: '⟳ 저장중', bg: '#1E3A8A', color: '#DBEAFE', border: '#3B82F6' };
+      return { text: '저장중', dot: '#60A5FA' };
     }
     if (syncStatus === 'error') {
-      return { text: '⚠ 동기화 재시도', bg: '#7F1D1D', color: '#FEE2E2', border: '#EF4444' };
+      return { text: '동기화 재시도', dot: '#EF4444' };
     }
-    return { text: '☁ 저장됨', bg: '#064E3B', color: '#A7F3D0', border: '#10B981' };
+    return { text: '저장됨', dot: '#10B981' };
   })();
 
   return (
@@ -200,18 +200,30 @@ export function HeaderUserControls() {
         onClick={() => void forceSyncNow()}
         title={syncError ? `동기화 오류: ${syncError}` : '클릭 시 현재 작업 상태를 서버에 즉시 저장합니다'}
         style={{
-          padding: '3px 7px',
+          padding: '3px 8px',
           borderRadius: 6,
-          border: `1px solid ${syncBadge.border}`,
-          background: syncBadge.bg,
-          color: syncBadge.color,
+          border: '1px solid #334155',
+          background: '#1E293B',
+          color: '#E2E8F0',
           fontSize: 10,
-          fontWeight: 800,
+          fontWeight: 700,
           cursor: 'pointer',
           whiteSpace: 'nowrap',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
         }}
       >
-        {syncBadge.text}
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: syncBadge.dot,
+            flexShrink: 0,
+          }}
+        />
+        <span>{syncBadge.text}</span>
       </button>
 
       <button
@@ -221,11 +233,11 @@ export function HeaderUserControls() {
         style={{
           padding: '3px 8px',
           borderRadius: 6,
-          border: '1px solid #334E68',
-          background: '#1A2F44',
-          color: '#F1F5F9',
+          border: '1px solid #334155',
+          background: '#1E293B',
+          color: '#E2E8F0',
           fontSize: 10.5,
-          fontWeight: 800,
+          fontWeight: 700,
           cursor: 'pointer',
           whiteSpace: 'nowrap',
         }}
@@ -242,16 +254,16 @@ export function HeaderUserControls() {
           style={{
             padding: '3px 8px',
             borderRadius: 6,
-            border: '1px solid #F59E0B',
-            background: '#78350F',
-            color: '#FEF3C7',
+            border: '1px solid #334155',
+            background: '#1E293B',
+            color: '#E2E8F0',
             fontSize: 10.5,
-            fontWeight: 800,
+            fontWeight: 700,
             cursor: 'pointer',
             whiteSpace: 'nowrap',
           }}
         >
-          관리자
+          계정관리
         </button>
       )}
 
@@ -263,9 +275,9 @@ export function HeaderUserControls() {
           style={{
             padding: '3px 7px',
             borderRadius: 6,
-            border: '1px solid #475569',
-            background: '#0F172A',
-            color: '#CBD5E1',
+            border: '1px solid #334155',
+            background: '#1E293B',
+            color: '#E2E8F0',
             fontSize: 10.2,
             fontWeight: 700,
             cursor: 'pointer',

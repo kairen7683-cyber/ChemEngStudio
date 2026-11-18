@@ -56,6 +56,21 @@ import {
   saveUiSwitchHandoff,
   setPreferredSimUiMode,
 } from '@/lib/simUiHandoff';
+import {
+  PENDING_CASE_LOAD_KEY,
+  LOAD_SAVED_CASE_EVENT,
+  OPEN_SHORTCUT_CALC_EVENT,
+  consumePendingCaseLoad,
+  getActiveCaseTitle,
+  setActiveCaseTitle,
+  notifyProjectsUpdated,
+  mapFlowUnitTypeToChemProTab,
+  type PendingCaseLoadPayload,
+} from '@/lib/caseManagerBridge';
+import {
+  buildChemProHandoffPayload,
+  saveChemProHandoffPayload,
+} from '@/lib/calculations/unitDesignHandoff';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import DistillationWorkbenchModal from '@/components/flowsheet/DistillationWorkbenchModal';
 import ComponentPropertySetupModal from '@/components/flowsheet/ComponentPropertySetupModal';
@@ -453,6 +468,7 @@ export default function ClassicSimulatorPage() {
   }));
   const [isDirty, setIsDirty] = useState(true);
   const skipDirtyRef = useRef(true);
+  const loadedPendingOnMountRef = useRef(false);
 
   useEffect(() => {
     const sync = () => {
@@ -468,49 +484,126 @@ export default function ClassicSimulatorPage() {
   // 로컬스토리지 복원 (절대 solveFlowsheet 자동 실행하지 않고 마지막 저장 상태 그대로 복원)
   useEffect(() => {
     try {
-      const rawAuto = localStorage.getItem(CLASSIC_AUTO_SAVE_KEY);
-      if (rawAuto) {
-        const parsed = JSON.parse(rawAuto);
-        if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
-          skipDirtyRef.current = true;
-          const restoredMethod = normalizePropertyMethod(parsed.thermoMethod);
-          const baseComps = Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
-            ? (parsed.activeComponents.filter((c: string) => SIM_COMPS.includes(c as SimCompKey)) as SimCompKey[])
-            : getPlantDefaultComponents('clorsim_sim');
-          const restoredComps = mergeFeedComponents(parsed.simDefs, baseComps);
-          setSimDefs(parsed.simDefs);
-          setFlowEdges(parsed.flowEdges);
-          setRfNodes(
-            parsed.simDefs.map((d: FlowNodeDef, i: number) => ({
-              id: d.id,
-              type: 'classicBlock',
-              position: parsed.positions?.[d.id] ?? { x: 80 + i * 170, y: 140 },
-              data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
-            }))
-          );
-          setThermoMethod(restoredMethod);
-          setActiveComponents(restoredComps);
+      let pending: PendingCaseLoadPayload | null = null;
+      const rawPendingStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+      if (rawPendingStr) {
+        try {
+          const peek = JSON.parse(rawPendingStr) as Partial<PendingCaseLoadPayload>;
           if (
-            parsed.lastSolvedMeta?.result &&
-            Array.isArray(parsed.lastSolvedMeta.result.streams) &&
-            Array.isArray(parsed.lastSolvedMeta.result.units)
+            peek &&
+            peek.uiMode === 'classic' &&
+            (!peek.targetPlantId || peek.targetPlantId === 'classic_sim')
           ) {
-            setSolvedMeta({
-              result: parsed.lastSolvedMeta.result,
-              elapsedMs: parsed.lastSolvedMeta.elapsedMs ?? 1,
-              lastRunTime: parsed.lastSolvedMeta.lastRunTime ?? '저장본 복원',
-            });
-            setIsDirty(Boolean(parsed.isDirty));
-          } else {
-            const idleRes = createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
+            pending = consumePendingCaseLoad('classic');
+          }
+        } catch {
+          pending = consumePendingCaseLoad('classic');
+        }
+      }
+
+      if (pending) {
+        if (pending.action === 'load_project' && pending.rawProject) {
+          const rawProj = pending.rawProject.state ?? pending.rawProject;
+          if (rawProj && Array.isArray(rawProj.simDefs) && Array.isArray(rawProj.flowEdges)) {
+            loadedPendingOnMountRef.current = true;
+            skipDirtyRef.current = true;
+            const restoredMethod = normalizePropertyMethod(rawProj.thermoMethod ?? rawProj.propertyMethod);
+            const baseComps =
+              Array.isArray(rawProj.activeComponents) && rawProj.activeComponents.length > 0
+                ? (rawProj.activeComponents.filter((c: string) => SIM_COMPS.includes(c as SimCompKey)) as SimCompKey[])
+                : getPlantDefaultComponents('classic_sim');
+            const restoredComps = mergeFeedComponents(rawProj.simDefs, baseComps);
+            setSimDefs(rawProj.simDefs);
+            setFlowEdges(rawProj.flowEdges);
+            setRfNodes(
+              rawProj.simDefs.map((d: FlowNodeDef, i: number) => ({
+                id: d.id,
+                type: 'classicBlock',
+                position: rawProj.positions?.[d.id] ?? { x: 80 + i * 170, y: 140 },
+                data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+              }))
+            );
+            setThermoMethod(restoredMethod);
+            setActiveComponents(restoredComps);
+            const idleRes = createIdleFlowsheetResult(rawProj.simDefs, rawProj.flowEdges, {
               propertyMethod: restoredMethod,
               activeComponents: restoredComps,
             });
             setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: '미실행 (▶ Run 대기)' });
             setIsDirty(true);
+            setSelectedId(rawProj.simDefs[0]?.id ?? null);
+            setSelectedKind('block');
+            setActiveCaseTitle(pending.caseName || pending.rawProject.name || null, 'classic_sim');
           }
-          setSelectedId(parsed.simDefs[0]?.id ?? null);
+        } else if (pending.action === 'new_blank') {
+          loadedPendingOnMountRef.current = true;
+          skipDirtyRef.current = true;
+          const defaultComps = getPlantDefaultComponents('classic_sim');
+          setSimDefs([]);
+          setRfNodes([]);
+          setFlowEdges([]);
+          setThermoMethod('AUTO');
+          setActiveComponents(defaultComps);
+          setSolvedMeta({
+            result: createIdleFlowsheetResult([], [], {
+              propertyMethod: 'AUTO',
+              activeComponents: defaultComps,
+            }),
+            elapsedMs: 0,
+            lastRunTime: '미실행 (▶ Run 대기)',
+          });
+          setIsDirty(true);
+          setSelectedId(null);
           setSelectedKind('block');
+          setActiveCaseTitle(null, 'classic_sim');
+        }
+      }
+
+      if (!loadedPendingOnMountRef.current) {
+        const rawAuto = localStorage.getItem(CLASSIC_AUTO_SAVE_KEY);
+        if (rawAuto) {
+          const parsed = JSON.parse(rawAuto);
+          if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
+            skipDirtyRef.current = true;
+            const restoredMethod = normalizePropertyMethod(parsed.thermoMethod);
+            const baseComps = Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
+              ? (parsed.activeComponents.filter((c: string) => SIM_COMPS.includes(c as SimCompKey)) as SimCompKey[])
+              : getPlantDefaultComponents('clorsim_sim');
+            const restoredComps = mergeFeedComponents(parsed.simDefs, baseComps);
+            setSimDefs(parsed.simDefs);
+            setFlowEdges(parsed.flowEdges);
+            setRfNodes(
+              parsed.simDefs.map((d: FlowNodeDef, i: number) => ({
+                id: d.id,
+                type: 'classicBlock',
+                position: parsed.positions?.[d.id] ?? { x: 80 + i * 170, y: 140 },
+                data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+              }))
+            );
+            setThermoMethod(restoredMethod);
+            setActiveComponents(restoredComps);
+            if (
+              parsed.lastSolvedMeta?.result &&
+              Array.isArray(parsed.lastSolvedMeta.result.streams) &&
+              Array.isArray(parsed.lastSolvedMeta.result.units)
+            ) {
+              setSolvedMeta({
+                result: parsed.lastSolvedMeta.result,
+                elapsedMs: parsed.lastSolvedMeta.elapsedMs ?? 1,
+                lastRunTime: parsed.lastSolvedMeta.lastRunTime ?? '저장본 복원',
+              });
+              setIsDirty(Boolean(parsed.isDirty));
+            } else {
+              const idleRes = createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
+                propertyMethod: restoredMethod,
+                activeComponents: restoredComps,
+              });
+              setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: '미실행 (▶ Run 대기)' });
+              setIsDirty(true);
+            }
+            setSelectedId(parsed.simDefs[0]?.id ?? null);
+            setSelectedKind('block');
+          }
         }
       }
       const rawProjs = localStorage.getItem(CLASSIC_PROJECTS_KEY);
@@ -648,6 +741,12 @@ export default function ClassicSimulatorPage() {
 
   // 모던 UI -> 클래식 UI 전환 시 실시간 플로우시트 인계 수신
   useEffect(() => {
+    if (loadedPendingOnMountRef.current) {
+      loadedPendingOnMountRef.current = false;
+      consumeUiSwitchHandoff();
+      setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
+      return;
+    }
     const handoff = consumeUiSwitchHandoff();
     if (!handoff || handoff.fromUi !== 'modern') return;
     const nextDefs = handoff.simDefs.map(d => ({ ...d, params: { ...d.params } }));
@@ -836,6 +935,7 @@ export default function ClassicSimulatorPage() {
       setBottomView('pfd');
       setSelectedKind('block');
       setSelectedId(nextDefs[0]?.id ?? null);
+      setActiveCaseTitle(null, 'classic_sim');
       setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
     },
     [rfInstance, runSimulation, tearMethod, thermoMethod]
@@ -1044,21 +1144,30 @@ export default function ClassicSimulatorPage() {
     setIsDirty(true);
     setSelectedKind('block');
     setSelectedId(nextDefs[0]?.id ?? null);
+    setActiveCaseTitle(null, 'classic_sim');
     setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
   };
 
   const clearBlank = () => {
     skipDirtyRef.current = true;
+    const defaultComps = getPlantDefaultComponents('classic_sim');
     setSimDefs([]);
     setRfNodes([]);
     setFlowEdges([]);
+    setThermoMethod('AUTO');
+    setActiveComponents(defaultComps);
     setSolvedMeta({
-      result: createIdleFlowsheetResult([], []),
+      result: createIdleFlowsheetResult([], [], {
+        propertyMethod: 'AUTO',
+        activeComponents: defaultComps,
+      }),
       elapsedMs: 0,
       lastRunTime: '미실행 (▶ Run 대기)',
     });
     setIsDirty(true);
+    setSelectedKind('block');
     setSelectedId(null);
+    setActiveCaseTitle(null, 'classic_sim');
   };
 
   const saveProject = () => {
@@ -1085,6 +1194,8 @@ export default function ClassicSimulatorPage() {
     } catch {
       /* ignore */
     }
+    setActiveCaseTitle(item.name, 'classic_sim');
+    notifyProjectsUpdated();
   };
 
   const loadSavedProject = (p: SavedClassicProject) => {
@@ -1118,10 +1229,12 @@ export default function ClassicSimulatorPage() {
     setSelectedKind('block');
     setSelectedId(p.simDefs[0]?.id ?? null);
     setShowProjectBar(false);
+    setActiveCaseTitle(p.name || null, 'classic_sim');
     setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
   };
 
   const deleteSavedProject = (id: string) => {
+    const deleted = savedProjects.find(p => p.id === id);
     const next = savedProjects.filter(p => p.id !== id);
     setSavedProjects(next);
     try {
@@ -1129,6 +1242,11 @@ export default function ClassicSimulatorPage() {
     } catch {
       /* ignore */
     }
+    const curTitle = getActiveCaseTitle();
+    if (deleted && curTitle && curTitle.plantId === 'classic_sim' && curTitle.title === deleted.name) {
+      setActiveCaseTitle(null, 'classic_sim');
+    }
+    notifyProjectsUpdated();
   };
 
   const exportJson = () => {
@@ -1178,6 +1296,107 @@ export default function ClassicSimulatorPage() {
   const selectedBlockRes = selectedBlock ? unitResultMap.get(selectedBlock.id) : undefined;
   const selectedEdge = selectedKind === 'stream' ? flowEdges.find(e => e.id === selectedId) ?? null : null;
   const selectedStreamRes = selectedEdge ? streamResultMap.get(selectedEdge.id) : undefined;
+
+  const applyPendingClassicRef = useRef<(pending: PendingCaseLoadPayload) => void>(() => {});
+  useEffect(() => {
+    applyPendingClassicRef.current = (pending: PendingCaseLoadPayload) => {
+      if (pending.action === 'load_project' && pending.rawProject) {
+        const raw = pending.rawProject.state ?? pending.rawProject;
+        if (raw && Array.isArray(raw.simDefs) && Array.isArray(raw.flowEdges)) {
+          loadSavedProject({
+            id: String(pending.rawProject.id || `loaded_${Date.now()}`),
+            name: String(pending.caseName || pending.rawProject.name || '불러온 케이스'),
+            savedAt: String(pending.rawProject.savedAt || ''),
+            simDefs: raw.simDefs,
+            positions: raw.positions ?? {},
+            flowEdges: raw.flowEdges,
+            thermoMethod: normalizePropertyMethod(raw.thermoMethod ?? raw.propertyMethod),
+            activeComponents: Array.isArray(raw.activeComponents)
+              ? raw.activeComponents.filter((c: unknown): c is SimCompKey => typeof c === 'string' && SIM_COMPS.includes(c as SimCompKey))
+              : undefined,
+          });
+          if (pending.caseName || pending.rawProject.name) {
+            setActiveCaseTitle(pending.caseName || pending.rawProject.name, 'classic_sim');
+          }
+        }
+      } else if (pending.action === 'new_blank') {
+        clearBlank();
+        setShowProjectBar(false);
+      }
+    };
+  });
+
+  useEffect(() => {
+    const onLoadSavedCase = (ev: Event) => {
+      const customEv = ev as CustomEvent<Partial<PendingCaseLoadPayload> | undefined>;
+      const detail = customEv?.detail;
+      if (detail && detail.action) {
+        if (detail.uiMode && detail.uiMode !== 'classic') return;
+        if (detail.targetPlantId && detail.targetPlantId !== 'classic_sim') return;
+        try {
+          const rawStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+          if (rawStr) {
+            const peek = JSON.parse(rawStr) as Partial<PendingCaseLoadPayload>;
+            if (!peek?.targetPlantId || peek.targetPlantId === 'classic_sim') {
+              consumePendingCaseLoad('classic');
+            }
+          }
+        } catch {
+          consumePendingCaseLoad('classic');
+        }
+        applyPendingClassicRef.current(detail as PendingCaseLoadPayload);
+        return;
+      }
+
+      try {
+        const rawStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+        if (!rawStr) return;
+        const peek = JSON.parse(rawStr) as Partial<PendingCaseLoadPayload>;
+        if (!peek || peek.uiMode !== 'classic') return;
+        if (peek.targetPlantId && peek.targetPlantId !== 'classic_sim') return;
+        const pending = consumePendingCaseLoad('classic');
+        if (pending) {
+          applyPendingClassicRef.current(pending);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener(LOAD_SAVED_CASE_EVENT, onLoadSavedCase);
+    return () => window.removeEventListener(LOAD_SAVED_CASE_EVENT, onLoadSavedCase);
+  }, []);
+
+  const openShortcutCalcRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    openShortcutCalcRef.current = () => {
+      if (!selectedBlock) {
+        router.push('/unit-equipment');
+        return;
+      }
+      const payload = buildChemProHandoffPayload(
+        selectedBlock,
+        flowEdges,
+        solved.streams,
+        selectedBlockRes,
+        '클래식 공정 시뮬레이터'
+      );
+      if (payload) {
+        saveChemProHandoffPayload({ ...payload, plantId: 'classic_sim' });
+        router.push(`/unit-equipment?tab=${encodeURIComponent(payload.tab)}&handoff=1&ts=${payload.timestamp}`);
+      } else {
+        router.push(`/unit-equipment?tab=${encodeURIComponent(mapFlowUnitTypeToChemProTab(selectedBlock.unitType))}`);
+      }
+    };
+  });
+
+  useEffect(() => {
+    const onOpenShortcutCalc = () => {
+      openShortcutCalcRef.current();
+    };
+    window.addEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
+    return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
+  }, []);
 
   const hasFeed = simDefs.some(d => d.unitType === 'feed');
   const convOverall = solved.convergence.overallStatus ?? (solved.convergence.converged ? 'converged' : 'failed');

@@ -5,6 +5,7 @@ import {
   emptySimFlows,
 } from './flowsheetSolver';
 import { CMS_REACTOR_CONFIG } from './cmsPlantHierarchy';
+import type { PlantId } from '@/lib/stores/balanceStore';
 
 export interface PlantUnitInletFeed {
   label: string;
@@ -15,6 +16,7 @@ export interface PlantUnitInletFeed {
 
 export interface PlantUnitTemplate {
   id: string;
+  plantId: PlantId;
   plantLabel: string;
   tag: string;
   name: string;
@@ -28,6 +30,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 1. 증류탑 / 정밀분리 (distillation) ─────────────────────────
   {
     id: 'tpl_c230_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'C-230A',
     name: '5N AHCl 다단 스트리핑 정제탑',
@@ -58,6 +61,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c310_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'C-310',
     name: '폐염산 진공 농축탑 (0.15 barA)',
@@ -87,6 +91,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c320_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'C-320',
     name: '가압 공비탈기 증류탑 (7.0 barA)',
@@ -116,6 +121,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c101_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'C-101',
     name: 'ECH 경질분·수분 공비탈수탑 (디캔터)',
@@ -148,6 +154,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c102_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'C-102',
     name: 'ECH 제품 진공 정제탑 (99.9% ECH)',
@@ -180,6 +187,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c201_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'C-201',
     name: '고압 무수 HCl 탈기 정제탑 (60단 · 17.5 kG)',
@@ -223,6 +231,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c202_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'C-202',
     name: '미반응 MC(CH₃Cl) 전용 회수탑 (50단 · MCL 비순환)',
@@ -266,6 +275,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c203_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'C-203',
     name: 'Azeo 공비·경질 분리탑 (30단 · 수분/경질 퍼지)',
@@ -299,6 +309,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c301_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'C-301',
     name: '고순도 MCL(CH₂Cl₂) 제품 정제탑 (80단 · 99.99 wt%)',
@@ -342,6 +353,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c302_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'C-302',
     name: '고순도 CFM(CHCl₃) 정제 및 CTC·헤비 분리탑 (120단 · 99.99 wt%)',
@@ -385,6 +397,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c101_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-101',
     name: '아닐린 감압 회수탑 (14단 · -0.88 kG)',
@@ -418,6 +431,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c301_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-301',
     name: '탈포스겐(COCl₂) 회수 스트리퍼 (14단 · 2.0 kG)',
@@ -451,6 +465,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c302_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-302',
     name: 'MCB 용매 진공 회수탑 (16단 · -0.90 kG)',
@@ -484,6 +499,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_c401_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'C-401',
     name: '고진공 Pure 4,4\'-MDI / PMDI 분별탑 (16단 · 20 mbar)',
@@ -519,6 +535,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 2. 흡수·제해·건조탑 (absorber) ─────────────────────────────
   {
     id: 'tpl_c110_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'C-110',
     name: '흑연 강하막 염산 흡수탑 (35% HCl)',
@@ -540,6 +557,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_t130_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'T-130',
     name: '테일가스 알칼리 제해탑 (20% NaOH)',
@@ -561,6 +579,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_t210_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'T-210',
     name: '98% 황산 초정밀 제습탑 (<1 ppm H₂O)',
@@ -582,6 +601,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_t410_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'T-410',
     name: 'Cl₂ 1차 수세·직접냉각탑',
@@ -597,6 +617,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_t430_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'T-430',
     name: 'Cl₂ 황산 건조탑 (98% H₂SO₄)',
@@ -612,6 +633,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_t280_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'T-280',
     name: '감압 탈염소탑 (Vacuum Dechlorinator)',
@@ -629,6 +651,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 3. 열교환기 / 냉각기 / 응축기 (hex) ─────────────────────────
   {
     id: 'tpl_e413_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'E-413',
     name: 'Cl₂ 1차 냉각기 (냉각수 CW)',
@@ -649,6 +672,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e423_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'E-423',
     name: 'Cl₂ 2차 냉수 칠러 (CHW 7°C)',
@@ -669,6 +693,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_d484_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'D-484',
     name: 'Cl₂ 프레온 냉동 액화기 (-35°C)',
@@ -689,6 +714,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e102_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'E-102',
     name: 'HCl 합성로 급냉 가스 냉각기',
@@ -709,6 +735,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e225_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'E-225',
     name: '무수염산 저온 응축기 (브라인 -20°C)',
@@ -729,6 +756,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_hx_h2',
+    plantId: 'green_h2',
     plantLabel: '수전해 참고 모델',
     tag: 'HX-H2',
     name: '수소 가스 쿨러 (CHW)',
@@ -749,6 +777,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e102_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'E-102',
     name: '글리세린 염소화 반응물 냉각기 (112→55°C)',
@@ -769,6 +798,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e301_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'E-301',
     name: '정제 ECH 제품 냉각기 (62→35°C)',
@@ -789,6 +819,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e101_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'E-101',
     name: '액화염소(Liq. Cl₂) 기화기 (25→95°C 기상 공급)',
@@ -809,6 +840,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_e102_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'E-102',
     name: '염소화 반응기 유출액 고압 냉각기 (120→58°C)',
@@ -831,6 +863,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 4. 펌프 (pump) ──────────────────────────────────────────────
   {
     id: 'tpl_p084_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'P-084A/B',
     name: '전해조 포화염수 공급펌프',
@@ -849,6 +882,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_p115_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'P-115',
     name: '35% 전자급 염산 제품 이송펌프',
@@ -867,6 +901,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_p315_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'P-315',
     name: '폐염산 가압 공비탑 이송펌프',
@@ -885,6 +920,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_p101_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'P-101',
     name: 'DCH 반응액 200 Sec 이송 펌프',
@@ -903,6 +939,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_p301_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'P-301',
     name: '고순도 99.9% ECH 제품 이송 펌프',
@@ -921,6 +958,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_p202_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'P-202',
     name: '회수 미반응 MC 고압 순환 펌프 (6.5→25.0 kG)',
@@ -941,6 +979,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 5. 압축기 / 블로워 (compressor) ─────────────────────────────
   {
     id: 'tpl_k471_elec',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'K-471',
     name: '건조 Cl₂ 가스 액화 압축기',
@@ -960,6 +999,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_comp_h2',
+    plantId: 'green_h2',
     plantLabel: '수전해 참고 모델',
     tag: 'COMP-H2',
     name: '고순도 수소 다단 압축기',
@@ -981,6 +1021,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 6. 반응기 (reactor) ─────────────────────────────────────────
   {
     id: 'tpl_r101_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'R-101',
     name: 'HCl 합성로 (Cl₂ + H₂ → 2HCl)',
@@ -1002,6 +1043,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r101_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'R-101',
     name: '글리세린 염소화 반응기 (DCH 합성)',
@@ -1023,6 +1065,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r201_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'R-201',
     name: 'DCH 비누화 고리화 반응기 (ECH 합성)',
@@ -1044,6 +1087,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r101_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'R-101',
     name: 'AIBN 개시 고압 액상 염소화 반응기 (24.0 kG · 120°C)',
@@ -1066,6 +1110,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r101_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-101',
     name: 'MDA 축합·전위 및 가성중화 반응기 (95°C · 2.5 kG)',
@@ -1087,6 +1132,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r201_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-201',
     name: '포스겐(COCl₂) 활성탄 고정층 합성 반응기 (90°C · 3.5 kG)',
@@ -1108,6 +1154,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_r202_mdi',
+    plantId: 'mdi_plant',
     plantLabel: 'PLANT 05 MDI 공정',
     tag: 'R-202',
     name: 'MDA 2단 연속 포스겐화 반응기 (145°C · MCB 용매)',
@@ -1131,6 +1178,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 7. 전해조 (electrolyzer) ────────────────────────────────────
   {
     id: 'tpl_elec_100',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'ELEC-100',
     name: '이온교환막 식염전해조 (32% NaOH)',
@@ -1152,6 +1200,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_pem_h2',
+    plantId: 'green_h2',
     plantLabel: '수전해 참고 모델',
     tag: 'WE-101',
     name: 'PEM 수전해 스택 (그린수소)',
@@ -1175,6 +1224,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 8. 증발관 (evaporator) ──────────────────────────────────────
   {
     id: 'tpl_evap_300',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'EVAP-300',
     name: '가성소다 3중효용 강하막 농축관 (32→50%)',
@@ -1195,6 +1245,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 9. 기액 분리기 (separator) ──────────────────────────────────
   {
     id: 'tpl_flash_cl2',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'V-485',
     name: '액화염소 기액 분리기',
@@ -1214,6 +1265,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_flash_hcl',
+    plantId: 'hcl_synth',
     plantLabel: 'PLANT 02 1A 염산·회수',
     tag: 'SP-105',
     name: '합성 HCl 급냉 기액 분리기',
@@ -1233,6 +1285,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_v102_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'V-102',
     name: '염소화 반응 배가스 기액 분리기',
@@ -1252,6 +1305,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_v202_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'V-202',
     name: 'ECH/염수 유수분리기 (Decanter)',
@@ -1273,6 +1327,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   // ── 10. 원료 공급 (feed) ────────────────────────────────────────
   {
     id: 'tpl_feed_brine',
+    plantId: 'clorsim_sim',
     plantLabel: 'PLANT 01 전해 시뮬레이터',
     tag: 'FEED-BRINE',
     name: '포화 정제염수 (25.5 wt% NaCl)',
@@ -1286,6 +1341,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_gly_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'FEED-GLY',
     name: '정제 글리세린 원료 (Glycerol)',
@@ -1299,6 +1355,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_ahcl_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'FEED-AHCL',
     name: '무수염산(AHCl) 반응 가스 원료',
@@ -1312,6 +1369,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_naoh_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'FEED-NAOH',
     name: '25 wt% 가성소다(NaOH) 비누화 수용액',
@@ -1325,6 +1383,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_ech',
+    plantId: 'ech_gte',
     plantLabel: 'PLANT 03 바이오 ECH',
     tag: 'FEED-CRUDE-ECH',
     name: '조 ECH 유기층 원료 (ECH/DCP/DCH/H₂O)',
@@ -1338,6 +1397,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_cl2_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'FEED-LIQ-CL2',
     name: '액화염소(Liq. Cl₂) 원료 공급 (220 T/D)',
@@ -1351,6 +1411,7 @@ export const PLANT_UNIT_TEMPLATES: PlantUnitTemplate[] = [
   },
   {
     id: 'tpl_feed_mc_cms',
+    plantId: 'cms_plant',
     plantLabel: 'PLANT 04 클로로메탄(CMS)',
     tag: 'FEED-MC',
     name: '신규 메틸클로라이드(CH₃Cl) 원료 공급',

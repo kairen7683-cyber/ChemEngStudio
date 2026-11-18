@@ -84,13 +84,24 @@ import {
 } from '@/lib/calculations/mdiPlantHierarchy';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
-import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import {
   consumeUiSwitchHandoff,
   saveUiSwitchHandoff,
   setPreferredSimUiMode,
 } from '@/lib/simUiHandoff';
+import {
+  PENDING_CASE_LOAD_KEY,
+  LOAD_SAVED_CASE_EVENT,
+  OPEN_SHORTCUT_CALC_EVENT,
+  consumePendingCaseLoad,
+  getActiveCaseTitle,
+  setActiveCaseTitle,
+  notifyProjectsUpdated,
+  mapFlowUnitTypeToChemProTab,
+  type PendingCaseLoadPayload,
+} from '@/lib/caseManagerBridge';
 import {
   getUnitDesignRouteInfo,
   buildChemProHandoffPayload,
@@ -1944,6 +1955,17 @@ export function FlowsheetWorkspace({
   const isCmsMode = workspaceMode === 'cms_plant';
   const isMdiMode = workspaceMode === 'mdi_plant';
   const isPlantSimMode = isElectrolyzerMode || isHcl1AMode || isEchGteMode || isCmsMode || isMdiMode;
+  const workspacePlantId: PlantId = isElectrolyzerMode
+    ? 'clorsim_sim'
+    : isHcl1AMode
+      ? 'hcl_synth'
+      : isEchGteMode
+        ? 'ech_gte'
+        : isCmsMode
+          ? 'cms_plant'
+          : isMdiMode
+            ? 'mdi_plant'
+            : 'new_builder';
   const AUTO_SAVE_KEY = isElectrolyzerMode
     ? PLANT02_AUTO_SAVE_KEY
     : isHcl1AMode
@@ -2576,9 +2598,12 @@ export function FlowsheetWorkspace({
       }
       setSelectedNodeId(defaultSelectedNodeId);
       setSelectedEdgeId(null);
+      if (resetToFactory) {
+        setActiveCaseTitle(null, workspacePlantId);
+      }
       setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
     },
-    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isEchGteMode, isHcl1AMode, isMdiMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta]
+    [activeComponents, activeSheetId, defaultModePresetId, defaultSelectedNodeId, extractCurrentPositions, flowEdges, hierarchySheets, isCmsMode, isEchGteMode, isHcl1AMode, isMdiMode, isPlantSimMode, isSimDirty, propertyMethod, rfInstance, rfNodes, simDefs, solvedMeta, workspacePlantId]
   );
 
   // 사용자가 마스터 도면에 새로 추가한 커스텀 블록에도 내부 세부 시트를 생성해 진입할 수 있게 지원
@@ -2694,123 +2719,275 @@ export function FlowsheetWorkspace({
     let alive = true;
     let restoredSheetId = 'master';
     let hadSavedSolved = false;
+    let skipBaselineOverride = false;
     let savedNodeCount = initialSheets.master.simDefs.length;
     try {
-      const handoff = workspaceMode === 'new_plant_builder' ? consumeUiSwitchHandoff() : null;
-      if (handoff && handoff.fromUi === 'classic') {
-        skipNextDirtyRef.current = true;
-        const nextMethod: SimPropertyMethod = handoff.thermoMethod ?? 'AUTO';
-        const baseComps =
-          Array.isArray(handoff.activeComponents) && handoff.activeComponents.length > 0
-            ? (handoff.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
-            : getPlantDefaultComponents(workspaceMode);
-        const restoredComps = mergeSheetFeedComponents(handoff.simDefs, baseComps);
-        setPropertyMethod(nextMethod);
-        setActiveComponents(restoredComps);
-        setPresetId('blank');
-        setSimDefs(handoff.simDefs);
-        setRfNodes(
-          handoff.simDefs.map((d, idx) => ({
-            id: d.id,
-            type: 'flowUnit',
-            position: handoff.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
-            data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
-          }))
-        );
-        setFlowEdges(handoff.flowEdges);
-        setSolvedMeta({
-          result: createIdleFlowsheetResult(handoff.simDefs, handoff.flowEdges, {
-            propertyMethod: nextMethod,
-            activeComponents: restoredComps,
-          }),
-          elapsedMs: 0,
-          runCount: 0,
-          lastRunTime: '클래식 UI에서 인계됨 (▶ RUN 대기)',
-        });
-        setIsSimDirty(true);
-        setSelectedNodeId(handoff.simDefs[0]?.id ?? null);
-        setHydrated(true);
-        return () => {
-          alive = false;
-        };
+      let pending: PendingCaseLoadPayload | null = null;
+      const rawPendingStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+      if (rawPendingStr) {
+        try {
+          const peek = JSON.parse(rawPendingStr) as Partial<PendingCaseLoadPayload>;
+          const normTarget = peek?.targetPlantId === 'clorsim' ? 'clorsim_sim' : peek?.targetPlantId;
+          if (
+            peek &&
+            peek.uiMode === 'modern' &&
+            (!normTarget || normTarget === workspacePlantId || workspacePlantId === 'new_builder')
+          ) {
+            pending = consumePendingCaseLoad('modern');
+          }
+        } catch {
+          pending = consumePendingCaseLoad('modern');
+        }
       }
-      const raw = localStorage.getItem(AUTO_SAVE_KEY);
-      if (raw) {
-        const parsed: SavedFlowsheetState = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
-          savedNodeCount = parsed.simDefs.length;
+
+      if (pending) {
+        skipBaselineOverride = true;
+        if (pending.action === 'load_project' && pending.rawProject?.state) {
+          const parsed: SavedFlowsheetState = pending.rawProject.state;
+          if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
+            savedNodeCount = parsed.simDefs.length;
+            skipNextDirtyRef.current = true;
+            const restoredMethod: SimPropertyMethod =
+              parsed.propertyMethod === 'ENRTL' ||
+              parsed.propertyMethod === 'NRTL' ||
+              parsed.propertyMethod === 'PR' ||
+              parsed.propertyMethod === 'SRK' ||
+              parsed.propertyMethod === 'AUTO'
+                ? parsed.propertyMethod
+                : defaultModePropertyMethod;
+            const baseComps =
+              Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
+                ? (parsed.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
+                : getPlantDefaultComponents(workspaceMode);
+            const restoredComps = mergeSheetFeedComponents(parsed.simDefs, baseComps);
+            restoredSheetId = parsed.activeSheetId || 'master';
+            setPropertyMethod(restoredMethod);
+            setActiveComponents(restoredComps);
+            setPresetId(parsed.presetId || defaultModePresetId);
+            if (parsed.hierarchySheets && Object.keys(parsed.hierarchySheets).length > 0) {
+              setHierarchySheets(parsed.hierarchySheets);
+            } else if (!isPlantSimMode) {
+              setHierarchySheets({
+                master: {
+                  id: 'master',
+                  sectionCode: 'NEW-PLANT',
+                  shortTabLabel: '🏗 신규공장 빈 캔버스',
+                  title: '공정 시뮬레이터',
+                  subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
+                  parentMasterNodeIds: [],
+                  simDefs: parsed.simDefs,
+                  positions: parsed.positions ?? {},
+                  flowEdges: parsed.flowEdges,
+                },
+              });
+            }
+            setActiveSheetId(restoredSheetId);
+            if (typeof parsed.boundarySyncEnabled === 'boolean') {
+              setBoundarySyncEnabled(parsed.boundarySyncEnabled);
+            }
+            setBoundarySyncBanner([]);
+            setSimDefs(parsed.simDefs);
+            setRfNodes(
+              parsed.simDefs.map((d, idx) => ({
+                id: d.id,
+                type: 'flowUnit',
+                position: parsed.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
+                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+              }))
+            );
+            setFlowEdges(parsed.flowEdges);
+
+            const savedMetaCandidate =
+              parsed.lastSolvedMeta?.result &&
+              Array.isArray(parsed.lastSolvedMeta.result.streams) &&
+              (!parsed.lastSolvedMeta.solvedSheetId || parsed.lastSolvedMeta.solvedSheetId === restoredSheetId)
+                ? parsed.lastSolvedMeta
+                : parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta;
+
+            if (savedMetaCandidate?.result && !savedMetaCandidate.result.convergence?.isIdle) {
+              hadSavedSolved = true;
+              setSolvedMeta({
+                result: savedMetaCandidate.result,
+                elapsedMs: savedMetaCandidate.elapsedMs ?? 1,
+                runCount: Math.max(1, savedMetaCandidate.runCount ?? 1),
+                lastRunTime: savedMetaCandidate.lastRunTime || parsed.savedAt || '저장 케이스 복원',
+              });
+              setIsSimDirty(Boolean(parsed.isSimDirty));
+            } else {
+              setSolvedMeta({
+                result: createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
+                  propertyMethod: restoredMethod,
+                  activeComponents: restoredComps,
+                }),
+                elapsedMs: 0,
+                runCount: 0,
+                lastRunTime: '미실행 (▶ RUN 대기)',
+              });
+              setIsSimDirty(true);
+            }
+            setSelectedNodeId(parsed.simDefs[0]?.id ?? null);
+            setSelectedEdgeId(null);
+            setLastSavedTime(parsed.savedAt || '저장 케이스 불러옴');
+            setActiveCaseTitle(pending.caseName || pending.rawProject.name || null, workspacePlantId);
+          }
+        } else if (pending.action === 'new_blank') {
+          savedNodeCount = 0;
           skipNextDirtyRef.current = true;
-          const restoredMethod: SimPropertyMethod =
-            parsed.propertyMethod === 'ENRTL' ||
-            parsed.propertyMethod === 'NRTL' ||
-            parsed.propertyMethod === 'PR' ||
-            parsed.propertyMethod === 'SRK' ||
-            parsed.propertyMethod === 'AUTO'
-              ? parsed.propertyMethod
-              : defaultModePropertyMethod;
+          const defaultComps = getPlantDefaultComponents(workspaceMode);
+          setPropertyMethod(defaultModePropertyMethod);
+          setActiveComponents(defaultComps);
+          setPresetId('blank');
+          setActiveSheetId('master');
+          setBoundarySyncBanner([]);
+          if (!isPlantSimMode) {
+            setHierarchySheets({
+              master: {
+                id: 'master',
+                sectionCode: 'NEW-PLANT',
+                shortTabLabel: '🏗 신규공장 빈 캔버스',
+                title: '공정 시뮬레이터',
+                subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
+                parentMasterNodeIds: [],
+                simDefs: [],
+                positions: {},
+                flowEdges: [],
+              },
+            });
+          }
+          setSimDefs([]);
+          setRfNodes([]);
+          setFlowEdges([]);
+          setSolvedMeta({
+            result: createIdleFlowsheetResult([], [], {
+              propertyMethod: defaultModePropertyMethod,
+              activeComponents: defaultComps,
+            }),
+            elapsedMs: 0,
+            runCount: 0,
+            lastRunTime: '미실행 (▶ RUN 대기)',
+          });
+          setIsSimDirty(true);
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+          setActiveCaseTitle(null, workspacePlantId);
+        }
+      } else {
+        const handoff = workspaceMode === 'new_plant_builder' ? consumeUiSwitchHandoff() : null;
+        if (handoff && handoff.fromUi === 'classic') {
+          skipNextDirtyRef.current = true;
+          const nextMethod: SimPropertyMethod = handoff.thermoMethod ?? 'AUTO';
           const baseComps =
-            Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
-              ? (parsed.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
+            Array.isArray(handoff.activeComponents) && handoff.activeComponents.length > 0
+              ? (handoff.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
               : getPlantDefaultComponents(workspaceMode);
-          const restoredComps = mergeSheetFeedComponents(parsed.simDefs, baseComps);
-          restoredSheetId = parsed.activeSheetId || 'master';
-          setPropertyMethod(restoredMethod);
+          const restoredComps = mergeSheetFeedComponents(handoff.simDefs, baseComps);
+          setPropertyMethod(nextMethod);
           setActiveComponents(restoredComps);
-          setPresetId(parsed.presetId || defaultModePresetId);
-          if (parsed.hierarchySheets && Object.keys(parsed.hierarchySheets).length > 0) {
-            setHierarchySheets(parsed.hierarchySheets);
-          }
-          if (parsed.activeSheetId) {
-            setActiveSheetId(parsed.activeSheetId);
-          }
-          if (typeof parsed.boundarySyncEnabled === 'boolean') {
-            setBoundarySyncEnabled(parsed.boundarySyncEnabled);
-          }
-          setSimDefs(parsed.simDefs);
+          setPresetId('blank');
+          setSimDefs(handoff.simDefs);
           setRfNodes(
-            parsed.simDefs.map((d, idx) => ({
+            handoff.simDefs.map((d, idx) => ({
               id: d.id,
               type: 'flowUnit',
-              position: parsed.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
+              position: handoff.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
               data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
             }))
           );
-          setFlowEdges(parsed.flowEdges);
+          setFlowEdges(handoff.flowEdges);
+          setSolvedMeta({
+            result: createIdleFlowsheetResult(handoff.simDefs, handoff.flowEdges, {
+              propertyMethod: nextMethod,
+              activeComponents: restoredComps,
+            }),
+            elapsedMs: 0,
+            runCount: 0,
+            lastRunTime: '클래식 UI에서 인계됨 (▶ RUN 대기)',
+          });
+          setIsSimDirty(true);
+          setSelectedNodeId(handoff.simDefs[0]?.id ?? null);
+          setHydrated(true);
+          return () => {
+            alive = false;
+          };
+        }
+        const raw = localStorage.getItem(AUTO_SAVE_KEY);
+        if (raw) {
+          const parsed: SavedFlowsheetState = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.simDefs) && Array.isArray(parsed.flowEdges)) {
+            savedNodeCount = parsed.simDefs.length;
+            skipNextDirtyRef.current = true;
+            const restoredMethod: SimPropertyMethod =
+              parsed.propertyMethod === 'ENRTL' ||
+              parsed.propertyMethod === 'NRTL' ||
+              parsed.propertyMethod === 'PR' ||
+              parsed.propertyMethod === 'SRK' ||
+              parsed.propertyMethod === 'AUTO'
+                ? parsed.propertyMethod
+                : defaultModePropertyMethod;
+            const baseComps =
+              Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
+                ? (parsed.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
+                : getPlantDefaultComponents(workspaceMode);
+            const restoredComps = mergeSheetFeedComponents(parsed.simDefs, baseComps);
+            restoredSheetId = parsed.activeSheetId || 'master';
+            setPropertyMethod(restoredMethod);
+            setActiveComponents(restoredComps);
+            setPresetId(parsed.presetId || defaultModePresetId);
+            if (parsed.hierarchySheets && Object.keys(parsed.hierarchySheets).length > 0) {
+              setHierarchySheets(parsed.hierarchySheets);
+            }
+            if (parsed.activeSheetId) {
+              setActiveSheetId(parsed.activeSheetId);
+            }
+            if (typeof parsed.boundarySyncEnabled === 'boolean') {
+              setBoundarySyncEnabled(parsed.boundarySyncEnabled);
+            }
+            setSimDefs(parsed.simDefs);
+            setRfNodes(
+              parsed.simDefs.map((d, idx) => ({
+                id: d.id,
+                type: 'flowUnit',
+                position: parsed.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
+                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+              }))
+            );
+            setFlowEdges(parsed.flowEdges);
 
-          const savedMetaCandidate =
-            parsed.lastSolvedMeta?.result &&
-            Array.isArray(parsed.lastSolvedMeta.result.streams) &&
-            (!parsed.lastSolvedMeta.solvedSheetId || parsed.lastSolvedMeta.solvedSheetId === restoredSheetId)
-              ? parsed.lastSolvedMeta
-              : parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta;
+            const savedMetaCandidate =
+              parsed.lastSolvedMeta?.result &&
+              Array.isArray(parsed.lastSolvedMeta.result.streams) &&
+              (!parsed.lastSolvedMeta.solvedSheetId || parsed.lastSolvedMeta.solvedSheetId === restoredSheetId)
+                ? parsed.lastSolvedMeta
+                : parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta;
 
-          if (savedMetaCandidate?.result && !savedMetaCandidate.result.convergence?.isIdle) {
-            hadSavedSolved = true;
-            setSolvedMeta({
-              result: savedMetaCandidate.result,
-              elapsedMs: savedMetaCandidate.elapsedMs ?? 1,
-              runCount: Math.max(1, savedMetaCandidate.runCount ?? 1),
-              lastRunTime: savedMetaCandidate.lastRunTime || parsed.savedAt || '저장본 복원',
-            });
-            setIsSimDirty(Boolean(parsed.isSimDirty));
-          } else {
-            setSolvedMeta({
-              result: createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
-                propertyMethod: restoredMethod,
-                activeComponents: restoredComps,
-              }),
-              elapsedMs: 0,
-              runCount: 0,
-              lastRunTime: '미실행 (▶ RUN 대기)',
-            });
-            setIsSimDirty(true);
+            if (savedMetaCandidate?.result && !savedMetaCandidate.result.convergence?.isIdle) {
+              hadSavedSolved = true;
+              setSolvedMeta({
+                result: savedMetaCandidate.result,
+                elapsedMs: savedMetaCandidate.elapsedMs ?? 1,
+                runCount: Math.max(1, savedMetaCandidate.runCount ?? 1),
+                lastRunTime: savedMetaCandidate.lastRunTime || parsed.savedAt || '저장본 복원',
+              });
+              setIsSimDirty(Boolean(parsed.isSimDirty));
+            } else {
+              setSolvedMeta({
+                result: createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
+                  propertyMethod: restoredMethod,
+                  activeComponents: restoredComps,
+                }),
+                elapsedMs: 0,
+                runCount: 0,
+                lastRunTime: '미실행 (▶ RUN 대기)',
+              });
+              setIsSimDirty(true);
+            }
+            setSelectedNodeId(
+              parsed.simDefs.find(x => x.id === defaultSelectedNodeId)?.id ??
+                parsed.simDefs[0]?.id ??
+                null
+            );
+            setLastSavedTime(parsed.savedAt || '복원됨');
           }
-          setSelectedNodeId(
-            parsed.simDefs.find(x => x.id === defaultSelectedNodeId)?.id ??
-              parsed.simDefs[0]?.id ??
-              null
-          );
-          setLastSavedTime(parsed.savedAt || '복원됨');
         }
       }
       const rawSlots = localStorage.getItem(SLOTS_SAVE_KEY);
@@ -2833,6 +3010,7 @@ export function FlowsheetWorkspace({
     loadConvergedBaselines().then(bundle => {
       if (!alive || !bundle) return;
       convergedBaselinesRef.current = bundle;
+      if (skipBaselineOverride) return;
       const pKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi' | null = isHcl1AMode
         ? 'hcl1A'
         : isEchGteMode
@@ -2893,7 +3071,7 @@ export function FlowsheetWorkspace({
     return () => {
       alive = false;
     };
-  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, isMdiMode, workspaceMode]);
+  }, [AUTO_SAVE_KEY, PROJECTS_SAVE_KEY, SLOTS_SAVE_KEY, defaultModePresetId, defaultModePropertyMethod, defaultSelectedNodeId, initialSheets.master.simDefs.length, isCmsMode, isEchGteMode, isElectrolyzerMode, isHcl1AMode, isMdiMode, isPlantSimMode, workspaceMode, workspacePlantId]);
 
   const switchToClassicUi = useCallback(() => {
     const positions = extractCurrentPositions(rfNodes);
@@ -3785,10 +3963,13 @@ export function FlowsheetWorkspace({
     try {
       localStorage.setItem(PROJECTS_SAVE_KEY, JSON.stringify(next));
     } catch { /* ignore */ }
+    setActiveCaseTitle(item.name, workspacePlantId);
+    notifyProjectsUpdated();
   };
 
   const overwriteNamedProject = (projId: string) => {
     const nowStr = new Date().toLocaleString('ko-KR', { hour12: false });
+    const targetProj = namedProjects.find(p => p.id === projId);
     const next = namedProjects.map(p =>
       p.id === projId
         ? {
@@ -3804,14 +3985,24 @@ export function FlowsheetWorkspace({
     try {
       localStorage.setItem(PROJECTS_SAVE_KEY, JSON.stringify(next));
     } catch { /* ignore */ }
+    if (targetProj) {
+      setActiveCaseTitle(targetProj.name, workspacePlantId);
+    }
+    notifyProjectsUpdated();
   };
 
   const deleteNamedProject = (projId: string) => {
+    const deletedProj = namedProjects.find(p => p.id === projId);
     const next = namedProjects.filter(p => p.id !== projId);
     setNamedProjects(next);
     try {
       localStorage.setItem(PROJECTS_SAVE_KEY, JSON.stringify(next));
     } catch { /* ignore */ }
+    const curTitle = getActiveCaseTitle();
+    if (deletedProj && curTitle && curTitle.plantId === workspacePlantId && curTitle.title === deletedProj.name) {
+      setActiveCaseTitle(null, workspacePlantId);
+    }
+    notifyProjectsUpdated();
   };
 
   const loadFromStateObject = (st: SavedFlowsheetState) => {
@@ -3834,6 +4025,15 @@ export function FlowsheetWorkspace({
     setPresetId(st.presetId || 'custom');
     if (st.hierarchySheets && Object.keys(st.hierarchySheets).length > 0) {
       setHierarchySheets(st.hierarchySheets);
+    } else if (!isPlantSimMode) {
+      setHierarchySheets({
+        master: {
+          ...initialSheets.master,
+          simDefs: st.simDefs,
+          positions: st.positions ?? {},
+          flowEdges: st.flowEdges,
+        },
+      });
     }
     setActiveSheetId(st.activeSheetId || 'master');
     if (typeof st.boundarySyncEnabled === 'boolean') {
@@ -4054,6 +4254,7 @@ export function FlowsheetWorkspace({
     }
     setSelectedNodeId(p.nodes[0]?.id ?? null);
     setSelectedEdgeId(null);
+    setActiveCaseTitle(null, workspacePlantId);
     setTimeout(() => rfInstance?.fitView({ padding: 0.16, duration: 240 }), 60);
   };
 
@@ -4150,6 +4351,7 @@ export function FlowsheetWorkspace({
     setSelectedNodeId(nextDefs[0]?.id ?? null);
     setSelectedEdgeId(null);
     setShowStorageBar(false);
+    setActiveCaseTitle(null, workspacePlantId);
     setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
   };
 
@@ -4157,6 +4359,17 @@ export function FlowsheetWorkspace({
     skipNextDirtyRef.current = true;
     setPresetId('blank');
     setBoundarySyncBanner([]);
+    if (!isPlantSimMode) {
+      setHierarchySheets({
+        master: {
+          ...initialSheets.master,
+          simDefs: [],
+          positions: {},
+          flowEdges: [],
+        },
+      });
+      setActiveSheetId('master');
+    }
     setSimDefs([]);
     setRfNodes([]);
     setFlowEdges([]);
@@ -4169,6 +4382,7 @@ export function FlowsheetWorkspace({
     setIsSimDirty(true);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setActiveCaseTitle(null, workspacePlantId);
   };
 
   // ── 명시적 [▶ RUN] 수렴 스냅샷 결과 ─────────────────────────
@@ -4844,7 +5058,7 @@ export function FlowsheetWorkspace({
         sourceLabel
       );
       if (payload) {
-        saveChemProHandoffPayload(payload);
+        saveChemProHandoffPayload({ ...payload, plantId: workspacePlantId });
         router.push(`/unit-equipment?tab=${encodeURIComponent(payload.tab)}&handoff=1&ts=${payload.timestamp}`);
       } else if (targetRoute.chemproTab) {
         router.push(`/unit-equipment?tab=${encodeURIComponent(targetRoute.chemproTab)}`);
@@ -4886,6 +5100,7 @@ export function FlowsheetWorkspace({
     isCmsMode,
     isMdiMode,
     activeSheetId,
+    workspacePlantId,
     flowEdges,
     solved.streams,
     router,
@@ -4894,6 +5109,138 @@ export function FlowsheetWorkspace({
     setActivePlantId,
     requestSimSheet,
   ]);
+
+  const handlePendingCaseRef = useRef<(pending: PendingCaseLoadPayload) => void>(() => {});
+  useEffect(() => {
+    handlePendingCaseRef.current = (pending: PendingCaseLoadPayload) => {
+      if (pending.action === 'load_project' && pending.rawProject?.state) {
+        loadFromStateObject(pending.rawProject.state as SavedFlowsheetState);
+        setActiveCaseTitle(pending.caseName || pending.rawProject.name || null, workspacePlantId);
+        setShowStorageBar(false);
+        setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
+      } else if (pending.action === 'new_blank') {
+        skipNextDirtyRef.current = true;
+        const defaultComps = getPlantDefaultComponents(workspaceMode);
+        setPropertyMethod(defaultModePropertyMethod);
+        setActiveComponents(defaultComps);
+        setPresetId('blank');
+        setActiveSheetId('master');
+        setBoundarySyncBanner([]);
+        if (!isPlantSimMode) {
+          setHierarchySheets({
+            master: {
+              ...initialSheets.master,
+              simDefs: [],
+              positions: {},
+              flowEdges: [],
+            },
+          });
+        }
+        setSimDefs([]);
+        setRfNodes([]);
+        setFlowEdges([]);
+        setSolvedMeta({
+          result: createIdleFlowsheetResult([], [], {
+            propertyMethod: defaultModePropertyMethod,
+            activeComponents: defaultComps,
+          }),
+          elapsedMs: 0,
+          runCount: 0,
+          lastRunTime: '미실행 (▶ RUN 대기)',
+        });
+        setIsSimDirty(true);
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
+        setShowStorageBar(false);
+        setActiveCaseTitle(null, workspacePlantId);
+      }
+    };
+  });
+
+  useEffect(() => {
+    const onLoadSavedCase = (ev: Event) => {
+      const customEv = ev as CustomEvent<Partial<PendingCaseLoadPayload> | undefined>;
+      const detail = customEv?.detail;
+      if (detail && detail.action) {
+        if (detail.uiMode && detail.uiMode !== 'modern') return;
+        const normTarget = detail.targetPlantId === 'clorsim' ? 'clorsim_sim' : detail.targetPlantId;
+        if (normTarget && normTarget !== workspacePlantId) return;
+        try {
+          const rawStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+          if (rawStr) {
+            const peek = JSON.parse(rawStr) as Partial<PendingCaseLoadPayload>;
+            const peekTarget = peek?.targetPlantId === 'clorsim' ? 'clorsim_sim' : peek?.targetPlantId;
+            if (!peekTarget || peekTarget === workspacePlantId) {
+              consumePendingCaseLoad('modern');
+            }
+          }
+        } catch {
+          consumePendingCaseLoad('modern');
+        }
+        handlePendingCaseRef.current(detail as PendingCaseLoadPayload);
+        return;
+      }
+
+      try {
+        const rawStr = window.sessionStorage.getItem(PENDING_CASE_LOAD_KEY);
+        if (!rawStr) return;
+        const peek = JSON.parse(rawStr) as Partial<PendingCaseLoadPayload>;
+        if (!peek || peek.uiMode !== 'modern') return;
+        const normTarget = peek.targetPlantId === 'clorsim' ? 'clorsim_sim' : peek.targetPlantId;
+        if (normTarget && normTarget !== workspacePlantId) return;
+        const pending = consumePendingCaseLoad('modern');
+        if (pending) {
+          handlePendingCaseRef.current(pending);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener(LOAD_SAVED_CASE_EVENT, onLoadSavedCase);
+    return () => window.removeEventListener(LOAD_SAVED_CASE_EVENT, onLoadSavedCase);
+  }, [workspacePlantId]);
+
+  const openShortcutCalcRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    openShortcutCalcRef.current = () => {
+      if (!selectedDef) {
+        router.push('/unit-equipment');
+        return;
+      }
+      const sourceLabel = isElectrolyzerMode
+        ? `PLANT 01 전해공장 시뮬레이터 (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+        : isHcl1AMode
+          ? `PLANT 02 초고순도·무수염산 & 폐염산회수 (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+          : isEchGteMode
+            ? `PLANT 03 ECH (7만톤 GTE) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+            : isCmsMode
+              ? `PLANT 04 클로로메탄(CMS) (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+              : isMdiMode
+                ? `PLANT 05 MDI (${activeSheetId === 'master' ? '전공정 마스터' : activeSheetId})`
+                : '공정 시뮬레이터';
+      const payload = buildChemProHandoffPayload(
+        selectedDef,
+        flowEdges,
+        solved.streams,
+        unitResultMap.get(selectedDef.id),
+        sourceLabel
+      );
+      if (payload) {
+        saveChemProHandoffPayload({ ...payload, plantId: workspacePlantId });
+        router.push(`/unit-equipment?tab=${encodeURIComponent(payload.tab)}&handoff=1&ts=${payload.timestamp}`);
+      } else {
+        router.push(`/unit-equipment?tab=${encodeURIComponent(mapFlowUnitTypeToChemProTab(selectedDef.unitType))}`);
+      }
+    };
+  });
+
+  useEffect(() => {
+    const onOpenShortcutCalc = () => {
+      openShortcutCalcRef.current();
+    };
+    window.addEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
+    return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
+  }, []);
 
   const updateSelectedDef = (patch: Partial<FlowNodeDef>) => {
     if (!selectedNodeId) return;
@@ -5006,11 +5353,11 @@ export function FlowsheetWorkspace({
               style={{
                 padding: '4px 8px',
                 fontSize: 10.5,
-                fontWeight: 900,
+                fontWeight: 800,
                 borderRadius: 6,
-                border: '1.5px solid #4338CA',
-                background: '#EEF2FF',
-                color: '#312E81',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 flexShrink: 0,
@@ -5024,7 +5371,8 @@ export function FlowsheetWorkspace({
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#EFF1EC',
+              background: '#F1F5F9',
+              border: '1px solid #E2E8F0',
               padding: 2,
               borderRadius: 7,
               gap: 2,
@@ -5043,7 +5391,7 @@ export function FlowsheetWorkspace({
                 fontWeight: 800,
                 borderRadius: 5,
                 border: 'none',
-                background: layoutMode !== 'table' ? '#1A2F44' : 'transparent',
+                background: layoutMode !== 'table' ? '#1E3A8A' : 'transparent',
                 color: layoutMode !== 'table' ? '#FFFFFF' : '#475569',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -5064,7 +5412,7 @@ export function FlowsheetWorkspace({
                 fontWeight: 800,
                 borderRadius: 5,
                 border: 'none',
-                background: layoutMode === 'table' && bottomTab === 'streams' ? '#1A2F44' : 'transparent',
+                background: layoutMode === 'table' && bottomTab === 'streams' ? '#1E3A8A' : 'transparent',
                 color: layoutMode === 'table' && bottomTab === 'streams' ? '#FFFFFF' : '#475569',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -5085,7 +5433,7 @@ export function FlowsheetWorkspace({
                 fontWeight: 800,
                 borderRadius: 5,
                 border: 'none',
-                background: layoutMode === 'table' && bottomTab === 'units' ? '#1A2F44' : 'transparent',
+                background: layoutMode === 'table' && bottomTab === 'units' ? '#1E3A8A' : 'transparent',
                 color: layoutMode === 'table' && bottomTab === 'units' ? '#FFFFFF' : '#475569',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -5101,17 +5449,38 @@ export function FlowsheetWorkspace({
             style={{
               padding: '4px 9px',
               fontSize: 10.5,
-              fontWeight: 900,
+              fontWeight: 800,
               borderRadius: 6,
-              border: 'none',
-              background: isSimRunning ? '#475569' : isSimDirty ? '#D97706' : '#059669',
+              border: '1px solid #1E3A8A',
+              background: isSimRunning ? '#475569' : '#1E3A8A',
               color: '#FFFFFF',
               cursor: isSimRunning ? 'wait' : 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
             }}
           >
-            {isSimRunning ? '⏳ 계산중...' : isSimDirty ? '▶ 재실행' : '✓ RUN'}
+            {isSimRunning ? (
+              '⏳ 계산중...'
+            ) : (
+              <>
+                <span>▶ RUN</span>
+                {isSimDirty && (
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: '#F59E0B',
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                )}
+              </>
+            )}
           </button>
 
           {layoutMode !== 'table' && (
@@ -5123,7 +5492,7 @@ export function FlowsheetWorkspace({
                 fontWeight: 800,
                 borderRadius: 6,
                 border: '1px solid #CBD5E1',
-                background: '#F8FAFC',
+                background: '#FFFFFF',
                 color: '#1E293B',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
@@ -5144,9 +5513,9 @@ export function FlowsheetWorkspace({
               fontSize: 10.5,
               fontWeight: 800,
               borderRadius: 6,
-              border: paletteOpen ? '1px solid #1A2F44' : '1px solid #CBD5E1',
-              background: paletteOpen ? '#EFECE5' : '#F8FAFC',
-              color: '#1A2F44',
+              border: paletteOpen ? '1px solid #64748B' : '1px solid #CBD5E1',
+              background: paletteOpen ? '#F1F5F9' : '#FFFFFF',
+              color: '#1E293B',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
@@ -5251,11 +5620,11 @@ export function FlowsheetWorkspace({
             style={{
               padding: '3px 9px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 5,
-              border: '1px solid #C7D2FE',
-              background: '#EEF2FF',
-              color: '#3730A3',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               display: 'inline-flex',
@@ -5264,7 +5633,7 @@ export function FlowsheetWorkspace({
             }}
           >
             <span>🧪 성분 ({activeComponents.length}종)</span>
-            <span style={{ color: '#818CF8' }}>|</span>
+            <span style={{ color: '#CBD5E1' }}>|</span>
             <span>
               ⚗️{' '}
               {propertyMethod === 'AUTO'
@@ -5281,11 +5650,11 @@ export function FlowsheetWorkspace({
             style={{
               padding: '3px 9px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 5,
-              border: '1px solid #99F6E4',
-              background: '#F0FDFA',
-              color: '#0F766E',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               display: 'inline-flex',
@@ -5299,7 +5668,7 @@ export function FlowsheetWorkspace({
                 style={{
                   padding: '0 5px',
                   borderRadius: 999,
-                  background: '#0F766E',
+                  background: '#1E3A8A',
                   color: '#FFFFFF',
                   fontSize: 9.5,
                   fontWeight: 900,
@@ -5311,34 +5680,15 @@ export function FlowsheetWorkspace({
           </button>
 
           <button
-            type="button"
-            onClick={switchToClassicUi}
-            title="현재 플로우시트·성분·열역학 설정을 유지한 채 클래식 데스크톱 UI로 전환"
-            style={{
-              padding: '3px 8px',
-              fontSize: 10.5,
-              fontWeight: 800,
-              borderRadius: 5,
-              border: '1px solid #0284C7',
-              background: '#EFF6FF',
-              color: '#0369A1',
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-            }}
-          >
-            🖥 클래식 UI
-          </button>
-
-          <button
             onClick={() => setShowStorageBar(v => !v)}
             style={{
               padding: '4px 7px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 6,
-              border: showStorageBar ? '1px solid #1E293B' : '1px solid #CBD5E1',
-              background: showStorageBar ? '#1E293B' : '#FFFFFF',
-              color: showStorageBar ? '#FFFFFF' : '#1E293B',
+              border: showStorageBar ? '1px solid #64748B' : '1px solid #CBD5E1',
+              background: showStorageBar ? '#F1F5F9' : '#FFFFFF',
+              color: '#1E293B',
               cursor: 'pointer',
               whiteSpace: 'nowrap',
               flexShrink: 0,
@@ -5377,11 +5727,11 @@ export function FlowsheetWorkspace({
                   padding: '3px 8px',
                   fontSize: 10.5,
                   fontWeight: 800,
-                  borderRadius: 4,
+                  borderRadius: 5,
                   cursor: 'pointer',
-                  border: '1px solid #1E293B',
-                  background: '#1E293B',
-                  color: '#FFFFFF',
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#1E293B',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -5424,10 +5774,10 @@ export function FlowsheetWorkspace({
                     fontWeight: active ? 800 : 600,
                     padding: '4px 7px',
                     border: 'none',
-                    borderBottom: active ? '2px solid #1D4ED8' : '2px solid transparent',
+                    borderBottom: active ? '2px solid #1E3A8A' : '2px solid transparent',
                     cursor: 'pointer',
                     background: 'transparent',
-                    color: active ? '#1D4ED8' : '#475569',
+                    color: active ? '#1E3A8A' : '#475569',
                     whiteSpace: 'nowrap',
                   }}
                 >
@@ -5470,16 +5820,37 @@ export function FlowsheetWorkspace({
                   style={{
                     padding: '4px 11px',
                     borderRadius: 5,
-                    border: 'none',
-                    background: isSimRunning ? '#475569' : isSimDirty ? '#D97706' : '#1D4ED8',
+                    border: '1px solid #1E3A8A',
+                    background: isSimRunning ? '#475569' : '#1E3A8A',
                     color: '#FFFFFF',
                     fontSize: 11,
                     fontWeight: 800,
                     cursor: isSimRunning ? 'wait' : 'pointer',
                     whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
                 >
-                  {isSimRunning ? '⏳ 계산 중...' : '▶ RUN (F5)'}
+                  {isSimRunning ? (
+                    '⏳ 계산 중...'
+                  ) : (
+                    <>
+                      <span>▶ RUN (F5)</span>
+                      {isSimDirty && (
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: '#F59E0B',
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
                 </button>
 
                 <button
@@ -5489,46 +5860,45 @@ export function FlowsheetWorkspace({
                   style={{
                     fontSize: 10.5,
                     fontWeight: 700,
-                    color:
-                      effectiveStatus === 'dirty'
-                        ? '#B45309'
-                        : effectiveStatus === 'converged'
-                          ? '#047857'
-                          : effectiveStatus === 'warning'
-                            ? '#D97706'
-                            : '#B91C1C',
-                    background:
-                      effectiveStatus === 'converged'
-                        ? '#ECFDF5'
-                        : effectiveStatus === 'warning'
-                          ? '#FFFBEB'
-                          : effectiveStatus === 'failed'
-                            ? '#FEF2F2'
-                            : 'transparent',
-                    border:
-                      effectiveStatus === 'converged'
-                        ? '1px solid #A7F3D0'
-                        : effectiveStatus === 'warning'
-                          ? '1px solid #FDE68A'
-                          : effectiveStatus === 'failed'
-                            ? '1px solid #FECACA'
-                            : 'none',
+                    color: '#1E293B',
+                    background: '#F8FAFC',
+                    border: '1px solid #CBD5E1',
                     borderRadius: 5,
-                    padding: '3px 7px',
+                    padding: '3px 8px',
                     fontFamily: 'JetBrains Mono, monospace',
                     whiteSpace: 'nowrap',
                     cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
                 >
-                  {effectiveStatus === 'dirty'
-                    ? solved.convergence.isIdle
-                      ? '⏸ 실행 대기 (▶ RUN)'
-                      : '● 조건 변경됨'
-                    : effectiveStatus === 'converged'
-                      ? `✓ 수렴 (${solved.convergence.iterations}회·${solvedMeta.elapsedMs}ms) ▾`
-                      : effectiveStatus === 'warning'
-                        ? `⚠ 경고 동반 수렴 (${solved.convergence.warningUnitCount ?? 0}건) ▾`
-                        : `✕ 미수렴 (${solved.convergence.failedUnitCount ?? 1}건 실패) ▾`}
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background:
+                        effectiveStatus === 'converged'
+                          ? '#10B981'
+                          : effectiveStatus === 'failed'
+                            ? '#DC2626'
+                            : '#D97706',
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span>
+                    {effectiveStatus === 'dirty'
+                      ? solved.convergence.isIdle
+                        ? '실행 대기 (▶ RUN)'
+                        : '조건 변경됨'
+                      : effectiveStatus === 'converged'
+                        ? `수렴 (${solved.convergence.iterations}회·${solvedMeta.elapsedMs}ms) ▾`
+                        : effectiveStatus === 'warning'
+                          ? `경고 동반 수렴 (${solved.convergence.warningUnitCount ?? 0}건) ▾`
+                          : `미수렴 (${solved.convergence.failedUnitCount ?? 1}건 실패) ▾`}
+                  </span>
                 </button>
 
                 {showConvDiag && (
@@ -5590,7 +5960,7 @@ export function FlowsheetWorkspace({
                 border: 'none',
                 cursor: 'pointer',
                 background: 'transparent',
-                color: '#1D4ED8',
+                color: '#1E3A8A',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -5644,14 +6014,14 @@ export function FlowsheetWorkspace({
             onClick={() => setPaletteOpen(v => !v)}
             title="공정도 하단에 종류별로 정리된 가로형 장치 모델 팔레트 바를 열거나 접습니다."
             style={{
-              padding: '3px 7px',
+              padding: '3px 8px',
               fontSize: 10.5,
               fontWeight: 700,
-              borderRadius: 4,
+              borderRadius: 5,
               cursor: 'pointer',
-              border: 'none',
-              background: paletteOpen ? '#F1F5F9' : 'transparent',
-              color: '#334155',
+              border: paletteOpen ? '1px solid #64748B' : '1px solid #CBD5E1',
+              background: paletteOpen ? '#F1F5F9' : '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
             }}
           >
@@ -5675,12 +6045,12 @@ export function FlowsheetWorkspace({
               style={{
                 padding: '3px 8px',
                 fontSize: 10.5,
-                fontWeight: 800,
+                fontWeight: 700,
                 borderRadius: 5,
                 cursor: 'pointer',
-                border: '1px solid #A7F3D0',
-                background: '#F0FDF4',
-                color: '#0F5338',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -5801,11 +6171,11 @@ export function FlowsheetWorkspace({
             style={{
               padding: '3px 9px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 5,
-              border: '1px solid #C7D2FE',
-              background: '#EEF2FF',
-              color: '#3730A3',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               display: 'inline-flex',
@@ -5814,7 +6184,7 @@ export function FlowsheetWorkspace({
             }}
           >
             <span>🧪 성분 ({activeComponents.length}종)</span>
-            <span style={{ color: '#818CF8' }}>|</span>
+            <span style={{ color: '#CBD5E1' }}>|</span>
             <span>
               ⚗️{' '}
               {propertyMethod === 'AUTO'
@@ -5831,11 +6201,11 @@ export function FlowsheetWorkspace({
             style={{
               padding: '3px 9px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 5,
-              border: '1px solid #99F6E4',
-              background: '#F0FDFA',
-              color: '#0F766E',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
               cursor: 'pointer',
               display: 'inline-flex',
@@ -5849,7 +6219,7 @@ export function FlowsheetWorkspace({
                 style={{
                   padding: '0 5px',
                   borderRadius: 999,
-                  background: '#0F766E',
+                  background: '#1E3A8A',
                   color: '#FFFFFF',
                   fontSize: 9.5,
                   fontWeight: 900,
@@ -5861,25 +6231,6 @@ export function FlowsheetWorkspace({
           </button>
 
           <button
-            type="button"
-            onClick={switchToClassicUi}
-            title="현재 플로우시트·성분·열역학 설정을 유지한 채 클래식 데스크톱 UI로 전환"
-            style={{
-              padding: '3px 9px',
-              fontSize: 10.5,
-              fontWeight: 800,
-              borderRadius: 5,
-              border: '1px solid #0284C7',
-              background: '#EFF6FF',
-              color: '#0369A1',
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-            }}
-          >
-            🖥 클래식 UI
-          </button>
-
-          <button
             onClick={() => setShowStorageBar(v => !v)}
             style={{
               padding: '3px 8px',
@@ -5887,9 +6238,9 @@ export function FlowsheetWorkspace({
               fontWeight: 700,
               borderRadius: 5,
               cursor: 'pointer',
-              border: showStorageBar ? '1px solid #1E293B' : '1px solid #CBD5E1',
-              background: showStorageBar ? '#1E293B' : '#FFFFFF',
-              color: showStorageBar ? '#FFFFFF' : '#1E293B',
+              border: showStorageBar ? '1px solid #64748B' : '1px solid #CBD5E1',
+              background: showStorageBar ? '#F1F5F9' : '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
             }}
           >
@@ -5902,12 +6253,12 @@ export function FlowsheetWorkspace({
             style={{
               padding: '3px 8px',
               fontSize: 10.5,
-              fontWeight: 800,
+              fontWeight: 700,
               borderRadius: 5,
               cursor: 'pointer',
-              border: inspectorOpen ? '1px solid #1A2F44' : '1px solid #CBD5E1',
-              background: inspectorOpen ? '#EFECE5' : '#F8FAFC',
-              color: '#1A2F44',
+              border: inspectorOpen ? '1px solid #64748B' : '1px solid #CBD5E1',
+              background: inspectorOpen ? '#F1F5F9' : '#FFFFFF',
+              color: '#1E293B',
               whiteSpace: 'nowrap',
             }}
           >
@@ -6146,6 +6497,7 @@ export function FlowsheetWorkspace({
                   <button
                     onClick={() => {
                       loadFromStateObject(proj.state);
+                      setActiveCaseTitle(proj.name, workspacePlantId);
                       setShowStorageBar(false);
                     }}
                     style={{
@@ -7529,19 +7881,19 @@ export function FlowsheetWorkspace({
           {selectedEdgeDef ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: '#92400E' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
                   🔗 선택 배관 [{selectedEdgeDef.streamNo}]
                 </span>
                 <button
                   onClick={() => deleteEdgeById(selectedEdgeDef.id)}
                   style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: '#FFFFFF',
-                    background: '#DC2626',
-                    border: 'none',
-                    borderRadius: 6,
-                    padding: '4px 10px',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    color: '#B91C1C',
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 5,
+                    padding: '3px 8px',
                     cursor: 'pointer',
                   }}
                 >
@@ -7549,47 +7901,47 @@ export function FlowsheetWorkspace({
                 </button>
               </div>
 
-              <div style={{ padding: '9px 10px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 7, fontSize: 11.5 }}>
+              <div style={{ padding: '9px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 11.5 }}>
                 {selectedStreamRes?.isTearStream && (
                   <div
                     style={{
                       marginBottom: 6,
                       padding: '4px 7px',
                       borderRadius: 5,
-                      background: '#F5F3FF',
-                      border: '1px solid #C4B5FD',
-                      color: '#5B21B6',
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      color: '#475569',
                       fontSize: 10.5,
-                      fontWeight: 900,
+                      fontWeight: 800,
                     }}
                   >
                     ♻ 순환 절단 배관 (Tear Stream) · Bounded Wegstein 다변수 가속 수렴 적용
                   </div>
                 )}
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                <div style={{ fontWeight: 800, color: '#0F172A', marginBottom: 4 }}>
                   구간: {selectedStreamRes?.fromTag} → {selectedStreamRes?.toTag}{selectedStreamRes?.portRole ? ` (${selectedStreamRes.portRole})` : ''}
                 </div>
                 <div style={{ color: '#475569', fontSize: 11 }}>
-                  인식 유체: <b style={{ color: '#0369A1' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>
+                  인식 유체: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>
                 </div>
                 <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
-                  상태: <b>{selectedStreamRes?.phase}</b> · {selectedStreamRes?.tempC}°C · {selectedStreamRes?.pressKgcm2g} kg/cm²G · {selectedStreamRes?.totalMassKgH.toLocaleString()} kg/h
+                  상태: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.phase}</b> · {selectedStreamRes?.tempC}°C · {selectedStreamRes?.pressKgcm2g} kg/cm²G · {selectedStreamRes?.totalMassKgH.toLocaleString()} kg/h
                 </div>
               </div>
 
               <div>
-                <label style={{ fontSize: 10.5, fontWeight: 800, color: '#4E6073' }}>배관 번호 (Stream No.)</label>
+                <label style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>배관 번호 (Stream No.)</label>
                 <input
                   value={selectedEdgeDef.streamNo}
                   onChange={e =>
                     setFlowEdges(eds => eds.map(ed => (ed.id === selectedEdgeDef.id ? { ...ed, streamNo: e.target.value } : ed)))
                   }
-                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', marginTop: 3 }}
+                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', marginTop: 3 }}
                 />
               </div>
 
               <div>
-                <label style={{ fontSize: 10.5, fontWeight: 800, color: '#4E6073' }}>출구 포트 역할 변경 (기상 G↑ / 액상 L↓)</label>
+                <label style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>출구 포트 역할 변경 (기상 G↑ / 액상 L↓)</label>
                 <select
                   value={selectedEdgeDef.sourcePort ?? 'out'}
                   onChange={e =>
@@ -7597,7 +7949,7 @@ export function FlowsheetWorkspace({
                       eds.map(ed => (ed.id === selectedEdgeDef.id ? { ...ed, sourcePort: e.target.value as SourcePortId } : ed))
                     )
                   }
-                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 11.5, marginTop: 3 }}
+                  style={{ width: '100%', padding: '5px 8px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5, marginTop: 3 }}
                 >
                   <option value="out">주배관 (out)</option>
                   <option value="vapor">상부 기상/정제가스 출구 (vapor · G↑)</option>
@@ -7616,7 +7968,7 @@ export function FlowsheetWorkspace({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1A2F44' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
                   {isVisualOnlyUnit(selectedDef.unitType)
                     ? '🖼️ 도면 장치 속성'
                     : selectedDef.unitType === 'feed' || selectedDef.unitType === 'product'
@@ -7628,9 +7980,9 @@ export function FlowsheetWorkspace({
                   style={{
                     fontSize: 10.5,
                     fontWeight: 700,
-                    color: '#DC2626',
-                    background: '#FEF2F2',
-                    border: '1px solid #FECACA',
+                    color: '#B91C1C',
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
                     borderRadius: 5,
                     padding: '3px 8px',
                     cursor: 'pointer',
@@ -7644,9 +7996,9 @@ export function FlowsheetWorkspace({
               <div
                 style={{
                   padding: '7px 9px',
-                  borderRadius: 7,
-                  background: isSimDirty ? '#FFFBEB' : '#ECFDF5',
-                  border: `1.5px solid ${isSimDirty ? '#F59E0B' : '#6EE7B7'}`,
+                  borderRadius: 6,
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -7656,12 +8008,25 @@ export function FlowsheetWorkspace({
                 <span
                   style={{
                     fontSize: 10.5,
-                    fontWeight: 900,
-                    color: isSimDirty ? '#92400E' : '#065F46',
+                    fontWeight: 800,
+                    color: isSimDirty ? '#D97706' : '#059669',
                     whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
                   }}
                 >
-                  {isSimDirty ? '⚠ 미수렴 (변경됨)' : `✓ 수렴 (${solvedMeta.elapsedMs}ms)`}
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: '50%',
+                      background: isSimDirty ? '#D97706' : '#059669',
+                      display: 'inline-block',
+                      flexShrink: 0,
+                    }}
+                  />
+                  {isSimDirty ? '미수렴 (변경됨)' : `수렴 (${solvedMeta.elapsedMs}ms)`}
                 </span>
                 <button
                   type="button"
@@ -7670,11 +8035,11 @@ export function FlowsheetWorkspace({
                   style={{
                     padding: '4px 10px',
                     borderRadius: 5,
-                    border: 'none',
-                    background: isSimRunning ? '#475569' : isSimDirty ? '#D97706' : '#059669',
+                    border: '1px solid #1E3A8A',
+                    background: isSimRunning ? '#475569' : '#1E3A8A',
                     color: '#FFFFFF',
                     fontSize: 10.5,
-                    fontWeight: 900,
+                    fontWeight: 800,
                     cursor: isSimRunning ? 'wait' : 'pointer',
                     whiteSpace: 'nowrap',
                   }}
@@ -7705,12 +8070,12 @@ export function FlowsheetWorkspace({
                       style={{
                         width: '100%',
                         padding: '7px 10px',
-                        borderRadius: 7,
-                        border: '1.5px solid #059669',
-                        background: 'linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%)',
-                        color: '#064E3B',
+                        borderRadius: 6,
+                        border: '1px solid #1E3A8A',
+                        background: '#1E3A8A',
+                        color: '#FFFFFF',
                         fontSize: 11,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         cursor: 'pointer',
                         textAlign: 'center',
                         whiteSpace: 'nowrap',
@@ -7727,12 +8092,12 @@ export function FlowsheetWorkspace({
                 <div
                   style={{
                     padding: '8px 10px',
-                    background: selectedUnitRes.detectedFluidLabel.includes('Cl₂') ? '#F0F9FF' : '#F8FAFC',
-                    border: `1.5px solid ${selectedUnitRes.detectedFluidLabel.includes('Cl₂') ? '#7DD3FC' : '#CBD5E1'}`,
-                    borderRadius: 7,
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 6,
                   }}
                 >
-                  <div style={{ fontSize: 10, fontWeight: 800, color: '#0369A1', marginBottom: 2 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>
                     🧪 유입 배관 물질 자동 인식
                   </div>
                   <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
@@ -7744,19 +8109,19 @@ export function FlowsheetWorkspace({
               {/* 태그 & 장치명 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 8 }}>
                 <div>
-                  <label style={{ fontSize: 10, fontWeight: 800, color: '#4E6073' }}>태그 (Tag)</label>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>태그 (Tag)</label>
                   <input
                     value={selectedDef.tag}
                     onChange={e => updateSelectedDef({ tag: e.target.value })}
-                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace' }}
+                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 800, fontFamily: 'JetBrains Mono, monospace' }}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, fontWeight: 800, color: '#4E6073' }}>명칭</label>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>명칭</label>
                   <input
                     value={selectedDef.name}
                     onChange={e => updateSelectedDef({ name: e.target.value })}
-                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12, fontWeight: 700 }}
+                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700 }}
                   />
                 </div>
               </div>
@@ -7855,18 +8220,18 @@ export function FlowsheetWorkspace({
                 <div
                   style={{
                     padding: '9px 10px',
-                    borderRadius: 8,
-                    background: 'linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)',
-                    border: '1.5px solid #A5B4FC',
+                    borderRadius: 6,
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 6,
                   }}
                 >
-                  <div style={{ fontSize: 10.5, fontWeight: 900, color: '#3730A3' }}>
+                  <div style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A' }}>
                     🏗️ 계층형 세부 공정 패키지 블록 ({selectedDef.subSheetBadge || '내부 상세 도면'})
                   </div>
-                  <div style={{ fontSize: 10.5, color: '#4338CA', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 10.5, color: '#475569', lineHeight: 1.4 }}>
                     캔버스에서 이 블록을 <b>더블클릭</b>하거나 아래 버튼을 누르면 내부 단위기기 시뮬레이션 화면으로 즉시 이동합니다.
                   </div>
                   <button
@@ -7875,11 +8240,11 @@ export function FlowsheetWorkspace({
                     style={{
                       padding: '6px 10px',
                       borderRadius: 6,
-                      border: 'none',
-                      background: '#4338CA',
+                      border: '1px solid #1E3A8A',
+                      background: '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 11.5,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                     }}
                   >
@@ -7897,16 +8262,16 @@ export function FlowsheetWorkspace({
                 <div
                   style={{
                     padding: '9px 10px',
-                    borderRadius: 8,
+                    borderRadius: 6,
                     background: selectedUnitDesignRoute.bgGradient,
-                    border: `1.5px solid ${selectedUnitDesignRoute.borderColor}`,
+                    border: `1px solid ${selectedUnitDesignRoute.borderColor}`,
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 6,
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 900, color: selectedUnitDesignRoute.accentColor }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A' }}>
                       📐 단위 장치 상세설계 연동 (유체조건 자동전달)
                     </span>
                     {selectedUnitRes && selectedUnitRes.inletMassKgH > 0 && (
@@ -7914,8 +8279,9 @@ export function FlowsheetWorkspace({
                         style={{
                           fontSize: 9.5,
                           fontWeight: 800,
-                          color: '#1A2F44',
-                          background: 'rgba(255,255,255,0.85)',
+                          color: '#475569',
+                          background: '#FFFFFF',
+                          border: '1px solid #E2E8F0',
                           padding: '1px 5px',
                           borderRadius: 4,
                           fontFamily: 'JetBrains Mono, monospace',
@@ -7925,7 +8291,7 @@ export function FlowsheetWorkspace({
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 10, color: '#334155', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.4 }}>
                     {selectedUnitDesignRoute.subHint}
                   </div>
                   <button
@@ -7934,11 +8300,11 @@ export function FlowsheetWorkspace({
                     style={{
                       padding: '7px 10px',
                       borderRadius: 6,
-                      border: 'none',
+                      border: `1px solid ${selectedUnitDesignRoute.accentColor}`,
                       background: selectedUnitDesignRoute.accentColor,
                       color: '#FFFFFF',
                       fontSize: 11,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                       textAlign: 'center',
                     }}
@@ -7959,11 +8325,11 @@ export function FlowsheetWorkspace({
                       style={{
                         padding: '5px 8px',
                         borderRadius: 5,
-                        border: `1px solid ${selectedUnitDesignRoute.accentColor}`,
+                        border: '1px solid #CBD5E1',
                         background: '#FFFFFF',
-                        color: selectedUnitDesignRoute.accentColor,
+                        color: '#1E293B',
                         fontSize: 10.5,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         cursor: 'pointer',
                       }}
                     >
@@ -7984,11 +8350,11 @@ export function FlowsheetWorkspace({
                     style={{
                       padding: '6px 10px',
                       borderRadius: 6,
-                      border: '1px dashed #6366F1',
-                      background: '#F8FAFC',
-                      color: '#4338CA',
+                      border: '1px dashed #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#1E293B',
                       fontSize: 11,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       cursor: 'pointer',
                     }}
                   >
@@ -8001,15 +8367,15 @@ export function FlowsheetWorkspace({
                 <div
                   style={{
                     padding: '8px 10px',
-                    borderRadius: 7,
-                    background: '#ECFDF5',
-                    border: '1.5px solid #A7F3D0',
+                    borderRadius: 6,
+                    background: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
                     fontSize: 10.5,
-                    color: '#065F46',
+                    color: '#475569',
                     lineHeight: 1.45,
                   }}
                 >
-                  <b>🔗 상위 풀패키지 연동 경계 스트림</b>
+                  <b style={{ color: '#0F172A' }}>🔗 상위 풀패키지 연동 경계 스트림</b>
                   <br />
                   상위 전공정 마스터 블록(<code>{selectedDef.params.boundaryFromMasterNodeId}</code>)의 유입 유량·온도·압력이 자동 전달됩니다. 아래 값을 직접 수정하여 단독 민감도 테스트를 수행할 수도 있습니다.
                 </div>
@@ -8025,15 +8391,15 @@ export function FlowsheetWorkspace({
                   <div
                     style={{
                       padding: '8px 9px',
-                      borderRadius: 7,
-                      background: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#F5F3FF' : '#F8FAFC',
-                      border: `1.5px solid ${(selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#C4B5FD' : '#CBD5E1'}`,
+                      borderRadius: 6,
+                      background: '#F8FAFC',
+                      border: '1px solid #E2E8F0',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 6,
                     }}
                   >
-                    <div style={{ fontSize: 10, fontWeight: 900, color: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#5B21B6' : '#334155' }}>
+                    <div style={{ fontSize: 10, fontWeight: 900, color: '#0F172A' }}>
                       해석 정밀도 모드 (장치별 독립 전환)
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
@@ -8046,9 +8412,9 @@ export function FlowsheetWorkspace({
                           fontSize: 11,
                           fontWeight: 800,
                           cursor: 'pointer',
-                          border: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '1.5px solid #0F5338' : '1px solid #CBD5E1',
-                          background: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#0F5338' : '#FFFFFF',
-                          color: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#FFFFFF' : '#475569',
+                          border: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#1E3A8A' : '#FFFFFF',
+                          color: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#FFFFFF' : '#1E293B',
                         }}
                       >
                         ⚡ 간편 발란스
@@ -8062,9 +8428,9 @@ export function FlowsheetWorkspace({
                           fontSize: 11,
                           fontWeight: 800,
                           cursor: 'pointer',
-                          border: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '1.5px solid #5B21B6' : '1px solid #CBD5E1',
-                          background: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#5B21B6' : '#FFFFFF',
-                          color: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#FFFFFF' : '#475569',
+                          border: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#1E3A8A' : '#FFFFFF',
+                          color: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#FFFFFF' : '#1E293B',
                         }}
                       >
                         🔬 정밀 열역학
@@ -8080,16 +8446,16 @@ export function FlowsheetWorkspace({
 
               {/* ── 0) 도면 전용 장치 ── */}
               {isVisualOnlyUnit(selectedDef.unitType) && (
-                <div style={{ padding: 10, background: '#F8FAFC', borderRadius: 7, border: '1.5px dashed #94A3B8', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>
+                <div style={{ padding: 10, background: '#F8FAFC', borderRadius: 6, border: '1px dashed #CBD5E1', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>
                     유입된 스트림(액화염소·염수·염산 등)을 변화 없이 후단 배관으로 그대로 통과시킵니다.
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700 }}>도면 사양 메모</label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>도면 사양 메모</label>
                     <input
                       value={selectedDef.params.visualSpecNote ?? ''}
                       onChange={e => updateParam('visualSpecNote', e.target.value)}
-                      style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5 }}
+                      style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                     />
                   </div>
                 </div>
@@ -8100,50 +8466,50 @@ export function FlowsheetWorkspace({
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#4E6073' }}>공급 온도 (°C)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>공급 온도 (°C)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-ftemp`}
                         step={1}
                         value={selectedDef.params.feedTempC ?? 25}
                         onValueChange={v => updateParam('feedTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#4E6073' }}>공급 압력 (kg/cm²G)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>공급 압력 (kg/cm²G)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-fpress`}
                         step={0.1}
                         value={selectedDef.params.feedPressKgcm2g ?? 0.5}
                         onValueChange={v => updateParam('feedPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
                       />
                     </div>
                   </div>
-                  <div style={{ background: '#F8FAFC', padding: 9, borderRadius: 7, border: '1px solid #E2E8F0' }}>
+                  <div style={{ background: '#F8FAFC', padding: 9, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 6, flexWrap: 'wrap' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: '#0F5338' }}>성분별 질량유량 (kg/h)</span>
+                        <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>성분별 질량유량 (kg/h)</span>
                         <button
                           type="button"
                           onClick={() => setCompSetupModalOpen(true)}
                           style={{
                             padding: '2px 7px',
                             fontSize: 9.5,
-                            fontWeight: 800,
+                            fontWeight: 700,
                             borderRadius: 4,
-                            border: '1px solid #A5B4FC',
-                            background: '#EEF2FF',
-                            color: '#3730A3',
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            color: '#1E293B',
                             cursor: 'pointer',
                           }}
                         >
                           + 성분 설정 ({activeComponents.length}종)
                         </button>
                       </div>
-                      <span style={{ fontSize: 10.5, fontWeight: 900, color: '#047857', fontFamily: 'JetBrains Mono, monospace' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
                         합계{' '}
                         {Object.values(selectedDef.params.feedFlowsKgH ?? {})
                           .reduce((a, b) => a + (Number(b) || 0), 0)
@@ -8157,7 +8523,7 @@ export function FlowsheetWorkspace({
                       const val = selectedDef.params.feedFlowsKgH?.[comp] ?? 0;
                       return (
                         <div key={comp} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, fontWeight: val > 0 ? 900 : 600, color: val > 0 ? '#064E3B' : '#475569' }}>
+                          <span style={{ fontSize: 11, fontWeight: val > 0 ? 800 : 600, color: val > 0 ? '#0F172A' : '#475569' }}>
                             {COMP_META[comp].label}
                           </span>
                           <BufferedNumberInput
@@ -8171,8 +8537,9 @@ export function FlowsheetWorkspace({
                               width: 96,
                               padding: '3px 6px',
                               textAlign: 'right',
-                              border: val > 0 ? '1.5px solid #059669' : '1px solid #CBD5E1',
-                              background: val > 0 ? '#ECFDF5' : '#FFFFFF',
+                              border: val > 0 ? '1px solid #64748B' : '1px solid #CBD5E1',
+                              background: '#FFFFFF',
+                              color: '#0F172A',
                               borderRadius: 4,
                               fontSize: 11.5,
                               fontWeight: val > 0 ? 800 : 600,
@@ -8188,37 +8555,37 @@ export function FlowsheetWorkspace({
 
               {/* ── B) 이온교환막 전해조 (Electrolyzer) ── */}
               {selectedDef.unitType === 'electrolyzer' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F0FDFA', padding: 10, borderRadius: 7, border: '1px solid #99F6E4' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F766E' }}>⚡ 전해조 양극·음극 동시 수지</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>⚡ 전해조 양극·음극 동시 수지</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>운전 전류 (kA)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-eka`} step={0.2} value={selectedDef.params.currentKA ?? 16.2} onValueChange={v => updateParam('currentKA', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전 전류 (kA)</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-eka`} step={0.2} value={selectedDef.params.currentKA ?? 16.2} onValueChange={v => updateParam('currentKA', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>전류 효율 (%)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-eeff`} step={0.5} value={selectedDef.params.currentEffPct ?? 94.0} onValueChange={v => updateParam('currentEffPct', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>전류 효율 (%)</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-eeff`} step={0.5} value={selectedDef.params.currentEffPct ?? 94.0} onValueChange={v => updateParam('currentEffPct', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>셀 수량 (개/기)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-ecell`} step={1} value={selectedDef.params.cellCount ?? 190} onValueChange={v => updateParam('cellCount', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>셀 수량 (개/기)</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-ecell`} step={1} value={selectedDef.params.cellCount ?? 190} onValueChange={v => updateParam('cellCount', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>전해조 기수</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-eunit`} step={1} value={selectedDef.params.unitCount ?? 5} onValueChange={v => updateParam('unitCount', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>전해조 기수</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-eunit`} step={1} value={selectedDef.params.unitCount ?? 5} onValueChange={v => updateParam('unitCount', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>운전 온도 (°C)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-etemp`} step={1} value={selectedDef.params.operTempC ?? 89.0} onValueChange={v => updateParam('operTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전 온도 (°C)</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-etemp`} step={1} value={selectedDef.params.operTempC ?? 89.0} onValueChange={v => updateParam('operTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>양극 압력 (kG)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-epress`} step={0.05} value={selectedDef.params.operPressKgcm2g ?? 0.40} onValueChange={v => updateParam('operPressKgcm2g', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }} />
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>양극 압력 (kG)</label>
+                      <BufferedNumberInput syncKey={`${selectedDef.id}-epress`} step={0.05} value={selectedDef.params.operPressKgcm2g ?? 0.40} onValueChange={v => updateParam('operPressKgcm2g', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
-                    <div style={{ marginTop: 4, paddingTop: 6, borderTop: '1px dashed #5EEAD4' }}>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#5B21B6' }}>
+                    <div style={{ marginTop: 4, paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
                         🔬 셀당 이온교환막 유효면적 (m², 전류밀도·셀전압 자동 산출)
                       </label>
                       <BufferedNumberInput
@@ -8227,7 +8594,7 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.membraneAreaM2 ?? 2.72}
                         onValueChange={v => updateParam('membraneAreaM2', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #C4B5FD', borderRadius: 4, fontSize: 12, marginTop: 2 }}
+                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, marginTop: 2 }}
                       />
                     </div>
                   )}
@@ -8243,8 +8610,8 @@ export function FlowsheetWorkspace({
                     gap: 8,
                     background: '#F8FAFC',
                     padding: 10,
-                    borderRadius: 8,
-                    border: '1px solid #CBD5E1',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
@@ -8260,9 +8627,9 @@ export function FlowsheetWorkspace({
                           fontWeight: 800,
                           padding: '1.5px 6px',
                           borderRadius: 999,
-                          background: '#EFF6FF',
-                          color: '#1E3A8A',
-                          border: '1px solid #BFDBFE',
+                          background: '#FFFFFF',
+                          color: '#475569',
+                          border: '1px solid #E2E8F0',
                           fontFamily: 'JetBrains Mono, monospace',
                         }}
                       >
@@ -8272,11 +8639,11 @@ export function FlowsheetWorkspace({
                   </div>
 
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>사용 냉매 / 열매 종류</label>
+                    <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>사용 냉매 / 열매 종류</label>
                     <select
                       value={selectedDef.params.refrigerantPreset ?? (selectedDef.unitType === 'liquefier' ? 'freon_m35' : 'cw')}
                       onChange={e => applyRefrigerantPreset(e.target.value as RefrigerantPresetKey)}
-                      style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, marginTop: 2, background: '#FFFFFF' }}
+                      style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, marginTop: 2, background: '#FFFFFF', color: '#0F172A' }}
                     >
                       {(Object.keys(REFRIGERANT_PRESETS) as RefrigerantPresetKey[]).map(rk => (
                         <option key={rk} value={rk}>
@@ -8287,11 +8654,11 @@ export function FlowsheetWorkspace({
                   </div>
 
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>계산 기준 모드</label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>계산 기준 모드</label>
                     <select
                       value={selectedDef.params.hexSpecMode ?? 'proc_temp'}
                       onChange={e => updateParam('hexSpecMode', e.target.value)}
-                      style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, marginTop: 2, background: '#FFFFFF' }}
+                      style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, marginTop: 2, background: '#FFFFFF', color: '#0F172A' }}
                     >
                       <option value="proc_temp">출구 목표 온도 지정 → 액화량·냉동부하 계산</option>
                       <option value="heat_duty">교환 열량(Mcal/h) 지정 → 출구 온도 역산</option>
@@ -8301,18 +8668,18 @@ export function FlowsheetWorkspace({
                   {(selectedDef.params.hexSpecMode ?? 'proc_temp') === 'proc_temp' ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>공정 출구 온도 (°C)</label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>공정 출구 온도 (°C)</label>
                         <BufferedNumberInput
                           syncKey={`${selectedDef.id}-hxtemp`}
                           step={1}
                           value={selectedDef.params.operTempC ?? (selectedDef.unitType === 'liquefier' ? -22 : 25)}
                           onValueChange={v => updateParam('operTempC', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF' }}
+                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF', color: '#0F172A' }}
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>운전압(비우면 전단추종)</label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전압(비우면 전단추종)</label>
                         <input
                           type="number"
                           step="0.1"
@@ -8321,20 +8688,20 @@ export function FlowsheetWorkspace({
                           onChange={e =>
                             updateParam('operPressKgcm2g', e.target.value === '' ? undefined : Number(e.target.value))
                           }
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF' }}
+                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
                         />
                       </div>
                     </div>
                   ) : (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>교환 열량 (Mcal/h, 냉각은 음수 -)</label>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>교환 열량 (Mcal/h, 냉각은 음수 -)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-hxduty`}
                         step={50}
                         value={selectedDef.params.specifiedDutyMcalH ?? -500}
                         onValueChange={v => updateParam('specifiedDutyMcalH', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF' }}
+                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
                       />
                     </div>
                   )}
@@ -8342,19 +8709,19 @@ export function FlowsheetWorkspace({
                   {selectedDef.params.refrigerantPreset === 'custom' && (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>냉매 입구 (°C)</label>
-                        <BufferedNumberInput syncKey={`${selectedDef.id}-uin`} step={1} value={selectedDef.params.utilInTempC ?? -25} onValueChange={v => updateParam('utilInTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF' }} />
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>냉매 입구 (°C)</label>
+                        <BufferedNumberInput syncKey={`${selectedDef.id}-uin`} step={1} value={selectedDef.params.utilInTempC ?? -25} onValueChange={v => updateParam('utilInTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#334155' }}>냉매 출구 (°C)</label>
-                        <BufferedNumberInput syncKey={`${selectedDef.id}-uout`} step={1} value={selectedDef.params.utilOutTempC ?? -18} onValueChange={v => updateParam('utilOutTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF' }} />
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>냉매 출구 (°C)</label>
+                        <BufferedNumberInput syncKey={`${selectedDef.id}-uout`} step={1} value={selectedDef.params.utilOutTempC ?? -18} onValueChange={v => updateParam('utilOutTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
                       </div>
                     </div>
                   )}
 
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div style={{ paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#1E3A8A' }}>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
                         🔬 총괄 오염계수 R_f (m²·h·°C/kcal · 3-Zone 전열면적 산출)
                       </label>
                       <BufferedNumberInput
@@ -8363,7 +8730,7 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.foulingFactor ?? 0.0002}
                         onValueChange={v => updateParam('foulingFactor', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, marginTop: 2, background: '#FFFFFF' }}
+                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, marginTop: 2, background: '#FFFFFF', color: '#0F172A' }}
                       />
                     </div>
                   )}
@@ -8396,7 +8763,7 @@ export function FlowsheetWorkspace({
                         background: '#1E3A8A',
                         color: '#FFFFFF',
                         fontSize: 11,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         cursor: 'pointer',
                       }}
                     >
@@ -8412,11 +8779,11 @@ export function FlowsheetWorkspace({
                         width: '100%',
                         padding: '7px 10px',
                         borderRadius: 6,
-                        border: '1.5px solid #2563EB',
+                        border: '1px solid #CBD5E1',
                         background: '#FFFFFF',
-                        color: '#1E3A8A',
+                        color: '#1E293B',
                         fontSize: 11,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         cursor: 'pointer',
                       }}
                     >
@@ -8428,50 +8795,50 @@ export function FlowsheetWorkspace({
 
               {/* ── D) 가스 압축기 & 원심 펌프 ── */}
               {(selectedDef.unitType === 'compressor' || selectedDef.unitType === 'pump') && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F0F9FF', padding: 10, borderRadius: 7, border: '1px solid #BAE6FD' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0369A1' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
                     {selectedDef.unitType === 'compressor' ? '🌀 가스 압축기 승압 · 이슬점 조건' : '💧 원심 펌프 토출 조건'}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>토출 압력 (kg/cm²G)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>토출 압력 (kg/cm²G)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-cpress`}
                         step={0.2}
                         value={selectedDef.params.outletPressKgcm2g ?? 3.5}
                         onValueChange={v => updateParam('outletPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
+                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>기계 효율 (0~1)</label>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>기계 효율 (0~1)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-ceff`}
                         step={0.02}
                         value={selectedDef.params.efficiency ?? 0.76}
                         onValueChange={v => updateParam('efficiency', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                       />
                     </div>
                   </div>
                   {selectedDef.unitType === 'compressor' && (
                     <>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700 }}>인터쿨러 후단 토출온도 (°C, 0이면 단열압축)</label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>인터쿨러 후단 토출온도 (°C, 0이면 단열압축)</label>
                         <BufferedNumberInput
                           syncKey={`${selectedDef.id}-cic`}
                           step={2}
                           value={selectedDef.params.intercooledTempC ?? 42}
                           onValueChange={v => updateParam('intercooledTempC', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }}
+                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                         />
                       </div>
                       {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
-                        <div style={{ paddingTop: 5, borderTop: '1px dashed #93C5FD' }}>
-                          <label style={{ fontSize: 10, fontWeight: 800, color: '#5B21B6' }}>
+                        <div style={{ paddingTop: 5, borderTop: '1px dashed #CBD5E1' }}>
+                          <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
                             🔬 다단 압축 단수 (1~4단 · PR-EOS Z 및 Cl₂ 발화한계 110°C 검토)
                           </label>
                           <BufferedNumberInput
@@ -8482,13 +8849,13 @@ export function FlowsheetWorkspace({
                             value={selectedDef.params.compStages ?? 2}
                             onValueChange={v => updateParam('compStages', v)}
                             onEnterRun={() => runSimulationNow()}
-                            style={{ width: '100%', padding: '4px 6px', border: '1px solid #C4B5FD', borderRadius: 4, fontSize: 12, marginTop: 2 }}
+                            style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, marginTop: 2 }}
                           />
                         </div>
                       )}
-                      <div style={{ fontSize: 10.5, color: '#0369A1', fontWeight: 700 }}>
+                      <div style={{ fontSize: 10.5, color: '#475569', fontWeight: 700 }}>
                         💡 토출압 {selectedDef.params.outletPressKgcm2g ?? 3.5} kG 기준 순수 Cl₂ 액화 이슬점:{' '}
-                        <b>{cl2DewPointTempC((selectedDef.params.outletPressKgcm2g ?? 3.5) + 1.03323).toFixed(1)} °C</b>
+                        <b style={{ color: '#0F172A' }}>{cl2DewPointTempC((selectedDef.params.outletPressKgcm2g ?? 3.5) + 1.03323).toFixed(1)} °C</b>
                       </div>
                     </>
                   )}
@@ -8512,31 +8879,17 @@ export function FlowsheetWorkspace({
                   : 0;
 
                 const diagLvl = dRes?.diagnostics?.level ?? (dRes?.converged ? 'ok' : 'error');
-                const badgeBg = isSimDirty
-                  ? '#FEF3C7'
-                  : diagLvl === 'ok'
-                  ? '#DCFCE7'
-                  : diagLvl === 'warning'
-                  ? '#FEF3C7'
-                  : '#FEE2E2';
                 const badgeFg = isSimDirty
-                  ? '#92400E'
+                  ? '#D97706'
                   : diagLvl === 'ok'
-                  ? '#166534'
+                  ? '#059669'
                   : diagLvl === 'warning'
-                  ? '#92400E'
-                  : '#991B1B';
-                const badgeBd = isSimDirty
-                  ? '#FCD34D'
-                  : diagLvl === 'ok'
-                  ? '#86EFAC'
-                  : diagLvl === 'warning'
-                  ? '#FCD34D'
-                  : '#FCA5A5';
+                  ? '#D97706'
+                  : '#B91C1C';
                 const badgeTxt = isSimDirty
                   ? '조건변경 · RUN 대기'
                   : dRes
-                  ? `${diagLvl === 'ok' ? '✓ 정상 수렴' : diagLvl === 'warning' ? '⚠ 스펙한계 점검' : '✕ 미수렴·조건부족'} · ${dRes.thermoModelUsed}`
+                  ? `${diagLvl === 'ok' ? '정상 수렴' : diagLvl === 'warning' ? '스펙한계 점검' : '미수렴·조건부족'} · ${dRes.thermoModelUsed}`
                   : dCfg.thermoModel ?? 'AUTO';
 
                 return (
@@ -8547,8 +8900,8 @@ export function FlowsheetWorkspace({
                       gap: 8,
                       background: '#F8FAFC',
                       padding: 10,
-                      borderRadius: 8,
-                      border: '1px solid #CBD5E1',
+                      borderRadius: 6,
+                      border: '1px solid #E2E8F0',
                     }}
                   >
                     {/* 1행: 헤더 + 수렴 배지 */}
@@ -8559,15 +8912,28 @@ export function FlowsheetWorkspace({
                       <span
                         style={{
                           fontSize: 9.5,
-                          fontWeight: 900,
+                          fontWeight: 800,
                           padding: '1.5px 6px',
                           borderRadius: 999,
-                          background: badgeBg,
+                          background: '#FFFFFF',
                           color: badgeFg,
-                          border: `1px solid ${badgeBd}`,
+                          border: '1px solid #E2E8F0',
                           whiteSpace: 'nowrap',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
                         }}
                       >
+                        <span
+                          style={{
+                            width: 5,
+                            height: 5,
+                            borderRadius: '50%',
+                            background: badgeFg,
+                            display: 'inline-block',
+                            flexShrink: 0,
+                          }}
+                        />
                         {badgeTxt}
                       </span>
                     </div>
@@ -8578,11 +8944,11 @@ export function FlowsheetWorkspace({
                         style={{
                           padding: '6px 8px',
                           borderRadius: 6,
-                          background: dRes.diagnostics.level === 'error' ? '#FEF2F2' : '#FFFBEB',
-                          border: `1px solid ${dRes.diagnostics.level === 'error' ? '#FECACA' : '#FCD34D'}`,
+                          background: '#FFFFFF',
+                          border: '1px solid #E2E8F0',
                           fontSize: 9.8,
                           lineHeight: 1.4,
-                          color: dRes.diagnostics.level === 'error' ? '#991B1B' : '#92400E',
+                          color: dRes.diagnostics.level === 'error' ? '#B91C1C' : '#D97706',
                           display: 'flex',
                           flexDirection: 'column',
                           gap: 4,
@@ -8602,8 +8968,8 @@ export function FlowsheetWorkspace({
                                 style={{
                                   padding: '3px 7px',
                                   borderRadius: 4,
-                                  border: '1px solid #2563EB',
-                                  background: '#2563EB',
+                                  border: '1px solid #1E3A8A',
+                                  background: '#1E3A8A',
                                   color: '#FFFFFF',
                                   fontSize: 9.5,
                                   fontWeight: 800,
@@ -8642,7 +9008,7 @@ export function FlowsheetWorkspace({
                         <>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                             <span style={{ color: '#475569', whiteSpace: 'nowrap', flexShrink: 0, fontSize: 9.8 }}>단수·RR</span>
-                            <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#1E3A8A', textAlign: 'right', fontSize: 10, whiteSpace: 'nowrap' }}>
+                            <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A', textAlign: 'right', fontSize: 10, whiteSpace: 'nowrap' }}>
                               {dRes.totalStagesUsed}단(실제 {dRes.actualTrayCount} · F:{dRes.feedStageUsed}) · RR={dRes.actualRefluxRatio.toFixed(2)}
                             </b>
                           </div>
@@ -8655,10 +9021,10 @@ export function FlowsheetWorkspace({
                               style={{
                                 fontSize: 9.6,
                                 fontFamily: 'JetBrains Mono, monospace',
-                                color: '#6D28D9',
+                                color: '#475569',
                                 fontWeight: 800,
-                                background: '#F5F3FF',
-                                border: '1px solid #DDD6FE',
+                                background: '#F8FAFC',
+                                border: '1px solid #E2E8F0',
                                 borderRadius: 4,
                                 padding: '3px 6px',
                                 display: 'flex',
@@ -8668,13 +9034,13 @@ export function FlowsheetWorkspace({
                               }}
                             >
                               <span>
-                                🟣 측류 S ({dRes.sideCutStageUsed ?? '-'}단·{dRes.sideCutPhase === 'G' ? '기상' : '액상'}): {(dRes.sideCutMassKgH ?? 0).toFixed(1)} kg/h
+                                측류 S ({dRes.sideCutStageUsed ?? '-'}단·{dRes.sideCutPhase === 'G' ? '기상' : '액상'}): {(dRes.sideCutMassKgH ?? 0).toFixed(1)} kg/h
                               </span>
                               <span>S/F {((dRes.actualSOverFMass ?? 0) * 100).toFixed(1)}%</span>
                             </div>
                           )}
                           {dRes.decanterWaterDrawKgH > 0.005 && (
-                            <div style={{ fontSize: 9.6, fontFamily: 'JetBrains Mono, monospace', color: '#0369A1', fontWeight: 800 }}>
+                            <div style={{ fontSize: 9.6, fontFamily: 'JetBrains Mono, monospace', color: '#475569', fontWeight: 800 }}>
                               💧 탑정 디캔터 수층 분리 W: {dRes.decanterWaterDrawKgH.toFixed(2)} kg/h
                             </div>
                           )}
@@ -8690,7 +9056,7 @@ export function FlowsheetWorkspace({
                           )}
                         </>
                       ) : (
-                        <div style={{ fontSize: 10, color: '#64748B' }}>
+                        <div style={{ fontSize: 10, color: '#475569' }}>
                           탑정압 {(dCfg.topPressKgcm2g ?? 0.05).toFixed(2)} kG · 상단 <b>▶ RUN 실행</b> 또는 아래 워크벤치를 열어 조건을 설정하세요.
                         </div>
                       )}
@@ -8712,7 +9078,7 @@ export function FlowsheetWorkspace({
                           background: '#1E3A8A',
                           color: '#FFFFFF',
                           fontSize: 11,
-                          fontWeight: 900,
+                          fontWeight: 800,
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
                         }}
@@ -8729,11 +9095,11 @@ export function FlowsheetWorkspace({
                           width: '100%',
                           padding: '8px 10px',
                           borderRadius: 6,
-                          border: '1.5px solid #2563EB',
+                          border: '1px solid #CBD5E1',
                           background: '#FFFFFF',
-                          color: '#1E3A8A',
+                          color: '#1E293B',
                           fontSize: 11,
-                          fontWeight: 900,
+                          fontWeight: 800,
                           cursor: 'pointer',
                           whiteSpace: 'nowrap',
                         }}
@@ -8747,14 +9113,14 @@ export function FlowsheetWorkspace({
 
               {/* ── E) 건조탑 · 흡수탑 (Absorber) ── */}
               {selectedDef.unitType === 'absorber' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#FAF5FF', padding: 10, borderRadius: 7, border: '1px solid #E9D5FF' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#5B21B6' }}>🗼 건조탑 · 흡수탑 발란스</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🗼 건조탑 · 흡수탑 발란스</div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800, color: '#5B21B6' }}>흡수탑 열역학 해석 알고리즘</label>
+                    <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>흡수탑 열역학 해석 알고리즘</label>
                     <select
                       value={selectedDef.params.absorberCalcMode ?? 'kremser'}
                       onChange={e => updateParam('absorberCalcMode', e.target.value as 'kremser' | 'rigorous_mesh')}
-                      style={{ width: '100%', padding: '5px', border: '1px solid #C4B5FD', borderRadius: 4, fontSize: 11.5, fontWeight: 700, background: '#FFFFFF' }}
+                      style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, background: '#FFFFFF', color: '#0F172A' }}
                     >
                       <option value="kremser">Kremser / 화학반응 흡수 수지 (기본 · 황산건조/가성제해)</option>
                       <option value="rigorous_mesh">🔬 엄밀 다단 MESH 향류 기액평형 흡수·스트리퍼</option>
@@ -8762,11 +9128,11 @@ export function FlowsheetWorkspace({
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>제거/흡수 대상 성분</label>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>제거/흡수 대상 성분</label>
                       <select
                         value={selectedDef.params.targetComponent ?? 'H2O'}
                         onChange={e => updateParam('targetComponent', e.target.value as SimCompKey)}
-                        style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5 }}
+                        style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                       >
                         <option value="H2O">H₂O (황산 염소건조탑)</option>
                         <option value="HCl">HCl (염산 흡수탑)</option>
@@ -8774,7 +9140,7 @@ export function FlowsheetWorkspace({
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
                         {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '이론 단수 N (단)' : '제거 효율 (0~1)'}
                       </label>
                       {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? (
@@ -8786,7 +9152,7 @@ export function FlowsheetWorkspace({
                           value={selectedDef.params.columnStages ?? 8}
                           onValueChange={v => updateParam('columnStages', Math.round(v))}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px', border: '1px solid #C4B5FD', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
+                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
                         />
                       ) : (
                         <BufferedNumberInput
@@ -8797,14 +9163,14 @@ export function FlowsheetWorkspace({
                           value={selectedDef.params.removalEfficiency ?? 0.999}
                           onValueChange={v => updateParam('removalEfficiency', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }}
+                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                         />
                       )}
                     </div>
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#5B21B6' }}>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
                         🔬 탑 압력강하 ΔP (kg/cm² · Kremser 흡수율 및 탑경 자동 산출)
                       </label>
                       <BufferedNumberInput
@@ -8814,16 +9180,16 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.columnDeltaPKgcm2 ?? 0.08}
                         onValueChange={v => updateParam('columnDeltaPKgcm2', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #C4B5FD', borderRadius: 4, fontSize: 11.5, marginTop: 2 }}
+                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, marginTop: 2 }}
                       />
                     </div>
                   )}
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 700 }}>흡수액 공급 방식</label>
+                    <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>흡수액 공급 방식</label>
                     <select
                       value={selectedDef.params.solventMode ?? 'connected_or_manual'}
                       onChange={e => updateParam('solventMode', e.target.value)}
-                      style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5 }}
+                      style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                     >
                       <option value="connected_or_manual">보충 유량 직접 입력 (황산 등)</option>
                       <option value="auto_target_wt">탑저 목표 농도(wt%) 지정 → 흡수액 자동역산</option>
@@ -8831,7 +9197,7 @@ export function FlowsheetWorkspace({
                   </div>
                   {(selectedDef.params.solventMode ?? 'connected_or_manual') === 'auto_target_wt' ? (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700 }}>탑저 배출액 목표 농도 (wt%)</label>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>탑저 배출액 목표 농도 (wt%)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-abswt`}
                         step={1}
@@ -8840,21 +9206,21 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.targetBottomWtPct ?? 35}
                         onValueChange={v => updateParam('targetBottomWtPct', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                       />
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700 }}>보충 성분</label>
-                        <select value={selectedDef.params.makeupSolventComp ?? 'H2SO4'} onChange={e => updateParam('makeupSolventComp', e.target.value as SimCompKey)} style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5 }}>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>보충 성분</label>
+                        <select value={selectedDef.params.makeupSolventComp ?? 'H2SO4'} onChange={e => updateParam('makeupSolventComp', e.target.value as SimCompKey)} style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}>
                           <option value="H2SO4">H₂SO₄ (진한황산)</option>
                           <option value="H2O">H₂O (순수)</option>
                           <option value="NaOH">NaOH (가성소다)</option>
                         </select>
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700 }}>보충량 (kg/h)</label>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>보충량 (kg/h)</label>
                         <BufferedNumberInput
                           syncKey={`${selectedDef.id}-absmu`}
                           step={100}
@@ -8862,7 +9228,7 @@ export function FlowsheetWorkspace({
                           value={selectedDef.params.makeupSolventKgH ?? 1800}
                           onValueChange={v => updateParam('makeupSolventKgH', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5 }}
+                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                         />
                       </div>
                     </div>
@@ -8875,18 +9241,18 @@ export function FlowsheetWorkspace({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>분리 온도 (°C)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>분리 온도 (°C)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-sept`}
                         step={1}
                         value={selectedDef.params.operTempC ?? 40}
                         onValueChange={v => updateParam('operTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>압력(비우면 전단추종)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>압력(비우면 전단추종)</label>
                       <input
                         type="text"
                         inputMode="decimal"
@@ -8903,17 +9269,17 @@ export function FlowsheetWorkspace({
                         onKeyDown={e => {
                           if (e.key === 'Enter') runSimulationNow();
                         }}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#5B21B6' }}>🔬 정밀 플래시 열조건</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>🔬 정밀 플래시 열조건</label>
                       <select
                         value={selectedDef.params.flashMode ?? 'isothermal'}
                         onChange={e => updateParam('flashMode', e.target.value)}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #C4B5FD', borderRadius: 5, fontSize: 11.5, marginTop: 2 }}
+                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5, marginTop: 2 }}
                       >
                         <option value="isothermal">등온 플래시 (PR-EOS + Pitzer 활동도 VLE)</option>
                         <option value="adiabatic">단열 감압 플래시 (줄-톰슨 온도 변화 반영)</option>
@@ -9088,11 +9454,11 @@ export function FlowsheetWorkspace({
               )}
 
               {selectedDef.unitType === 'extractor' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F5F3FF', padding: 10, borderRadius: 7, border: '1px solid #DDD6FE' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#6D28D9' }}>🧪 향류 다단 액-액 추출탑 (LLE)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🧪 향류 다단 액-액 추출탑 (LLE)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>이론 추출 단수 N (단)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>이론 추출 단수 N (단)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-extst`}
                         step={1}
@@ -9101,28 +9467,28 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.extractorStages ?? 6}
                         onValueChange={v => updateParam('extractorStages', Math.max(1, Math.min(50, Math.round(v))))}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #C4B5FD', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>추출 운전 온도 (°C)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>추출 운전 온도 (°C)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-extt`}
                         step={1}
                         value={selectedDef.params.operTempC ?? 25}
                         onValueChange={v => updateParam('operTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>보충 추출용매 성분 (미연결 시)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>보충 추출용매 성분 (미연결 시)</label>
                       <select
                         value={selectedDef.params.extractorSolventComp ?? 'EtOAc'}
                         onChange={e => updateParam('extractorSolventComp', e.target.value as SimCompKey)}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 11.5 }}
+                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}
                       >
                         {activeComponents.map(c => (
                           <option key={c} value={c}>
@@ -9132,7 +9498,7 @@ export function FlowsheetWorkspace({
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>보충 용매 유량 (kg/h)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>보충 용매 유량 (kg/h)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-extsolv`}
                         step={50}
@@ -9140,7 +9506,7 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.extractorSolventKgH ?? 800}
                         onValueChange={v => updateParam('extractorSolventKgH', Math.max(0, v))}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -9148,11 +9514,11 @@ export function FlowsheetWorkspace({
               )}
 
               {selectedDef.unitType === 'valve' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#FFFBEB', padding: 10, borderRadius: 7, border: '1px solid #FDE68A' }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: '#B45309' }}>🔻 단열 등엔탈피 감압·교축 밸브 (H_out = H_in)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>🔻 단열 등엔탈피 감압·교축 밸브 (H_out = H_in)</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>목표 후단 압력 P_out (kg/cm²G)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>목표 후단 압력 P_out (kg/cm²G)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-vlvpout`}
                         step={0.2}
@@ -9160,11 +9526,11 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.outletPressKgcm2g ?? 1.0}
                         onValueChange={v => updateParam('outletPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #FCD34D', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>설계 차압 ΔP 참고 (kg/cm²)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>설계 차압 ΔP 참고 (kg/cm²)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-vlvdp`}
                         step={0.2}
@@ -9172,7 +9538,7 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.pressureDropKgcm2 ?? 2.0}
                         onValueChange={v => updateParam('pressureDropKgcm2', Math.max(0, v))}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -9180,21 +9546,21 @@ export function FlowsheetWorkspace({
               )}
 
               {selectedDef.unitType === 'reactor' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   {selectedDef.params.reactorConfig && (
                     <div
                       style={{
                         padding: '6px 8px',
                         borderRadius: 6,
-                        background: '#FEF2F2',
-                        border: '1px solid #FECACA',
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         gap: 6,
                       }}
                     >
-                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#991B1B' }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A' }}>
                         🔬 정밀 반응기 모델 활성 ({String(selectedDef.params.reactorConfig.model ?? 'stoic').toUpperCase()} · {selectedDef.params.reactorConfig.thermalMode ?? 'isothermal'})
                       </span>
                       <button
@@ -9203,11 +9569,11 @@ export function FlowsheetWorkspace({
                         style={{
                           padding: '2px 6px',
                           fontSize: 9.5,
-                          fontWeight: 800,
+                          fontWeight: 700,
                           borderRadius: 4,
-                          border: '1px solid #FCA5A5',
+                          border: '1px solid #CBD5E1',
                           background: '#FFFFFF',
-                          color: '#B91C1C',
+                          color: '#1E293B',
                           cursor: 'pointer',
                         }}
                       >
@@ -9221,11 +9587,11 @@ export function FlowsheetWorkspace({
                     style={{
                       padding: '8px 10px',
                       borderRadius: 6,
-                      border: '1px solid #DC2626',
-                      background: 'linear-gradient(135deg, #991B1B 0%, #B91C1C 100%)',
+                      border: '1px solid #1E3A8A',
+                      background: '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 11.5,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                       textAlign: 'center',
                     }}
@@ -9233,8 +9599,8 @@ export function FlowsheetWorkspace({
                     ⚗️ 반응기 정밀설계 워크벤치 열기 (STOIC·평형·Gibbs·CSTR·PFR) →
                   </button>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>반응 모델</label>
-                    <select value={selectedDef.params.reactionPreset ?? 'hcl_burner'} onChange={e => updateParam('reactionPreset', e.target.value)} style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 11.5 }}>
+                    <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응 모델</label>
+                    <select value={selectedDef.params.reactionPreset ?? 'hcl_burner'} onChange={e => updateParam('reactionPreset', e.target.value)} style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}>
                       <option value="hcl_burner">염산 합성 (Cl₂ + H₂ → 2HCl)</option>
                       <option value="caustic_scrub">폐염소 가성제해 · 차아염소산소다 생성 (Cl₂ + 2NaOH → NaOCl + NaCl + H₂O)</option>
                       <option value="fecl3_chlorination">1B 에칭폐액 염소화 재생 (2FeCl₂ + Cl₂ → 2FeCl₃)</option>
@@ -9244,11 +9610,11 @@ export function FlowsheetWorkspace({
                     </select>
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>반응기 해석 방식</label>
+                    <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응기 해석 방식</label>
                     <select
                       value={selectedDef.params.reactorModel ?? 'conversion'}
                       onChange={e => updateParam('reactorModel', e.target.value)}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 11.5 }}
+                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}
                     >
                       <option value="conversion">전환율 지정 (화학양론 / 2단계 연속반응)</option>
                       <option value="cstr">연속교반 반응기 (CSTR · Arrhenius 반응속도)</option>
@@ -9257,7 +9623,7 @@ export function FlowsheetWorkspace({
                   </div>
                   {(selectedDef.params.reactorModel ?? 'conversion') === 'conversion' ? (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>목표 전환율 (0~1 또는 %)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>목표 전환율 (0~1 또는 %)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-rxnconv`}
                         step={0.005}
@@ -9266,12 +9632,12 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.conversion ?? 0.995}
                         onValueChange={v => updateParam('conversion', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   ) : (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>유효 반응체적 V (m³)</label>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>유효 반응체적 V (m³)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-rxnvol`}
                         step={1}
@@ -9280,7 +9646,7 @@ export function FlowsheetWorkspace({
                         value={selectedDef.params.reactorVolumeM3 ?? 24}
                         onValueChange={v => updateParam('reactorVolumeM3', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   )}
@@ -9289,7 +9655,7 @@ export function FlowsheetWorkspace({
 
               {selectedDef.unitType === 'splitter' && (
                 <div>
-                  <label style={{ fontSize: 10, fontWeight: 800 }}>1번 출구 분기 비율 (0.01 ~ 0.99)</label>
+                  <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>1번 출구 분기 비율 (0.01 ~ 0.99)</label>
                   <BufferedNumberInput
                     syncKey={`${selectedDef.id}-splitr`}
                     step={0.05}
@@ -9298,18 +9664,18 @@ export function FlowsheetWorkspace({
                     value={selectedDef.params.splitRatioTop ?? 0.5}
                     onValueChange={v => updateParam('splitRatioTop', v)}
                     onEnterRun={() => runSimulationNow()}
-                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                    style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                   />
                 </div>
               )}
 
               {/* ── 실시간 계산 지표 결과 카드 ── */}
               {selectedUnitRes && (
-                <div style={{ marginTop: 2, padding: 10, background: '#F6F7F2', borderRadius: 7, border: '1px solid #E5E2DC', fontSize: 11.5 }}>
-                  <div style={{ fontWeight: 900, color: '#0F5338', marginBottom: 6 }}>📊 실시간 계산 결과</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                <div style={{ marginTop: 2, padding: 10, background: '#F8FAFC', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 11.5 }}>
+                  <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>📊 실시간 계산 결과</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
                     <span>유입 / 유출 유량:</span>
-                    <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
+                    <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
                       {selectedUnitRes.inletMassKgH.toLocaleString()} / {selectedUnitRes.outletMassKgH.toLocaleString()} kg/h
                     </b>
                   </div>
@@ -9319,10 +9685,10 @@ export function FlowsheetWorkspace({
                       .map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginBottom: 3, fontSize: 11 }}>
                           <span style={{ color: '#475569' }}>{k}:</span>
-                          <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#1A2F44', textAlign: 'right' }}>{v}</b>
+                          <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A', textAlign: 'right' }}>{v}</b>
                         </div>
                       ))}
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #CBD5E1', fontSize: 11, color: '#334155', lineHeight: 1.45 }}>
+                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #CBD5E1', fontSize: 11, color: '#475569', lineHeight: 1.45 }}>
                       {selectedUnitRes.statusNote}
                     </div>
                   </div>
