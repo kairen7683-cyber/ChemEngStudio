@@ -5,6 +5,8 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { useAuth } from '@/components/auth/AuthContext';
+import { formatPlantLabelForUser } from '@/lib/plantRegistry';
 
 const ElectrolyzerPlantSimulator = dynamic(
   () => import('@/app/flowsheet-simulator/page').then(m => m.FlowsheetWorkspace),
@@ -31,6 +33,7 @@ const ElectrolyzerPlantSimulator = dynamic(
 
 export default function MaterialBalancePage() {
   const router = useRouter();
+  const { user } = useAuth();
   const { activePlantId: plantId, setActivePlantId: setPlantId } = useBalanceStore();
 
   // 숨김(clorsim 기준참고용) 또는 삭제(green_h2)된 플랜트 ID 정규화 및 classic_sim 라우트 이동
@@ -102,7 +105,7 @@ export default function MaterialBalancePage() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 5, background: '#1E293B', color: '#FFFFFF' }}>
-                PLANT 05 · MDI 100,000 TPA
+                {formatPlantLabelForUser('PLANT 05 · MDI 100,000 TPA', user)}
               </span>
               <span style={{ fontSize: 11, fontWeight: 700, color: '#334155' }}>
                 Pure 4,4&apos;-MDI 4,500 kg/h (108 T/D) · PMDI 8,000 kg/h (192 T/D)

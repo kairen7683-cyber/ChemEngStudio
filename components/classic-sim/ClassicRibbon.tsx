@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/EngIcons';
 
 import React from 'react';
+import { useAuth } from '@/components/auth/AuthContext';
+import { formatPlantLabelForUser } from '@/lib/plantRegistry';
 import type { ClassicPlantPresetOption } from '@/lib/classicPlantPresets';
 import type { SimPropertyMethod } from '@/lib/calculations/componentCatalog';
 import type { TearSolverMethod } from '@/lib/calculations/flowsheetSolver';
@@ -103,12 +105,14 @@ export default function ClassicRibbon(props: ClassicRibbonProps) {
     onSelectPlantPreset,
   } = props;
 
+  const { user } = useAuth();
+
   const groupedPresets: Array<{ group: string; label: string; items: ClassicPlantPresetOption[] }> = [
-    { group: 'electrolysis', label: 'PLANT 01 · 전해공장 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'electrolysis') },
-    { group: 'hcl1A', label: 'PLANT 02 · 염산합성/정제 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'hcl1A') },
-    { group: 'ech', label: 'PLANT 03 · ECH 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'ech') },
-    { group: 'cms', label: 'PLANT 04 · 클로로메탄(CMS) 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'cms') },
-    { group: 'mdi', label: 'PLANT 05 · MDI 통합 공정 (수렴 완료)', items: plantPresets.filter(p => p.plantGroup === 'mdi') },
+    { group: 'electrolysis', label: formatPlantLabelForUser('PLANT 01 · 전해공장 (수렴 완료)', user), items: plantPresets.filter(p => p.plantGroup === 'electrolysis') },
+    { group: 'hcl1A', label: formatPlantLabelForUser('PLANT 02 · 염산합성/정제 (수렴 완료)', user), items: plantPresets.filter(p => p.plantGroup === 'hcl1A') },
+    { group: 'ech', label: formatPlantLabelForUser('PLANT 03 · ECH 공정 (수렴 완료)', user), items: plantPresets.filter(p => p.plantGroup === 'ech') },
+    { group: 'cms', label: formatPlantLabelForUser('PLANT 04 · 클로로메탄(CMS) 공정 (수렴 완료)', user), items: plantPresets.filter(p => p.plantGroup === 'cms') },
+    { group: 'mdi', label: formatPlantLabelForUser('PLANT 05 · MDI 통합 공정 (수렴 완료)', user), items: plantPresets.filter(p => p.plantGroup === 'mdi') },
   ].filter(g => g.items.length > 0);
 
   return (

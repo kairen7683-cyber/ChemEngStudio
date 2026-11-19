@@ -8,6 +8,8 @@ import {
   PLANT_REGISTRY,
   getPlantRegistryItem,
   isPlantAllowed,
+  showPlantNumbersForUser,
+  formatPlantCodeAndName,
   type PlantWorkspaceTab,
 } from '@/lib/plantRegistry';
 import {
@@ -195,7 +197,7 @@ export default function Header() {
 
   const caseTriggerLabel = isSimulatorMode
     ? `내 케이스 · ${displayCaseTitle || '기본 작업공간'}`
-    : `[예제] ${plantMeta.code} · ${plantMeta.shortLabel}`;
+    : `[예제] ${formatPlantCodeAndName(plantMeta, user)}`;
 
   const getActiveWorkspaceTabKey = (): PlantWorkspaceTab['key'] => {
     if (pathname.startsWith('/pep-yearbook')) return 'econ';
@@ -826,19 +828,21 @@ export default function Header() {
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-                            <span
-                              style={{
-                                fontSize: 9.2,
-                                fontWeight: 800,
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: selected ? '#1E3A8A' : '#1E293B',
-                                color: '#FFFFFF',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {p.code}
-                            </span>
+                            {showPlantNumbersForUser(user) && (
+                              <span
+                                style={{
+                                  fontSize: 9.2,
+                                  fontWeight: 800,
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  background: selected ? '#1E3A8A' : '#1E293B',
+                                  color: '#FFFFFF',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {p.code}
+                              </span>
+                            )}
                             <div style={{ minWidth: 0 }}>
                               <div
                                 style={{

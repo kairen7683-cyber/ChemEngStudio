@@ -5,7 +5,8 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
-import { getPlantRegistryItem } from '@/lib/plantRegistry';
+import { getPlantRegistryItem, showPlantNumbersForUser } from '@/lib/plantRegistry';
+import { useAuth } from '@/components/auth/AuthContext';
 
 const DesignStandards = dynamic(() => import('@/components/DesignStandards'), { ssr: false });
 
@@ -292,6 +293,7 @@ export default function PepYearbookPage() {
   const plantMeta = getPlantRegistryItem(activePlantId);
   const allowedKeys = useMemo(() => getPlantPepKeys(activePlantId), [activePlantId]);
 
+  const { user } = useAuth();
   const [subMode, setSubMode]         = useState<'econ' | 'standards'>('econ');
   const [procKey, setProcKey]         = useState<string>(() => allowedKeys[0]);
   const [capTpy, setCapTpy]           = useState<number>(() => PEP_PROCESS_DB[allowedKeys[0]]?.baseCap_tpy ?? 165000);
@@ -355,7 +357,7 @@ export default function PepYearbookPage() {
     const wb = XLSX.utils.book_new();
     const rows = [
       ['CHEMPLANT STUDIO — 공정 원단위 및 경제성 평가 보고서'],
-      ['대상 공장', `${plantMeta.code} (${plantMeta.title})`],
+      ['대상 공장', showPlantNumbersForUser(user) ? `${plantMeta.code} (${plantMeta.title})` : plantMeta.title],
       ['공정 코드', proc.code, '공정명', proc.name],
       ['기준 제품', proc.product, '대표 라이센서', proc.licensor],
       ['연간 생산능력 (t/yr)', capTpy, '연간 가동시간 (hr/yr)', opHours],
@@ -481,7 +483,7 @@ export default function PepYearbookPage() {
         }}>
           <div>
             <div style={{ fontSize: 15.5, fontWeight: 900, color: '#0F172A' }}>
-              [{plantMeta.code}] {plantMeta.title} — 원단위 · 유틸리티 · 경제성 분석
+              {showPlantNumbersForUser(user) ? `[${plantMeta.code}] ` : ''}{plantMeta.title} — 원단위 · 유틸리티 · 경제성 분석
             </div>
             <div style={{ fontSize: 11.5, color: '#52525B', marginTop: 3 }}>
               선택된 공장의 원료·유틸리티 원단위(Unit Consumption), 설비 투자비(Six-Tenths Rule), 제조원가 및 수익성을 평가합니다.
@@ -517,7 +519,11 @@ export default function PepYearbookPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
             <div style={{ gridColumn: 'span 2', minWidth: 260 }}>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#52525B', display: 'block', marginBottom: 4 }}>
-                {activePlantId === 'new_builder' ? '신규 프로젝트 벤치마크 공정 선택' : `${plantMeta.code} 적용 공정 패키지`}
+                {activePlantId === 'new_builder'
+                  ? '신규 프로젝트 벤치마크 공정 선택'
+                  : showPlantNumbersForUser(user)
+                    ? `${plantMeta.code} 적용 공정 패키지`
+                    : `${plantMeta.shortLabel} 적용 공정 패키지`}
               </label>
               <select
                 value={proc.key}

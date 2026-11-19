@@ -185,3 +185,39 @@ export function isPlantAllowed(
   if (user.allowed_plants.includes('*')) return true;
   return user.allowed_plants.includes(plantId);
 }
+
+/**
+ * 관리자 계정에는 내부 관리 편의를 위해 PLANT 01~05 번호를 유지하고,
+ * 일반/접근제한 계정에는 타 공장 존재가 노출되지 않도록 PLANT 번호 접두어를 제거합니다.
+ */
+export function showPlantNumbersForUser(
+  user?: { role?: string } | null
+): boolean {
+  return user?.role === 'admin';
+}
+
+export function stripPlantNumberPrefix(label: string): string {
+  return label
+    .replace(/^PLANT\s*0?\d+\s*[·:\-—]?\s*/i, '')
+    .replace(/^\[PLANT\s*0?\d+\]\s*/i, '')
+    .trim();
+}
+
+export function formatPlantLabelForUser(
+  label: string,
+  user?: { role?: string } | null
+): string {
+  if (showPlantNumbersForUser(user)) return label;
+  return stripPlantNumberPrefix(label);
+}
+
+export function formatPlantCodeAndName(
+  plant: Pick<PlantRegistryItem, 'code' | 'shortLabel'>,
+  user?: { role?: string } | null,
+  separator = ' · '
+): string {
+  if (showPlantNumbersForUser(user) && /^PLANT\s/i.test(plant.code)) {
+    return `${plant.code}${separator}${plant.shortLabel}`;
+  }
+  return plant.shortLabel;
+}

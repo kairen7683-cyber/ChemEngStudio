@@ -83,7 +83,7 @@ import {
   syncMdiSubDefsFromMaster,
 } from '@/lib/calculations/mdiPlantHierarchy';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
+import { PLANT_GROUP_TO_ID, isPlantAllowed, formatPlantLabelForUser } from '@/lib/plantRegistry';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { useUnitStore } from '@/lib/stores/unitStore';
@@ -5414,7 +5414,7 @@ export function FlowsheetWorkspace({
                   ))}
               </optgroup>
               {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
-                <optgroup label="PLANT 01 전해 단위공정">
+                <optgroup label={formatPlantLabelForUser('PLANT 01 전해 단위공정', user)}>
                   {getAllPresets()
                     .filter(p => p.group === 'plant02')
                     .map(p => (
@@ -5425,7 +5425,7 @@ export function FlowsheetWorkspace({
                 </optgroup>
               )}
               {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
-                <optgroup label="PLANT 02 1A 단위공정">
+                <optgroup label={formatPlantLabelForUser('PLANT 02 1A 단위공정', user)}>
                   {getAllPresets()
                     .filter(p => p.group === 'plant03')
                     .map(p => (
@@ -5436,7 +5436,7 @@ export function FlowsheetWorkspace({
                 </optgroup>
               )}
               {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
-                <optgroup label="PLANT 03 바이오 ECH 단위공정">
+                <optgroup label={formatPlantLabelForUser('PLANT 03 바이오 ECH 단위공정', user)}>
                   {getAllPresets()
                     .filter(p => p.group === 'plant04')
                     .map(p => (
@@ -5447,7 +5447,7 @@ export function FlowsheetWorkspace({
                 </optgroup>
               )}
               {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
-                <optgroup label="PLANT 04 클로로메탄(CMS) 단위공정">
+                <optgroup label={formatPlantLabelForUser('PLANT 04 클로로메탄(CMS) 단위공정', user)}>
                   {getAllPresets()
                     .filter(p => p.group === 'plant05')
                     .map(p => (
@@ -5458,7 +5458,7 @@ export function FlowsheetWorkspace({
                 </optgroup>
               )}
               {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
-                <optgroup label="PLANT 05 · MDI 통합 공정">
+                <optgroup label={formatPlantLabelForUser('PLANT 05 · MDI 통합 공정', user)}>
                   {getAllPresets()
                     .filter(p => p.group === 'plant06')
                     .map(p => (
@@ -5947,7 +5947,7 @@ export function FlowsheetWorkspace({
                     ))}
                 </optgroup>
                 {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
-                  <optgroup label="PLANT 01 전해공장 — 단위공정 단독 프리셋">
+                  <optgroup label={formatPlantLabelForUser('PLANT 01 전해공장 — 단위공정 단독 프리셋', user)}>
                     {getAllPresets()
                       .filter(p => p.group === 'plant02')
                       .map(p => (
@@ -5958,7 +5958,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
                 {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
-                  <optgroup label="PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋">
+                  <optgroup label={formatPlantLabelForUser('PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋', user)}>
                     {getAllPresets()
                       .filter(p => p.group === 'plant03')
                       .map(p => (
@@ -5969,7 +5969,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
                 {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
-                  <optgroup label="PLANT 03 바이오 ECH — 단위공정 단독 프리셋">
+                  <optgroup label={formatPlantLabelForUser('PLANT 03 바이오 ECH — 단위공정 단독 프리셋', user)}>
                     {getAllPresets()
                       .filter(p => p.group === 'plant04')
                       .map(p => (
@@ -5980,7 +5980,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
                 {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
-                  <optgroup label="PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋">
+                  <optgroup label={formatPlantLabelForUser('PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋', user)}>
                     {getAllPresets()
                       .filter(p => p.group === 'plant05')
                       .map(p => (
@@ -5991,7 +5991,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
                 {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
-                  <optgroup label="PLANT 05 · MDI 통합 공정 — 단위공정 단독 프리셋">
+                  <optgroup label={formatPlantLabelForUser('PLANT 05 · MDI 통합 공정 — 단위공정 단독 프리셋', user)}>
                     {getAllPresets()
                       .filter(p => p.group === 'plant06')
                       .map(p => (
@@ -7886,6 +7886,7 @@ export function FlowsheetWorkspace({
               <PlantUnitCopyBox
                 unitType={selectedDef.unitType}
                 nodeKey={selectedDef.id}
+                activePlantId={isPlantSimMode ? workspacePlantId : undefined}
                 onCopyParams={(copiedParams, tpl, includeInlet) => {
                   const unitId = selectedDef.id;
                   updateSelectedDef({ params: copiedParams });

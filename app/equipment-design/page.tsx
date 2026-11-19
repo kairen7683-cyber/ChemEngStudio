@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_REGISTRY, isPlantAllowed } from '@/lib/plantRegistry';
+import { PLANT_REGISTRY, isPlantAllowed, formatPlantLabelForUser } from '@/lib/plantRegistry';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { useUnitStore } from '@/lib/stores/unitStore';
@@ -930,15 +930,18 @@ export default function EquipmentDesignPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', marginRight: 4, whiteSpace: 'nowrap' }}>
-            {isMdiMode
-              ? 'PLANT 05 MDI:'
-              : isCmsMode
-                ? 'PLANT 04 클로로메탄(CMS):'
-                : isEchMode
-                  ? 'PLANT 03 바이오 ECH:'
-                  : activePlantId === 'hcl_synth'
-                    ? 'PLANT 02 1A 염산:'
-                    : '전해공장 상세설계:'}
+            {formatPlantLabelForUser(
+              isMdiMode
+                ? 'PLANT 05 MDI:'
+                : isCmsMode
+                  ? 'PLANT 04 클로로메탄(CMS):'
+                  : isEchMode
+                    ? 'PLANT 03 바이오 ECH:'
+                    : activePlantId === 'hcl_synth'
+                      ? 'PLANT 02 1A 염산:'
+                      : '전해공장 상세설계:',
+              user
+            )}
           </span>
           {subTabs.map(st => {
             const isSel = effectiveDesignTab === st.key;
@@ -1031,13 +1034,16 @@ export default function EquipmentDesignPage() {
           >
             <div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A' }}>
-                {effectiveDesignTab === 'mdi_hub'
-                  ? 'PLANT 05 MDI 10만톤 — 핵심장치 내장·상세설계'
-                  : effectiveDesignTab === 'cms_hub'
-                    ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
-                    : effectiveDesignTab === 'distill'
-                      ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
-                      : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계'}
+                {formatPlantLabelForUser(
+                  effectiveDesignTab === 'mdi_hub'
+                    ? 'PLANT 05 MDI 10만톤 — 핵심장치 내장·상세설계'
+                    : effectiveDesignTab === 'cms_hub'
+                      ? 'PLANT 04 클로로메탄(CMS) — 핵심장치 내장·상세설계'
+                      : effectiveDesignTab === 'distill'
+                        ? 'PLANT 03 바이오 ECH — 핵심장치 내장·상세설계'
+                        : 'PLANT 02 1A 염산 · 공비회수 — 핵심장치 내장설계',
+                  user
+                )}
               </div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
                 {effectiveDesignTab === 'mdi_hub'

@@ -99,7 +99,7 @@ import {
   type DistillSideCutConfig,
 } from '@/lib/calculations/rigorousDistillation';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
+import { PLANT_GROUP_TO_ID, isPlantAllowed, showPlantNumbersForUser } from '@/lib/plantRegistry';
 import {
   type SimPropertyMethod,
   type ResolvedPropertyMethod,
@@ -705,6 +705,7 @@ export default function ClassicSimulatorPage() {
 
   const router = useRouter();
   const { user } = useAuth();
+  const activePlantId = useBalanceStore(s => s.activePlantId);
   const setActivePlantId = useBalanceStore(s => s.setActivePlantId);
   const [ribbonTab, setRibbonTab] = useState<ClassicRibbonTab>('home');
   const [showPalette, setShowPalette] = useState(true);
@@ -2375,7 +2376,9 @@ export default function ClassicSimulatorPage() {
                           textAlign: 'left',
                         }}
                       >
-                        {p.code.replace('PLANT ', 'P')} · {p.labelKo.split(' ')[0]}
+                        {showPlantNumbersForUser(user)
+                          ? `${p.code.replace('PLANT ', 'P')} · ${p.labelKo.split(' ')[0]}`
+                          : p.labelKo.split(' ')[0]}
                       </button>
                     ))}
                   </div>
@@ -2866,6 +2869,11 @@ export default function ClassicSimulatorPage() {
                 <PlantUnitCopyBox
                   unitType={selectedBlock.unitType}
                   nodeKey={selectedBlock.id}
+                  activePlantId={
+                    activePlantId !== 'new_builder' && activePlantId !== 'classic_sim'
+                      ? activePlantId
+                      : undefined
+                  }
                   onCopyParams={(copiedParams, tpl, includeInlet) => {
                     const unitId = selectedBlock.id;
                     updateBlockDef(unitId, d => ({ ...d, params: copiedParams }));
