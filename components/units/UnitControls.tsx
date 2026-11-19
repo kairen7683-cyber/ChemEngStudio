@@ -1,0 +1,581 @@
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import BufferedNumberInput from '@/components/common/BufferedNumberInput';
+import { SlidersParamIcon } from '@/components/ui/EngIcons';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import {
+  UNIT_PRESETS,
+  UNIT_QUANTITIES,
+  fromCanonical,
+  getUnitOption,
+  toCanonical,
+  type UnitQuantity,
+} from '@/lib/units/unitSystem';
+
+function roundClean(v: number, digits = 5): number {
+  if (!Number.isFinite(v)) return 0;
+  const f = Math.pow(10, digits);
+  return Math.round(v * f) / f;
+}
+
+/**
+ * 전역 기본 단위를 따르되, 개별 행/입력창에서 사용자가 드롭다운으로 단위를 바꾸면
+ * 해당 컴포넌트에서만 독립적으로 유지하고, 헤더에서 전역 기본 단위를 변경하면 즉시 동기화합니다.
+ */
+export function useLocalUnit(
+  quantity: UnitQuantity,
+  controlledUnitId?: string
+): [string, (nextUnitId: string) => void] {
+  const globalUnit = useUnitStore(s => s.units[quantity]);
+  const revision = useUnitStore(s => s.revision);
+  const hydrate = useUnitStore(s => s.hydrate);
+  const [override, setOverride] = useState<{ rev: number; id: string } | null>(null);
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  const activeId =
+    controlledUnitId ?? (override && override.rev === revision ? override.id : globalUnit);
+
+  const setUnitId = (nextUnitId: string) => {
+    setOverride({ rev: revision, id: nextUnitId });
+  };
+
+  return [activeId, setUnitId];
+}
+
+export interface UnitSelectProps {
+  quantity: UnitQuantity;
+  value: string;
+  onChange: (nextUnitId: string) => void;
+  size?: 'xs' | 'sm';
+  style?: React.CSSProperties;
+  title?: string;
+  disabled?: boolean;
+}
+
+export function UnitSelect({
+  quantity,
+  value,
+  onChange,
+  size = 'xs',
+  style,
+  title,
+  disabled,
+}: UnitSelectProps) {
+  const meta = UNIT_QUANTITIES[quantity];
+  return (
+    <select
+      value={value}
+      disabled={disabled}
+      title={title ?? `${meta.labelKo} 단위 변경`}
+      onMouseDown={e => e.stopPropagation()}
+      onClick={e => e.stopPropagation()}
+      onChange={e => {
+        e.stopPropagation();
+        onChange(e.target.value);
+      }}
+      style={{
+        fontSize: size === 'xs' ? 10 : 11,
+        fontWeight: 700,
+        fontFamily: 'JetBrains Mono, monospace',
+        color: '#334155',
+        background: '#F8FAFC',
+        border: '1px solid #CBD5E1',
+        borderRadius: 4,
+        padding: size === 'xs' ? '1px 2px' : '2px 4px',
+        cursor: disabled ? 'default' : 'pointer',
+        outline: 'none',
+        maxWidth: '100%',
+        ...style,
+      }}
+    >
+      {meta.options.map(opt => (
+        <option key={opt.id} value={opt.id}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export interface UnitNumberInputProps {
+  quantity: UnitQuantity;
+  /** Canonical internal value expected by the solver */
+  value: number;
+  /** Called with converted canonical internal value */
+  onValueChange: (canonicalVal: number) => void;
+  unitId?: string;
+  onUnitChange?: (unitId: string) => void;
+  onEnterRun?: () => void;
+  syncKey?: string | number;
+  minCanonical?: number;
+  maxCanonical?: number;
+  decimals?: number;
+  disabled?: boolean;
+  placeholder?: string;
+  title?: string;
+  inputStyle?: React.CSSProperties;
+  selectStyle?: React.CSSProperties;
+  containerStyle?: React.CSSProperties;
+}
+
+export function UnitNumberInput({
+  quantity,
+  value,
+  onValueChange,
+  unitId,
+  onUnitChange,
+  onEnterRun,
+  syncKey,
+  minCanonical,
+  maxCanonical,
+  decimals,
+  disabled,
+  placeholder,
+  title,
+  inputStyle,
+  selectStyle,
+  containerStyle,
+}: UnitNumberInputProps) {
+  const [localUnitId, setLocalUnitId] = useLocalUnit(quantity, unitId);
+  const activeUnitId = unitId ?? localUnitId;
+  const opt = getUnitOption(quantity, activeUnitId);
+
+  const displayDigits = decimals ?? Math.max(2, (opt.decimals ?? 2) + 1);
+  const displayVal = roundClean(fromCanonical(quantity, value, activeUnitId), displayDigits);
+  const minDisplay =
+    minCanonical !== undefined ? fromCanonical(quantity, minCanonical, activeUnitId) : undefined;
+  const maxDisplay =
+    maxCanonical !== undefined ? fromCanonical(quantity, maxCanonical, activeUnitId) : undefined;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 3,
+        width: '100%',
+        minWidth: 0,
+        ...containerStyle,
+      }}
+    >
+      <BufferedNumberInput
+        syncKey={`${syncKey ?? ''}:${activeUnitId}`}
+        value={displayVal}
+        min={minDisplay}
+        max={maxDisplay}
+        disabled={disabled}
+        placeholder={placeholder}
+        title={title}
+        onEnterRun={onEnterRun}
+        onValueChange={nextDisp => {
+          const nextCan = roundClean(toCanonical(quantity, nextDisp, activeUnitId), 6);
+          onValueChange(nextCan);
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          ...inputStyle,
+        }}
+      />
+      <UnitSelect
+        quantity={quantity}
+        value={activeUnitId}
+        disabled={disabled}
+        onChange={nextId => {
+          if (onUnitChange) onUnitChange(nextId);
+          else setLocalUnitId(nextId);
+        }}
+        size="xs"
+        style={{
+          flexShrink: 0,
+          minWidth: 56,
+          ...selectStyle,
+        }}
+      />
+    </div>
+  );
+}
+
+export interface UnitNullableNumberInputProps {
+  quantity: UnitQuantity;
+  value: number | undefined;
+  onValueChange: (canonicalVal: number | undefined) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  inputStyle?: React.CSSProperties;
+  selectStyle?: React.CSSProperties;
+  containerStyle?: React.CSSProperties;
+}
+
+export function UnitNullableNumberInput({
+  quantity,
+  value,
+  onValueChange,
+  placeholder,
+  disabled,
+  inputStyle,
+  selectStyle,
+  containerStyle,
+}: UnitNullableNumberInputProps) {
+  const [localUnitId, setLocalUnitId] = useLocalUnit(quantity);
+  const opt = getUnitOption(quantity, localUnitId);
+  const displayDigits = Math.max(2, (opt.decimals ?? 2) + 1);
+  const formatted =
+    value !== undefined && Number.isFinite(value)
+      ? String(roundClean(fromCanonical(quantity, value, localUnitId), displayDigits))
+      : '';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 3,
+        width: '100%',
+        minWidth: 0,
+        ...containerStyle,
+      }}
+    >
+      <input
+        type="text"
+        inputMode="decimal"
+        disabled={disabled}
+        placeholder={placeholder}
+        value={formatted}
+        onChange={e => {
+          const raw = e.target.value.trim();
+          if (raw === '') {
+            onValueChange(undefined);
+            return;
+          }
+          const num = Number(raw);
+          if (Number.isFinite(num)) {
+            onValueChange(roundClean(toCanonical(quantity, num, localUnitId), 6));
+          }
+        }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          ...inputStyle,
+        }}
+      />
+      <UnitSelect
+        quantity={quantity}
+        value={localUnitId}
+        disabled={disabled}
+        onChange={setLocalUnitId}
+        size="xs"
+        style={{
+          flexShrink: 0,
+          minWidth: 56,
+          ...selectStyle,
+        }}
+      />
+    </div>
+  );
+}
+
+const MODAL_QUANTITIES: UnitQuantity[] = [
+  'temp',
+  'pressG',
+  'deltaP',
+  'massFlow',
+  'molarFlow',
+  'volFlow',
+  'heatDuty',
+  'power',
+  'density',
+  'cp',
+  'htc',
+  'fouling',
+  'area',
+  'volume',
+  'length',
+  'velocity',
+  'viscosity',
+];
+
+export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: boolean }) {
+  const units = useUnitStore(s => s.units);
+  const presetId = useUnitStore(s => s.presetId);
+  const hydrate = useUnitStore(s => s.hydrate);
+  const setUnit = useUnitStore(s => s.setUnit);
+  const applyPreset = useUnitStore(s => s.applyPreset);
+  const resetDefaults = useUnitStore(s => s.resetDefaults);
+
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const activePresetMeta = UNIT_PRESETS.find(p => p.id === presetId);
+  const shortBadge = activePresetMeta ? activePresetMeta.shortName : '사용자';
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        title="기본 보기 단위 설정 (스트림 테이블 · 블록 입력 · 장치설계 전역 적용)"
+        style={{
+          padding: isMobile ? '4px 7px' : '4px 9px',
+          borderRadius: 6,
+          border: open ? '1px solid #60A5FA' : '1px solid #334155',
+          background: open ? '#1E3A8A' : '#1E293B',
+          color: '#F8FAFC',
+          fontSize: 10.8,
+          fontWeight: 700,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+        }}
+      >
+        <SlidersParamIcon size={12} />
+        <span>{isMobile ? shortBadge : `단위 · ${shortBadge}`}</span>
+        <span style={{ fontSize: 9, opacity: 0.75 }}>▾</span>
+      </button>
+
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.45)',
+            display: 'flex',
+            alignItems: isMobile ? 'flex-end' : 'center',
+            justifyContent: 'center',
+            padding: isMobile ? 0 : 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: isMobile ? '100%' : 580,
+              maxWidth: '100%',
+              maxHeight: isMobile ? '86vh' : '88vh',
+              background: '#FFFFFF',
+              borderRadius: isMobile ? '14px 14px 0 0' : 10,
+              border: '1px solid #CBD5E1',
+              boxShadow: '0 20px 50px rgba(15, 23, 42, 0.28)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              color: '#0F172A',
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: '12px 16px',
+                background: '#0F172A',
+                color: '#F8FAFC',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <SlidersParamIcon size={15} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>기본 보기 단위 설정 (Unit System)</div>
+                  <div style={{ fontSize: 10.5, color: '#94A3B8' }}>
+                    스트림 테이블 · 블록 입력 · 장치설계 · 숏컷 계산기 전역 기본 단위
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                style={{
+                  border: '1px solid #334155',
+                  background: '#1E293B',
+                  color: '#E2E8F0',
+                  borderRadius: 6,
+                  padding: '4px 9px',
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                닫기 ✕
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: 14, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Presets */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
+                  단위계 프리셋 선택
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                    gap: 6,
+                  }}
+                >
+                  {UNIT_PRESETS.map(p => {
+                    const active = presetId === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => applyPreset(p.id)}
+                        style={{
+                          textAlign: 'left',
+                          padding: '8px 9px',
+                          borderRadius: 7,
+                          border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: active ? '#EFF6FF' : '#F8FAFC',
+                          color: '#0F172A',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: active ? '#1E3A8A' : '#0F172A' }}>
+                          {p.name}
+                        </div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, lineHeight: 1.3 }}>
+                          {p.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Per-quantity overrides */}
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>
+                    물리량별 기본 단위 개별 지정
+                  </span>
+                  <span style={{ fontSize: 10, color: '#64748B' }}>
+                    {presetId === 'CUSTOM' ? '사용자 지정 단위계' : `프리셋: ${activePresetMeta?.name}`}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                    gap: 6,
+                  }}
+                >
+                  {MODAL_QUANTITIES.map(q => {
+                    const meta = UNIT_QUANTITIES[q];
+                    return (
+                      <div
+                        key={q}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                          padding: '6px 9px',
+                          borderRadius: 6,
+                          border: '1px solid #E2E8F0',
+                          background: '#FFFFFF',
+                        }}
+                      >
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#1E293B' }}>
+                          {meta.labelKo}
+                        </span>
+                        <UnitSelect
+                          quantity={q}
+                          value={units[q]}
+                          onChange={val => setUnit(q, val)}
+                          size="sm"
+                          style={{ minWidth: 96 }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                padding: '10px 14px',
+                borderTop: '1px solid #E2E8F0',
+                background: '#F8FAFC',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span style={{ fontSize: 10.5, color: '#64748B' }}>
+                설정은 브라우저에 자동 저장되며, 각 테이블·입력칸에서 개별 단위를 임시 변경해 볼 수 있습니다.
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={resetDefaults}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#334155',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  기본값(MKS) 복원
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  style={{
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #0F172A',
+                    background: '#0F172A',
+                    color: '#FFFFFF',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                  }}
+                >
+                  적용 완료
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

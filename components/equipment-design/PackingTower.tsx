@@ -10,6 +10,17 @@ import { useEquipmentList } from '@/lib/hooks/useEquipmentList';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { exportTowerDatasheet } from '@/lib/excel/datasheetExport';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  fromCanonical,
+  getUnitLabel,
+  toCanonical,
+} from '@/lib/units/unitSystem';
 
 const card: React.CSSProperties = {
   background: '#FFFFFF',
@@ -104,6 +115,11 @@ export default function PackingTower() {
   const [error, setError]             = useState('');
   const [savedNotice, setSavedNotice] = useState('');
   const dwgCanvasRef                  = useRef<HTMLCanvasElement | null>(null);
+
+  const [lenUnit, setLenUnit]         = useLocalUnit('length');
+  const [areaUnit, setAreaUnit]       = useLocalUnit('area');
+  const [velUnit, setVelUnit]         = useLocalUnit('velocity');
+  const [dpUnit, setDpUnit]           = useLocalUnit('deltaP');
 
   const getGasDensity = (t = temp, p = pressure, gKey = gasFluidKey, gMode = gasMode) => {
     if (gMode === 'manual') return gasDensityManual;
@@ -649,12 +665,24 @@ export default function PackingTower() {
             </div>
             <div style={{ ...grid2, marginTop: 10 }}>
               <div>
-                <label style={labelSt}>운전 온도 (°C)</label>
-                <input type="number" value={temp} onChange={e => setTemp(+e.target.value)} style={inp} />
+                <label style={labelSt}>운전 온도</label>
+                <UnitNumberInput
+                  quantity="temp"
+                  value={temp}
+                  syncKey={`${selectedTag}:temp`}
+                  onValueChange={v => setTemp(v)}
+                  inputStyle={inp}
+                />
               </div>
               <div>
-                <label style={labelSt}>운전 압력 (kPa abs)</label>
-                <input type="number" value={pressure} step={5} onChange={e => setPressure(+e.target.value)} style={inp} />
+                <label style={labelSt}>운전 압력</label>
+                <UnitNumberInput
+                  quantity="pressG"
+                  value={toCanonical('pressG', pressure, 'kPaA')}
+                  syncKey={`${selectedTag}:press`}
+                  onValueChange={can => setPressure(+Math.max(1, fromCanonical('pressG', can, 'kPaA')).toFixed(2))}
+                  inputStyle={inp}
+                />
               </div>
             </div>
           </div>
@@ -686,23 +714,42 @@ export default function PackingTower() {
                 </div>
               </div>
             ) : (
-              <div style={grid2}>
+              <div style={{ ...grid2, marginBottom: 10 }}>
                 <div>
-                  <label style={labelSt}>밀도 (kg/m³)</label>
-                  <input type="number" value={gasDensityManual} step={0.01}
-                    onChange={e => setGasDensityManual(+e.target.value)} style={inp} />
+                  <label style={labelSt}>기체 밀도</label>
+                  <UnitNumberInput
+                    quantity="density"
+                    value={gasDensityManual}
+                    minCanonical={0.01}
+                    syncKey={`${selectedTag}:gdens`}
+                    onValueChange={v => setGasDensityManual(Math.max(0.01, v))}
+                    inputStyle={inp}
+                  />
                 </div>
                 <div>
-                  <label style={labelSt}>점도 (mPa·s)</label>
-                  <input type="number" value={gasViscManual} step={0.001}
-                    onChange={e => setGasViscManual(+e.target.value)} style={inp} />
+                  <label style={labelSt}>기체 점도</label>
+                  <UnitNumberInput
+                    quantity="viscosity"
+                    value={gasViscManual}
+                    minCanonical={0.0001}
+                    decimals={4}
+                    syncKey={`${selectedTag}:gvisc`}
+                    onValueChange={v => setGasViscManual(Math.max(0.0001, v))}
+                    inputStyle={inp}
+                  />
                 </div>
               </div>
             )}
             <div>
-              <label style={labelSt}>기체 유량 (kg/h)</label>
-              <input type="number" value={gasFlow} step={100}
-                onChange={e => setGasFlow(+e.target.value)} style={inp} />
+              <label style={labelSt}>기체 유량</label>
+              <UnitNumberInput
+                quantity="massFlow"
+                value={gasFlow}
+                minCanonical={0}
+                syncKey={`${selectedTag}:gflow`}
+                onValueChange={v => setGasFlow(Math.max(0, v))}
+                inputStyle={inp}
+              />
             </div>
           </div>
 
@@ -733,16 +780,28 @@ export default function PackingTower() {
                 </div>
               </div>
             ) : (
-              <div style={grid3}>
+              <div style={{ ...grid3, marginBottom: 10 }}>
                 <div>
-                  <label style={labelSt}>밀도 (kg/m³)</label>
-                  <input type="number" value={liqDensityManual}
-                    onChange={e => setLiqDensityManual(+e.target.value)} style={inp} />
+                  <label style={labelSt}>액체 밀도</label>
+                  <UnitNumberInput
+                    quantity="density"
+                    value={liqDensityManual}
+                    minCanonical={100}
+                    syncKey={`${selectedTag}:ldens`}
+                    onValueChange={v => setLiqDensityManual(Math.max(100, v))}
+                    inputStyle={inp}
+                  />
                 </div>
                 <div>
-                  <label style={labelSt}>점도 (mPa·s)</label>
-                  <input type="number" value={liqViscManual} step={0.1}
-                    onChange={e => setLiqViscManual(+e.target.value)} style={inp} />
+                  <label style={labelSt}>액체 점도</label>
+                  <UnitNumberInput
+                    quantity="viscosity"
+                    value={liqViscManual}
+                    minCanonical={0.01}
+                    syncKey={`${selectedTag}:lvisc`}
+                    onValueChange={v => setLiqViscManual(Math.max(0.01, v))}
+                    inputStyle={inp}
+                  />
                 </div>
                 <div>
                   <label style={labelSt}>표면장력 (mN/m)</label>
@@ -752,9 +811,15 @@ export default function PackingTower() {
               </div>
             )}
             <div>
-              <label style={labelSt}>액체 순환 유량 (kg/h)</label>
-              <input type="number" value={liqFlow} step={100}
-                onChange={e => setLiqFlow(+e.target.value)} style={inp} />
+              <label style={labelSt}>액체 순환 유량</label>
+              <UnitNumberInput
+                quantity="massFlow"
+                value={liqFlow}
+                minCanonical={0}
+                syncKey={`${selectedTag}:lflow`}
+                onValueChange={v => setLiqFlow(Math.max(0, v))}
+                inputStyle={inp}
+              />
             </div>
           </div>
         </div>
@@ -802,14 +867,28 @@ export default function PackingTower() {
             </div>
             <div style={{ ...grid2, marginTop: 10 }}>
               <div>
-                <label style={labelSt}>기준 공탑유속 U 지정 (m/s, 0=GPDC 자동)</label>
-                <input type="number" value={targetU} step={0.01} min={0} max={3.0}
-                  onChange={e => setTargetU(+e.target.value)} style={inp} />
+                <label style={labelSt}>기준 공탑유속 U 지정 (0=GPDC 자동)</label>
+                <UnitNumberInput
+                  quantity="velocity"
+                  value={targetU}
+                  minCanonical={0}
+                  maxCanonical={3.0}
+                  syncKey={`${selectedTag}:targetU`}
+                  onValueChange={v => setTargetU(Math.max(0, v))}
+                  inputStyle={inp}
+                />
               </div>
               <div>
-                <label style={labelSt}>기준 충진층고 Z 지정 (m, 0=HETP 자동)</label>
-                <input type="number" value={fixedZ} step={0.05} min={0} max={20.0}
-                  onChange={e => setFixedZ(+e.target.value)} style={inp} />
+                <label style={labelSt}>기준 충진층고 Z 지정 (0=HETP 자동)</label>
+                <UnitNumberInput
+                  quantity="length"
+                  value={fixedZ}
+                  minCanonical={0}
+                  maxCanonical={20.0}
+                  syncKey={`${selectedTag}:fixedZ`}
+                  onValueChange={v => setFixedZ(Math.max(0, v))}
+                  inputStyle={inp}
+                />
               </div>
             </div>
           </div>
@@ -906,12 +985,30 @@ export default function PackingTower() {
             <div style={{ ...sectionTitle, color: '#202C3C' }}>📋 공정 데이터시트 — 패킹타워 설계 결과</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#52525B', marginBottom: 8 }}>타워 치수 (Column Sizing)</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#52525B' }}>타워 치수 (Column Sizing)</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} size="xs" title="치수(직경·높이) 단위" />
+                    <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} size="xs" title="단면적 단위" />
+                  </div>
+                </div>
                 {[
-                  ['타워 직경 (계산 / 표준)', `${results.tower_diameter_mm.toFixed(0)} mm / STD ${results.tower_diameter_std_mm} mm`],
-                  ['타워 단면적 (S)', `${results.crossSectionArea_m2.toFixed(3)} m²`],
-                  ['패킹 충전 높이 (Z)', `${results.packingHeight_m.toFixed(2)} m`],
-                  ['총 타워 높이 (H_total)', `${results.totalHeight_m.toFixed(2)} m`],
+                  [
+                    '타워 직경 (계산 / 표준)',
+                    `${formatCanonicalValue('length', toCanonical('length', results.tower_diameter_mm, 'mm'), lenUnit)} / STD ${formatCanonicalValue('length', toCanonical('length', results.tower_diameter_std_mm, 'mm'), lenUnit)} ${getUnitLabel('length', lenUnit)}`,
+                  ],
+                  [
+                    '타워 단면적 (S)',
+                    `${formatCanonicalValue('area', results.crossSectionArea_m2, areaUnit, 3)} ${getUnitLabel('area', areaUnit)}`,
+                  ],
+                  [
+                    '패킹 충전 높이 (Z)',
+                    `${formatCanonicalValue('length', results.packingHeight_m, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`,
+                  ],
+                  [
+                    '총 타워 높이 (H_total)',
+                    `${formatCanonicalValue('length', results.totalHeight_m, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`,
+                  ],
                 ].map(([k, v]) => (
                   <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11 }}>
                     <span style={{ color: '#3F3F46' }}>{k}</span>
@@ -928,7 +1025,7 @@ export default function PackingTower() {
                     ['가스 비유량 (G\')', `${Math.round(results.gasMassFlux_kgm2h).toLocaleString()} kg/m²·h`],
                     ['가스 몰유량 (G_M)', `${results.G_M_kmolh.toFixed(1)} kmol/h`],
                     ['이동단위수 (N_OG / NTU)', results.NTU.toFixed(2)],
-                    ['이동단위높이 (H_OG = Z/N_OG)', `${results.H_OG_m.toFixed(2)} m`],
+                    ['이동단위높이 (H_OG = Z/N_OG)', `${formatCanonicalValue('length', results.H_OG_m, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`],
                     ['총괄용량계수 (K_Ga)', `${results.K_Ga_kmolm3h.toFixed(1)} kmol/m³·h`],
                   ].map(([k, v]) => (
                     <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: 11 }}>
@@ -938,15 +1035,21 @@ export default function PackingTower() {
                   ))}
                 </div>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#52525B', marginBottom: 8 }}>유체역학 및 압력손실 (ΔP)</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 8 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#52525B' }}>유체역학 및 압력손실 (ΔP)</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} size="xs" title="유속 단위" />
+                      <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} size="xs" title="압력손실 단위" />
+                    </div>
+                  </div>
                   {[
-                    ['홍수점 유속 (U_flood)', `${results.u_flood_ms.toFixed(3)} m/s`],
-                    ['운전 공탑유속 (U)', `${results.u_operating_ms.toFixed(2)} m/s`],
-                    ['충진부 ΔP', `${results.dP_packing_mmH2O.toFixed(0)} mmH₂O (${(results.dP_packing_mmH2O / 100).toFixed(2)} kPa)`],
-                    ['다공판(目皿部) ΔP', `${results.dP_supportPlate_mmH2O.toFixed(0)} mmH₂O (${(results.dP_supportPlate_mmH2O / 100).toFixed(2)} kPa)`],
-                    ['탑 총 압력손실 (ΔP_total)', `${results.dP_total_kPa.toFixed(3)} kPa`],
+                    ['홍수점 유속 (U_flood)', `${formatCanonicalValue('velocity', results.u_flood_ms, velUnit, 3)} ${getUnitLabel('velocity', velUnit)}`],
+                    ['운전 공탑유속 (U)', `${formatCanonicalValue('velocity', results.u_operating_ms, velUnit, 2)} ${getUnitLabel('velocity', velUnit)}`],
+                    ['충진부 ΔP', `${formatCanonicalValue('deltaP', toCanonical('deltaP', results.dP_packing_mmH2O, 'mmH2O'), dpUnit)} ${getUnitLabel('deltaP', dpUnit)}`],
+                    ['다공판(目皿部) ΔP', `${formatCanonicalValue('deltaP', toCanonical('deltaP', results.dP_supportPlate_mmH2O, 'mmH2O'), dpUnit)} ${getUnitLabel('deltaP', dpUnit)}`],
+                    ['탑 총 압력손실 (ΔP_total)', `${formatCanonicalValue('deltaP', toCanonical('deltaP', results.dP_total_kPa, 'kPa'), dpUnit)} ${getUnitLabel('deltaP', dpUnit)}`],
                     ['액체 체적부하', `${results.liquidFlux_m3m2h.toFixed(2)} m³/m²·h`],
-                    ['이론단수 / HETP', `${results.theoreticalStages} 단 / ${results.HETP_m.toFixed(2)} m`],
+                    ['이론단수 / HETP', `${results.theoreticalStages} 단 / ${formatCanonicalValue('length', results.HETP_m, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`],
                   ].map(([k, v]) => (
                     <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5, fontSize: 11 }}>
                       <span style={{ color: '#3F3F46' }}>{k}</span>

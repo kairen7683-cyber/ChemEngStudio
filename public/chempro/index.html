@@ -11,6 +11,125 @@
   <link rel="apple-touch-icon" href="icon-512.png" />
   <title>ChemPro Suite — 화공 장치설계 엔지니어링 워크스테이션</title>
   <link rel="stylesheet" href="styles.css?v=20261118b" />
+  <style>
+    .cp-unit-wrap {
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      width: 100%;
+    }
+    .cp-unit-wrap > input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .cp-unit-sel {
+      flex: 0 0 auto;
+      width: auto;
+      max-width: 92px;
+      padding: 0 6px;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--font-mono, monospace);
+      color: #1A2F44;
+      background: #F6F7F2;
+      border: 1px solid #DFDCD4;
+      border-radius: 6px;
+      cursor: pointer;
+      outline: none;
+    }
+    .cp-unit-sel:hover,
+    .cp-unit-sel:focus {
+      border-color: #1A2F44;
+      background: #FFFFFF;
+    }
+    .cp-unit-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px 10px;
+      margin: 0 0 10px 0;
+      padding: 7px 11px;
+      background: #FFFFFF;
+      border: 1px solid #E2E0D8;
+      border-radius: 8px;
+    }
+    .cp-unit-bar-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .cp-unit-bar-title {
+      font-size: 11px;
+      font-weight: 800;
+      color: #1A2F44;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+    }
+    .cp-preset-group {
+      display: inline-flex;
+      gap: 3px;
+    }
+    .cp-preset-btn {
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 800;
+      font-family: var(--font-mono, monospace);
+      color: #3F3F46;
+      background: #F6F7F2;
+      border: 1px solid #DFDCD4;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .cp-preset-btn.active {
+      background: #1A2F44;
+      color: #FFFFFF;
+      border-color: #1A2F44;
+    }
+    .cp-unit-bar-items {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 5px;
+    }
+    .cp-bar-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 5px;
+      background: #F6F7F2;
+      border: 1px solid #E5E2DC;
+      border-radius: 5px;
+      margin: 0;
+    }
+    .cp-bar-lbl {
+      font-size: 10px;
+      font-weight: 700;
+      color: #71717A;
+      white-space: nowrap;
+    }
+    .cp-bar-sel {
+      border: none;
+      background: transparent;
+      color: #18181B;
+      font-size: 10.5px;
+      font-weight: 800;
+      font-family: var(--font-mono, monospace);
+      cursor: pointer;
+      outline: none;
+      padding: 1px 2px;
+    }
+    .cp-kpi-conv {
+      margin-top: 4px;
+      padding-top: 3px;
+      border-top: 1px dashed #E2E0D8;
+      font-size: 10.5px;
+      font-weight: 700;
+      font-family: var(--font-mono, monospace);
+      color: #1A2F44;
+    }
+  </style>
 </head>
 <body class="mode-rigorous">
   <script>
@@ -1593,6 +1712,7 @@
   <script src="eng_solvers.js?v=20261118b"></script>
   <script src="excel_exporter.js?v=20261118b"></script>
   <script src="app.js?v=20261118b"></script>
+  <script src="unit_bridge.js?v=20261119a"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(regs => {

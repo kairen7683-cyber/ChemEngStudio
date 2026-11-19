@@ -110,6 +110,15 @@ import {
   getPlantDefaultComponents,
   recommendPropertyMethod,
 } from '@/lib/calculations/componentCatalog';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
 
 const CLASSIC_AUTO_SAVE_KEY = 'chemplant-classic-sim-auto-v1';
 const CLASSIC_PROJECTS_KEY = 'chemplant-classic-sim-projects-v1';
@@ -423,6 +432,14 @@ export default function ClassicSimulatorPage() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [mobilePane, setMobilePane] = useState<'pfd' | 'tree' | 'form' | 'summary'>('pfd');
+
+  // 전역 기본 단위 연동 + 인라인 단위 선택 상태
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [massFlowUnit, setMassFlowUnit] = useLocalUnit('massFlow');
+  const [heatDutyUnit, setHeatDutyUnit] = useLocalUnit('heatDuty');
+  const [powerUnit, setPowerUnit] = useLocalUnit('power');
+  const [feedFlowUnit, setFeedFlowUnit] = useLocalUnit('massFlow');
 
   // 내장 정밀 워크벤치 모달
   const [distillModalNodeId, setDistillModalNodeId] = useState<string | null>(null);
@@ -2045,9 +2062,24 @@ export default function ClassicSimulatorPage() {
                     <th style={{ padding: '7px 10px', textAlign: 'left' }}>Stream</th>
                     <th style={{ padding: '7px 10px', textAlign: 'left' }}>From → To</th>
                     <th style={{ padding: '7px 10px', textAlign: 'center' }}>Phase</th>
-                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>Temp (°C)</th>
-                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>Press (kgf/cm²G)</th>
-                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>Mass Flow (kg/h)</th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Temp
+                        <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
+                      </span>
+                    </th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Press
+                        <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} size="xs" />
+                      </span>
+                    </th>
+                    <th style={{ padding: '7px 10px', textAlign: 'right' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Mass Flow
+                        <UnitSelect quantity="massFlow" value={massFlowUnit} onChange={setMassFlowUnit} size="xs" />
+                      </span>
+                    </th>
                     <th style={{ padding: '7px 10px', textAlign: 'left' }}>Composition (wt%)</th>
                   </tr>
                 </thead>
@@ -2079,10 +2111,14 @@ export default function ClassicSimulatorPage() {
                         <td style={{ padding: '6px 10px', fontWeight: 800, color: '#1D4ED8' }}>{st.streamNo}</td>
                         <td style={{ padding: '6px 10px' }}>{srcTag} → {dstTag}</td>
                         <td style={{ padding: '6px 10px', textAlign: 'center' }}>{st.phase}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>{st.tempC.toFixed(1)}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>{st.pressKgcm2g.toFixed(2)}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                          {formatCanonicalValue('temp', st.tempC, tempUnit, 1)}
+                        </td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                          {formatCanonicalValue('pressG', st.pressKgcm2g, pressUnit, 2)}
+                        </td>
                         <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 800 }}>
-                          {st.totalMassKgH.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                          {formatCanonicalValue('massFlow', st.totalMassKgH, massFlowUnit)}
                         </td>
                         <td style={{ padding: '6px 10px', fontFamily: 'Inter, sans-serif', color: '#334155' }}>
                           {comps || '—'}
@@ -2166,12 +2202,29 @@ export default function ClassicSimulatorPage() {
                     </div>
                   </div>
                   <div style={{ padding: 10, border: '1px solid #CBD5E1', borderRadius: 5, background: '#F8FAFC' }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>Block Results</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#0F172A' }}>Block Results</div>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <UnitSelect quantity="massFlow" value={massFlowUnit} onChange={setMassFlowUnit} size="xs" />
+                        <UnitSelect quantity="heatDuty" value={heatDutyUnit} onChange={setHeatDutyUnit} size="xs" />
+                        <UnitSelect quantity="power" value={powerUnit} onChange={setPowerUnit} size="xs" />
+                      </div>
+                    </div>
                     <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
-                      Mass: {bRes ? `${bRes.inletMassKgH.toFixed(1)} -> ${bRes.outletMassKgH.toFixed(1)} kg/h` : '—'}
+                      Mass:{' '}
+                      {bRes
+                        ? `${formatCanonicalValue('massFlow', bRes.inletMassKgH, massFlowUnit)} -> ${formatCanonicalValue('massFlow', bRes.outletMassKgH, massFlowUnit)} ${getUnitLabel('massFlow', massFlowUnit)}`
+                        : '—'}
                     </div>
                     <div style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace', marginTop: 3 }}>
-                      Duty: {bRes ? `${(bRes.heatDutyKcalH / 1000).toFixed(2)} Mcal/h` : '—'} | Power: {bRes ? `${bRes.shaftPowerKW.toFixed(2)} kW` : '—'}
+                      Duty:{' '}
+                      {bRes
+                        ? `${formatCanonicalValue('heatDuty', bRes.heatDutyKcalH / 1000, heatDutyUnit)} ${getUnitLabel('heatDuty', heatDutyUnit)}`
+                        : '—'}{' '}
+                      | Power:{' '}
+                      {bRes
+                        ? `${formatCanonicalValue('power', bRes.shaftPowerKW, powerUnit)} ${getUnitLabel('power', powerUnit)}`
+                        : '—'}
                     </div>
                   </div>
                 </div>
@@ -2195,17 +2248,28 @@ export default function ClassicSimulatorPage() {
                 </div>
                 {st ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <div style={{ display: 'flex', gap: 16, fontSize: 11.5, fontFamily: 'JetBrains Mono, monospace', padding: 10, background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 5 }}>
-                      <span>Temp: <b>{st.tempC.toFixed(2)} °C</b></span>
-                      <span>Press: <b>{st.pressKgcm2g.toFixed(3)} kgf/cm²G</b></span>
+                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, fontFamily: 'JetBrains Mono, monospace', padding: 10, background: '#F8FAFC', border: '1px solid #CBD5E1', borderRadius: 5 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Temp: <b>{formatCanonicalValue('temp', st.tempC, tempUnit, 2)}</b>
+                        <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
+                      </span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Press: <b>{formatCanonicalValue('pressG', st.pressKgcm2g, pressUnit, 3)}</b>
+                        <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} size="xs" />
+                      </span>
                       <span>Phase: <b>{st.phase}</b></span>
-                      <span>Total: <b>{st.totalMassKgH.toFixed(2)} kg/h</b></span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        Total: <b>{formatCanonicalValue('massFlow', st.totalMassKgH, massFlowUnit)}</b>
+                        <UnitSelect quantity="massFlow" value={massFlowUnit} onChange={setMassFlowUnit} size="xs" />
+                      </span>
                     </div>
                     <table style={{ width: '100%', maxWidth: 520, borderCollapse: 'collapse', fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
                       <thead>
                         <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
                           <th style={{ padding: '5px 8px', textAlign: 'left' }}>Component</th>
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>Mass Flow (kg/h)</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>
+                            Mass Flow ({getUnitLabel('massFlow', massFlowUnit)})
+                          </th>
                           <th style={{ padding: '5px 8px', textAlign: 'right' }}>Mass Frac (wt%)</th>
                         </tr>
                       </thead>
@@ -2216,7 +2280,9 @@ export default function ClassicSimulatorPage() {
                           .map(([c, v]) => (
                             <tr key={c} style={{ borderBottom: '1px solid #F1F5F9' }}>
                               <td style={{ padding: '4px 8px', fontWeight: 700 }}>{c}</td>
-                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{(v ?? 0).toFixed(2)}</td>
+                              <td style={{ padding: '4px 8px', textAlign: 'right' }}>
+                                {formatCanonicalValue('massFlow', v ?? 0, massFlowUnit)}
+                              </td>
                               <td style={{ padding: '4px 8px', textAlign: 'right' }}>
                                 {st.totalMassKgH > 0 ? (((v ?? 0) / st.totalMassKgH) * 100).toFixed(2) : '0.00'}%
                               </td>
@@ -2629,36 +2695,37 @@ export default function ClassicSimulatorPage() {
                     <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
                       원료 공급 조건 ({selectedEdgeSourceFeed.tag} 연동 입력)
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                      <label style={{ fontSize: 10, color: '#475569' }}>
-                        온도 (°C)
-                        <input
-                          type="number"
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 10, color: '#475569' }}>
+                        <div style={{ marginBottom: 2 }}>온도</div>
+                        <UnitNumberInput
+                          quantity="temp"
+                          syncKey={`${selectedEdgeSourceFeed.id}:feedTempC`}
                           value={selectedEdgeSourceFeed.params.feedTempC ?? 25}
-                          onChange={e =>
+                          onValueChange={v =>
                             updateBlockDef(selectedEdgeSourceFeed.id, d => ({
                               ...d,
-                              params: { ...d.params, feedTempC: Number(e.target.value) },
+                              params: { ...d.params, feedTempC: v },
                             }))
                           }
-                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                         />
-                      </label>
-                      <label style={{ fontSize: 10, color: '#475569' }}>
-                        압력 (kgf/cm²G)
-                        <input
-                          type="number"
-                          step="0.1"
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569' }}>
+                        <div style={{ marginBottom: 2 }}>압력</div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          syncKey={`${selectedEdgeSourceFeed.id}:feedPress`}
                           value={selectedEdgeSourceFeed.params.feedPressKgcm2g ?? 1.0}
-                          onChange={e =>
+                          onValueChange={v =>
                             updateBlockDef(selectedEdgeSourceFeed.id, d => ({
                               ...d,
-                              params: { ...d.params, feedPressKgcm2g: Number(e.target.value) },
+                              params: { ...d.params, feedPressKgcm2g: v },
                             }))
                           }
-                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                         />
-                      </label>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2676,8 +2743,15 @@ export default function ClassicSimulatorPage() {
                       fontFamily: 'JetBrains Mono, monospace',
                     }}
                   >
-                    <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: '#0F172A' }}>
-                      계산된 스트림 결과
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: '#0F172A' }}>
+                        계산된 스트림 결과
+                      </div>
+                      <div style={{ display: 'inline-flex', gap: 3 }}>
+                        <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
+                        <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} size="xs" />
+                        <UnitSelect quantity="massFlow" value={massFlowUnit} onChange={setMassFlowUnit} size="xs" />
+                      </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Source Port</span>
@@ -2705,19 +2779,19 @@ export default function ClassicSimulatorPage() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Temperature</span>
-                      <b>{selectedStreamRes.tempC.toFixed(1)} °C</b>
+                      <b>{formatCanonicalValue('temp', selectedStreamRes.tempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}</b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Pressure</span>
-                      <b>{selectedStreamRes.pressKgcm2g.toFixed(2)} kgf/cm²G</b>
+                      <b>{formatCanonicalValue('pressG', selectedStreamRes.pressKgcm2g, pressUnit, 2)} {getUnitLabel('pressG', pressUnit)}</b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>Total Mass Flow</span>
-                      <b>{selectedStreamRes.totalMassKgH.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg/h</b>
+                      <b>{formatCanonicalValue('massFlow', selectedStreamRes.totalMassKgH, massFlowUnit)} {getUnitLabel('massFlow', massFlowUnit)}</b>
                     </div>
                     <div style={{ borderTop: '1px dashed #CBD5E1', marginTop: 4, paddingTop: 4 }}>
                       <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 10, color: '#475569', marginBottom: 3 }}>
-                        성분별 유량 (kg/h)
+                        성분별 유량 ({getUnitLabel('massFlow', massFlowUnit)})
                       </div>
                       {(Object.entries(selectedStreamRes.flowsKgH) as [string, number][])
                         .filter(([, v]) => v > 0.01)
@@ -2725,7 +2799,7 @@ export default function ClassicSimulatorPage() {
                           <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5 }}>
                             <span>{k}</span>
                             <span>
-                              {v.toFixed(1)} ({selectedStreamRes.totalMassKgH > 0 ? ((v / selectedStreamRes.totalMassKgH) * 100).toFixed(1) : '0'}%)
+                              {formatCanonicalValue('massFlow', v, massFlowUnit)} ({selectedStreamRes.totalMassKgH > 0 ? ((v / selectedStreamRes.totalMassKgH) * 100).toFixed(1) : '0'}%)
                             </span>
                           </div>
                         ))}
@@ -2881,40 +2955,42 @@ export default function ClassicSimulatorPage() {
                 {selectedBlock.unitType === 'feed' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Feed Specifications</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                      <label style={{ fontSize: 10, color: '#475569' }}>
-                        온도 (°C)
-                        <input
-                          type="number"
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 10, color: '#475569' }}>
+                        <div style={{ marginBottom: 2 }}>온도</div>
+                        <UnitNumberInput
+                          quantity="temp"
+                          syncKey={`${selectedBlock.id}:feedTempC`}
                           value={selectedBlock.params.feedTempC ?? 25}
-                          onChange={e =>
+                          onValueChange={v =>
                             updateBlockDef(selectedBlock.id, d => ({
                               ...d,
-                              params: { ...d.params, feedTempC: Number(e.target.value) },
+                              params: { ...d.params, feedTempC: v },
                             }))
                           }
-                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                         />
-                      </label>
-                      <label style={{ fontSize: 10, color: '#475569' }}>
-                        압력 (kgf/cm²G)
-                        <input
-                          type="number"
-                          step="0.1"
+                      </div>
+                      <div style={{ fontSize: 10, color: '#475569' }}>
+                        <div style={{ marginBottom: 2 }}>압력</div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          syncKey={`${selectedBlock.id}:feedPress`}
                           value={selectedBlock.params.feedPressKgcm2g ?? 1.0}
-                          onChange={e =>
+                          onValueChange={v =>
                             updateBlockDef(selectedBlock.id, d => ({
                               ...d,
-                              params: { ...d.params, feedPressKgcm2g: Number(e.target.value) },
+                              params: { ...d.params, feedPressKgcm2g: v },
                             }))
                           }
-                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                         />
-                      </label>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#334155' }}>
-                        성분별 질량유량 (kg/h)
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#334155' }}>
+                        성분별 질량유량
+                        <UnitSelect quantity="massFlow" value={feedFlowUnit} onChange={setFeedFlowUnit} size="xs" />
                       </span>
                       <button
                         type="button"
@@ -2933,41 +3009,45 @@ export default function ClassicSimulatorPage() {
                         + 성분 추가/설정 ({activeComponents.length}종)
                       </button>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, maxHeight: 240, overflowY: 'auto' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto' }}>
                       {SIM_COMPS.filter(
                         comp => activeComponents.includes(comp) || (selectedBlock.params.feedFlowsKgH?.[comp] ?? 0) > 0
                       ).map(comp => {
                         const val = selectedBlock.params.feedFlowsKgH?.[comp] ?? 0;
                         return (
-                          <label key={comp} style={{ fontSize: 10, color: '#475569' }} title={COMP_META[comp].label}>
-                            {comp}
-                            <input
-                              type="number"
-                              min={0}
-                              value={val || ''}
+                          <div key={comp} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#475569' }} title={COMP_META[comp].label}>
+                            <span style={{ width: 64, flexShrink: 0, fontWeight: 700, color: val > 0 ? '#0F172A' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {comp}
+                            </span>
+                            <UnitNumberInput
+                              quantity="massFlow"
+                              syncKey={`${selectedBlock.id}:feedFlow:${comp}`}
+                              value={val}
+                              unitId={feedFlowUnit}
+                              onUnitChange={setFeedFlowUnit}
+                              minCanonical={0}
                               placeholder="0"
-                              onChange={e => {
-                                const num = Number(e.target.value) || 0;
+                              onValueChange={num => {
                                 updateBlockDef(selectedBlock.id, d => ({
                                   ...d,
                                   params: {
                                     ...d.params,
-                                    feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), [comp]: num },
+                                    feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), [comp]: Math.max(0, num) },
                                   },
                                 }));
                               }}
-                              style={{
-                                width: '100%',
+                              inputStyle={{
                                 height: 24,
-                                marginTop: 1,
                                 padding: '0 5px',
                                 borderRadius: 4,
                                 border: val > 0 ? '1px solid #1D4ED8' : '1px solid #CBD5E1',
                                 background: '#FFFFFF',
                                 fontFamily: 'JetBrains Mono, monospace',
+                                fontSize: 11,
                               }}
+                              selectStyle={{ minWidth: 50, fontSize: 9.5 }}
                             />
-                          </label>
+                          </div>
                         );
                       })}
                     </div>
@@ -2981,36 +3061,37 @@ export default function ClassicSimulatorPage() {
                   selectedBlock.unitType === 'liquefier') && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Operating Specifications</div>
-                    <label style={{ fontSize: 10, color: '#475569' }}>
-                      목표 온도 (°C)
-                      <input
-                        type="number"
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>목표 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
+                        syncKey={`${selectedBlock.id}:operTempC`}
                         value={selectedBlock.params.operTempC ?? 30}
-                        onChange={e =>
+                        onValueChange={v =>
                           updateBlockDef(selectedBlock.id, d => ({
                             ...d,
-                            params: { ...d.params, operTempC: Number(e.target.value) },
+                            params: { ...d.params, operTempC: v },
                           }))
                         }
-                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
-                    </label>
+                    </div>
                     {selectedBlock.unitType === 'separator' && (
-                      <label style={{ fontSize: 10, color: '#475569' }}>
-                        운전 압력 (kgf/cm²G)
-                        <input
-                          type="number"
-                          step="0.1"
+                      <div style={{ fontSize: 10, color: '#475569' }}>
+                        <div style={{ marginBottom: 2 }}>운전 압력</div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          syncKey={`${selectedBlock.id}:operPress`}
                           value={selectedBlock.params.operPressKgcm2g ?? 0.5}
-                          onChange={e =>
+                          onValueChange={v =>
                             updateBlockDef(selectedBlock.id, d => ({
                               ...d,
-                              params: { ...d.params, operPressKgcm2g: Number(e.target.value) },
+                              params: { ...d.params, operPressKgcm2g: v },
                             }))
                           }
-                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                         />
-                      </label>
+                      </div>
                     )}
                     {(selectedBlock.unitType === 'hex' ||
                       selectedBlock.unitType === 'cooler' ||
@@ -3042,21 +3123,21 @@ export default function ClassicSimulatorPage() {
                 {(selectedBlock.unitType === 'pump' || selectedBlock.unitType === 'compressor') && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Pressure / Efficiency</div>
-                    <label style={{ fontSize: 10, color: '#475569' }}>
-                      토출 압력 (kgf/cm²G)
-                      <input
-                        type="number"
-                        step="0.1"
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>토출 압력</div>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        syncKey={`${selectedBlock.id}:outletPress`}
                         value={selectedBlock.params.outletPressKgcm2g ?? 3.5}
-                        onChange={e =>
+                        onValueChange={v =>
                           updateBlockDef(selectedBlock.id, d => ({
                             ...d,
-                            params: { ...d.params, outletPressKgcm2g: Number(e.target.value) },
+                            params: { ...d.params, outletPressKgcm2g: v },
                           }))
                         }
-                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
-                    </label>
+                    </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
                       효율 (0~1)
                       <input
@@ -3134,7 +3215,7 @@ export default function ClassicSimulatorPage() {
                         >
                           사이드컷 측류 S: {scStage}단 ({scPhase})
                           {scMass > 1e-4
-                            ? ` · ${scMass.toFixed(1)} kg/h (S/F ${((dr?.actualSOverFMass ?? 0) * 100).toFixed(1)}%)`
+                            ? ` · ${formatCanonicalValue('massFlow', scMass, massFlowUnit)} ${getUnitLabel('massFlow', massFlowUnit)} (S/F ${((dr?.actualSOverFMass ?? 0) * 100).toFixed(1)}%)`
                             : ` · ${sc.specType}=${sc.specValue}`}
                         </div>
                       );
@@ -3211,21 +3292,21 @@ export default function ClassicSimulatorPage() {
                     >
                       <FlaskCompIcon size={12} /> 반응기 정밀설계 워크벤치 열기 →
                     </button>
-                    <label style={{ fontSize: 10, color: '#475569' }}>
-                      운전 온도 (°C)
-                      <input
-                        type="number"
-                        step="1"
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
+                        syncKey={`${selectedBlock.id}:reactorOperTempC`}
                         value={selectedBlock.params.operTempC ?? 180}
-                        onChange={e =>
+                        onValueChange={v =>
                           updateBlockDef(selectedBlock.id, d => ({
                             ...d,
-                            params: { ...d.params, operTempC: Number(e.target.value) },
+                            params: { ...d.params, operTempC: v },
                           }))
                         }
-                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
-                    </label>
+                    </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
                       전환율 (0~1)
                       <input
@@ -3314,21 +3395,21 @@ export default function ClassicSimulatorPage() {
                         style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
                       />
                     </label>
-                    <label style={{ fontSize: 10, color: '#475569' }}>
-                      운전 온도 (°C)
-                      <input
-                        type="number"
-                        step="1"
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
+                        syncKey={`${selectedBlock.id}:extractorOperTempC`}
                         value={selectedBlock.params.operTempC ?? 25}
-                        onChange={e =>
+                        onValueChange={v =>
                           updateBlockDef(selectedBlock.id, d => ({
                             ...d,
-                            params: { ...d.params, operTempC: Number(e.target.value) },
+                            params: { ...d.params, operTempC: v },
                           }))
                         }
-                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
-                    </label>
+                    </div>
                   </div>
                 )}
 
@@ -3338,22 +3419,22 @@ export default function ClassicSimulatorPage() {
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#B45309' }}>
                       JT Expansion Valve (H_out = H_in)
                     </div>
-                    <label style={{ fontSize: 10, color: '#475569' }}>
-                      후단 토출 압력 P_out (kgf/cm²G)
-                      <input
-                        type="number"
-                        step="0.2"
-                        min={-0.98}
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>후단 토출 압력 P_out</div>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        syncKey={`${selectedBlock.id}:valveOutletPress`}
+                        minCanonical={-0.98}
                         value={selectedBlock.params.outletPressKgcm2g ?? 1.0}
-                        onChange={e =>
+                        onValueChange={v =>
                           updateBlockDef(selectedBlock.id, d => ({
                             ...d,
-                            params: { ...d.params, outletPressKgcm2g: Number(e.target.value) },
+                            params: { ...d.params, outletPressKgcm2g: v },
                           }))
                         }
-                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1' }}
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
-                    </label>
+                    </div>
                   </div>
                 )}
 
@@ -3371,24 +3452,35 @@ export default function ClassicSimulatorPage() {
                       fontSize: 10.5,
                     }}
                   >
-                    <div style={{ fontWeight: 800, color: '#0F172A' }}>Block Results</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                      <div style={{ fontWeight: 800, color: '#0F172A' }}>Block Results</div>
+                      <div style={{ display: 'inline-flex', gap: 3 }}>
+                        <UnitSelect quantity="massFlow" value={massFlowUnit} onChange={setMassFlowUnit} size="xs" />
+                        <UnitSelect quantity="heatDuty" value={heatDutyUnit} onChange={setHeatDutyUnit} size="xs" />
+                        <UnitSelect quantity="power" value={powerUnit} onChange={setPowerUnit} size="xs" />
+                      </div>
+                    </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>유입 / 유출</span>
                       <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                        {selectedBlockRes.inletMassKgH.toFixed(1)} / {selectedBlockRes.outletMassKgH.toFixed(1)} kg/h
+                        {formatCanonicalValue('massFlow', selectedBlockRes.inletMassKgH, massFlowUnit)} /{' '}
+                        {formatCanonicalValue('massFlow', selectedBlockRes.outletMassKgH, massFlowUnit)}{' '}
+                        {getUnitLabel('massFlow', massFlowUnit)}
                       </b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span>열부하 (Duty)</span>
                       <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                        {(selectedBlockRes.heatDutyKcalH / 1000).toFixed(1)} Mcal/h
+                        {formatCanonicalValue('heatDuty', selectedBlockRes.heatDutyKcalH / 1000, heatDutyUnit)}{' '}
+                        {getUnitLabel('heatDuty', heatDutyUnit)}
                       </b>
                     </div>
                     {selectedBlockRes.shaftPowerKW > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span>축동력 (Power)</span>
                         <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
-                          {selectedBlockRes.shaftPowerKW.toFixed(2)} kW
+                          {formatCanonicalValue('power', selectedBlockRes.shaftPowerKW, powerUnit)}{' '}
+                          {getUnitLabel('power', powerUnit)}
                         </b>
                       </div>
                     )}

@@ -1,6 +1,15 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
 import { MW } from '../../lib/calculations/constants';
 import type { SimCompKey } from '../../lib/calculations/flowsheetSolver';
 import {
@@ -35,6 +44,15 @@ export interface ReactorWorkbenchModalProps {
 }
 
 const MONO = 'JetBrains Mono, ui-monospace, SFMono-Regular, Consolas, monospace';
+const BAR_TO_KGCM2 = 1 / 0.980665;
+
+function formatSignedDeltaT(dtC: number, tempUnitId: string): string {
+  if (!Number.isFinite(dtC)) return '—';
+  const sign = dtC >= 0 ? '+' : '';
+  if (tempUnitId === 'F') return `${sign}${(dtC * 1.8).toFixed(1)} °F`;
+  if (tempUnitId === 'K') return `${sign}${dtC.toFixed(1)} K`;
+  return `${sign}${dtC.toFixed(1)} °C`;
+}
 
 const MODEL_TABS: Array<{
   key: ReactorModelType;
@@ -508,6 +526,15 @@ export function ReactorWorkbenchModal({
     return solveChemicalReactor(previewFeed, previewTempC, previewPressG, cfg);
   }, [previewFeed, previewTempC, previewPressG, cfg]);
 
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [dpUnit, setDpUnit] = useLocalUnit('deltaP');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [htcUnit, setHtcUnit] = useLocalUnit('htc');
+  const [volUnit, setVolUnit] = useLocalUnit('volume');
+  const [lenUnit, setLenUnit] = useLocalUnit('length');
+  const [massUnit, setMassUnit] = useLocalUnit('massFlow');
+
   if (!open) return null;
 
   const applyTemplate = (tplId: string) => {
@@ -936,42 +963,46 @@ export function ReactorWorkbenchModal({
                 </div>
 
                 <div>
-                  <label style={labelStyle}>운전 압력 [kg/cm²g]</label>
-                  <input
-                    type="number"
-                    step="0.5"
+                  <label style={labelStyle}>운전 압력</label>
+                  <UnitNumberInput
+                    quantity="pressG"
+                    unitId={pressUnit}
+                    onUnitChange={setPressUnit}
+                    syncKey={`${unitTag}-rx-p`}
                     value={cfg.operPressKgcm2g ?? inletPressKgcm2g}
-                    onChange={(e) =>
-                      setCfg((p) => ({ ...p, operPressKgcm2g: Number(e.target.value) }))
-                    }
-                    style={inputStyle}
+                    onValueChange={(v) => setCfg((p) => ({ ...p, operPressKgcm2g: v }))}
+                    inputStyle={inputStyle}
                   />
                 </div>
 
                 {cfg.thermalMode === 'isothermal' && (
                   <div>
-                    <label style={labelStyle}>등온 운전 온도 [°C]</label>
-                    <input
-                      type="number"
-                      step="5"
+                    <label style={labelStyle}>등온 운전 온도</label>
+                    <UnitNumberInput
+                      quantity="temp"
+                      unitId={tempUnit}
+                      onUnitChange={setTempUnit}
+                      syncKey={`${unitTag}-rx-t`}
                       value={cfg.operTempC ?? inletTempC}
-                      onChange={(e) => setCfg((p) => ({ ...p, operTempC: Number(e.target.value) }))}
-                      style={inputStyle}
+                      onValueChange={(v) => setCfg((p) => ({ ...p, operTempC: v }))}
+                      inputStyle={inputStyle}
                     />
                   </div>
                 )}
 
                 {cfg.thermalMode === 'specified_duty' && (
                   <div>
-                    <label style={labelStyle}>지정 열부하 Q [kcal/h]</label>
-                    <input
-                      type="number"
-                      step="1000"
-                      value={cfg.specifiedDutyKcalH ?? 0}
-                      onChange={(e) =>
-                        setCfg((p) => ({ ...p, specifiedDutyKcalH: Number(e.target.value) }))
+                    <label style={labelStyle}>지정 열부하 Q</label>
+                    <UnitNumberInput
+                      quantity="heatDuty"
+                      unitId={dutyUnit}
+                      onUnitChange={setDutyUnit}
+                      syncKey={`${unitTag}-rx-q`}
+                      value={(cfg.specifiedDutyKcalH ?? 0) / 1000}
+                      onValueChange={(v) =>
+                        setCfg((p) => ({ ...p, specifiedDutyKcalH: v * 1000 }))
                       }
-                      style={inputStyle}
+                      inputStyle={inputStyle}
                     />
                   </div>
                 )}
@@ -979,27 +1010,27 @@ export function ReactorWorkbenchModal({
                 {cfg.thermalMode === 'jacket_ua' && (
                   <>
                     <div>
-                      <label style={labelStyle}>열매체 온도 T_jacket [°C]</label>
-                      <input
-                        type="number"
-                        step="5"
+                      <label style={labelStyle}>열매체 온도 T_jacket</label>
+                      <UnitNumberInput
+                        quantity="temp"
+                        unitId={tempUnit}
+                        onUnitChange={setTempUnit}
+                        syncKey={`${unitTag}-rx-tj`}
                         value={cfg.jacketTempC ?? inletTempC}
-                        onChange={(e) =>
-                          setCfg((p) => ({ ...p, jacketTempC: Number(e.target.value) }))
-                        }
-                        style={inputStyle}
+                        onValueChange={(v) => setCfg((p) => ({ ...p, jacketTempC: v }))}
+                        inputStyle={inputStyle}
                       />
                     </div>
                     <div>
-                      <label style={labelStyle}>총괄열전달계수 U [kcal/m²·h·°C]</label>
-                      <input
-                        type="number"
-                        step="10"
+                      <label style={labelStyle}>총괄열전달계수 U</label>
+                      <UnitNumberInput
+                        quantity="htc"
+                        unitId={htcUnit}
+                        onUnitChange={setHtcUnit}
+                        syncKey={`${unitTag}-rx-u`}
                         value={cfg.overallU_KcalM2HC ?? 200}
-                        onChange={(e) =>
-                          setCfg((p) => ({ ...p, overallU_KcalM2HC: Number(e.target.value) }))
-                        }
-                        style={inputStyle}
+                        onValueChange={(v) => setCfg((p) => ({ ...p, overallU_KcalM2HC: v }))}
+                        inputStyle={inputStyle}
                       />
                     </div>
                   </>
@@ -1019,19 +1050,21 @@ export function ReactorWorkbenchModal({
                   }}
                 >
                   <div>
-                    <label style={labelStyle}>반응기 부피 V [m³]</label>
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.5"
+                    <label style={labelStyle}>반응기 부피 V</label>
+                    <UnitNumberInput
+                      quantity="volume"
+                      unitId={volUnit}
+                      onUnitChange={setVolUnit}
+                      syncKey={`${unitTag}-rx-v`}
+                      minCanonical={0.0001}
                       value={cfg.volumeM3 ?? 4.0}
-                      onChange={(e) =>
+                      onValueChange={(v) =>
                         setCfg((p) => ({
                           ...p,
-                          volumeM3: Math.max(0.0001, Number(e.target.value)),
+                          volumeM3: Math.max(0.0001, v),
                         }))
                       }
-                      style={inputStyle}
+                      inputStyle={inputStyle}
                     />
                   </div>
 
@@ -1054,35 +1087,39 @@ export function ReactorWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>튜브 내경 D [m]</label>
-                        <input
-                          type="number"
-                          min="0.01"
-                          step="0.01"
+                        <label style={labelStyle}>튜브 내경 D</label>
+                        <UnitNumberInput
+                          quantity="length"
+                          unitId={lenUnit}
+                          onUnitChange={setLenUnit}
+                          syncKey={`${unitTag}-rx-td`}
+                          minCanonical={0.005}
                           value={cfg.tubeDiamM ?? 0.1}
-                          onChange={(e) =>
+                          onValueChange={(v) =>
                             setCfg((p) => ({
                               ...p,
-                              tubeDiamM: Math.max(0.005, Number(e.target.value)),
+                              tubeDiamM: Math.max(0.005, v),
                             }))
                           }
-                          style={inputStyle}
+                          inputStyle={inputStyle}
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>튜브 길이 L [m]</label>
-                        <input
-                          type="number"
-                          min="0.1"
-                          step="0.5"
+                        <label style={labelStyle}>튜브 길이 L</label>
+                        <UnitNumberInput
+                          quantity="length"
+                          unitId={lenUnit}
+                          onUnitChange={setLenUnit}
+                          syncKey={`${unitTag}-rx-tl`}
+                          minCanonical={0.05}
                           value={cfg.tubeLengthM ?? 4.0}
-                          onChange={(e) =>
+                          onValueChange={(v) =>
                             setCfg((p) => ({
                               ...p,
-                              tubeLengthM: Math.max(0.05, Number(e.target.value)),
+                              tubeLengthM: Math.max(0.05, v),
                             }))
                           }
-                          style={inputStyle}
+                          inputStyle={inputStyle}
                         />
                       </div>
                       <div>
@@ -1675,11 +1712,14 @@ export function ReactorWorkbenchModal({
               }}
             >
               <div style={cardStyle}>
-                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                  출구 온도 T_out / ΔT
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
+                    출구 온도 T_out / ΔT
+                  </span>
+                  <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
                 </div>
                 <div style={{ fontSize: 17, fontWeight: 900, fontFamily: MONO, marginTop: 3 }}>
-                  {liveResult.outletTempC.toFixed(1)} °C{' '}
+                  {formatCanonicalValue('temp', liveResult.outletTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}{' '}
                   <span
                     style={{
                       fontSize: 12,
@@ -1687,23 +1727,25 @@ export function ReactorWorkbenchModal({
                         liveResult.outletTempC - previewTempC >= 0 ? '#D97706' : '#0284C7',
                     }}
                   >
-                    ({liveResult.outletTempC - previewTempC >= 0 ? '+' : ''}
-                    {(liveResult.outletTempC - previewTempC).toFixed(1)} °C)
+                    ({formatSignedDeltaT(liveResult.outletTempC - previewTempC, tempUnit)})
                   </span>
                 </div>
                 {liveResult.hotspotTempC !== undefined && (
                   <div style={{ fontSize: 11, color: '#1D4ED8', fontFamily: MONO, fontWeight: 700 }}>
-                    최고점 Hotspot: {liveResult.hotspotTempC.toFixed(1)} °C
+                    최고점 Hotspot: {formatCanonicalValue('temp', liveResult.hotspotTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}
                   </div>
                 )}
               </div>
 
               <div style={cardStyle}>
-                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                  반응기 열부하 Q ({liveResult.heatDutyKcalH >= 0 ? '가열/흡열' : '냉각/발열'})
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
+                    반응기 열부하 Q ({liveResult.heatDutyKcalH >= 0 ? '가열/흡열' : '냉각/발열'})
+                  </span>
+                  <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, fontFamily: MONO, marginTop: 3 }}>
-                  {Math.round(liveResult.heatDutyKcalH).toLocaleString()} kcal/h
+                  {formatCanonicalValue('heatDuty', liveResult.heatDutyKcalH / 1000, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                 </div>
                 <div style={{ fontSize: 11, color: '#475569', fontFamily: MONO, fontWeight: 700 }}>
                   ({dutyKW.toFixed(1)} kW)
@@ -1711,14 +1753,20 @@ export function ReactorWorkbenchModal({
               </div>
 
               <div style={cardStyle}>
-                <div style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                  출구 압력 / 충전층 ΔP
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
+                    출구 압력 / 충전층 ΔP
+                  </span>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} />
+                    <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
+                  </div>
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 900, fontFamily: MONO, marginTop: 3 }}>
-                  {liveResult.outletPressKgcm2g.toFixed(2)} kg/cm²g
+                  {formatCanonicalValue('pressG', liveResult.outletPressKgcm2g, pressUnit, 2)} {getUnitLabel('pressG', pressUnit)}
                 </div>
                 <div style={{ fontSize: 11, color: '#475569', fontFamily: MONO, fontWeight: 700 }}>
-                  ΔP = {liveResult.pressureDropBar.toFixed(3)} bar
+                  ΔP = {formatCanonicalValue('deltaP', liveResult.pressureDropBar * BAR_TO_KGCM2, dpUnit, 3)} {getUnitLabel('deltaP', dpUnit)}
                 </div>
               </div>
 
@@ -1747,8 +1795,11 @@ export function ReactorWorkbenchModal({
 
             {/* 입출구 성분 물질수지 및 기액 분배 표 */}
             <div style={cardStyle}>
-              <div style={{ fontSize: 12.5, fontWeight: 900, marginBottom: 8 }}>
-                입·출구 성분 물질수지 및 상분배 요약
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 900 }}>
+                  입·출구 성분 물질수지 및 상분배 요약
+                </span>
+                <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table
@@ -1762,8 +1813,8 @@ export function ReactorWorkbenchModal({
                   <thead>
                     <tr style={{ borderBottom: '2px solid #CBD5E1', color: '#475569' }}>
                       <th style={{ textAlign: 'left', padding: '5px 4px' }}>성분</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>유입 [kg/h]</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>출구 [kg/h]</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>유입 [{getUnitLabel('massFlow', massUnit)}]</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>출구 [{getUnitLabel('massFlow', massUnit)}]</th>
                       <th style={{ textAlign: 'right', padding: '5px 4px' }}>출구 [mol%]</th>
                       <th style={{ textAlign: 'right', padding: '5px 4px' }}>기상/액상</th>
                     </tr>
@@ -1781,10 +1832,10 @@ export function ReactorWorkbenchModal({
                             {k}
                           </td>
                           <td style={{ textAlign: 'right', padding: '5px 4px', color: '#64748B' }}>
-                            {mIn.toFixed(1)}
+                            {formatCanonicalValue('massFlow', mIn, massUnit)}
                           </td>
                           <td style={{ textAlign: 'right', padding: '5px 4px', fontWeight: 800 }}>
-                            {mOut.toFixed(1)}
+                            {formatCanonicalValue('massFlow', mOut, massUnit)}
                           </td>
                           <td style={{ textAlign: 'right', padding: '5px 4px', color: '#1D4ED8' }}>
                             {molPct.toFixed(2)}%

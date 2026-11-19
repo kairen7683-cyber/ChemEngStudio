@@ -9,6 +9,16 @@ import {
 } from '@/lib/calculations/compressorDesign';
 import { type SimCompKey } from '@/lib/calculations/flowsheetSolver';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+  toCanonical,
+} from '@/lib/units/unitSystem';
 
 interface PresetOption {
   id: string;
@@ -265,6 +275,11 @@ export default function CompressorDesignPanel() {
   const [selectedPresetId, setSelectedPresetId] = useState<string>(() => plantPresets[0]?.id || 'C470');
   const [inputs, setInputs] = useState<CompressorInputs>(() => plantPresets[0]?.inputs || PRESETS[0].inputs);
 
+  const [powerUnit, setPowerUnit] = useLocalUnit('power');
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [cwFlowUnit, setCwFlowUnit] = useLocalUnit('volFlow');
+
   useEffect(() => {
     const first = plantPresets[0];
     if (first && !plantPresets.some(p => p.id === selectedPresetId)) {
@@ -398,12 +413,14 @@ export default function CompressorDesignPanel() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>유량 [kg/h]</label>
-              <input
-                type="number"
+              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>유량</label>
+              <UnitNumberInput
+                quantity="massFlow"
                 value={inputs.massFlowKgH}
-                onChange={e => setInputs({ ...inputs, massFlowKgH: Math.max(1, Number(e.target.value)) })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
+                minCanonical={1}
+                syncKey={`${selectedPresetId}:flow`}
+                onValueChange={v => setInputs({ ...inputs, massFlowKgH: Math.max(1, v) })}
+                inputStyle={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
               />
             </div>
 
@@ -418,46 +435,46 @@ export default function CompressorDesignPanel() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>흡입압력 [kg/cm²G]</label>
-              <input
-                type="number"
-                step="0.05"
+              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>흡입압력</label>
+              <UnitNumberInput
+                quantity="pressG"
                 value={inputs.suctionPressKgcm2g}
-                onChange={e => setInputs({ ...inputs, suctionPressKgcm2g: Number(e.target.value) })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
+                syncKey={`${selectedPresetId}:psuc`}
+                onValueChange={v => setInputs({ ...inputs, suctionPressKgcm2g: v })}
+                inputStyle={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>흡입온도 [°C]</label>
-              <input
-                type="number"
-                step="1"
+              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>흡입온도</label>
+              <UnitNumberInput
+                quantity="temp"
                 value={inputs.suctionTempC}
-                onChange={e => setInputs({ ...inputs, suctionTempC: Number(e.target.value) })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
+                syncKey={`${selectedPresetId}:tsuc`}
+                onValueChange={v => setInputs({ ...inputs, suctionTempC: v })}
+                inputStyle={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>목표 토출압력 [kg/cm²G]</label>
-              <input
-                type="number"
-                step="0.1"
+              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>목표 토출압력</label>
+              <UnitNumberInput
+                quantity="pressG"
                 value={inputs.dischargePressKgcm2g}
-                onChange={e => setInputs({ ...inputs, dischargePressKgcm2g: Number(e.target.value) })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
+                syncKey={`${selectedPresetId}:pdis`}
+                onValueChange={v => setInputs({ ...inputs, dischargePressKgcm2g: v })}
+                inputStyle={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>중간냉각 출구온도 [°C]</label>
-              <input
-                type="number"
-                step="1"
+              <label style={{ display: 'block', fontSize: '11px', color: '#64748B', marginBottom: '3px' }}>중간냉각 출구온도</label>
+              <UnitNumberInput
+                quantity="temp"
                 value={inputs.intercoolerExitTempC ?? 38}
-                onChange={e => setInputs({ ...inputs, intercoolerExitTempC: Number(e.target.value) })}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
+                syncKey={`${selectedPresetId}:tic`}
+                onValueChange={v => setInputs({ ...inputs, intercoolerExitTempC: v })}
+                inputStyle={{ padding: '6px 8px', borderRadius: '4px', border: '1px solid #CBD5E1', fontSize: '12px', boxSizing: 'border-box' }}
               />
             </div>
 
@@ -516,10 +533,15 @@ export default function CompressorDesignPanel() {
         {/* Key KPI Output Cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
           <div style={{ background: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', borderLeft: '4px solid #2563EB' }}>
-            <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>총 소요 축동력 (Shaft Power)</div>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1E293B' }}>{result.totalShaftPowerKW.toLocaleString()} kW</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11px', color: '#64748B' }}>총 소요 축동력 (Shaft Power)</span>
+              <UnitSelect quantity="power" value={powerUnit} onChange={setPowerUnit} size="xs" />
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1E293B' }}>
+              {formatCanonicalValue('power', result.totalShaftPowerKW, powerUnit)} {getUnitLabel('power', powerUnit)}
+            </div>
             <div style={{ fontSize: '11px', color: '#059669', marginTop: '2px' }}>
-              선정 전동기: <strong>{result.motorNominalKW} kW</strong> (+{result.apiMotorMarginPct}% API 마진)
+              선정 전동기: <strong>{formatCanonicalValue('power', result.motorNominalKW, powerUnit)} {getUnitLabel('power', powerUnit)}</strong> (+{result.apiMotorMarginPct}% API 마진)
             </div>
           </div>
 
@@ -532,9 +554,12 @@ export default function CompressorDesignPanel() {
           </div>
 
           <div style={{ background: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', borderLeft: result.maxDischargeTempC > 140 ? '4px solid #DC2626' : '4px solid #EA580C' }}>
-            <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>최고 토출온도 (Max Discharge T)</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11px', color: '#64748B' }}>최고 토출온도 (Max Discharge T)</span>
+              <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
+            </div>
             <div style={{ fontSize: '20px', fontWeight: 'bold', color: result.maxDischargeTempC > 140 ? '#DC2626' : '#1E293B' }}>
-              {result.maxDischargeTempC.toFixed(1)} °C
+              {formatCanonicalValue('temp', result.maxDischargeTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}
             </div>
             <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
               총 압축비: <strong>{result.overallPressureRatio.toFixed(2)}</strong> ({result.numStages}단 분할)
@@ -542,10 +567,18 @@ export default function CompressorDesignPanel() {
           </div>
 
           <div style={{ background: '#FFFFFF', padding: '12px', borderRadius: '8px', border: '1px solid #E2E8F0', borderLeft: '4px solid #6366F1' }}>
-            <div style={{ fontSize: '11px', color: '#64748B', marginBottom: '4px' }}>중간 냉각기 총 열부하</div>
-            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1E293B' }}>{result.totalIntercoolerDutyKW.toFixed(1)} kW</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '11px', color: '#64748B' }}>중간 냉각기 총 열부하</span>
+              <div style={{ display: 'flex', gap: '3px' }}>
+                <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} size="xs" title="열부하 단위" />
+                <UnitSelect quantity="volFlow" value={cwFlowUnit} onChange={setCwFlowUnit} size="xs" title="냉각수 유량 단위" />
+              </div>
+            </div>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#1E293B' }}>
+              {formatCanonicalValue('heatDuty', toCanonical('heatDuty', result.totalIntercoolerDutyKW, 'kW'), dutyUnit, 1)} {getUnitLabel('heatDuty', dutyUnit)}
+            </div>
             <div style={{ fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
-              냉각수 필요량: <strong>{result.totalCoolingWaterM3H.toFixed(1)} m³/h</strong> (ΔT=10°C)
+              냉각수 필요량: <strong>{formatCanonicalValue('volFlow', result.totalCoolingWaterM3H, cwFlowUnit, 1)} {getUnitLabel('volFlow', cwFlowUnit)}</strong> (ΔT=10°C)
             </div>
           </div>
         </div>
@@ -577,14 +610,14 @@ export default function CompressorDesignPanel() {
             {result.stages.map(st => (
               <tr key={st.stage} style={{ borderBottom: '1px solid #E2E8F0' }}>
                 <td style={{ padding: '8px', textAlign: 'center', fontWeight: 'bold', color: '#2563EB' }}>Stage {st.stage}</td>
-                <td style={{ padding: '8px' }}>{st.suctionPressKgcm2g.toFixed(2)} kg/cm²G<br /><span style={{ color: '#64748B' }}>{st.suctionTempC}°C</span></td>
-                <td style={{ padding: '8px' }}>{st.dischargePressKgcm2g.toFixed(2)} kg/cm²G<br /><span style={{ color: st.dischargeTempC > 135 ? '#DC2626' : '#64748B', fontWeight: st.dischargeTempC > 135 ? 'bold' : 'normal' }}>{st.dischargeTempC}°C</span></td>
+                <td style={{ padding: '8px' }}>{st.suctionPressKgcm2g.toFixed(2)} kg/cm²G<br /><span style={{ color: '#64748B' }}>{formatCanonicalValue('temp', st.suctionTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}</span></td>
+                <td style={{ padding: '8px' }}>{st.dischargePressKgcm2g.toFixed(2)} kg/cm²G<br /><span style={{ color: st.dischargeTempC > 135 ? '#DC2626' : '#64748B', fontWeight: st.dischargeTempC > 135 ? 'bold' : 'normal' }}>{formatCanonicalValue('temp', st.dischargeTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}</span></td>
                 <td style={{ padding: '8px', fontWeight: 'bold' }}>{st.pressureRatio.toFixed(2)}</td>
                 <td style={{ padding: '8px' }}>{st.zAvg.toFixed(4)}</td>
                 <td style={{ padding: '8px' }}>{st.schultzFactor.toFixed(4)}</td>
                 <td style={{ padding: '8px' }}>{st.polytropicHeadKjKg.toFixed(1)} kJ/kg<br /><span style={{ color: '#64748B' }}>{st.polytropicHeadM.toLocaleString()} m</span></td>
-                <td style={{ padding: '8px', fontWeight: 'bold', color: '#1E293B' }}>{st.shaftPowerKW.toFixed(1)} kW</td>
-                <td style={{ padding: '8px' }}>{st.intercoolerDutyKW > 0 ? `${st.intercoolerDutyKW.toFixed(1)} kW` : '토출 없음'}</td>
+                <td style={{ padding: '8px', fontWeight: 'bold', color: '#1E293B' }}>{formatCanonicalValue('power', st.shaftPowerKW, powerUnit, 1)} {getUnitLabel('power', powerUnit)}</td>
+                <td style={{ padding: '8px' }}>{st.intercoolerDutyKW > 0 ? `${formatCanonicalValue('heatDuty', toCanonical('heatDuty', st.intercoolerDutyKW, 'kW'), dutyUnit, 1)} ${getUnitLabel('heatDuty', dutyUnit)}` : '토출 없음'}</td>
                 <td style={{ padding: '8px', textAlign: 'center' }}>
                   {inputs.type === 'centrifugal' ? (
                     <div>

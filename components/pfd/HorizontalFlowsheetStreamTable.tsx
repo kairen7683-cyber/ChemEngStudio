@@ -2,6 +2,8 @@
 
 import React, { useRef, useState } from 'react';
 import { SIM_COMPS, COMP_META, SolvedStream, type SimCompKey } from '@/lib/calculations/flowsheetSolver';
+import { UnitSelect, useLocalUnit } from '@/components/units/UnitControls';
+import { formatCanonicalValue, fromCanonical, getUnitLabel } from '@/lib/units/unitSystem';
 
 interface HorizontalFlowsheetStreamTableProps {
   streams: SolvedStream[];
@@ -12,7 +14,7 @@ interface HorizontalFlowsheetStreamTableProps {
 }
 
 const LABEL_W = 186;
-const UNIT_W = 78;
+const UNIT_W = 92;
 const COL_W = 98;
 
 export default function HorizontalFlowsheetStreamTable({
@@ -26,6 +28,15 @@ export default function HorizontalFlowsheetStreamTable({
   const [dragging, setDragging] = useState(false);
   const [compViewMode, setCompViewMode] = useState<'active' | 'configured' | 'all'>('active');
   const dragStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
+
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [molarUnit, setMolarUnit] = useLocalUnit('molarFlow');
+  const [volUnit, setVolUnit] = useLocalUnit('volFlow');
+  const [densUnit, setDensUnit] = useLocalUnit('density');
+  const [cpUnit, setCpUnit] = useLocalUnit('cp');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [massUnit, setMassUnit] = useLocalUnit('massFlow');
 
   const activeComps = SIM_COMPS.filter(ck =>
     streams.some(s => (s.flowsKgH[ck] || 0) > 0.00005)
@@ -46,7 +57,7 @@ export default function HorizontalFlowsheetStreamTable({
           : mergedConfiguredComps;
 
   const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    if ((e.target as HTMLElement).closest('button, select, input, option')) return;
     const el = scrollRef.current;
     if (!el) return;
     setDragging(true);
@@ -335,10 +346,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 04. 온도 */}
           <tr>
             <td style={stickyRowLabel('#FFFFFF', true)}>Temperature (온도)</td>
-            <td style={stickyRowUnit('#FFFFFF')}>°C</td>
+            <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
+              <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FFFFFF'), fontWeight: 800, color: '#1A2F44' }}>
-                {s.tempC.toFixed(1)}
+                {formatCanonicalValue('temp', s.tempC, tempUnit, 1)}
               </td>
             ))}
           </tr>
@@ -346,10 +359,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 05. 압력 */}
           <tr>
             <td style={stickyRowLabel('#FAF9F5', true)}>Pressure (압력)</td>
-            <td style={stickyRowUnit('#FAF9F5')}>kg/cm²G</td>
+            <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
+              <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), fontWeight: 700, color: '#334155' }}>
-                {s.pressKgcm2g.toFixed(2)}
+                {formatCanonicalValue('pressG', s.pressKgcm2g, pressUnit)}
               </td>
             ))}
           </tr>
@@ -357,10 +372,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 06. 몰 유량 */}
           <tr>
             <td style={stickyRowLabel('#FFFFFF')}>Molar Flow (몰유량)</td>
-            <td style={stickyRowUnit('#FFFFFF')}>kmol/h</td>
+            <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
+              <UnitSelect quantity="molarFlow" value={molarUnit} onChange={setMolarUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FFFFFF'), color: '#1A2F44' }}>
-                {s.totalMolarKmolH.toFixed(1)}
+                {formatCanonicalValue('molarFlow', s.totalMolarKmolH, molarUnit, 1)}
               </td>
             ))}
           </tr>
@@ -368,10 +385,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 07. 부피 유량 */}
           <tr>
             <td style={stickyRowLabel('#FAF9F5')}>Volume Flow (부피유량)</td>
-            <td style={stickyRowUnit('#FAF9F5')}>m³/h</td>
+            <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
+              <UnitSelect quantity="volFlow" value={volUnit} onChange={setVolUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), color: '#0F5338', fontWeight: 700 }}>
-                {s.volFlowM3H.toFixed(1)}
+                {formatCanonicalValue('volFlow', s.volFlowM3H, volUnit, 1)}
               </td>
             ))}
           </tr>
@@ -390,10 +409,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 09. 밀도 */}
           <tr>
             <td style={stickyRowLabel('#FAF9F5')}>Density (밀도 ρ)</td>
-            <td style={stickyRowUnit('#FAF9F5')}>kg/m³</td>
+            <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
+              <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), color: '#334155' }}>
-                {s.phase === 'G' ? s.densityKgM3.toFixed(2) : s.densityKgM3.toFixed(0)}
+                {formatCanonicalValue('density', s.densityKgM3, densUnit, densUnit === 'gcm3' ? 4 : s.phase === 'G' ? 2 : 1)}
               </td>
             ))}
           </tr>
@@ -401,10 +422,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 10. 압축인자 Z / 비열 Cp */}
           <tr>
             <td style={stickyRowLabel('#FFFFFF')}>Heat Capacity Cp (기상 Z)</td>
-            <td style={stickyRowUnit('#FFFFFF')}>kcal/kg°C</td>
+            <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
+              <UnitSelect quantity="cp" value={cpUnit} onChange={setCpUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FFFFFF'), color: '#52525B' }}>
-                {s.cpKcalKgC.toFixed(3)}
+                {formatCanonicalValue('cp', s.cpKcalKgC, cpUnit, 3)}
                 {s.compressibilityZ !== undefined ? ` (Z=${s.compressibilityZ.toFixed(2)})` : ''}
               </td>
             ))}
@@ -413,10 +436,12 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 11. 엔탈피 유량 */}
           <tr>
             <td style={stickyRowLabel('#FAF9F5')}>Enthalpy Flow (엔탈피 유량)</td>
-            <td style={stickyRowUnit('#FAF9F5')}>Mcal/h</td>
+            <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
+              <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} style={{ width: '100%' }} />
+            </td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), color: '#7C2D12', fontWeight: 700 }}>
-                {(s.enthalpyKcalH / 1000).toFixed(1)}
+                {formatCanonicalValue('heatDuty', s.enthalpyKcalH / 1000, dutyUnit)}
               </td>
             ))}
           </tr>
@@ -493,14 +518,14 @@ export default function HorizontalFlowsheetStreamTable({
                 borderTop: '1.5px solid #C8C4BA',
                 borderBottom: '1px solid #DFDCD4',
                 borderRight: '2px solid #C8C4BA',
-                padding: '4px 8px',
+                padding: '2px 4px',
                 fontSize: 9,
                 fontWeight: 800,
                 color: '#64748B',
                 textAlign: 'right',
               }}
             >
-              kg/h
+              <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} style={{ width: '100%' }} />
             </td>
             {streams.map(s => (
               <td
@@ -518,10 +543,10 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 13. 총 질량유량 */}
           <tr>
             <td style={stickyRowLabel('#FAF9F5', true)}>Total Mass Flow (총 질량유량)</td>
-            <td style={stickyRowUnit('#FAF9F5')}>kg/h</td>
+            <td style={stickyRowUnit('#FAF9F5')}>{getUnitLabel('massFlow', massUnit)}</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), fontWeight: 900, color: '#18181B' }}>
-                {s.totalMassKgH.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                {formatCanonicalValue('massFlow', s.totalMassKgH, massUnit)}
               </td>
             ))}
           </tr>
@@ -529,27 +554,29 @@ export default function HorizontalFlowsheetStreamTable({
           {/* 14+. 개별 성분 질량유량 */}
           {visibleComps.map((comp, idx) => {
             const bg = idx % 2 === 0 ? '#FFFFFF' : '#FAF9F5';
+            const massLabel = getUnitLabel('massFlow', massUnit);
             return (
               <tr key={comp}>
                 <td style={stickyRowLabel(bg, false, true)}>{COMP_META[comp].label}</td>
-                <td style={stickyRowUnit(bg)}>kg/h</td>
+                <td style={stickyRowUnit(bg)}>{massLabel}</td>
                 {streams.map(s => {
-                  const val = s.flowsKgH[comp] || 0;
+                  const rawKgH = s.flowsKgH[comp] || 0;
+                  const val = fromCanonical('massFlow', rawKgH, massUnit);
                   return (
                     <td
                       key={s.edgeId}
                       onClick={() => onSelectStream(s.edgeId)}
                       style={{
                         ...cellValStyle(s, bg),
-                        color: val >= 0.0001 ? '#1A2F44' : '#CBD5E1',
-                        fontWeight: val >= 0.0001 ? 700 : 400,
+                        color: rawKgH >= 0.0001 ? '#1A2F44' : '#CBD5E1',
+                        fontWeight: rawKgH >= 0.0001 ? 700 : 400,
                       }}
                     >
-                      {val >= 1.0
-                        ? val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
-                        : val >= 0.0001
-                          ? val.toFixed(4)
-                          : '—'}
+                      {rawKgH >= 0.0001
+                        ? Math.abs(val) >= 1.0
+                          ? val.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
+                          : val.toFixed(4)
+                        : '—'}
                     </td>
                   );
                 })}

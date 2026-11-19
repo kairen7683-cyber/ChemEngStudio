@@ -4,6 +4,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import ColumnInternalsDesignPanel from '@/components/flowsheet/ColumnInternalsDesignPanel';
 import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
+import {
   resolveEffectiveDofSlots,
   type DistillCalcMode,
   type DistillColumnParams,
@@ -805,6 +814,12 @@ export default function DistillationWorkbenchModal({
   const murphreeEff = config.murphreeEffPct ?? 75;
   const stageInputBasis: DistillStageInputBasis = config.stageInputBasis ?? 'theoretical';
 
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [dpUnit, setDpUnit] = useLocalUnit('deltaP');
+  const [massUnit, setMassUnit] = useLocalUnit('massFlow');
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+
   if (!open) return null;
 
   const stages = result?.stages ?? [];
@@ -1226,22 +1241,41 @@ export default function DistillationWorkbenchModal({
               )}
 
               <div>
-                <label style={labelStyle}>목표 수치 ({specMeta.unit})</label>
-                <BufferedNumberInput
-                  syncKey={`${unitTag}-scval-${sideCutCfg.specType}`}
-                  step={specMeta.step}
-                  min={specMeta.min}
-                  max={specMeta.max}
-                  value={sideCutCfg.specValue}
-                  onValueChange={(v) => updateSideCut({ specValue: v })}
-                  onEnterRun={() => {
-                    if (dofEvaluation.canRun) triggerRunSimulation();
-                  }}
-                  style={inputBaseStyle}
-                />
+                <label style={labelStyle}>
+                  {sideCutCfg.specType === 'mass_kgh' ? '목표 질량유량 S' : `목표 수치 (${specMeta.unit})`}
+                </label>
+                {sideCutCfg.specType === 'mass_kgh' ? (
+                  <UnitNumberInput
+                    quantity="massFlow"
+                    unitId={massUnit}
+                    onUnitChange={setMassUnit}
+                    syncKey={`${unitTag}-scval-mass`}
+                    minCanonical={specMeta.min}
+                    maxCanonical={specMeta.max}
+                    value={sideCutCfg.specValue}
+                    onValueChange={(v) => updateSideCut({ specValue: v })}
+                    onEnterRun={() => {
+                      if (dofEvaluation.canRun) triggerRunSimulation();
+                    }}
+                    inputStyle={inputBaseStyle}
+                  />
+                ) : (
+                  <BufferedNumberInput
+                    syncKey={`${unitTag}-scval-${sideCutCfg.specType}`}
+                    step={specMeta.step}
+                    min={specMeta.min}
+                    max={specMeta.max}
+                    value={sideCutCfg.specValue}
+                    onValueChange={(v) => updateSideCut({ specValue: v })}
+                    onEnterRun={() => {
+                      if (dofEvaluation.canRun) triggerRunSimulation();
+                    }}
+                    style={inputBaseStyle}
+                  />
+                )}
                 {sideCutCfg.specType === 's_over_f_mass' && totalFeedKgH > 0 && (
                   <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, fontFamily: MONO }}>
-                    ≈ {(sideCutCfg.specValue * totalFeedKgH).toFixed(1)} kg/h ({(sideCutCfg.specValue * 100).toFixed(1)}%)
+                    ≈ {formatCanonicalValue('massFlow', sideCutCfg.specValue * totalFeedKgH, massUnit)} {getUnitLabel('massFlow', massUnit)} ({(sideCutCfg.specValue * 100).toFixed(1)}%)
                   </div>
                 )}
                 {sideCutCfg.specType === 's_over_f_mole' && (
@@ -3574,28 +3608,50 @@ export default function DistillationWorkbenchModal({
                           <div>
                             <label style={labelStyle}>
                               {isFixedStages && topSpecType === 'reflux_mass_kgh'
-                                ? '환류 액상 유량 (kg/h)'
+                                ? '환류 액상 유량 L₀'
                                 : isFixedStages && topSpecType === 'boilup_ratio'
                                 ? '재비율 (VB/B)'
                                 : '운전 환류비 (RR)'}
                             </label>
-                            <BufferedNumberInput
-                              syncKey={`${unitTag}-topspec`}
-                              step={0.1}
-                              min={0.05}
-                              value={topSpecValue}
-                              onValueChange={(v) => {
-                                const val = Math.max(0.05, v || 1.5);
-                                applyUnifiedConfigChange({
-                                  topSpecValue: val,
-                                  designFixedRR: val,
-                                });
-                              }}
-                              onEnterRun={() => {
-                                if (dofEvaluation.canRun) triggerRunSimulation();
-                              }}
-                              style={inputBaseStyle}
-                            />
+                            {isFixedStages && topSpecType === 'reflux_mass_kgh' ? (
+                              <UnitNumberInput
+                                quantity="massFlow"
+                                unitId={massUnit}
+                                onUnitChange={setMassUnit}
+                                syncKey={`${unitTag}-topspec-mass`}
+                                minCanonical={0.05}
+                                value={topSpecValue}
+                                onValueChange={(v) => {
+                                  const val = Math.max(0.05, v || 1.5);
+                                  applyUnifiedConfigChange({
+                                    topSpecValue: val,
+                                    designFixedRR: val,
+                                  });
+                                }}
+                                onEnterRun={() => {
+                                  if (dofEvaluation.canRun) triggerRunSimulation();
+                                }}
+                                inputStyle={inputBaseStyle}
+                              />
+                            ) : (
+                              <BufferedNumberInput
+                                syncKey={`${unitTag}-topspec`}
+                                step={0.1}
+                                min={0.05}
+                                value={topSpecValue}
+                                onValueChange={(v) => {
+                                  const val = Math.max(0.05, v || 1.5);
+                                  applyUnifiedConfigChange({
+                                    topSpecValue: val,
+                                    designFixedRR: val,
+                                  });
+                                }}
+                                onEnterRun={() => {
+                                  if (dofEvaluation.canRun) triggerRunSimulation();
+                                }}
+                                style={inputBaseStyle}
+                              />
+                            )}
                           </div>
                         </div>
                       )}
@@ -3634,26 +3690,46 @@ export default function DistillationWorkbenchModal({
                             <div>
                               <label style={labelStyle}>
                                 {splitSpecType === 'distillate_kgh'
-                                  ? '탑정 유출 유량 D (kg/h)'
+                                  ? '탑정 유출 유량 D'
                                   : splitSpecType === 'bottoms_kgh'
-                                  ? '탑저 관출 유량 B (kg/h)'
+                                  ? '탑저 관출 유량 B'
                                   : '분배 비율 수치'}
                               </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-splitspec`}
-                                step={splitSpecType.includes('kgh') ? 10 : 0.01}
-                                min={0.0001}
-                                value={splitSpecValue}
-                                onValueChange={(v) =>
-                                  applyUnifiedConfigChange({
-                                    splitSpecValue: Math.max(0.0001, v || 0.5),
-                                  })
-                                }
-                                onEnterRun={() => {
-                                  if (dofEvaluation.canRun) triggerRunSimulation();
-                                }}
-                                style={inputBaseStyle}
-                              />
+                              {splitSpecType === 'distillate_kgh' || splitSpecType === 'bottoms_kgh' ? (
+                                <UnitNumberInput
+                                  quantity="massFlow"
+                                  unitId={massUnit}
+                                  onUnitChange={setMassUnit}
+                                  syncKey={`${unitTag}-splitspec-mass`}
+                                  minCanonical={0.0001}
+                                  value={splitSpecValue}
+                                  onValueChange={(v) =>
+                                    applyUnifiedConfigChange({
+                                      splitSpecValue: Math.max(0.0001, v || 0.5),
+                                    })
+                                  }
+                                  onEnterRun={() => {
+                                    if (dofEvaluation.canRun) triggerRunSimulation();
+                                  }}
+                                  inputStyle={inputBaseStyle}
+                                />
+                              ) : (
+                                <BufferedNumberInput
+                                  syncKey={`${unitTag}-splitspec`}
+                                  step={0.01}
+                                  min={0.0001}
+                                  value={splitSpecValue}
+                                  onValueChange={(v) =>
+                                    applyUnifiedConfigChange({
+                                      splitSpecValue: Math.max(0.0001, v || 0.5),
+                                    })
+                                  }
+                                  onEnterRun={() => {
+                                    if (dofEvaluation.canRun) triggerRunSimulation();
+                                  }}
+                                  style={inputBaseStyle}
+                                />
+                              )}
                             </div>
                           </div>
                           <div
@@ -3964,18 +4040,24 @@ export default function DistillationWorkbenchModal({
                             </div>
                           </div>
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑정 유량 D (상부)</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑정 유량 D (상부)</span>
+                              <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
+                            </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {distTotalKgH.toFixed(1)} kg/h
+                              {formatCanonicalValue('massFlow', distTotalKgH, massUnit)} {getUnitLabel('massFlow', massUnit)}
                             </div>
                             <div style={{ fontSize: 9.5, color: '#475569' }}>
                               {result.shortcutDesign.lkComp} {result.shortcutDesign.topLkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.topLkRecoveryPct}%)
                             </div>
                           </div>
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑저 유량 B (하부)</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑저 유량 B (하부)</span>
+                              <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
+                            </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {botTotalKgH.toFixed(1)} kg/h
+                              {formatCanonicalValue('massFlow', botTotalKgH, massUnit)} {getUnitLabel('massFlow', massUnit)}
                             </div>
                             <div style={{ fontSize: 9.5, color: '#475569' }}>
                               {result.shortcutDesign.hkComp} {result.shortcutDesign.botHkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.botHkRecoveryPct}%)
@@ -4005,14 +4087,20 @@ export default function DistillationWorkbenchModal({
                             border: '1px solid #CBD5E1',
                           }}
                         >
-                          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                            탑정 응축기 냉각열량 (Q_cond)
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                              탑정 응축기 냉각열량 (Q_cond)
+                            </span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                              <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
+                            </div>
                           </div>
                           <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
-                            {(result.condenserDutyKcalH / 1000).toFixed(1)} Mcal/h
+                            {formatCanonicalValue('heatDuty', result.condenserDutyKcalH / 1000, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                           </div>
                           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                            ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · 탑정 {result.topTempC.toFixed(1)}°C)
+                            ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · 탑정 {formatCanonicalValue('temp', result.topTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
                           </div>
                         </div>
                         <div
@@ -4023,14 +4111,20 @@ export default function DistillationWorkbenchModal({
                             border: '1px solid #CBD5E1',
                           }}
                         >
-                          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                            탑저 리보일러 가열열량 (Q_reb)
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                              탑저 리보일러 가열열량 (Q_reb)
+                            </span>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                              <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
+                            </div>
                           </div>
                           <div style={{ fontSize: 14.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 3 }}>
-                            +{(result.reboilerDutyKcalH / 1000).toFixed(1)} Mcal/h
+                            +{formatCanonicalValue('heatDuty', result.reboilerDutyKcalH / 1000, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                           </div>
                           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                            ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · 탑저 {result.bottomTempC.toFixed(1)}°C)
+                            ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · 탑저 {formatCanonicalValue('temp', result.bottomTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
                           </div>
                         </div>
                       </div>
@@ -4077,12 +4171,14 @@ export default function DistillationWorkbenchModal({
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 9 }}>
                     <div style={cardStyle}>
-                      <label style={labelStyle}>탑정 압력 (kgf/cm²G)</label>
-                      <BufferedNumberInput
+                      <label style={labelStyle}>탑정 압력</label>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        unitId={pressUnit}
+                        onUnitChange={setPressUnit}
                         syncKey={`${unitTag}-press`}
-                        step={0.05}
-                        min={-0.99}
-                        max={35}
+                        minCanonical={-0.99}
+                        maxCanonical={35}
                         value={topPress}
                         onValueChange={(v) =>
                           onChangeConfig({
@@ -4092,7 +4188,7 @@ export default function DistillationWorkbenchModal({
                         onEnterRun={() => {
                           if (dofEvaluation.canRun) triggerRunSimulation();
                         }}
-                        style={inputBaseStyle}
+                        inputStyle={inputBaseStyle}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4, fontFamily: MONO }}>
                         = {topBarA.toFixed(3)} barA ({topTorr.toFixed(0)} Torr)
@@ -4100,12 +4196,14 @@ export default function DistillationWorkbenchModal({
                     </div>
 
                     <div style={cardStyle}>
-                      <label style={labelStyle}>단당 ΔP (kgf/cm²/단)</label>
-                      <BufferedNumberInput
+                      <label style={labelStyle}>단당 ΔP (/단)</label>
+                      <UnitNumberInput
+                        quantity="deltaP"
+                        unitId={dpUnit}
+                        onUnitChange={setDpUnit}
                         syncKey={`${unitTag}-dp`}
-                        step={0.001}
-                        min={0}
-                        max={0.05}
+                        minCanonical={0}
+                        maxCanonical={0.05}
                         value={stageDp}
                         onValueChange={(v) =>
                           onChangeConfig({ stageDeltaPKgcm2: Math.max(0, v || 0) })
@@ -4113,10 +4211,10 @@ export default function DistillationWorkbenchModal({
                         onEnterRun={() => {
                           if (dofEvaluation.canRun) triggerRunSimulation();
                         }}
-                        style={inputBaseStyle}
+                        inputStyle={inputBaseStyle}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4, fontFamily: MONO }}>
-                        탑저: {botPress.toFixed(3)} kG ({botBarA.toFixed(2)} barA)
+                        탑저: {formatCanonicalValue('pressG', botPress, pressUnit, 2)} {getUnitLabel('pressG', pressUnit)} ({botBarA.toFixed(2)} barA)
                       </div>
                     </div>
 
@@ -4221,14 +4319,17 @@ export default function DistillationWorkbenchModal({
                         ? '탑정(D) · 사이드컷(S) · 탑저(B) 물질수지 및 순도 요약'
                         : '탑정 유출(D) vs 탑저 관출(B) 물질수지 및 순도 요약'}
                     </span>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A', fontFamily: MONO }}>
-                      D = {distTotalKgH.toFixed(1)} kg/h
-                      {hasSideCutOut ? ` | S = ${sideCutOutMass.toFixed(1)} kg/h` : ''}
-                      {` | B = ${botTotalKgH.toFixed(1)} kg/h`}
-                      {result.decanterWaterDrawKgH > 0.005
-                        ? ` | 💧 디캔터 수분 W = ${result.decanterWaterDrawKgH.toFixed(2)} kg/h`
-                        : ''}
-                    </span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A', fontFamily: MONO }}>
+                        D = {formatCanonicalValue('massFlow', distTotalKgH, massUnit)} {getUnitLabel('massFlow', massUnit)}
+                        {hasSideCutOut ? ` | S = ${formatCanonicalValue('massFlow', sideCutOutMass, massUnit)} ${getUnitLabel('massFlow', massUnit)}` : ''}
+                        {` | B = ${formatCanonicalValue('massFlow', botTotalKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)}`}
+                        {result.decanterWaterDrawKgH > 0.005
+                          ? ` | 💧 디캔터 수분 W = ${formatCanonicalValue('massFlow', result.decanterWaterDrawKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)}`
+                          : ''}
+                      </span>
+                      <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
+                    </div>
                   </div>
 
                   {hasSideCutOut && (
@@ -4257,9 +4358,9 @@ export default function DistillationWorkbenchModal({
                           🟣 사이드컷 측류 (S)
                         </span>
                         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#4C1D95', fontFamily: MONO }}>
-                          {sideCutOutMass.toFixed(1)} kg/h (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%) ·{' '}
+                          {formatCanonicalValue('massFlow', sideCutOutMass, massUnit)} {getUnitLabel('massFlow', massUnit)} (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%) ·{' '}
                           {result.sideCutStageUsed ?? '-'}단 ·{' '}
-                          {result.sideCutTempC !== undefined ? `${result.sideCutTempC.toFixed(1)}°C` : '-'} ·{' '}
+                          {result.sideCutTempC !== undefined ? `${formatCanonicalValue('temp', result.sideCutTempC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '-'} ·{' '}
                           {result.sideCutPhase === 'G' ? '기상 (Vapor)' : '액상 (Liquid)'}
                         </span>
                       </div>
@@ -4293,15 +4394,15 @@ export default function DistillationWorkbenchModal({
                       <thead>
                         <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
                           <th style={{ padding: '5px 8px', textAlign: 'left' }}>성분</th>
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 D (kg/h)</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 D ({getUnitLabel('massFlow', massUnit)})</th>
                           <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 농도</th>
                           {hasSideCutOut && (
                             <>
-                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 S (kg/h)</th>
+                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 S ({getUnitLabel('massFlow', massUnit)})</th>
                               <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 농도</th>
                             </>
                           )}
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 B (kg/h)</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 B ({getUnitLabel('massFlow', massUnit)})</th>
                           <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 농도</th>
                         </tr>
                       </thead>
@@ -4319,7 +4420,7 @@ export default function DistillationWorkbenchModal({
                                 {COMP_META[ck]?.formula ?? ck}
                               </td>
                               <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
-                                {dKg.toFixed(2)}
+                                {formatCanonicalValue('massFlow', dKg, massUnit, 2)}
                               </td>
                               <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#1D4ED8' }}>
                                 {fmtConc(dWt)}
@@ -4327,7 +4428,7 @@ export default function DistillationWorkbenchModal({
                               {hasSideCutOut && (
                                 <>
                                   <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#5B21B6' }}>
-                                    {sKg.toFixed(2)}
+                                    {formatCanonicalValue('massFlow', sKg, massUnit, 2)}
                                   </td>
                                   <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#6D28D9' }}>
                                     {fmtConc(sWt)}
@@ -4335,7 +4436,7 @@ export default function DistillationWorkbenchModal({
                                 </>
                               )}
                               <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, color: '#334155' }}>
-                                {bKg.toFixed(2)}
+                                {formatCanonicalValue('massFlow', bKg, massUnit, 2)}
                               </td>
                               <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: MONO, fontWeight: 800, color: '#0F172A' }}>
                                 {fmtConc(bWt)}

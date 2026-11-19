@@ -12,6 +12,15 @@ import {
   drawFallingFilmBlueprintCanvas,
 } from '@/lib/calculations/evaporator';
 import { usePFDStore } from '@/lib/stores/pfdStore';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
 
 export type EffectCount = 1 | 2 | 3;
 
@@ -124,6 +133,13 @@ export default function MultiEffectEvapStudio() {
   const [activeSection, setActiveSection] = useState<'all' | 'pfd' | 'streams' | 'equip' | 'datasheet'>('all');
   const [selectedEquipTag, setSelectedEquipTag] = useState<string>('E-320');
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+
+  const [flowUnit, setFlowUnit] = useLocalUnit('massFlow');
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [densUnit, setDensUnit] = useLocalUnit('density');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [areaUnit, setAreaUnit] = useLocalUnit('area');
 
   const pfdCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const dwgCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1810,14 +1826,13 @@ export default function MultiEffectEvapStudio() {
             </div>
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#2C353E', display: 'block', marginBottom: 4 }}>
-                급액 온도 (°C)
+                급액 온도
               </label>
-              <input
-                type="number"
-                step={1}
+              <UnitNumberInput
+                quantity="temp"
                 value={feedTempC}
-                onChange={e => setFeedTempC(Number(e.target.value) || 90)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
+                onValueChange={v => setFeedTempC(v)}
+                inputStyle={{ padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
               />
             </div>
           </div>
@@ -1826,63 +1841,109 @@ export default function MultiEffectEvapStudio() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, alignItems: 'start' }}>
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#2C353E', display: 'block', marginBottom: 4 }}>
-                13K 스팀압 (kg/cm²G)
+                13K 스팀압
               </label>
-              <input
-                type="number"
-                step={0.25}
+              <UnitNumberInput
+                quantity="pressG"
                 value={steamPressG}
-                onChange={e => setSteamPressG(Number(e.target.value) || 8.35)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
+                onValueChange={v => setSteamPressG(v)}
+                inputStyle={{ padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
               />
             </div>
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#2C353E', display: 'block', marginBottom: 4 }}>
-                최종 진공압 (kg/cm²G)
+                최종 진공압
               </label>
-              <input
-                type="number"
-                step={0.02}
+              <UnitNumberInput
+                quantity="pressG"
                 value={vacPressG}
-                onChange={e => setVacPressG(Number(e.target.value) || -0.94)}
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
+                onValueChange={v => setVacPressG(v)}
+                inputStyle={{ padding: '6px 8px', borderRadius: 7, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}
               />
             </div>
           </div>
         </div>
 
         {/* 실시간 핵심 KPI 요약 타일 */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
-          gap: 8,
-          marginTop: 10,
-        }}>
-          {[
-            { lbl: '원료 급액 유량 (L1)', val: `${simData.feedFlow_kgh.toLocaleString()} kg/h`, sub: `${wtIn.toFixed(1)} wt% NaOH (${feedTempC}°C)` },
-            { lbl: '50% 농축 제품량 (L14)', val: `${simData.prodFlow_kgh.toLocaleString()} kg/h`, sub: `Dry ${simData.naohPure_kgh.toLocaleString()} kg/h (${simData.capTonDay.toFixed(1)} T/D)` },
-            { lbl: '총 수분 증발량 (V_tot)', val: `${simData.totalEvap_kgh.toLocaleString()} kg/h`, sub: `${effectCount}단 분할 증발` },
-            { lbl: '13K 생증기 소비량 (S1)', val: `${simData.liveSteam_kgh.toLocaleString()} kg/h`, sub: `스팀 원단위 ${(simData.liveSteam_kgh / simData.naohPure_kgh).toFixed(2)} t-S/t-NaOH` },
-            { lbl: '스팀 경제성 (Economy)', val: `${simData.steamEconomy.toFixed(2)} kg-V/kg-S`, sub: effectCount === 3 ? '3중 효용 최적 에너지 회수' : effectCount === 2 ? '2중 효용 열회수' : '단일 효용 운전' },
-            { lbl: '총 설비 기기 수', val: `${simData.equipRows.length} 개 기기`, sub: `증발관 ${effectCount} · 분리기 ${effectCount} · 펌프 ${effectCount} 외` },
-          ].map((k, idx) => (
-            <div
-              key={idx}
-              style={{
-                background: idx === 4 ? '#EFECE5' : '#FFFFFF',
-                border: idx === 4 ? '1.5px solid #1A2F44' : '1px solid #E5E2DC',
-                borderRadius: 10,
-                padding: '8px 11px',
-              }}
-            >
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#5A6570' }}>{k.lbl}</div>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: '#1A2F44', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
-                {k.val}
-              </div>
-              <div style={{ fontSize: 9.5, color: '#7A7872', marginTop: 1 }}>{k.sub}</div>
+        {(() => {
+          const totalEvapDuty_Mcalh = simData.stages.reduce((acc, st) => acc + st.Q_duty_Mcalh, 0);
+          const totalEvapArea_m2 = simData.stages.reduce((acc, st) => acc + st.designResults.A_prov_m2, 0);
+          const kpiCards: Array<{
+            lbl: string;
+            val: string;
+            sub: string;
+            highlight?: boolean;
+            unitControl?: React.ReactNode;
+          }> = [
+            {
+              lbl: '원료 급액 유량 (L1)',
+              val: `${formatCanonicalValue('massFlow', simData.feedFlow_kgh, flowUnit)} ${getUnitLabel('massFlow', flowUnit)}`,
+              sub: `${wtIn.toFixed(1)} wt% NaOH (${formatCanonicalValue('temp', feedTempC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)})`,
+            },
+            {
+              lbl: '50% 농축 제품량 (L14)',
+              val: `${formatCanonicalValue('massFlow', simData.prodFlow_kgh, flowUnit)} ${getUnitLabel('massFlow', flowUnit)}`,
+              sub: `Dry ${formatCanonicalValue('massFlow', simData.naohPure_kgh, flowUnit)} ${getUnitLabel('massFlow', flowUnit)} (${simData.capTonDay.toFixed(1)} T/D)`,
+            },
+            {
+              lbl: '총 수분 증발량 (V_tot)',
+              val: `${formatCanonicalValue('massFlow', simData.totalEvap_kgh, flowUnit)} ${getUnitLabel('massFlow', flowUnit)}`,
+              sub: `${effectCount}단 분할 증발`,
+            },
+            {
+              lbl: '13K 생증기 소비량 (S1)',
+              val: `${formatCanonicalValue('massFlow', simData.liveSteam_kgh, flowUnit)} ${getUnitLabel('massFlow', flowUnit)}`,
+              sub: `스팀 원단위 ${(simData.liveSteam_kgh / simData.naohPure_kgh).toFixed(2)} t-S/t-NaOH`,
+            },
+            {
+              lbl: '스팀 경제성 (Economy)',
+              val: `${simData.steamEconomy.toFixed(2)} kg-V/kg-S`,
+              sub: effectCount === 3 ? '3중 효용 최적 에너지 회수' : effectCount === 2 ? '2중 효용 열회수' : '단일 효용 운전',
+              highlight: true,
+            },
+            {
+              lbl: '총 증발 열부하 (Heat Duty)',
+              val: `${formatCanonicalValue('heatDuty', totalEvapDuty_Mcalh, dutyUnit, 1)} ${getUnitLabel('heatDuty', dutyUnit)}`,
+              sub: `${effectCount}효 증발관 합계`,
+              unitControl: <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} size="xs" />,
+            },
+            {
+              lbl: '총 증발 전열면적 (Area)',
+              val: `${formatCanonicalValue('area', totalEvapArea_m2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)}`,
+              sub: `증발관 ${effectCount} · 총 ${simData.equipRows.length}기`,
+              unitControl: <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} size="xs" />,
+            },
+          ];
+          return (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
+              gap: 8,
+              marginTop: 10,
+            }}>
+              {kpiCards.map((k, idx) => (
+                <div
+                  key={idx}
+                  style={{
+                    background: k.highlight ? '#EFECE5' : '#FFFFFF',
+                    border: k.highlight ? '1.5px solid #1A2F44' : '1px solid #E5E2DC',
+                    borderRadius: 10,
+                    padding: '8px 11px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#5A6570' }}>{k.lbl}</span>
+                    {k.unitControl}
+                  </div>
+                  <div style={{ fontSize: 14.5, fontWeight: 800, color: '#1A2F44', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
+                    {k.val}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#7A7872', marginTop: 1 }}>{k.sub}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          );
+        })()}
 
         {/* 섹션 표시 필터 바 (한눈에 통합 보기 / 개별 섹션 집중 보기) */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid #ECEAE4' }}>
@@ -1953,7 +2014,7 @@ export default function MultiEffectEvapStudio() {
                     fontFamily: 'JetBrains Mono, monospace',
                   }}
                 >
-                  {st.evapTag} ({st.effectNo}효: {st.wtIn_pct.toFixed(1)}→{st.wtOut_pct.toFixed(1)}%, {st.designResults.A_prov_m2.toFixed(1)}m²)
+                  {st.evapTag} ({st.effectNo}효: {st.wtIn_pct.toFixed(1)}→{st.wtOut_pct.toFixed(1)}%, {formatCanonicalValue('area', st.designResults.A_prov_m2, areaUnit, 1)}{getUnitLabel('area', areaUnit)})
                 </button>
               ))}
             </div>
@@ -2017,14 +2078,39 @@ export default function MultiEffectEvapStudio() {
                   <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>Stream</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>스트림 명칭</th>
                   <th style={{ padding: '8px 8px', textAlign: 'center', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>상</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>총 유량 (kg/h)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>NaOH (kg/h)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>H₂O (kg/h)</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>총 유량</span>
+                      <UnitSelect quantity="massFlow" value={flowUnit} onChange={setFlowUnit} size="xs" />
+                    </div>
+                  </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>NaOH ({getUnitLabel('massFlow', flowUnit)})</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>H₂O ({getUnitLabel('massFlow', flowUnit)})</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>농도 (wt%)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>온도 (°C)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>압력 (kg/cm²G)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>밀도 (kg/m³)</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>열량 (Mcal/h)</th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>온도</span>
+                      <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
+                    </div>
+                  </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>압력</span>
+                      <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} size="xs" />
+                    </div>
+                  </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>밀도</span>
+                      <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} size="xs" />
+                    </div>
+                  </th>
+                  <th style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <span>열량</span>
+                      <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} size="xs" />
+                    </div>
+                  </th>
                   <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>배관 (ANSI)</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 800, color: '#1A2F44', whiteSpace: 'nowrap' }}>흐름 경로 및 설명</th>
                 </tr>
@@ -2048,28 +2134,28 @@ export default function MultiEffectEvapStudio() {
                       </span>
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#1A2F44' }}>
-                      {s.total_kgh.toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                      {formatCanonicalValue('massFlow', s.total_kgh, flowUnit)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {s.naoh_kgh > 0 ? s.naoh_kgh.toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}
+                      {s.naoh_kgh > 0 ? formatCanonicalValue('massFlow', s.naoh_kgh, flowUnit) : '-'}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {s.h2o_kgh.toLocaleString('ko-KR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                      {formatCanonicalValue('massFlow', s.h2o_kgh, flowUnit)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
                       {s.wt_pct > 0 ? `${s.wt_pct.toFixed(2)}%` : '-'}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                      {s.temp_C.toFixed(1)}
+                      {formatCanonicalValue('temp', s.temp_C, tempUnit, 1)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {s.press_kgcm2g.toFixed(2)}
+                      {formatCanonicalValue('pressG', s.press_kgcm2g, pressUnit)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {s.density_kgm3}
+                      {formatCanonicalValue('density', s.density_kgm3, densUnit)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {s.enthalpy_Mcalh.toLocaleString('ko-KR', { maximumFractionDigits: 0 })}
+                      {formatCanonicalValue('heatDuty', s.enthalpy_Mcalh, dutyUnit)}
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'center', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>
                       {s.lineSize_NPS}

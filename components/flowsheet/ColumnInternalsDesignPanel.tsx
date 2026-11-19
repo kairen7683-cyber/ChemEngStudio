@@ -3,6 +3,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
+import {
   PACKING_CATALOG,
   solveColumnInternalsDesign,
   type ColumnInternalsKind,
@@ -159,6 +168,13 @@ export default function ColumnInternalsDesignPanel({
     if (!simResult || !simResult.stages || simResult.stages.length < 3) return null;
     return solveColumnInternalsDesign(config, feeds, simResult);
   }, [config, feeds, simResult]);
+
+  const [lenUnit, setLenUnit] = useLocalUnit('length');
+  const [dpUnit, setDpUnit] = useLocalUnit('deltaP');
+  const [velUnit, setVelUnit] = useLocalUnit('velocity');
+  const [areaUnit, setAreaUnit] = useLocalUnit('area');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [volUnit, setVolUnit] = useLocalUnit('volume');
 
   if (!simResult || !designRes) {
     return (
@@ -1316,7 +1332,9 @@ export default function ColumnInternalsDesignPanel({
             }}
           >
             <div style={{ padding: '6px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
-              <div style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>풍하중 (Wind · V={ic.windSpeedMS ?? 38} m/s)</div>
+              <div style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>
+                풍하중 (Wind · V={formatCanonicalValue('velocity', ic.windSpeedMS ?? 38, velUnit, 1)} {getUnitLabel('velocity', velUnit)})
+              </div>
               <div style={{ fontSize: 12, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 2 }}>
                 전단 {mech.windBaseShearKN} kN · 모멘트 {mech.windBaseMomentKNm} kN·m
               </div>
@@ -1540,14 +1558,17 @@ export default function ColumnInternalsDesignPanel({
           }}
         >
           <div style={{ padding: '5px 8px', borderRadius: 6, background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#4338CA' }}>선정 공칭 내경 (ØD)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#4338CA' }}>선정 공칭 내경 (ØD)</span>
+              <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
+            </div>
             <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E1B4B', fontFamily: MONO, marginTop: 1 }}>
               {isSwaged
-                ? `Ø${designRes.rectifying.selectedNominalDiamM} / Ø${designRes.stripping.selectedNominalDiamM}m`
-                : `Ø${designRes.governingDiamM.toFixed(2)} m`}
+                ? `Ø${formatCanonicalValue('length', designRes.rectifying.selectedNominalDiamM, lenUnit, 2)} / Ø${formatCanonicalValue('length', designRes.stripping.selectedNominalDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`
+                : `Ø${formatCanonicalValue('length', designRes.governingDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`}
             </div>
             <div style={{ fontSize: 9, color: '#475569' }}>
-              최소필요 Ø{Math.max(designRes.rectifying.requiredMinDiamM, designRes.stripping.requiredMinDiamM).toFixed(2)}m
+              최소필요 Ø{formatCanonicalValue('length', Math.max(designRes.rectifying.requiredMinDiamM, designRes.stripping.requiredMinDiamM), lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
           </div>
 
@@ -1573,21 +1594,27 @@ export default function ColumnInternalsDesignPanel({
           </div>
 
           <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>탑 총 높이 (T-T / 총고)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>탑 총 높이 (T-T / O.A.L.)</span>
+              <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
+            </div>
             <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
-              {designRes.tangentToTangentHeightM} m / {designRes.totalElevationM} m
+              {formatCanonicalValue('length', designRes.tangentToTangentHeightM, lenUnit, 2)} / {formatCanonicalValue('length', designRes.totalElevationM, lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
             <div style={{ fontSize: 9, color: '#475569' }}>
-              {isTray ? `실제 ${designRes.actualTotalTrays}단 · DC체류 ≥${designRes.minDcResidenceTimeSec}s` : `충진고 ${designRes.totalPackedHeightM}m (h_L ${designRes.avgPackedHoldupPct}%)`}
+              {isTray ? `실제 ${designRes.actualTotalTrays}단 · DC체류 ≥${designRes.minDcResidenceTimeSec}s` : `충진고 ${formatCanonicalValue('length', designRes.totalPackedHeightM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} (h_L ${designRes.avgPackedHoldupPct}%)`}
             </div>
           </div>
 
           <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>인터널 총 압력손실</div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
-              {designRes.totalInternalsDpMbar} mbar
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>인터널 총 압력손실</span>
+              <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>{designRes.totalInternalsDpKgcm2} kgf/cm²</div>
+            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
+              {formatCanonicalValue('deltaP', designRes.totalInternalsDpKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}
+            </div>
+            <div style={{ fontSize: 9, color: '#475569' }}>{designRes.totalInternalsDpMbar} mbar</div>
           </div>
 
           <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
@@ -1812,29 +1839,33 @@ export default function ColumnInternalsDesignPanel({
             <div style={{ display: 'grid', gridTemplateColumns: isSwaged ? '1fr 1fr' : '1fr', gap: 8, marginTop: 8 }}>
               <div>
                 <label style={lblStyle}>
-                  {isSwaged ? '정류부 내경 지정 (0=자동 m)' : '탑 내경 수동 지정 (0=자동 m)'}
+                  {isSwaged ? '정류부 내경 지정 (0=자동)' : '탑 내경 수동 지정 (0=자동)'}
                 </label>
-                <BufferedNumberInput
+                <UnitNumberInput
+                  quantity="length"
+                  unitId={lenUnit}
+                  onUnitChange={setLenUnit}
                   syncKey={`${unitTag}-ic-dr`}
-                  min={0}
-                  max={8}
-                  step={0.15}
+                  minCanonical={0}
+                  maxCanonical={8}
                   value={ic.manualRectDiamM ?? 0}
                   onValueChange={(v) => patchInternals({ manualRectDiamM: v > 0.3 ? v : 0 })}
-                  style={inpStyle}
+                  inputStyle={inpStyle}
                 />
               </div>
               {isSwaged && (
                 <div>
-                  <label style={lblStyle}>스트리핑 내경 지정 (0=자동 m)</label>
-                  <BufferedNumberInput
+                  <label style={lblStyle}>스트리핑 내경 지정 (0=자동)</label>
+                  <UnitNumberInput
+                    quantity="length"
+                    unitId={lenUnit}
+                    onUnitChange={setLenUnit}
                     syncKey={`${unitTag}-ic-ds`}
-                    min={0}
-                    max={8}
-                    step={0.15}
+                    minCanonical={0}
+                    maxCanonical={8}
                     value={ic.manualStripDiamM ?? 0}
                     onValueChange={(v) => patchInternals({ manualStripDiamM: v > 0.3 ? v : 0 })}
-                    style={inpStyle}
+                    inputStyle={inpStyle}
                   />
                 </div>
               )}
@@ -1847,7 +1878,7 @@ export default function ColumnInternalsDesignPanel({
               <div style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A', marginBottom: 7 }}>
                 💿 트레이 데크 상세 제원 (Fair · Glitsch · Chan–Fair)
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 0.9fr', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: 8 }}>
                 <div>
                   <label style={lblStyle}>트레이 종류</label>
                   <select
@@ -1867,18 +1898,27 @@ export default function ColumnInternalsDesignPanel({
                   </select>
                 </div>
                 <div>
-                  <label style={lblStyle}>단 간격 (Spacing mm)</label>
-                  <select
-                    value={ic.traySpacingMm ?? 500}
-                    onChange={(e) => patchInternals({ traySpacingMm: Number(e.target.value) })}
-                    style={selStyle}
-                  >
-                    <option value={300}>300 mm (소구경)</option>
-                    <option value={450}>450 mm (표준)</option>
-                    <option value={500}>500 mm (권장)</option>
-                    <option value={600}>600 mm (대구경/보수)</option>
-                    <option value={750}>750 mm (고발포)</option>
-                  </select>
+                  <label style={lblStyle}>단 간격 (Spacing)</label>
+                  <div style={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
+                    <select
+                      value={ic.traySpacingMm ?? 500}
+                      onChange={(e) => patchInternals({ traySpacingMm: Number(e.target.value) })}
+                      style={{ ...selStyle, flex: 1, minWidth: 0 }}
+                    >
+                      {([
+                        { v: 300, note: '소구경' },
+                        { v: 450, note: '표준' },
+                        { v: 500, note: '권장' },
+                        { v: 600, note: '대구경' },
+                        { v: 750, note: '고발포' },
+                      ] as const).map((opt) => (
+                        <option key={opt.v} value={opt.v}>
+                          {formatCanonicalValue('length', opt.v / 1000, lenUnit)} {getUnitLabel('length', lenUnit)} ({opt.note})
+                        </option>
+                      ))}
+                    </select>
+                    <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} style={{ flexShrink: 0, minWidth: 48 }} />
+                  </div>
                 </div>
               </div>
 
@@ -1913,43 +1953,45 @@ export default function ColumnInternalsDesignPanel({
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 8 }}>
                 <div>
-                  <label style={lblStyle}>위어 높이 hw (mm)</label>
-                  <BufferedNumberInput
+                  <label style={lblStyle}>위어 높이 hw</label>
+                  <UnitNumberInput
+                    quantity="length"
                     syncKey={`${unitTag}-ic-hw`}
-                    min={25}
-                    max={95}
-                    step={5}
-                    value={ic.weirHeightMm ?? 50}
-                    onValueChange={(v) => patchInternals({ weirHeightMm: v })}
-                    style={inpStyle}
+                    minCanonical={0.025}
+                    maxCanonical={0.095}
+                    value={(ic.weirHeightMm ?? 50) / 1000}
+                    onValueChange={(v) => patchInternals({ weirHeightMm: Number((v * 1000).toFixed(1)) })}
+                    inputStyle={inpStyle}
+                    selectStyle={{ minWidth: 46 }}
                   />
                 </div>
                 <div>
-                  <label style={lblStyle}>개구율 Ah/Aa (%)</label>
-                  <BufferedNumberInput
-                    syncKey={`${unitTag}-ic-ah`}
-                    min={5}
-                    max={16}
-                    step={0.5}
-                    value={ic.holeAreaPct ?? 10}
-                    onValueChange={(v) => patchInternals({ holeAreaPct: v })}
-                    style={inpStyle}
-                  />
-                </div>
-                <div>
-                  <label style={lblStyle}>홀/밸브경 (mm)</label>
-                  <BufferedNumberInput
+                  <label style={lblStyle}>홀/밸브경 Øh</label>
+                  <UnitNumberInput
+                    quantity="length"
                     syncKey={`${unitTag}-ic-dh`}
-                    min={3}
-                    max={90}
-                    step={1}
-                    value={ic.holeDiameterMm ?? ((ic.trayType ?? 'valve') === 'sieve' ? 5 : 38)}
-                    onValueChange={(v) => patchInternals({ holeDiameterMm: v })}
-                    style={inpStyle}
+                    minCanonical={0.003}
+                    maxCanonical={0.09}
+                    value={(ic.holeDiameterMm ?? ((ic.trayType ?? 'valve') === 'sieve' ? 5 : 38)) / 1000}
+                    onValueChange={(v) => patchInternals({ holeDiameterMm: Number((v * 1000).toFixed(2)) })}
+                    inputStyle={inpStyle}
+                    selectStyle={{ minWidth: 46 }}
                   />
                 </div>
+              </div>
+              <div style={{ marginTop: 8 }}>
+                <label style={lblStyle}>개구율 Ah/Aa (%)</label>
+                <BufferedNumberInput
+                  syncKey={`${unitTag}-ic-ah`}
+                  min={5}
+                  max={16}
+                  step={0.5}
+                  value={ic.holeAreaPct ?? 10}
+                  onValueChange={(v) => patchInternals({ holeAreaPct: v })}
+                  style={inpStyle}
+                />
               </div>
             </div>
           ) : (
@@ -1994,15 +2036,17 @@ export default function ColumnInternalsDesignPanel({
               </div>
 
               <div style={{ marginTop: 8 }}>
-                <label style={lblStyle}>베드당 최대 높이 (액체 재분배기 간격 m)</label>
-                <BufferedNumberInput
+                <label style={lblStyle}>베드당 최대 높이 (액체 재분배기 간격)</label>
+                <UnitNumberInput
+                  quantity="length"
+                  unitId={lenUnit}
+                  onUnitChange={setLenUnit}
                   syncKey={`${unitTag}-ic-bedh`}
-                  min={2.5}
-                  max={8.5}
-                  step={0.5}
+                  minCanonical={2.5}
+                  maxCanonical={8.5}
                   value={ic.maxBedHeightM ?? 5.5}
                   onValueChange={(v) => patchInternals({ maxBedHeightM: v })}
-                  style={inpStyle}
+                  inputStyle={inpStyle}
                 />
               </div>
             </div>
@@ -2043,17 +2087,20 @@ export default function ColumnInternalsDesignPanel({
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.35fr 0.9fr 0.75fr', gap: 6, marginTop: 8 }}>
               <div>
-                <label style={lblStyle}>설계풍속 (m/s)</label>
-                <BufferedNumberInput
+                <label style={lblStyle}>설계풍속</label>
+                <UnitNumberInput
+                  quantity="velocity"
+                  unitId={velUnit}
+                  onUnitChange={setVelUnit}
                   syncKey={`${unitTag}-ic-wind`}
-                  min={20}
-                  max={65}
-                  step={2}
+                  minCanonical={20}
+                  maxCanonical={65}
                   value={ic.windSpeedMS ?? 38}
                   onValueChange={(v) => patchInternals({ windSpeedMS: v })}
-                  style={inpStyle}
+                  inputStyle={inpStyle}
+                  selectStyle={{ minWidth: 48 }}
                 />
               </div>
               <div>
@@ -2421,32 +2468,47 @@ export default function ColumnInternalsDesignPanel({
 
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 9 }}>
                 <div style={cardBox}>
-                  <div style={{ fontSize: 10.5, fontWeight: 900, color: '#1D4ED8' }}>❄️ 탑정 응축기 (Condenser)</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#1D4ED8' }}>❄️ 탑정 응축기 (Condenser)</span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
+                      <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                    </div>
+                  </div>
                   <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 4 }}>
-                    전열면적 약 {designRes.auxiliaries.condenserEstAreaM2} m²
+                    전열면적 약 {formatCanonicalValue('area', designRes.auxiliaries.condenserEstAreaM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)}
                   </div>
                   <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                    열부하 {designRes.auxiliaries.condenserDutyKw} kW · 설치원가{' '}
+                    열부하 {formatCanonicalValue('heatDuty', designRes.auxiliaries.condenserDutyKw / 1.163, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)} · 설치원가{' '}
                     {designRes.auxiliaries.condenserCost ? formatKrwReadable(designRes.auxiliaries.condenserCost.bareModuleKrw) : '-'}
                   </div>
                 </div>
                 <div style={cardBox}>
-                  <div style={{ fontSize: 10.5, fontWeight: 900, color: '#B91C1C' }}>🔥 탑저 리보일러 (Reboiler)</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#B91C1C' }}>🔥 탑저 리보일러 (Reboiler)</span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
+                      <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                    </div>
+                  </div>
                   <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 4 }}>
-                    전열면적 약 {designRes.auxiliaries.reboilerEstAreaM2} m²
+                    전열면적 약 {formatCanonicalValue('area', designRes.auxiliaries.reboilerEstAreaM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)}
                   </div>
                   <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                    열부하 {designRes.auxiliaries.reboilerDutyKw} kW · 설치원가{' '}
+                    열부하 {formatCanonicalValue('heatDuty', designRes.auxiliaries.reboilerDutyKw / 1.163, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)} · 설치원가{' '}
                     {designRes.auxiliaries.reboilerCost ? formatKrwReadable(designRes.auxiliaries.reboilerCost.bareModuleKrw) : '-'}
                   </div>
                 </div>
                 <div style={cardBox}>
-                  <div style={{ fontSize: 10.5, fontWeight: 900, color: '#0F766E' }}>🛢️ 수평 환류드럼 (5분 홀드업)</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F766E' }}>🛢️ 수평 환류드럼 (5분 홀드업)</span>
+                    <UnitSelect quantity="volume" value={volUnit} onChange={setVolUnit} />
+                  </div>
                   <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 4 }}>
-                    Ø{designRes.auxiliaries.refluxDrumDiamM}m × {designRes.auxiliaries.refluxDrumLengthM}mL
+                    Ø{formatCanonicalValue('length', designRes.auxiliaries.refluxDrumDiamM, lenUnit, 2)} × {formatCanonicalValue('length', designRes.auxiliaries.refluxDrumLengthM, lenUnit, 2)} {getUnitLabel('length', lenUnit)}
                   </div>
                   <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
-                    총 용적 {designRes.auxiliaries.refluxDrumHoldupM3} m³ (50% 액위 기준)
+                    총 용적 {formatCanonicalValue('volume', designRes.auxiliaries.refluxDrumHoldupM3, volUnit)} {getUnitLabel('volume', volUnit)} (50% 액위 기준)
                   </div>
                 </div>
               </div>

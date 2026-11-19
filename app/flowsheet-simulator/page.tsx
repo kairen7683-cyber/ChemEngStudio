@@ -86,6 +86,17 @@ import { useAuth } from '@/components/auth/AuthContext';
 import { PLANT_GROUP_TO_ID, isPlantAllowed } from '@/lib/plantRegistry';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import {
+  UnitNumberInput,
+  UnitNullableNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
 import {
   PfdSchematicIcon,
   StreamFlowIcon,
@@ -1998,6 +2009,21 @@ export function FlowsheetWorkspace({
             : 'chemplant-builder-projects-v1';
 
   const router = useRouter();
+
+  // 전역 기본 단위 구독 및 로컬 오버라이드 단위 상태
+  const globalUnits = useUnitStore(s => s.units);
+  const hydrateUnits = useUnitStore(s => s.hydrate);
+  useEffect(() => {
+    hydrateUnits();
+  }, [hydrateUnits]);
+
+  const [mobileTempUnit, setMobileTempUnit] = useLocalUnit('temp');
+  const [mobilePressUnit, setMobilePressUnit] = useLocalUnit('pressG');
+  const [mobileMassUnit, setMobileMassUnit] = useLocalUnit('massFlow');
+  const [unitSummaryMassUnit, setUnitSummaryMassUnit] = useLocalUnit('massFlow');
+  const [unitSummaryDutyUnit, setUnitSummaryDutyUnit] = useLocalUnit('heatDuty');
+  const [unitSummaryPowerUnit, setUnitSummaryPowerUnit] = useLocalUnit('power');
+  const [feedFlowUnit, setFeedFlowUnit] = useLocalUnit('massFlow');
   const setSimActiveSheetId = useBalanceStore(s => s.setSimActiveSheetId);
   const simRequestedSheetId = useBalanceStore(s => s.simRequestedSheetId);
   const simRequestedNodeAction = useBalanceStore(s => s.simRequestedNodeAction);
@@ -4341,7 +4367,7 @@ export function FlowsheetWorkspace({
           : '#475569';
 
       const labelText = s
-        ? `${isTear ? '[순환] ' : ''}[${e.streamNo}] ${s.totalMassKgH.toFixed(0)} kg/h · ${s.tempC}°C · ${s.pressKgcm2g}kG (${s.phase})`
+        ? `${isTear ? '[순환] ' : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`
         : `[${e.streamNo}]`;
 
       return {
@@ -4376,7 +4402,7 @@ export function FlowsheetWorkspace({
         markerEnd: { type: MarkerType.ArrowClosed, color: phaseColor, width: 15, height: 15 },
       };
     });
-  }, [flowEdges, streamResultMap, selectedEdgeId]);
+  }, [flowEdges, streamResultMap, selectedEdgeId, globalUnits.massFlow, globalUnits.temp, globalUnits.pressG]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     setRfNodes(nds => applyNodeChanges(changes, nds));
@@ -6443,7 +6469,7 @@ export function FlowsheetWorkspace({
                             }}
                           >
                             {selectedUnitRes
-                              ? `${selectedUnitRes.detectedFluidLabel} · 유입 ${selectedUnitRes.inletMassKgH.toLocaleString()} kg/h`
+                              ? `${selectedUnitRes.detectedFluidLabel} · 유입 ${formatCanonicalValue('massFlow', selectedUnitRes.inletMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)}`
                               : '터치하여 운전조건 및 설계 열기'}
                           </div>
                         </>
@@ -6489,7 +6515,7 @@ export function FlowsheetWorkspace({
                             }}
                           >
                             {selEdgeSt
-                              ? `${selEdgeSt.totalMassKgH.toFixed(1)} kg/h · ${selEdgeSt.tempC.toFixed(1)}°C · ${selEdgeSt.pressKgcm2g.toFixed(2)} kgf/cm²G`
+                              ? `${formatCanonicalValue('massFlow', selEdgeSt.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', selEdgeSt.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', selEdgeSt.pressKgcm2g, globalUnits.pressG, 2)} ${getUnitLabel('pressG', globalUnits.pressG)}`
                               : '터치하여 배관 속성 열기'}
                           </div>
                         </>
@@ -6996,6 +7022,26 @@ export function FlowsheetWorkspace({
                         background: '#F6F7F2',
                       }}
                     >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          padding: '5px 8px',
+                          background: '#FFFFFF',
+                          border: '1px solid #D8D5CD',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>표시 단위</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <UnitSelect quantity="massFlow" value={mobileMassUnit} onChange={setMobileMassUnit} size="xs" />
+                          <UnitSelect quantity="temp" value={mobileTempUnit} onChange={setMobileTempUnit} size="xs" />
+                          <UnitSelect quantity="pressG" value={mobilePressUnit} onChange={setMobilePressUnit} size="xs" />
+                        </div>
+                      </div>
                       {solved.streams
                         .filter(st => {
                           const q = mobileSearch.trim().toLowerCase();
@@ -7114,19 +7160,19 @@ export function FlowsheetWorkspace({
                                 <div>
                                   <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>총 질량유량</div>
                                   <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                                    {st.totalMassKgH.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg/h
+                                    {formatCanonicalValue('massFlow', st.totalMassKgH, mobileMassUnit)} {getUnitLabel('massFlow', mobileMassUnit)}
                                   </div>
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>온도</div>
                                   <div style={{ fontSize: 11.5, fontWeight: 800, color: '#B91C1C' }}>
-                                    {st.tempC.toFixed(1)} °C
+                                    {formatCanonicalValue('temp', st.tempC, mobileTempUnit, 1)} {getUnitLabel('temp', mobileTempUnit)}
                                   </div>
                                 </div>
                                 <div>
                                   <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>압력</div>
                                   <div style={{ fontSize: 11.5, fontWeight: 800, color: '#1E3A8A' }}>
-                                    {st.pressKgcm2g.toFixed(2)} kgf/cm²G
+                                    {formatCanonicalValue('pressG', st.pressKgcm2g, mobilePressUnit, 2)} {getUnitLabel('pressG', mobilePressUnit)}
                                   </div>
                                 </div>
                               </div>
@@ -7149,7 +7195,7 @@ export function FlowsheetWorkspace({
                                           fontWeight: 700,
                                         }}
                                       >
-                                        {comp} {wtPct.toFixed(1)}% ({flow.toFixed(1)} kg/h)
+                                        {comp} {wtPct.toFixed(1)}% ({formatCanonicalValue('massFlow', flow, mobileMassUnit)} {getUnitLabel('massFlow', mobileMassUnit)})
                                       </span>
                                     );
                                   })}
@@ -7171,6 +7217,26 @@ export function FlowsheetWorkspace({
                         background: '#F6F7F2',
                       }}
                     >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 6,
+                          flexWrap: 'wrap',
+                          padding: '5px 8px',
+                          background: '#FFFFFF',
+                          border: '1px solid #D8D5CD',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>장치 단위</span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <UnitSelect quantity="massFlow" value={unitSummaryMassUnit} onChange={setUnitSummaryMassUnit} size="xs" />
+                          <UnitSelect quantity="heatDuty" value={unitSummaryDutyUnit} onChange={setUnitSummaryDutyUnit} size="xs" />
+                          <UnitSelect quantity="power" value={unitSummaryPowerUnit} onChange={setUnitSummaryPowerUnit} size="xs" />
+                        </div>
+                      </div>
                       {solved.units
                         .filter(u => {
                           const q = mobileSearch.trim().toLowerCase();
@@ -7258,21 +7324,27 @@ export function FlowsheetWorkspace({
                                 }}
                               >
                                 <div>
-                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>유입 / 유출</div>
+                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>
+                                    유입 / 유출 ({getUnitLabel('massFlow', unitSummaryMassUnit)})
+                                  </div>
                                   <div style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A' }}>
-                                    {u.inletMassKgH.toLocaleString()} / {u.outletMassKgH.toLocaleString()}
+                                    {formatCanonicalValue('massFlow', u.inletMassKgH, unitSummaryMassUnit)} / {formatCanonicalValue('massFlow', u.outletMassKgH, unitSummaryMassUnit)}
                                   </div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>열부하 (Mcal/h)</div>
+                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>
+                                    열부하 ({getUnitLabel('heatDuty', unitSummaryDutyUnit)})
+                                  </div>
                                   <div style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A' }}>
-                                    {u.heatDutyKcalH !== 0 ? (u.heatDutyKcalH / 1000).toFixed(1) : '—'}
+                                    {u.heatDutyKcalH !== 0 ? formatCanonicalValue('heatDuty', u.heatDutyKcalH / 1000, unitSummaryDutyUnit) : '—'}
                                   </div>
                                 </div>
                                 <div>
-                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>축동력 (kW)</div>
+                                  <div style={{ fontSize: 9, color: '#64748B', fontFamily: 'Inter, sans-serif' }}>
+                                    축동력 ({getUnitLabel('power', unitSummaryPowerUnit)})
+                                  </div>
                                   <div style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A' }}>
-                                    {u.shaftPowerKW > 0 ? u.shaftPowerKW.toFixed(1) : '—'}
+                                    {u.shaftPowerKW > 0 ? formatCanonicalValue('power', u.shaftPowerKW, unitSummaryPowerUnit) : '—'}
                                   </div>
                                 </div>
                               </div>
@@ -7381,11 +7453,30 @@ export function FlowsheetWorkspace({
                       <th style={{ padding: '6px 10px', textAlign: 'left' }}>태그</th>
                       <th style={{ padding: '6px 10px', textAlign: 'left' }}>계산 모드</th>
                       <th style={{ padding: '6px 10px', textAlign: 'left' }}>자동 인식 유입물질</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>유입(kg/h)</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>유출(kg/h)</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>수지오차</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>열부하(Mcal/h)</th>
-                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>동력(kW)</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          유입
+                          <UnitSelect quantity="massFlow" value={unitSummaryMassUnit} onChange={setUnitSummaryMassUnit} size="xs" />
+                        </span>
+                      </th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        유출({getUnitLabel('massFlow', unitSummaryMassUnit)})
+                      </th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        수지오차({getUnitLabel('massFlow', unitSummaryMassUnit)})
+                      </th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          열부하
+                          <UnitSelect quantity="heatDuty" value={unitSummaryDutyUnit} onChange={setUnitSummaryDutyUnit} size="xs" />
+                        </span>
+                      </th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          동력
+                          <UnitSelect quantity="power" value={unitSummaryPowerUnit} onChange={setUnitSummaryPowerUnit} size="xs" />
+                        </span>
+                      </th>
                       <th style={{ padding: '6px 10px', textAlign: 'left' }}>운전 · 액화 · 정밀 열역학 진단 요약</th>
                     </tr>
                   </thead>
@@ -7418,16 +7509,20 @@ export function FlowsheetWorkspace({
                         <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#0369A1' }}>
                           {u.detectedFluidLabel}
                         </td>
-                        <td style={{ padding: '5px 10px', textAlign: 'right' }}>{u.inletMassKgH.toLocaleString()}</td>
-                        <td style={{ padding: '5px 10px', textAlign: 'right' }}>{u.outletMassKgH.toLocaleString()}</td>
+                        <td style={{ padding: '5px 10px', textAlign: 'right' }}>
+                          {formatCanonicalValue('massFlow', u.inletMassKgH, unitSummaryMassUnit)}
+                        </td>
+                        <td style={{ padding: '5px 10px', textAlign: 'right' }}>
+                          {formatCanonicalValue('massFlow', u.outletMassKgH, unitSummaryMassUnit)}
+                        </td>
                         <td style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 800, color: Math.abs(u.massImbalanceKgH) < 0.5 ? '#0F5338' : '#DC2626' }}>
-                          {u.massImbalanceKgH.toFixed(1)}
+                          {formatCanonicalValue('massFlow', u.massImbalanceKgH, unitSummaryMassUnit)}
                         </td>
                         <td style={{ padding: '5px 10px', textAlign: 'right' }}>
-                          {u.heatDutyKcalH !== 0 ? (u.heatDutyKcalH / 1000).toFixed(1) : '—'}
+                          {u.heatDutyKcalH !== 0 ? formatCanonicalValue('heatDuty', u.heatDutyKcalH / 1000, unitSummaryDutyUnit) : '—'}
                         </td>
                         <td style={{ padding: '5px 10px', textAlign: 'right' }}>
-                          {u.shaftPowerKW > 0 ? u.shaftPowerKW.toFixed(1) : '—'}
+                          {u.shaftPowerKW > 0 ? formatCanonicalValue('power', u.shaftPowerKW, unitSummaryPowerUnit) : '—'}
                         </td>
                         <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', color: '#334155' }}>{u.statusNote}</td>
                       </tr>
@@ -7584,7 +7679,10 @@ export function FlowsheetWorkspace({
                   인식 유체: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>
                 </div>
                 <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
-                  상태: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.phase}</b> · {selectedStreamRes?.tempC}°C · {selectedStreamRes?.pressKgcm2g} kg/cm²G · {selectedStreamRes?.totalMassKgH.toLocaleString()} kg/h
+                  상태: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.phase}</b> ·{' '}
+                  {selectedStreamRes ? `${formatCanonicalValue('temp', selectedStreamRes.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)}` : '—'} ·{' '}
+                  {selectedStreamRes ? `${formatCanonicalValue('pressG', selectedStreamRes.pressKgcm2g, globalUnits.pressG, 2)} ${getUnitLabel('pressG', globalUnits.pressG)}` : '—'} ·{' '}
+                  {selectedStreamRes ? `${formatCanonicalValue('massFlow', selectedStreamRes.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)}` : '—'}
                 </div>
               </div>
 
@@ -8123,34 +8221,35 @@ export function FlowsheetWorkspace({
               {/* ── A) 유입 물질 스트림 (Feed) — 0ms 초저지연 즉시 입력 ── */}
               {selectedDef.unitType === 'feed' && (
                 <>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>공급 온도 (°C)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>공급 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
                         syncKey={`${selectedDef.id}-ftemp`}
-                        step={1}
                         value={selectedDef.params.feedTempC ?? 25}
                         onValueChange={v => updateParam('feedTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>공급 압력 (kg/cm²G)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>공급 압력</div>
+                      <UnitNumberInput
+                        quantity="pressG"
                         syncKey={`${selectedDef.id}-fpress`}
-                        step={0.1}
                         value={selectedDef.params.feedPressKgcm2g ?? 0.5}
                         onValueChange={v => updateParam('feedPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
                       />
                     </div>
                   </div>
                   <div style={{ background: '#F8FAFC', padding: 9, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 6, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>성분별 질량유량 (kg/h)</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>성분별 질량유량</span>
+                        <UnitSelect quantity="massFlow" value={feedFlowUnit} onChange={setFeedFlowUnit} size="xs" />
                         <button
                           type="button"
                           onClick={() => setCompSetupModalOpen(true)}
@@ -8170,10 +8269,12 @@ export function FlowsheetWorkspace({
                       </div>
                       <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
                         합계{' '}
-                        {Object.values(selectedDef.params.feedFlowsKgH ?? {})
-                          .reduce((a, b) => a + (Number(b) || 0), 0)
-                          .toLocaleString()}{' '}
-                        kg/h
+                        {formatCanonicalValue(
+                          'massFlow',
+                          Object.values(selectedDef.params.feedFlowsKgH ?? {}).reduce((a, b) => a + (Number(b) || 0), 0),
+                          feedFlowUnit
+                        )}{' '}
+                        {getUnitLabel('massFlow', feedFlowUnit)}
                       </span>
                     </div>
                     {SIM_COMPS.filter(
@@ -8181,19 +8282,21 @@ export function FlowsheetWorkspace({
                     ).map(comp => {
                       const val = selectedDef.params.feedFlowsKgH?.[comp] ?? 0;
                       return (
-                        <div key={comp} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, fontWeight: val > 0 ? 800 : 600, color: val > 0 ? '#0F172A' : '#475569' }}>
+                        <div key={comp} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 11, fontWeight: val > 0 ? 800 : 600, color: val > 0 ? '#0F172A' : '#475569', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {COMP_META[comp].label}
                           </span>
-                          <BufferedNumberInput
+                          <UnitNumberInput
+                            quantity="massFlow"
+                            unitId={feedFlowUnit}
+                            onUnitChange={setFeedFlowUnit}
                             syncKey={`${selectedDef.id}-fc-${comp}`}
-                            step={10}
-                            min={0}
+                            minCanonical={0}
                             value={val}
-                            onValueChange={v => updateFeedComp(comp, v)}
+                            onValueChange={v => updateFeedComp(comp, Math.max(0, v))}
                             onEnterRun={() => runSimulationNow()}
-                            style={{
-                              width: 96,
+                            containerStyle={{ width: 132, flexShrink: 0 }}
+                            inputStyle={{
                               padding: '3px 6px',
                               textAlign: 'right',
                               border: val > 0 ? '1px solid #64748B' : '1px solid #CBD5E1',
@@ -8204,6 +8307,7 @@ export function FlowsheetWorkspace({
                               fontWeight: val > 0 ? 800 : 600,
                               fontFamily: 'JetBrains Mono, monospace',
                             }}
+                            selectStyle={{ minWidth: 46, fontSize: 9.5 }}
                           />
                         </div>
                       );
@@ -8233,27 +8337,29 @@ export function FlowsheetWorkspace({
                       <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>전해조 기수</label>
                       <BufferedNumberInput syncKey={`${selectedDef.id}-eunit`} step={1} value={selectedDef.params.unitCount ?? 5} onValueChange={v => updateParam('unitCount', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전 온도 (°C)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-etemp`} step={1} value={selectedDef.params.operTempC ?? 89.0} onValueChange={v => updateParam('operTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>운전 온도</div>
+                      <UnitNumberInput quantity="temp" syncKey={`${selectedDef.id}-etemp`} value={selectedDef.params.operTempC ?? 89.0} onValueChange={v => updateParam('operTempC', v)} onEnterRun={() => runSimulationNow()} inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>양극 압력 (kG)</label>
-                      <BufferedNumberInput syncKey={`${selectedDef.id}-epress`} step={0.05} value={selectedDef.params.operPressKgcm2g ?? 0.40} onValueChange={v => updateParam('operPressKgcm2g', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>양극 압력</div>
+                      <UnitNumberInput quantity="pressG" syncKey={`${selectedDef.id}-epress`} value={selectedDef.params.operPressKgcm2g ?? 0.40} onValueChange={v => updateParam('operPressKgcm2g', v)} onEnterRun={() => runSimulationNow()} inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }} />
                     </div>
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div style={{ marginTop: 4, paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        셀당 이온교환막 유효면적 (m², 전류밀도·셀전압 자동 산출)
-                      </label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                        셀당 이온교환막 유효면적 (전류밀도·셀전압 자동 산출)
+                      </div>
+                      <UnitNumberInput
+                        quantity="area"
                         syncKey={`${selectedDef.id}-ememb`}
-                        step={0.05}
                         value={selectedDef.params.membraneAreaM2 ?? 2.72}
                         onValueChange={v => updateParam('membraneAreaM2', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, marginTop: 2 }}
+                        inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                       />
                     </div>
                   )}
@@ -8326,71 +8432,68 @@ export function FlowsheetWorkspace({
                   </div>
 
                   {(selectedDef.params.hexSpecMode ?? 'proc_temp') === 'proc_temp' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>공정 출구 온도 (°C)</label>
-                        <BufferedNumberInput
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>공정 출구 온도</div>
+                        <UnitNumberInput
+                          quantity="temp"
                           syncKey={`${selectedDef.id}-hxtemp`}
-                          step={1}
                           value={selectedDef.params.operTempC ?? (selectedDef.unitType === 'liquefier' ? -22 : 25)}
                           onValueChange={v => updateParam('operTempC', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF', color: '#0F172A' }}
+                          inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF', color: '#0F172A' }}
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전압(비우면 전단추종)</label>
-                        <input
-                          type="number"
-                          step="0.1"
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>운전압(비우면 전단추종)</div>
+                        <UnitNullableNumberInput
+                          quantity="pressG"
                           placeholder="전단압 자동"
-                          value={selectedDef.params.operPressKgcm2g ?? ''}
-                          onChange={e =>
-                            updateParam('operPressKgcm2g', e.target.value === '' ? undefined : Number(e.target.value))
-                          }
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
+                          value={selectedDef.params.operPressKgcm2g}
+                          onValueChange={v => updateParam('operPressKgcm2g', v)}
+                          inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
                         />
                       </div>
                     </div>
                   ) : (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>교환 열량 (Mcal/h, 냉각은 음수 -)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>교환 열량 (냉각은 음수 -)</div>
+                      <UnitNumberInput
+                        quantity="heatDuty"
                         syncKey={`${selectedDef.id}-hxduty`}
-                        step={50}
                         value={selectedDef.params.specifiedDutyMcalH ?? -500}
                         onValueChange={v => updateParam('specifiedDutyMcalH', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
+                        inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, background: '#FFFFFF', color: '#0F172A' }}
                       />
                     </div>
                   )}
 
                   {selectedDef.params.refrigerantPreset === 'custom' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>냉매 입구 (°C)</label>
-                        <BufferedNumberInput syncKey={`${selectedDef.id}-uin`} step={1} value={selectedDef.params.utilInTempC ?? -25} onValueChange={v => updateParam('utilInTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>냉매 입구</div>
+                        <UnitNumberInput quantity="temp" syncKey={`${selectedDef.id}-uin`} value={selectedDef.params.utilInTempC ?? -25} onValueChange={v => updateParam('utilInTempC', v)} onEnterRun={() => runSimulationNow()} inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>냉매 출구 (°C)</label>
-                        <BufferedNumberInput syncKey={`${selectedDef.id}-uout`} step={1} value={selectedDef.params.utilOutTempC ?? -18} onValueChange={v => updateParam('utilOutTempC', v)} onEnterRun={() => runSimulationNow()} style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>냉매 출구</div>
+                        <UnitNumberInput quantity="temp" syncKey={`${selectedDef.id}-uout`} value={selectedDef.params.utilOutTempC ?? -18} onValueChange={v => updateParam('utilOutTempC', v)} onEnterRun={() => runSimulationNow()} inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }} />
                       </div>
                     </div>
                   )}
 
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div style={{ paddingTop: 6, borderTop: '1px dashed #CBD5E1' }}>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        총괄 오염계수 R_f (m²·h·°C/kcal · 3-Zone 전열면적 산출)
-                      </label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                        총괄 오염계수 R_f (3-Zone 전열면적 산출)
+                      </div>
+                      <UnitNumberInput
+                        quantity="fouling"
                         syncKey={`${selectedDef.id}-rfoul`}
-                        step={0.0001}
                         value={selectedDef.params.foulingFactor ?? 0.0002}
                         onValueChange={v => updateParam('foulingFactor', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, marginTop: 2, background: '#FFFFFF', color: '#0F172A' }}
+                        inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, background: '#FFFFFF', color: '#0F172A' }}
                       />
                     </div>
                   )}
@@ -8459,16 +8562,16 @@ export function FlowsheetWorkspace({
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
                     {selectedDef.unitType === 'compressor' ? '가스 압축기 승압 · 이슬점 조건' : '원심 펌프 토출 조건'}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>토출 압력 (kg/cm²G)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>토출 압력</div>
+                      <UnitNumberInput
+                        quantity="pressG"
                         syncKey={`${selectedDef.id}-cpress`}
-                        step={0.2}
                         value={selectedDef.params.outletPressKgcm2g ?? 3.5}
                         onValueChange={v => updateParam('outletPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
+                        inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
@@ -8486,14 +8589,14 @@ export function FlowsheetWorkspace({
                   {selectedDef.unitType === 'compressor' && (
                     <>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>인터쿨러 후단 토출온도 (°C, 0이면 단열압축)</label>
-                        <BufferedNumberInput
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>인터쿨러 후단 토출온도 (0°C이면 단열압축)</div>
+                        <UnitNumberInput
+                          quantity="temp"
                           syncKey={`${selectedDef.id}-cic`}
-                          step={2}
                           value={selectedDef.params.intercooledTempC ?? 42}
                           onValueChange={v => updateParam('intercooledTempC', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
+                          inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
                         />
                       </div>
                       {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
@@ -8514,8 +8617,10 @@ export function FlowsheetWorkspace({
                         </div>
                       )}
                       <div style={{ fontSize: 10.5, color: '#475569', fontWeight: 700 }}>
-                        토출압 {selectedDef.params.outletPressKgcm2g ?? 3.5} kG 기준 순수 Cl₂ 액화 이슬점:{' '}
-                        <b style={{ color: '#0F172A' }}>{cl2DewPointTempC((selectedDef.params.outletPressKgcm2g ?? 3.5) + 1.03323).toFixed(1)} °C</b>
+                        토출압 {formatCanonicalValue('pressG', selectedDef.params.outletPressKgcm2g ?? 3.5, globalUnits.pressG, 2)} {getUnitLabel('pressG', globalUnits.pressG)} 기준 순수 Cl₂ 액화 이슬점:{' '}
+                        <b style={{ color: '#0F172A' }}>
+                          {formatCanonicalValue('temp', cl2DewPointTempC((selectedDef.params.outletPressKgcm2g ?? 3.5) + 1.03323), globalUnits.temp, 1)} {getUnitLabel('temp', globalUnits.temp)}
+                        </b>
                       </div>
                     </>
                   )}
@@ -8830,17 +8935,17 @@ export function FlowsheetWorkspace({
                   </div>
                   {(selectedDef.params.calcMode ?? 'simple') === 'rigorous' && (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
-                        탑 압력강하 ΔP (kg/cm² · Kremser 흡수율 및 탑경 자동 산출)
-                      </label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                        탑 압력강하 ΔP (Kremser 흡수율 및 탑경 자동 산출)
+                      </div>
+                      <UnitNumberInput
+                        quantity="deltaP"
                         syncKey={`${selectedDef.id}-absdp`}
-                        step={0.02}
-                        min={0}
+                        minCanonical={0}
                         value={selectedDef.params.columnDeltaPKgcm2 ?? 0.08}
                         onValueChange={v => updateParam('columnDeltaPKgcm2', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, marginTop: 2 }}
+                        inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                       />
                     </div>
                   )}
@@ -8870,7 +8975,7 @@ export function FlowsheetWorkspace({
                       />
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                       <div>
                         <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>보충 성분</label>
                         <select value={selectedDef.params.makeupSolventComp ?? 'H2SO4'} onChange={e => updateParam('makeupSolventComp', e.target.value as SimCompKey)} style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}>
@@ -8880,15 +8985,15 @@ export function FlowsheetWorkspace({
                         </select>
                       </div>
                       <div>
-                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>보충량 (kg/h)</label>
-                        <BufferedNumberInput
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>보충량</div>
+                        <UnitNumberInput
+                          quantity="massFlow"
                           syncKey={`${selectedDef.id}-absmu`}
-                          step={100}
-                          min={0}
+                          minCanonical={0}
                           value={selectedDef.params.makeupSolventKgH ?? 1800}
                           onValueChange={v => updateParam('makeupSolventKgH', v)}
                           onEnterRun={() => runSimulationNow()}
-                          style={{ width: '100%', padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
+                          inputStyle={{ padding: '5px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5 }}
                         />
                       </div>
                     </div>
@@ -8899,37 +9004,26 @@ export function FlowsheetWorkspace({
               {/* ── F) 기액분리기 / 증발관 / 반응기 / 분기기 ── */}
               {selectedDef.unitType === 'separator' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>분리 온도 (°C)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>분리 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
                         syncKey={`${selectedDef.id}-sept`}
-                        step={1}
                         value={selectedDef.params.operTempC ?? 40}
                         onValueChange={v => updateParam('operTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>압력(비우면 전단추종)</label>
-                      <input
-                        type="text"
-                        inputMode="decimal"
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>압력(비우면 전단추종)</div>
+                      <UnitNullableNumberInput
+                        quantity="pressG"
                         placeholder="전단압 자동"
-                        value={selectedDef.params.operPressKgcm2g ?? ''}
-                        onChange={e => {
-                          const raw = e.target.value.trim();
-                          if (raw === '') {
-                            updateParam('operPressKgcm2g', undefined);
-                          } else if (!Number.isNaN(Number(raw))) {
-                            updateParam('operPressKgcm2g', Number(raw));
-                          }
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') runSimulationNow();
-                        }}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        value={selectedDef.params.operPressKgcm2g}
+                        onValueChange={v => updateParam('operPressKgcm2g', v)}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -8966,17 +9060,6 @@ export function FlowsheetWorkspace({
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800 }}>포화 운전온도 (°C)</label>
-                      <BufferedNumberInput
-                        syncKey={`${selectedDef.id}-satt`}
-                        step={1}
-                        value={selectedDef.params.operTempC ?? 67}
-                        onValueChange={v => updateParam('operTempC', v)}
-                        onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
-                      />
-                    </div>
-                    <div>
                       <label style={{ fontSize: 10, fontWeight: 800 }}>침전 슬러지 배출율 (%)</label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-satsl`}
@@ -8989,32 +9072,43 @@ export function FlowsheetWorkspace({
                         style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 4 }}>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={selectedDef.params.autoSaltMakeup !== false}
-                          onChange={e => updateParam('autoSaltMakeup', e.target.checked)}
-                        />
-                        원염(NaCl) 자동보충
-                      </label>
-                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>포화 운전온도</div>
+                    <UnitNumberInput
+                      quantity="temp"
+                      syncKey={`${selectedDef.id}-satt`}
+                      value={selectedDef.params.operTempC ?? 67}
+                      onValueChange={v => updateParam('operTempC', v)}
+                      onEnterRun={() => runSimulationNow()}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', paddingBottom: 2 }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDef.params.autoSaltMakeup !== false}
+                        onChange={e => updateParam('autoSaltMakeup', e.target.checked)}
+                      />
+                      원염(NaCl) 자동보충
+                    </label>
                   </div>
                 </div>
               )}
 
               {selectedDef.unitType === 'chelate_tower' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>킬레이트 수지 충진량 (m³)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>킬레이트 수지 충진량</div>
+                    <UnitNumberInput
+                      quantity="volume"
                       syncKey={`${selectedDef.id}-chvol`}
-                      step={1}
-                      min={0.5}
+                      minCanonical={0.5}
                       value={selectedDef.params.resinVolM3 ?? 18}
                       onValueChange={v => updateParam('resinVolM3', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                   <div>
@@ -9030,62 +9124,62 @@ export function FlowsheetWorkspace({
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>수지탑 차압 ΔP (kg/cm²)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>수지탑 차압 ΔP</div>
+                    <UnitNumberInput
+                      quantity="deltaP"
                       syncKey={`${selectedDef.id}-chdp`}
-                      step={0.05}
-                      min={0}
+                      minCanonical={0}
                       value={selectedDef.params.columnDeltaPKgcm2 ?? 0.8}
                       onValueChange={v => updateParam('columnDeltaPKgcm2', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>운전 온도 (°C)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>운전 온도</div>
+                    <UnitNumberInput
+                      quantity="temp"
                       syncKey={`${selectedDef.id}-cht`}
-                      step={1}
                       value={selectedDef.params.operTempC ?? 65}
                       onValueChange={v => updateParam('operTempC', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                 </div>
               )}
 
               {selectedDef.unitType === 'desiccant_dryer' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>목표 출구 노점 (°C)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>목표 출구 노점</div>
+                    <UnitNumberInput
+                      quantity="temp"
                       syncKey={`${selectedDef.id}-dddew`}
-                      step={5}
-                      max={20}
+                      maxCanonical={20}
                       value={selectedDef.params.targetDewPointC ?? -60}
                       onValueChange={v => updateParam('targetDewPointC', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>흡착탑 차압 ΔP (kg/cm²)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>흡착탑 차압 ΔP</div>
+                    <UnitNumberInput
+                      quantity="deltaP"
                       syncKey={`${selectedDef.id}-dddp`}
-                      step={0.05}
-                      min={0}
+                      minCanonical={0}
                       value={selectedDef.params.columnDeltaPKgcm2 ?? 0.35}
                       onValueChange={v => updateParam('columnDeltaPKgcm2', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                 </div>
               )}
 
               {selectedDef.unitType === 'evaporator' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <div>
                     <label style={{ fontSize: 10, fontWeight: 800 }}>목표 농축 농도 (wt%)</label>
                     <BufferedNumberInput
@@ -9100,14 +9194,14 @@ export function FlowsheetWorkspace({
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 10, fontWeight: 800 }}>운전 온도 (°C)</label>
-                    <BufferedNumberInput
+                    <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 2 }}>운전 온도</div>
+                    <UnitNumberInput
+                      quantity="temp"
                       syncKey={`${selectedDef.id}-evapt`}
-                      step={1}
                       value={selectedDef.params.operTempC ?? 112}
                       onValueChange={v => updateParam('operTempC', v)}
                       onEnterRun={() => runSimulationNow()}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
                 </div>
@@ -9116,7 +9210,7 @@ export function FlowsheetWorkspace({
               {selectedDef.unitType === 'extractor' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><FlaskCompIcon size={12} /> 향류 다단 액-액 추출탑 (LLE)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>이론 추출 단수 N (단)</label>
                       <BufferedNumberInput
@@ -9131,18 +9225,18 @@ export function FlowsheetWorkspace({
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>추출 운전 온도 (°C)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>추출 운전 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
                         syncKey={`${selectedDef.id}-extt`}
-                        step={1}
                         value={selectedDef.params.operTempC ?? 25}
                         onValueChange={v => updateParam('operTempC', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr', gap: 7 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>보충 추출용매 성분 (미연결 시)</label>
                       <select
@@ -9158,15 +9252,15 @@ export function FlowsheetWorkspace({
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>보충 용매 유량 (kg/h)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>보충 용매 유량</div>
+                      <UnitNumberInput
+                        quantity="massFlow"
                         syncKey={`${selectedDef.id}-extsolv`}
-                        step={50}
-                        min={0}
+                        minCanonical={0}
                         value={selectedDef.params.extractorSolventKgH ?? 800}
                         onValueChange={v => updateParam('extractorSolventKgH', Math.max(0, v))}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -9176,29 +9270,29 @@ export function FlowsheetWorkspace({
               {selectedDef.unitType === 'valve' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><StreamFlowIcon size={12} /> 단열 등엔탈피 감압·교축 밸브 (H_out = H_in)</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>목표 후단 압력 P_out (kg/cm²G)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>목표 후단 압력 P_out</div>
+                      <UnitNumberInput
+                        quantity="pressG"
                         syncKey={`${selectedDef.id}-vlvpout`}
-                        step={0.2}
-                        min={-0.98}
+                        minCanonical={-0.98}
                         value={selectedDef.params.outletPressKgcm2g ?? 1.0}
                         onValueChange={v => updateParam('outletPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>설계 차압 ΔP 참고 (kg/cm²)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>설계 차압 ΔP 참고</div>
+                      <UnitNumberInput
+                        quantity="deltaP"
                         syncKey={`${selectedDef.id}-vlvdp`}
-                        step={0.2}
-                        min={0}
+                        minCanonical={0}
                         value={selectedDef.params.pressureDropKgcm2 ?? 2.0}
                         onValueChange={v => updateParam('pressureDropKgcm2', Math.max(0, v))}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   </div>
@@ -9297,16 +9391,16 @@ export function FlowsheetWorkspace({
                     </div>
                   ) : (
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>유효 반응체적 V (m³)</label>
-                      <BufferedNumberInput
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>유효 반응체적 V</div>
+                      <UnitNumberInput
+                        quantity="volume"
                         syncKey={`${selectedDef.id}-rxnvol`}
-                        step={1}
-                        min={0.2}
-                        max={500}
+                        minCanonical={0.2}
+                        maxCanonical={500}
                         value={selectedDef.params.reactorVolumeM3 ?? 24}
                         onValueChange={v => updateParam('reactorVolumeM3', v)}
                         onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
+                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
                       />
                     </div>
                   )}
@@ -9332,13 +9426,42 @@ export function FlowsheetWorkspace({
               {/* ── 실시간 계산 지표 결과 카드 ── */}
               {selectedUnitRes && (
                 <div style={{ marginTop: 2, padding: 10, background: '#F8FAFC', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 11.5 }}>
-                  <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 5 }}><TableGridIcon size={12} /> 실시간 계산 결과</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                    <div style={{ fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <TableGridIcon size={12} /> 실시간 계산 결과
+                    </div>
+                    <div style={{ display: 'inline-flex', gap: 3 }}>
+                      <UnitSelect quantity="massFlow" value={unitSummaryMassUnit} onChange={setUnitSummaryMassUnit} size="xs" />
+                      <UnitSelect quantity="heatDuty" value={unitSummaryDutyUnit} onChange={setUnitSummaryDutyUnit} size="xs" />
+                      <UnitSelect quantity="power" value={unitSummaryPowerUnit} onChange={setUnitSummaryPowerUnit} size="xs" />
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
                     <span>유입 / 유출 유량:</span>
                     <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
-                      {selectedUnitRes.inletMassKgH.toLocaleString()} / {selectedUnitRes.outletMassKgH.toLocaleString()} kg/h
+                      {formatCanonicalValue('massFlow', selectedUnitRes.inletMassKgH, unitSummaryMassUnit)} /{' '}
+                      {formatCanonicalValue('massFlow', selectedUnitRes.outletMassKgH, unitSummaryMassUnit)}{' '}
+                      {getUnitLabel('massFlow', unitSummaryMassUnit)}
                     </b>
                   </div>
+                  {selectedUnitRes.heatDutyKcalH !== 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
+                      <span>열부하 (Duty):</span>
+                      <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
+                        {formatCanonicalValue('heatDuty', selectedUnitRes.heatDutyKcalH / 1000, unitSummaryDutyUnit)}{' '}
+                        {getUnitLabel('heatDuty', unitSummaryDutyUnit)}
+                      </b>
+                    </div>
+                  )}
+                  {selectedUnitRes.shaftPowerKW > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
+                      <span>축동력 (Power):</span>
+                      <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
+                        {formatCanonicalValue('power', selectedUnitRes.shaftPowerKW, unitSummaryPowerUnit)}{' '}
+                        {getUnitLabel('power', unitSummaryPowerUnit)}
+                      </b>
+                    </div>
+                  )}
                   {selectedUnitRes.extraMetrics &&
                     Object.entries(selectedUnitRes.extraMetrics)
                       .filter(([k]) => k !== '인식 유체')

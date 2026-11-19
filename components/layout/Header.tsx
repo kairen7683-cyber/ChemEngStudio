@@ -27,6 +27,7 @@ import {
   type UnifiedSavedCaseEntry,
 } from '@/lib/caseManagerBridge';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
+import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import {
@@ -1089,6 +1090,8 @@ export default function Header() {
             <FlaskCompIcon size={13} />
             <span>물성 · 열역학 DB</span>
           </button>
+
+          <HeaderUnitSettingsButton isMobile={isMobile} />
 
           <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />
           <HeaderUserControls />

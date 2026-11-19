@@ -10,6 +10,17 @@ import {
   simulateTripleEffectEvaporator,
   drawFallingFilmBlueprintCanvas,
 } from '@/lib/calculations/evaporator';
+import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  fromCanonical,
+  getUnitLabel,
+  toCanonical,
+} from '@/lib/units/unitSystem';
 
 const EVAP_TAGS = [
   { tag: 'E-320', bcpl: 'E-5320', sepTag: 'D-321', label: 'E-320 (E-5320) — 1효 강하막 증발관 (42%→50% NaOH, 70 Tubes, 70.1 m², LC-Ni 99)' },
@@ -45,6 +56,11 @@ export default function FallingFilmDesign() {
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
   const [inp, setInp] = useState<FallingFilmDesignInputs>(() => getFallingFilmPreset('E-320', streams));
   const [viewMode, setViewMode] = useState<'calc' | 'tema'>('calc');
+
+  const [areaUnit, setAreaUnit] = useLocalUnit('area');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [htcUnit, setHtcUnit] = useLocalUnit('htc');
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -395,10 +411,32 @@ export default function FallingFilmDesign() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <NumInput label="유입 NaOH 유량 (kg/h)" value={inp.feedFlow_kgh} step={500}
-                onChange={v => setInp({ ...inp, feedFlow_kgh: v })} />
-              <NumInput label="증발 수분량 V (kg/h)" value={inp.evapWater_kgh} step={200}
-                onChange={v => setInp({ ...inp, evapWater_kgh: v })} />
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  유입 NaOH 유량
+                </label>
+                <UnitNumberInput
+                  quantity="massFlow"
+                  value={inp.feedFlow_kgh}
+                  minCanonical={0}
+                  syncKey={`${selectedTag}:feed`}
+                  onValueChange={v => setInp({ ...inp, feedFlow_kgh: Math.max(0, v) })}
+                  inputStyle={numInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  증발 수분량 V
+                </label>
+                <UnitNumberInput
+                  quantity="massFlow"
+                  value={inp.evapWater_kgh}
+                  minCanonical={0}
+                  syncKey={`${selectedTag}:evap`}
+                  onValueChange={v => setInp({ ...inp, evapWater_kgh: Math.max(0, v) })}
+                  inputStyle={numInputStyle}
+                />
+              </div>
               <NumInput label="입구 농도 (wt% NaOH)" value={inp.wtIn_pct} step={0.5}
                 onChange={v => setInp({ ...inp, wtIn_pct: v })} />
               <NumInput label="출구 목표 농도 (wt% NaOH)" value={inp.wtOut_pct} step={0.5}
@@ -409,14 +447,60 @@ export default function FallingFilmDesign() {
               🌡️ 증발기 운전 압력 및 가열 증기 조건
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <NumInput label="튜브측 절대압력 (bar abs)" value={inp.P_tube_barA_spec ?? res.P_tube_barA} step={0.02}
-                onChange={v => setInp({ ...inp, P_tube_barA_spec: Math.max(0.05, v), P_tube_kgcm2g: +((v - 1.01325) / 0.980665).toFixed(2) })} />
-              <NumInput label="쉘측 절대압력 (bar abs)" value={inp.P_shell_barA ?? res.P_shell_barA} step={0.05}
-                onChange={v => setInp({ ...inp, P_shell_barA: Math.max(0.1, v), P_shell_kgcm2g: +((v - 1.01325) / 0.980665).toFixed(2) })} />
-              <NumInput label="쉘측 가열 증기 응축온도 (°C)" value={inp.T_steam_C} step={0.5}
-                onChange={v => setInp({ ...inp, T_steam_C: v })} />
-              <NumInput label="급액 입구 온도 (°C)" value={inp.T_feed_C} step={0.5}
-                onChange={v => setInp({ ...inp, T_feed_C: v })} />
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  튜브측 운전압력
+                </label>
+                <UnitNumberInput
+                  quantity="pressG"
+                  value={toCanonical('pressG', inp.P_tube_barA_spec ?? res.P_tube_barA, 'barA')}
+                  syncKey={`${selectedTag}:ptube`}
+                  onValueChange={can => {
+                    const barA = Math.max(0.05, fromCanonical('pressG', can, 'barA'));
+                    setInp({ ...inp, P_tube_barA_spec: +barA.toFixed(4), P_tube_kgcm2g: +can.toFixed(3) });
+                  }}
+                  inputStyle={numInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  쉘측 운전압력
+                </label>
+                <UnitNumberInput
+                  quantity="pressG"
+                  value={toCanonical('pressG', inp.P_shell_barA ?? res.P_shell_barA, 'barA')}
+                  syncKey={`${selectedTag}:pshell`}
+                  onValueChange={can => {
+                    const barA = Math.max(0.1, fromCanonical('pressG', can, 'barA'));
+                    setInp({ ...inp, P_shell_barA: +barA.toFixed(4), P_shell_kgcm2g: +can.toFixed(3) });
+                  }}
+                  inputStyle={numInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  쉘측 가열 증기 응축온도
+                </label>
+                <UnitNumberInput
+                  quantity="temp"
+                  value={inp.T_steam_C}
+                  syncKey={`${selectedTag}:tsteam`}
+                  onValueChange={v => setInp({ ...inp, T_steam_C: v })}
+                  inputStyle={numInputStyle}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  급액 입구 온도
+                </label>
+                <UnitNumberInput
+                  quantity="temp"
+                  value={inp.T_feed_C}
+                  syncKey={`${selectedTag}:tfeed`}
+                  onValueChange={v => setInp({ ...inp, T_feed_C: v })}
+                  inputStyle={numInputStyle}
+                />
+              </div>
             </div>
 
             <div style={{ fontSize: 12, fontWeight: 700, color: '#1A2F44', marginTop: 4 }}>
@@ -470,24 +554,35 @@ export default function FallingFilmDesign() {
 
               <div>
                 <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
-                  튜브 길이 L (m)
+                  튜브 길이 L
                 </label>
-                <select
+                <UnitNumberInput
+                  quantity="length"
                   value={inp.L_m}
-                  onChange={e => setInp({ ...inp, L_m: Number(e.target.value) })}
-                  style={selectStyle}
-                >
-                  {[6.0, 6.8, 7.5, 8.0, 9.0, 10.0].map(L => (
-                    <option key={L} value={L}>{L.toFixed(1)} m ({L === 6.8 ? '6,800 mm 표준' : `${L * 1000} mm`})</option>
-                  ))}
-                </select>
+                  minCanonical={1.0}
+                  maxCanonical={20.0}
+                  syncKey={`${selectedTag}:L`}
+                  onValueChange={v => setInp({ ...inp, L_m: Math.max(1.0, v) })}
+                  inputStyle={numInputStyle}
+                />
               </div>
 
               <NumInput label="튜브 피치 Pitch (mm)" value={inp.pitch_mm ?? 60} step={2}
                 onChange={v => setInp({ ...inp, pitch_mm: Math.max(30, v), pitchRatio: v / inp.do_mm })} />
 
-              <NumInput label="외부 순환 추가유량 (kg/h)" value={inp.recycleAdd_kgh ?? 0} step={2000}
-                onChange={v => setInp({ ...inp, recycleAdd_kgh: Math.max(0, v) })} />
+              <div>
+                <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                  외부 순환 추가유량
+                </label>
+                <UnitNumberInput
+                  quantity="massFlow"
+                  value={inp.recycleAdd_kgh ?? 0}
+                  minCanonical={0}
+                  syncKey={`${selectedTag}:recycle`}
+                  onValueChange={v => setInp({ ...inp, recycleAdd_kgh: Math.max(0, v) })}
+                  inputStyle={numInputStyle}
+                />
+              </div>
 
               <NumInput label="설계 여유율 (%)" value={inp.overdesignPct} step={5}
                 onChange={v => setInp({ ...inp, overdesignPct: v })} />
@@ -517,20 +612,28 @@ export default function FallingFilmDesign() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12 }}>
               <KpiCard
                 title="전열 면적 & 튜브 본수"
-                value={`${res.A_prov_m2.toFixed(1)} m² (${res.N_tubes} EA)`}
+                headerRight={<UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} size="xs" />}
+                value={`${formatCanonicalValue('area', res.A_prov_m2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} (${res.N_tubes} EA)`}
                 sub={`Ø${inp.do_mm}×${inp.tw_mm}t × ${(inp.L_m * 1000).toFixed(0)}mmL (Pitch ${res.pitch_mm}mm)`}
                 color="#1A2F44"
               />
               <KpiCard
-                title="튜브 젖음율 (Wetting Rate)"
-                value={inp.effectNo === 1 ? `${res.volWettingRateIn_Lms.toFixed(2)} L/m·s` : `${res.actualWettingRate_kgms.toFixed(2)} kg/m·s`}
-                sub={`질량 Γ=${res.actualWettingRate_kgms.toFixed(2)} kg/m·s | 체적 Γ_V=${res.volWettingRateIn_Lms.toFixed(2)} L/m·s`}
+                title="비등 온도 T_boil & 젖음율"
+                headerRight={<UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />}
+                value={`${formatCanonicalValue('temp', res.T_boil_C, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}`}
+                sub={`Γ=${res.actualWettingRate_kgms.toFixed(2)} kg/m·s | Γ_V=${res.volWettingRateIn_Lms.toFixed(2)} L/m·s`}
                 color={wettingOk ? '#1A2F44' : '#f43f5e'}
               />
               <KpiCard
                 title="열부하 Q & 서비스 U"
-                value={`${res.Q_total_kW.toFixed(1)} kW`}
-                sub={`U_serv = ${res.U_service_Wm2K.toFixed(0)} / U_calc = ${res.U_dirty_Wm2K.toFixed(0)} W/m²K`}
+                headerRight={
+                  <div style={{ display: 'flex', gap: 3 }}>
+                    <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} size="xs" />
+                    <UnitSelect quantity="htc" value={htcUnit} onChange={setHtcUnit} size="xs" />
+                  </div>
+                }
+                value={`${formatCanonicalValue('heatDuty', res.Q_total_Mcalh, dutyUnit, 1)} ${getUnitLabel('heatDuty', dutyUnit)}`}
+                sub={`U_serv = ${formatCanonicalValue('htc', toCanonical('htc', res.U_service_Wm2K, 'Wm2K'), htcUnit, 0)} / U_calc = ${formatCanonicalValue('htc', toCanonical('htc', res.U_dirty_Wm2K, 'Wm2K'), htcUnit, 0)} ${getUnitLabel('htc', htcUnit)}`}
                 color="#1A2F44"
               />
               <KpiCard
@@ -550,14 +653,14 @@ export default function FallingFilmDesign() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                   <tbody>
                     <Row label="튜브 규격 × 길이 × 본수 (No. of Tubes)" val={`Ø${inp.do_mm} × ${inp.tw_mm}t × ${(inp.L_m * 1000).toFixed(0)}mm × ${res.N_tubes} EA (Pitch ${res.pitch_mm}mm)`} highlight />
-                    <Row label="제공 전열면적 (Surface Area)" val={`${res.A_prov_m2.toFixed(1)} m² (전체 튜브 내주 둘레 ${res.wettedPerimeter_m.toFixed(2)} m)`} highlight />
+                    <Row label="제공 전열면적 (Surface Area)" val={`${formatCanonicalValue('area', res.A_prov_m2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} (전체 튜브 내주 둘레 ${res.wettedPerimeter_m.toFixed(2)} m)`} highlight />
                     <Row label="질량 젖음율 Γ_m (In / Avg / Out)" val={`${res.wettingRateIn_kgms.toFixed(2)} / ${res.actualWettingRate_kgms.toFixed(2)} / ${res.wettingRateOut_kgms.toFixed(2)} kg/(m·s)`} highlight />
                     <Row label="체적 젖음율 Γ_V (In / Out / 시간당)" val={`${res.volWettingRateIn_Lms.toFixed(2)} / ${res.volWettingRateOut_Lms.toFixed(2)} L/(m·s) (${res.volWettingRate_m3hm.toFixed(2)} m³/h·m)`} highlight />
                     <Row label="수분 증발량 / 농축액 유출량" val={`증발 ${inp.evapWater_kgh.toLocaleString()} kg/h / 액출구 ${res.outFlow_kgh.toLocaleString()} kg/h (${inp.wtOut_pct.toFixed(1)}%)`} />
                     <Row label="운전 압력 (Tube / Shell)" val={`Tube ${res.P_tube_barA.toFixed(3)} barA / Shell ${res.P_shell_barA.toFixed(3)} barA`} />
-                    <Row label="비등 온도 T_boil (순수 포화 + BPR)" val={`${res.T_boil_C.toFixed(1)} °C (T_sat ${res.T_sat_water_C.toFixed(1)}°C + BPR ${res.BPR_C.toFixed(1)}°C)`} />
-                    <Row label="총 교환열량 Q (Heat Exchanged)" val={`${res.Q_total_kW.toFixed(1)} kW (${(res.Q_total_Mcalh / 1000).toFixed(3)} Gcal/h)`} />
-                    <Row label="강하 액막 Re_film & 두께 δ" val={`Re = ${res.Re_film.toFixed(0)} | δ = ${res.filmThickness_mm.toFixed(2)} mm | h_film = ${res.h_film_Wm2K} W/m²K`} />
+                    <Row label="비등 온도 T_boil (순수 포화 + BPR)" val={`${formatCanonicalValue('temp', res.T_boil_C, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)} (T_sat ${formatCanonicalValue('temp', res.T_sat_water_C, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)} + BPR ${res.BPR_C.toFixed(1)}°C)`} />
+                    <Row label="총 교환열량 Q (Heat Exchanged)" val={`${formatCanonicalValue('heatDuty', res.Q_total_Mcalh, dutyUnit, 1)} ${getUnitLabel('heatDuty', dutyUnit)}`} />
+                    <Row label="강하 액막 Re_film & 두께 δ" val={`Re = ${res.Re_film.toFixed(0)} | δ = ${res.filmThickness_mm.toFixed(2)} mm | h_film = ${formatCanonicalValue('htc', toCanonical('htc', res.h_film_Wm2K, 'Wm2K'), htcUnit, 0)} ${getUnitLabel('htc', htcUnit)}`} />
                     <Row label="쉘 외경 (Calandria / Separator) × 총장" val={`Ø${res.D_calandria_mm} / Ø${res.D_separator_mm} mm × L ${res.totalVesselLength_mm.toLocaleString()} mm`} />
                     <Row label="튜브/쉘 재질 (Material of Construction)" val={`${inp.matTubeSpec ?? inp.material}`} />
                     <Row label="ANSI/ASME 노즐 규격 (Liquor / Vapor)" val={`Liq ${res.nozzleLiquorIn_NPS} / Vap ${res.nozzleVaporOut_NPS} / Stm ${res.nozzleSteamIn_NPS}`} />
@@ -922,6 +1025,17 @@ const selectStyle: React.CSSProperties = {
   fontFamily: 'JetBrains Mono, monospace',
 };
 
+const numInputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--bg-secondary)',
+  color: 'var(--text-primary)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: 6,
+  padding: '6px 8px',
+  fontSize: 12,
+  fontFamily: 'JetBrains Mono, monospace',
+};
+
 function NumInput({ label, value, step = 1, onChange }: { label: string; value: number; step?: number; onChange: (v: number) => void }) {
   return (
     <div>
@@ -931,26 +1045,32 @@ function NumInput({ label, value, step = 1, onChange }: { label: string; value: 
         step={step}
         value={Number.isFinite(value) ? value : 0}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
-        style={{
-          width: '100%',
-          background: 'var(--bg-secondary)',
-          color: 'var(--text-primary)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 6,
-          padding: '6px 8px',
-          fontSize: 12,
-          fontFamily: 'JetBrains Mono, monospace',
-        }}
+        style={numInputStyle}
       />
     </div>
   );
 }
 
-function KpiCard({ title, value, sub, color }: { title: string; value: string; sub: string; color: string }) {
+function KpiCard({
+  title,
+  value,
+  sub,
+  color,
+  headerRight,
+}: {
+  title: string;
+  value: string;
+  sub: string;
+  color: string;
+  headerRight?: React.ReactNode;
+}) {
   return (
     <div className="card" style={{ padding: '12px 14px', borderLeft: `3px solid ${color}` }}>
-      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4 }}>{title}</div>
-      <div style={{ fontSize: 16, fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginBottom: 4 }}>
+        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{title}</div>
+        {headerRight}
+      </div>
+      <div style={{ fontSize: 15.5, fontWeight: 800, color, fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
       <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>{sub}</div>
     </div>
   );

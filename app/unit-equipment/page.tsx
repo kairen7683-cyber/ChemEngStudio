@@ -4,6 +4,7 @@ import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } fr
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import { PLANT_REGISTRY, getPlantRegistryItem, isPlantAllowed } from '@/lib/plantRegistry';
 import {
   CHEMPRO_SIM_HANDOFF_KEY,
@@ -63,7 +64,13 @@ function UnitEquipmentInner() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const { user } = useAuth();
   const { activePlantId, balance } = useBalanceStore();
+  const units = useUnitStore(s => s.units);
+  const hydrateUnits = useUnitStore(s => s.hydrate);
   const plantMeta = getPlantRegistryItem(activePlantId);
+
+  useEffect(() => {
+    hydrateUnits();
+  }, [hydrateUnits]);
 
   const allowedPlants = useMemo(
     () =>
@@ -645,7 +652,12 @@ function UnitEquipmentInner() {
     if (effectiveHandoff) {
       win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
     }
-  }, [activePlantId, allowedPlants, candidates, effectiveHandoff]);
+    win.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
+  }, [activePlantId, allowedPlants, candidates, effectiveHandoff, units]);
+
+  useEffect(() => {
+    iframeRef.current?.contentWindow?.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
+  }, [units]);
 
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -667,7 +679,7 @@ function UnitEquipmentInner() {
     () =>
       `${BASE_PATH}/chempro/index.html?embed=1&standalone=1&plant=${encodeURIComponent(activePlantId)}&tab=${encodeURIComponent(effectiveTab)}${
         effectiveHandoff ? '&handoff=1' : ''
-      }${effectiveTs ? `&ts=${encodeURIComponent(effectiveTs)}` : ''}&v=20261118b`,
+      }${effectiveTs ? `&ts=${encodeURIComponent(effectiveTs)}` : ''}&v=20261119a`,
     [activePlantId, effectiveTab, effectiveHandoff, effectiveTs]
   );
 
@@ -677,6 +689,9 @@ function UnitEquipmentInner() {
         <iframe
           ref={iframeRef}
           src={iframeSrc}
+          onLoad={() => {
+            iframeRef.current?.contentWindow?.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
+          }}
           title="ChemPro Unit Equipment Workstation"
           style={{ width: '100%', height: '100%', border: 'none', background: '#F6F7F2' }}
         />

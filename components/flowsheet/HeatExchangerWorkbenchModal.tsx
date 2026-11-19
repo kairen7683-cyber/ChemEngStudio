@@ -3,6 +3,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
+  UnitNumberInput,
+  UnitSelect,
+  useLocalUnit,
+} from '@/components/units/UnitControls';
+import {
+  formatCanonicalValue,
+  getUnitLabel,
+} from '@/lib/units/unitSystem';
+import {
   REFRIGERANT_PRESETS,
   type FlowUnitParams,
   type FlowUnitType,
@@ -51,6 +60,15 @@ interface HeatExchangerWorkbenchModalProps {
 type MechVisualTab = 'cad' | 'hydraulics' | 'datasheet';
 
 const MONO = 'JetBrains Mono, monospace';
+const BAR_TO_KGCM2 = 1 / 0.980665;
+const WM2K_TO_KCALM2HC = 1 / 1.163;
+
+function formatDeltaT(dtC: number, tempUnitId: string): string {
+  if (!Number.isFinite(dtC)) return '—';
+  if (tempUnitId === 'F') return `${(dtC * 1.8).toFixed(1)} °F`;
+  if (tempUnitId === 'K') return `${dtC.toFixed(1)} K`;
+  return `${dtC.toFixed(1)} °C`;
+}
 
 const cardBox: React.CSSProperties = {
   background: '#FFFFFF',
@@ -202,6 +220,19 @@ export default function HeatExchangerWorkbenchModal({
     utilOutStreams,
     unitResult,
   ]);
+
+  const [tempUnit, setTempUnit] = useLocalUnit('temp');
+  const [pressUnit, setPressUnit] = useLocalUnit('pressG');
+  const [dpUnit, setDpUnit] = useLocalUnit('deltaP');
+  const [dutyUnit, setDutyUnit] = useLocalUnit('heatDuty');
+  const [areaUnit, setAreaUnit] = useLocalUnit('area');
+  const [htcUnit, setHtcUnit] = useLocalUnit('htc');
+  const [velUnit, setVelUnit] = useLocalUnit('velocity');
+  const [lenUnit, setLenUnit] = useLocalUnit('length');
+  const [massUnit, setMassUnit] = useLocalUnit('massFlow');
+  const [cpUnit, setCpUnit] = useLocalUnit('cp');
+  const [densUnit, setDensUnit] = useLocalUnit('density');
+  const [viscUnit, setViscUnit] = useLocalUnit('viscosity');
 
   if (!open || !dRes) return null;
 
@@ -852,7 +883,7 @@ export default function HeatExchangerWorkbenchModal({
           </div>
 
           <div style={{ fontSize: 11, color: '#475569', fontFamily: MONO, fontWeight: 700 }}>
-            Q = {dRes.dutyMcalH.toFixed(1)} Mcal/h ({dRes.dutyKW.toFixed(1)} kW) · A = {dRes.areaProvM2.toFixed(1)} m² · U = {dRes.uCalcKcalM2HC.toFixed(0)} kcal/m²·h·°C
+            Q = {formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)} · A = {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)} · U = {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
             {lastRunStamp ? ` · 최근 실행 ${lastRunStamp}` : ''}
           </div>
         </div>
@@ -1143,7 +1174,7 @@ export default function HeatExchangerWorkbenchModal({
                         border: '1px solid #BFDBFE',
                       }}
                     >
-                      유입 유체: {dRes.processSide.fluidName} ({dRes.processSide.massFlowKgH.toFixed(1)} kg/h)
+                      유입 유체: {dRes.processSide.fluidName} ({formatCanonicalValue('massFlow', dRes.processSide.massFlowKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
                     </span>
                   </div>
 
@@ -1159,37 +1190,41 @@ export default function HeatExchangerWorkbenchModal({
                         }
                         style={selStyle}
                       >
-                        <option value="proc_temp">공정 출구 목표온도 (°C) 지정</option>
-                        <option value="heat_duty">교환 열부하 Q (Mcal/h) 직접 지정</option>
+                        <option value="proc_temp">공정 출구 목표온도 지정</option>
+                        <option value="heat_duty">교환 열부하 Q 직접 지정</option>
                       </select>
                     </div>
 
                     {hexSpecMode === 'proc_temp' ? (
                       <div>
                         <label style={lblStyle}>
-                          공정 출구 목표온도 (°C) [입구 {dRes.processSide.inTempC.toFixed(1)}°C]
+                          공정 출구 목표온도 [입구 {formatCanonicalValue('temp', dRes.processSide.inTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}]
                         </label>
-                        <BufferedNumberInput
+                        <UnitNumberInput
+                          quantity="temp"
+                          unitId={tempUnit}
+                          onUnitChange={setTempUnit}
                           syncKey={`${unitTag}-hx-tout`}
-                          step={1}
-                          min={-65}
-                          max={350}
+                          minCanonical={-65}
+                          maxCanonical={350}
                           value={params.operTempC ?? (isLiquefier ? -22 : 32)}
                           onValueChange={(v) => onChangeParams({ operTempC: v })}
                           onEnterRun={triggerRun}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                     ) : (
                       <div>
-                        <label style={lblStyle}>지정 교환열량 (Mcal/h, 냉각 음수 -)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>지정 교환열량 (냉각 음수 -)</label>
+                        <UnitNumberInput
+                          quantity="heatDuty"
+                          unitId={dutyUnit}
+                          onUnitChange={setDutyUnit}
                           syncKey={`${unitTag}-hx-qspec`}
-                          step={20}
                           value={params.specifiedDutyMcalH ?? -500}
                           onValueChange={(v) => onChangeParams({ specifiedDutyMcalH: v })}
                           onEnterRun={triggerRun}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                     )}
@@ -1214,12 +1249,14 @@ export default function HeatExchangerWorkbenchModal({
                     </div>
 
                     <div>
-                      <label style={lblStyle}>공정 출구 운전압력 (kgf/cm²G)</label>
-                      <BufferedNumberInput
+                      <label style={lblStyle}>공정 출구 운전압력</label>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        unitId={pressUnit}
+                        onUnitChange={setPressUnit}
                         syncKey={`${unitTag}-hx-pout`}
-                        step={0.05}
-                        min={-0.98}
-                        max={45}
+                        minCanonical={-0.98}
+                        maxCanonical={45}
                         value={
                           params.operPressKgcm2g !== undefined
                             ? params.operPressKgcm2g
@@ -1227,7 +1264,7 @@ export default function HeatExchangerWorkbenchModal({
                         }
                         onValueChange={(v) => onChangeParams({ operPressKgcm2g: v })}
                         onEnterRun={triggerRun}
-                        style={inpStyle}
+                        inputStyle={inpStyle}
                       />
                     </div>
                   </div>
@@ -1244,37 +1281,43 @@ export default function HeatExchangerWorkbenchModal({
                       }}
                     >
                       <div>
-                        <label style={lblStyle}>유틸리티 입구 (°C)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>유틸리티 입구 온도</label>
+                        <UnitNumberInput
+                          quantity="temp"
+                          unitId={tempUnit}
+                          onUnitChange={setTempUnit}
                           syncKey={`${unitTag}-ut-in`}
-                          step={1}
                           value={params.utilInTempC ?? 20}
                           onValueChange={(v) => onChangeParams({ utilInTempC: v })}
                           onEnterRun={triggerRun}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유틸리티 출구 (°C)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>유틸리티 출구 온도</label>
+                        <UnitNumberInput
+                          quantity="temp"
+                          unitId={tempUnit}
+                          onUnitChange={setTempUnit}
                           syncKey={`${unitTag}-ut-out`}
-                          step={1}
                           value={params.utilOutTempC ?? 30}
                           onValueChange={(v) => onChangeParams({ utilOutTempC: v })}
                           onEnterRun={triggerRun}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유틸리티 비열 (kcal/kg·°C)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>유틸리티 비열 Cp</label>
+                        <UnitNumberInput
+                          quantity="cp"
+                          unitId={cpUnit}
+                          onUnitChange={setCpUnit}
                           syncKey={`${unitTag}-ut-cp`}
-                          step={0.05}
-                          min={0.1}
+                          minCanonical={0.1}
                           value={params.utilCp ?? 1.0}
                           onValueChange={(v) => onChangeParams({ utilCp: Math.max(0.1, v) })}
                           onEnterRun={triggerRun}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                     </div>
@@ -1285,7 +1328,7 @@ export default function HeatExchangerWorkbenchModal({
                 {dRes.latentDutyMcalH > 0.05 && (
                   <div style={cardBox}>
                     <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>
-                      상변화 3-구간 열부하 분해 (이슬점 {dRes.dewPointC?.toFixed(1)}°C · 응축/액화량 {dRes.processSide.phaseChangeMassKgH.toFixed(1)} kg/h)
+                      상변화 3-구간 열부하 분해 (이슬점 {dRes.dewPointC !== null ? `${formatCanonicalValue('temp', dRes.dewPointC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '—'} · 응축/액화량 {formatCanonicalValue('massFlow', dRes.processSide.phaseChangeMassKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
                     </div>
                     <div
                       style={{
@@ -1298,19 +1341,19 @@ export default function HeatExchangerWorkbenchModal({
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                         <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>① 과열가스 냉각</div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                          {dRes.desupDutyMcalH.toFixed(1)} Mcal/h
+                          {formatCanonicalValue('heatDuty', dRes.desupDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
                       </div>
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                         <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>② 잠열 응축·액화</div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#1E3A8A', marginTop: 2 }}>
-                          {dRes.latentDutyMcalH.toFixed(1)} Mcal/h
+                          {formatCanonicalValue('heatDuty', dRes.latentDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
                       </div>
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                         <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>③ 응축액 과냉각</div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                          {dRes.subcoolDutyMcalH.toFixed(1)} Mcal/h
+                          {formatCanonicalValue('heatDuty', dRes.subcoolDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
                       </div>
                     </div>
@@ -1341,39 +1384,57 @@ export default function HeatExchangerWorkbenchModal({
                         </td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>질량유량 (kg/h)</td>
+                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            질량유량
+                            <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
+                          </span>
+                        </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 800 }}>
-                          {dRes.processSide.massFlowKgH.toFixed(1)}
+                          {formatCanonicalValue('massFlow', dRes.processSide.massFlowKgH, massUnit)}
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 800, color: '#1E3A8A' }}>
-                          {dRes.utilitySide.massFlowKgH.toFixed(1)}
+                          {formatCanonicalValue('massFlow', dRes.utilitySide.massFlowKgH, massUnit)}
                         </td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>입구 → 출구 온도 (°C)</td>
-                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.processSide.inTempC.toFixed(1)} → {dRes.processSide.outTempC.toFixed(1)}
+                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                            입구 → 출구 온도
+                            <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
+                          </span>
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.utilitySide.inTempC.toFixed(1)} → {dRes.utilitySide.outTempC.toFixed(1)}
+                          {formatCanonicalValue('temp', dRes.processSide.inTempC, tempUnit, 1)} → {formatCanonicalValue('temp', dRes.processSide.outTempC, tempUnit, 1)}
+                        </td>
+                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
+                          {formatCanonicalValue('temp', dRes.utilitySide.inTempC, tempUnit, 1)} → {formatCanonicalValue('temp', dRes.utilitySide.outTempC, tempUnit, 1)}
                         </td>
                       </tr>
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>밀도 (kg/m³) / 점도 (cP)</td>
-                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.processSide.densityKgM3.toFixed(1)} / {dRes.processSide.viscosityCp.toFixed(2)}
+                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                            밀도 <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} /> / 점도 <UnitSelect quantity="viscosity" value={viscUnit} onChange={setViscUnit} />
+                          </span>
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.utilitySide.densityKgM3.toFixed(1)} / {dRes.utilitySide.viscosityCp.toFixed(2)}
+                          {formatCanonicalValue('density', dRes.processSide.densityKgM3, densUnit)} / {formatCanonicalValue('viscosity', dRes.processSide.viscosityCp, viscUnit, 2)}
+                        </td>
+                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
+                          {formatCanonicalValue('density', dRes.utilitySide.densityKgM3, densUnit)} / {formatCanonicalValue('viscosity', dRes.utilitySide.viscosityCp, viscUnit, 2)}
                         </td>
                       </tr>
                       <tr>
-                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>열전도도 (W/m·K) / 비열</td>
-                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.processSide.conductivityWmK.toFixed(3)} / {dRes.processSide.cpKcalKgC.toFixed(2)}
+                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                            열전도도 (W/m·K) / 비열 <UnitSelect quantity="cp" value={cpUnit} onChange={setCpUnit} />
+                          </span>
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right' }}>
-                          {dRes.utilitySide.conductivityWmK.toFixed(3)} / {dRes.utilitySide.cpKcalKgC.toFixed(2)}
+                          {dRes.processSide.conductivityWmK.toFixed(3)} / {formatCanonicalValue('cp', dRes.processSide.cpKcalKgC, cpUnit, 2)}
+                        </td>
+                        <td style={{ padding: '4px 7px', textAlign: 'right' }}>
+                          {dRes.utilitySide.conductivityWmK.toFixed(3)} / {formatCanonicalValue('cp', dRes.utilitySide.cpKcalKgC, cpUnit, 2)}
                         </td>
                       </tr>
                     </tbody>
@@ -1429,39 +1490,51 @@ export default function HeatExchangerWorkbenchModal({
                   }}
                 >
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>총 교환열량 Q</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>총 교환열량 Q</span>
+                      <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                    </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                      {dRes.dutyMcalH.toFixed(1)} Mcal/h
+                      {formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                     </div>
                     <div style={{ fontSize: 9.5, color: '#475569' }}>
                       {dRes.dutyKW.toFixed(1)} kW ({dRes.usrt.toFixed(1)} RT)
                     </div>
                   </div>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>유효 온도차 CMTD</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>유효 온도차 CMTD</span>
+                      <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
+                    </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                      {dRes.cmtdC.toFixed(1)} °C
+                      {formatDeltaT(dRes.cmtdC, tempUnit)}
                     </div>
                     <div style={{ fontSize: 9.5, color: '#475569' }}>
-                      LMTD {dRes.lmtdCounterC.toFixed(1)}°C · Ft={dRes.ftFactor.toFixed(2)}
+                      LMTD {formatDeltaT(dRes.lmtdCounterC, tempUnit)} · Ft={dRes.ftFactor.toFixed(2)}
                     </div>
                   </div>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>산출 총괄 U</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>산출 총괄 U</span>
+                      <UnitSelect quantity="htc" value={htcUnit} onChange={setHtcUnit} />
+                    </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A', marginTop: 2 }}>
-                      {dRes.uCalcKcalM2HC.toFixed(0)}
+                      {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)}
                     </div>
                     <div style={{ fontSize: 9.5, color: '#475569' }}>
-                      kcal/m²·h·°C ({dRes.uCalcWm2K.toFixed(0)} W/m²K)
+                      {getUnitLabel('htc', htcUnit)}
                     </div>
                   </div>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>설계 전열면적 A</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>설계 전열면적 A</span>
+                      <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
+                    </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                      {dRes.areaProvM2.toFixed(1)} m²
+                      {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)}
                     </div>
                     <div style={{ fontSize: 9.5, color: '#475569' }}>
-                      요구 {dRes.areaReqM2.toFixed(1)} m² (+{dRes.actualOverdesignPct.toFixed(0)}%)
+                      요구 {formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)} (+{dRes.actualOverdesignPct.toFixed(0)}%)
                     </div>
                   </div>
                 </div>
@@ -1487,24 +1560,37 @@ export default function HeatExchangerWorkbenchModal({
                 {/* 숏컷 스타일 4-KPI 요약 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, fontFamily: MONO }}>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>열부하 Q</div>
-                    <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>{dRes.dutyMcalH.toFixed(1)}</div>
-                    <div style={{ fontSize: 9, color: '#64748B' }}>Mcal/h</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>열부하 Q</span>
+                      <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
+                      {formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)}
+                    </div>
+                    <div style={{ fontSize: 9, color: '#64748B' }}>{getUnitLabel('heatDuty', dutyUnit)}</div>
                   </div>
                   <div style={cardBox}>
                     <div style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>CMTD / Ft</div>
                     <div style={{ fontSize: 12.5, fontWeight: 900, color: dRes.ftFactor < 0.78 ? '#B91C1C' : '#0F172A' }}>
-                      {dRes.cmtdC.toFixed(1)}°C
+                      {formatDeltaT(dRes.cmtdC, tempUnit)}
                     </div>
                     <div style={{ fontSize: 9, color: dRes.ftFactor < 0.78 ? '#B91C1C' : '#64748B' }}>Ft {dRes.ftFactor.toFixed(2)}</div>
                   </div>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>전열면적</div>
-                    <div style={{ fontSize: 12.5, fontWeight: 900, color: '#1E3A8A' }}>{dRes.areaProvM2.toFixed(1)} m²</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>전열면적</span>
+                      <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 900, color: '#1E3A8A' }}>
+                      {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)}
+                    </div>
                     <div style={{ fontSize: 9, color: '#64748B' }}>+{dRes.actualOverdesignPct.toFixed(0)}%</div>
                   </div>
                   <div style={cardBox}>
-                    <div style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>최대 ΔP</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>최대 ΔP</span>
+                      <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
+                    </div>
                     <div
                       style={{
                         fontSize: 12.5,
@@ -1512,9 +1598,11 @@ export default function HeatExchangerWorkbenchModal({
                         color: Math.max(dRes.dpTubeBar, dRes.dpShellBar) > 0.7 ? '#B91C1C' : '#166534',
                       }}
                     >
-                      {Math.max(dRes.dpTubeBar, dRes.dpShellBar).toFixed(2)}
+                      {formatCanonicalValue('deltaP', Math.max(dRes.dpTubeBar, dRes.dpShellBar) * BAR_TO_KGCM2, dpUnit, 2)}
                     </div>
-                    <div style={{ fontSize: 9, color: '#64748B' }}>bar (≤0.70)</div>
+                    <div style={{ fontSize: 9, color: '#64748B' }}>
+                      {getUnitLabel('deltaP', dpUnit)} (≤{formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)})
+                    </div>
                   </div>
                 </div>
 
@@ -1650,22 +1738,31 @@ export default function HeatExchangerWorkbenchModal({
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 튜브 길이 L (m)</label>
-                        <select
-                          value={dRes.tubeLengthM}
-                          onChange={(e) =>
-                            patchHxCfg({
-                              tubeLengthM: Number(e.target.value) as 2.44 | 3.05 | 3.66 | 4.88 | 6.1,
-                            })
-                          }
-                          style={selStyle}
-                        >
-                          <option value={2.44}>2.44 m (8 ft)</option>
-                          <option value={3.05}>3.05 m (10 ft)</option>
-                          <option value={3.66}>3.66 m (12 ft 표준)</option>
-                          <option value={4.88}>4.88 m (16 ft)</option>
-                          <option value={6.1}>6.10 m (20 ft)</option>
-                        </select>
+                        <label style={lblStyle}>유효 튜브 길이 L</label>
+                        <div style={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
+                          <select
+                            value={dRes.tubeLengthM}
+                            onChange={(e) =>
+                              patchHxCfg({
+                                tubeLengthM: Number(e.target.value) as 2.44 | 3.05 | 3.66 | 4.88 | 6.1,
+                              })
+                            }
+                            style={{ ...selStyle, flex: 1, minWidth: 0 }}
+                          >
+                            {([
+                              { v: 2.44, note: '8 ft' },
+                              { v: 3.05, note: '10 ft' },
+                              { v: 3.66, note: '12 ft 표준' },
+                              { v: 4.88, note: '16 ft' },
+                              { v: 6.1, note: '20 ft' },
+                            ] as const).map((opt) => (
+                              <option key={opt.v} value={opt.v}>
+                                {formatCanonicalValue('length', opt.v, lenUnit, 2)} {getUnitLabel('length', lenUnit)} ({opt.note})
+                              </option>
+                            ))}
+                          </select>
+                          <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} style={{ flexShrink: 0, minWidth: 50 }} />
+                        </div>
                       </div>
                       <div>
                         <label style={lblStyle}>배플 간격비 (B / Ds)</label>
@@ -1715,39 +1812,43 @@ export default function HeatExchangerWorkbenchModal({
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>채널 판간격 b (mm)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>채널 판간격 b</label>
+                        <UnitNumberInput
+                          quantity="length"
                           syncKey={`${unitTag}-phe-gap`}
-                          step={0.2}
-                          min={2.0}
-                          max={5.5}
-                          value={dRes.pheGapMm}
-                          onValueChange={(v) => patchHxCfg({ pheGapMm: v })}
-                          style={inpStyle}
+                          minCanonical={0.002}
+                          maxCanonical={0.0055}
+                          value={dRes.pheGapMm / 1000}
+                          onValueChange={(v) => patchHxCfg({ pheGapMm: Number((v * 1000).toFixed(3)) })}
+                          inputStyle={inpStyle}
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 판폭 W (m)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>유효 판폭 W</label>
+                        <UnitNumberInput
+                          quantity="length"
+                          unitId={lenUnit}
+                          onUnitChange={setLenUnit}
                           syncKey={`${unitTag}-phe-w`}
-                          step={0.05}
-                          min={0.25}
-                          max={1.2}
+                          minCanonical={0.25}
+                          maxCanonical={1.2}
                           value={hxCfg.phePlateWidthM ?? 0.55}
                           onValueChange={(v) => patchHxCfg({ phePlateWidthM: v })}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 판길이 L (m)</label>
-                        <BufferedNumberInput
+                        <label style={lblStyle}>유효 판길이 L</label>
+                        <UnitNumberInput
+                          quantity="length"
+                          unitId={lenUnit}
+                          onUnitChange={setLenUnit}
                           syncKey={`${unitTag}-phe-l`}
-                          step={0.1}
-                          min={0.6}
-                          max={2.6}
+                          minCanonical={0.6}
+                          maxCanonical={2.6}
                           value={hxCfg.phePlateLengthM ?? 1.45}
                           onValueChange={(v) => patchHxCfg({ phePlateLengthM: v })}
-                          style={inpStyle}
+                          inputStyle={inpStyle}
                         />
                       </div>
                     </div>
@@ -1786,16 +1887,25 @@ export default function HeatExchangerWorkbenchModal({
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>튜브 외경 OD (mm)</label>
-                        <select
-                          value={dRes.tubeOdMm}
-                          onChange={(e) => patchHxCfg({ tubeOdMm: Number(e.target.value) as 15.88 | 19.05 | 25.4 })}
-                          style={selStyle}
-                        >
-                          <option value={15.88}>15.88 mm (5/8&quot;)</option>
-                          <option value={19.05}>19.05 mm (3/4&quot;)</option>
-                          <option value={25.4}>25.40 mm (1&quot;)</option>
-                        </select>
+                        <label style={lblStyle}>튜브 외경 OD</label>
+                        <div style={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
+                          <select
+                            value={dRes.tubeOdMm}
+                            onChange={(e) => patchHxCfg({ tubeOdMm: Number(e.target.value) as 15.88 | 19.05 | 25.4 })}
+                            style={{ ...selStyle, flex: 1, minWidth: 0 }}
+                          >
+                            {([
+                              { v: 15.88, note: '5/8"' },
+                              { v: 19.05, note: '3/4"' },
+                              { v: 25.4, note: '1"' },
+                            ] as const).map((opt) => (
+                              <option key={opt.v} value={opt.v}>
+                                {formatCanonicalValue('length', opt.v / 1000, lenUnit)} {getUnitLabel('length', lenUnit)} ({opt.note})
+                              </option>
+                            ))}
+                          </select>
+                          <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} style={{ flexShrink: 0, minWidth: 50 }} />
+                        </div>
                       </div>
                       <div>
                         <label style={lblStyle}>배열 각도</label>
@@ -1852,7 +1962,7 @@ export default function HeatExchangerWorkbenchModal({
                   }}
                 >
                   <div style={{ fontSize: 10.6, color: '#1E3A8A', fontWeight: 700 }}>
-                    U = <b>{dRes.uCalcKcalM2HC.toFixed(0)}</b> kcal/m²·h·°C · ΔP = <b>{dRes.dpProcessKgcm2.toFixed(3)} kG</b>
+                    U = <b>{formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)}</b> {getUnitLabel('htc', htcUnit)} · ΔP = <b>{formatCanonicalValue('deltaP', dRes.dpProcessKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}</b>
                   </div>
                   <button
                     type="button"
@@ -1937,18 +2047,23 @@ export default function HeatExchangerWorkbenchModal({
                       }}
                     >
                       <div style={cardBox}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
-                          {dRes.hxKind === 'plate_phe' ? '전열판 매수' : '동체 내경 D_s'}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                            {dRes.hxKind === 'plate_phe' ? '전열판 매수' : '동체 내경 D_s'}
+                          </span>
+                          {dRes.hxKind !== 'plate_phe' && (
+                            <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
+                          )}
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {dRes.hxKind === 'plate_phe'
                             ? `${dRes.phePlateCount} 매`
-                            : `Ø${dRes.shellIdMm} mm`}
+                            : `Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
                           {dRes.hxKind === 'plate_phe'
                             ? `채널 ${dRes.pheChannelsPerSide}×2`
-                            : `번들 Ø${dRes.bundleDiaMm.toFixed(0)} mm`}
+                            : `번들 Ø${formatCanonicalValue('length', dRes.bundleDiaMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`}
                         </div>
                       </div>
                       <div style={cardBox}>
@@ -1957,21 +2072,26 @@ export default function HeatExchangerWorkbenchModal({
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {dRes.hxKind === 'plate_phe'
-                            ? `${dRes.phePackLengthMm} mm`
+                            ? `${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`
                             : `${dRes.tubeCountPerShell} 본`}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
                           {dRes.hxKind === 'plate_phe'
                             ? `간격 ${dRes.pheGapMm} mm`
-                            : `${dRes.tubePasses}패스 · L=${dRes.tubeLengthM}m`}
+                            : `${dRes.tubePasses}패스 · L=${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)}`}
                         </div>
                       </div>
                       <div style={cardBox}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>관측 / 동체 압손</div>
-                        <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                          {dRes.dpTubeBar.toFixed(2)} / {dRes.dpShellBar.toFixed(2)}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>관측 / 동체 압손</span>
+                          <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                         </div>
-                        <div style={{ fontSize: 9.5, color: '#475569' }}>bar (권장 ≤ 0.70)</div>
+                        <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                          {formatCanonicalValue('deltaP', dRes.dpTubeBar * BAR_TO_KGCM2, dpUnit, 2)} / {formatCanonicalValue('deltaP', dRes.dpShellBar * BAR_TO_KGCM2, dpUnit, 2)}
+                        </div>
+                        <div style={{ fontSize: 9.5, color: '#475569' }}>
+                          {getUnitLabel('deltaP', dpUnit)} (권장 ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)})
+                        </div>
                       </div>
                       <div style={cardBox}>
                         <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>와류 진동비 FIV</div>
@@ -1996,39 +2116,47 @@ export default function HeatExchangerWorkbenchModal({
                 {visualTab === 'hydraulics' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={cardBox}>
-                      <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 8 }}>
-                        막열전달계수 & 총괄 열전달계수 산출 내역
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
+                          막열전달계수 & 총괄 열전달계수 산출 내역
+                        </span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>U/h</span>
+                          <UnitSelect quantity="htc" value={htcUnit} onChange={setHtcUnit} />
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>유속</span>
+                          <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} />
+                        </div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontFamily: MONO, fontSize: 11 }}>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                           <div style={{ color: '#64748B', fontSize: 10 }}>관측(유로A) 막계수 h_i</div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
-                            {dRes.hTubeWm2K.toFixed(0)} W/m²·K
+                            {formatCanonicalValue('htc', dRes.hTubeWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
-                            유속 {dRes.velTubeMs.toFixed(2)} m/s · Re = {dRes.reTube.toFixed(0)}
+                            유속 {formatCanonicalValue('velocity', dRes.velTubeMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reTube.toFixed(0)}
                           </div>
                         </div>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                           <div style={{ color: '#64748B', fontSize: 10 }}>동체(유로B) 막계수 h_o</div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
-                            {dRes.hShellWm2K.toFixed(0)} W/m²·K
+                            {formatCanonicalValue('htc', dRes.hShellWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
-                            유속 {dRes.velShellMs.toFixed(2)} m/s · Re = {dRes.reShell.toFixed(0)}
+                            유속 {formatCanonicalValue('velocity', dRes.velShellMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reShell.toFixed(0)}
                           </div>
                         </div>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
                           <div style={{ color: '#64748B', fontSize: 10 }}>청정 총괄 U_clean</div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
-                            {(dRes.uCleanWm2K * 0.859845).toFixed(0)} kcal/m²·h·°C
+                            {formatCanonicalValue('htc', dRes.uCleanWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>({dRes.uCleanWm2K.toFixed(0)} W/m²·K)</div>
                         </div>
                         <div style={{ background: '#EFF6FF', padding: '8px 10px', borderRadius: 6, border: '1px solid #BFDBFE' }}>
                           <div style={{ color: '#1E3A8A', fontSize: 10, fontWeight: 800 }}>오염반영 설계 U_design</div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A' }}>
-                            {dRes.uCalcKcalM2HC.toFixed(0)} kcal/m²·h·°C
+                            {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#1D4ED8' }}>({dRes.uCalcWm2K.toFixed(0)} W/m²·K)</div>
                         </div>
@@ -2036,21 +2164,24 @@ export default function HeatExchangerWorkbenchModal({
                     </div>
 
                     <div style={cardBox}>
-                      <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 8 }}>
-                        압력손실(ΔP ≤ 0.70 bar) 및 유체유발진동(FIV &lt; 0.80) 검증 게이지
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
+                          압력손실(ΔP ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} {getUnitLabel('deltaP', dpUnit)}) 및 유체유발진동(FIV &lt; 0.80) 검증 게이지
+                        </span>
+                        <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                       </div>
                       {[
                         {
                           label: `${dRes.hxKind === 'plate_phe' ? '유로 A' : '관측(Tube)'} 압력손실`,
                           val: dRes.dpTubeBar,
                           limit: 0.7,
-                          unit: 'bar',
+                          isDp: true,
                         },
                         {
                           label: `${dRes.hxKind === 'plate_phe' ? '유로 B' : '동체(Shell)'} 압력손실`,
                           val: dRes.dpShellBar,
                           limit: 0.7,
-                          unit: 'bar',
+                          isDp: true,
                         },
                         ...(dRes.hxKind === 'shell_tube'
                           ? [
@@ -2058,7 +2189,7 @@ export default function HeatExchangerWorkbenchModal({
                                 label: `TEMA 와류 진동비 (f_vs=${dRes.vortexFreqHz.toFixed(1)}Hz / f_nat=${dRes.naturalFreqHz.toFixed(1)}Hz)`,
                                 val: dRes.vibRatio,
                                 limit: 0.8,
-                                unit: '',
+                                isDp: false,
                               },
                             ]
                           : []),
@@ -2070,7 +2201,9 @@ export default function HeatExchangerWorkbenchModal({
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800, marginBottom: 3 }}>
                               <span style={{ color: '#334155' }}>{g.label}</span>
                               <span style={{ fontFamily: MONO, color: over ? '#92400E' : '#166534' }}>
-                                {g.val.toFixed(2)} {g.unit} / 기준 {g.limit.toFixed(2)} {g.unit}
+                                {g.isDp
+                                  ? `${formatCanonicalValue('deltaP', g.val * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)} / 기준 ${formatCanonicalValue('deltaP', g.limit * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}`
+                                  : `${g.val.toFixed(2)} / 기준 ${g.limit.toFixed(2)}`}
                               </span>
                             </div>
                             <div style={{ height: 8, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
@@ -2101,7 +2234,11 @@ export default function HeatExchangerWorkbenchModal({
                             <th style={{ padding: '5px 7px', textAlign: 'left' }}>Nozzle</th>
                             <th style={{ padding: '5px 7px', textAlign: 'left', fontFamily: 'inherit' }}>서비스 위치</th>
                             <th style={{ padding: '5px 7px', textAlign: 'right' }}>규격 (DN / NPS)</th>
-                            <th style={{ padding: '5px 7px', textAlign: 'right' }}>유속 (m/s)</th>
+                            <th style={{ padding: '5px 7px', textAlign: 'right' }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                유속 <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} />
+                              </span>
+                            </th>
                             <th style={{ padding: '5px 7px', textAlign: 'right' }}>ρv² (Pa)</th>
                           </tr>
                         </thead>
@@ -2113,7 +2250,7 @@ export default function HeatExchangerWorkbenchModal({
                               <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 800 }}>
                                 DN{nz.dnMm} ({nz.npsInch})
                               </td>
-                              <td style={{ padding: '4px 7px', textAlign: 'right' }}>{nz.velocityMs.toFixed(2)}</td>
+                              <td style={{ padding: '4px 7px', textAlign: 'right' }}>{formatCanonicalValue('velocity', nz.velocityMs, velUnit, 2)}</td>
                               <td style={{ padding: '4px 7px', textAlign: 'right' }}>{nz.rhoV2Pa}</td>
                             </tr>
                           ))}
@@ -2136,20 +2273,20 @@ export default function HeatExchangerWorkbenchModal({
                                 : `TEMA ${dRes.temaType} 다관원통형 (${dRes.shellCount} Shell × ${dRes.tubePasses} Tube Pass)`,
                             ],
                             ['적용 주요 재질', dRes.material.label],
-                            ['교환 열부하 Q', `${dRes.dutyMcalH.toFixed(1)} Mcal/h (${dRes.dutyKW.toFixed(1)} kW)`],
+                            ['교환 열부하 Q', `${formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} ${getUnitLabel('heatDuty', dutyUnit)} (${dRes.dutyKW.toFixed(1)} kW)`],
                             [
                               '전열 면적 (제공 / 요구)',
-                              `${dRes.areaProvM2.toFixed(1)} m² / ${dRes.areaReqM2.toFixed(1)} m² (여유율 +${dRes.actualOverdesignPct.toFixed(1)}%)`,
+                              `${formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} / ${formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} (여유율 +${dRes.actualOverdesignPct.toFixed(1)}%)`,
                             ],
                             [
                               '유효 온도차 / 총괄 U',
-                              `CMTD ${dRes.cmtdC.toFixed(1)} °C · U = ${dRes.uCalcKcalM2HC.toFixed(0)} kcal/m²·h·°C`,
+                              `CMTD ${formatDeltaT(dRes.cmtdC, tempUnit)} · U = ${formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} ${getUnitLabel('htc', htcUnit)}`,
                             ],
                             [
                               '기하 주요 치수',
                               dRes.hxKind === 'plate_phe'
-                                ? `${dRes.phePlateWidthMm}W × ${dRes.phePlateHeightMm}H mm × ${dRes.phePlateCount}매 (팩 ${dRes.phePackLengthMm} mm)`
-                                : `동체 ID Ø${dRes.shellIdMm} mm · 튜브 Ø${dRes.tubeOdMm}×${dRes.tubeLengthM}m × ${dRes.tubeCountPerShell}본 · 배플 ${dRes.baffleCount}단`,
+                                ? `${formatCanonicalValue('length', dRes.phePlateWidthMm / 1000, lenUnit)}W × ${formatCanonicalValue('length', dRes.phePlateHeightMm / 1000, lenUnit)}H ${getUnitLabel('length', lenUnit)} × ${dRes.phePlateCount}매 (팩 ${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)})`
+                                : `동체 ID Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)} · 튜브 Ø${dRes.tubeOdMm}mm×${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} × ${dRes.tubeCountPerShell}본 · 배플 ${dRes.baffleCount}단`,
                             ],
                           ].map(([k, v], i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
