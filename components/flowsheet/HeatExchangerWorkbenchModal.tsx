@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
@@ -154,12 +154,19 @@ export default function HeatExchangerWorkbenchModal({
     return () => window.removeEventListener('resize', syncMob);
   }, []);
   const [lastRunStamp, setLastRunStamp] = useState<string | null>(null);
+  const temaFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [temaImportNotice, setTemaImportNotice] = useState<{
+    count: number;
+    summary: string;
+    isError?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (open) {
       setWorkbenchView(initialView);
       setAiReport(null);
       setAiStepLabel('');
+      setTemaImportNotice(null);
     }
   }, [open, initialView, unitTag]);
 
@@ -484,6 +491,308 @@ export default function HeatExchangerWorkbenchModal({
     const safeTag = (unitTag || 'E-101').replace(/[^A-Za-z0-9_-]/g, '_');
     const stdTag = isPhe ? 'API662_PHE' : `TEMA_${dRes.temaType}`;
     XLSX.writeFile(wb, `${safeTag}_${stdTag}_Datasheet_${dateStr}.xlsx`);
+  };
+
+  const handleImportTemaExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const prioritySheets = [
+        '1_TEMA_HX_Datasheet',
+        'TEMA_HX_Datasheet',
+        'HX DATASHEET',
+        '1_API662_PHE_Datasheet',
+        'API662_PHE_Datasheet',
+      ];
+      let targetSheetName =
+        prioritySheets.find((pn) =>
+          wb.SheetNames.some((sn) => sn.trim().toLowerCase() === pn.toLowerCase())
+        ) ?? '';
+      if (targetSheetName) {
+        targetSheetName =
+          wb.SheetNames.find(
+            (sn) => sn.trim().toLowerCase() === targetSheetName.toLowerCase()
+          ) ?? wb.SheetNames[0];
+      } else {
+        targetSheetName =
+          wb.SheetNames.find((sn) => /tema|hx|datasheet|phe|heat/i.test(sn)) ??
+          wb.SheetNames[0];
+      }
+      const ws = targetSheetName ? wb.Sheets[targetSheetName] : undefined;
+      if (!ws) {
+        setTemaImportNotice({
+          count: 0,
+          summary: '워크시트를 찾을 수 없습니다.',
+          isError: true,
+        });
+        return;
+      }
+
+      const rawRows = XLSX.utils.sheet_to_json<(string | number | null | undefined)[]>(
+        ws,
+        { header: 1, defval: '' }
+      );
+
+      const parseNum = (s: unknown): number => {
+        if (typeof s === 'number') return Number.isFinite(s) ? s : NaN;
+        const m = String(s ?? '').replace(/,/g, '').match(/[-+]?\d+(?:\.\d+)?/);
+        return m ? parseFloat(m[0]) : NaN;
+      };
+      const snapNearest = <T extends number>(val: number, allowed: readonly T[]): T => {
+        let best = allowed[0];
+        let bestDiff = Infinity;
+        for (const a of allowed) {
+          const diff = Math.abs(a - val);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            best = a;
+          }
+        }
+        return best;
+      };
+
+      const patch: Partial<HxDesignParams> = {};
+      const matchedLabels: string[] = [];
+      let shellIdMm = NaN;
+      let baffleSpacingMm = NaN;
+      let parsedTempInfo = '';
+      let parsedDutyInfo = '';
+
+      const isPheSheet =
+        /phe|api\s*662/i.test(targetSheetName) ||
+        rawRows.slice(0, 6).some((row) =>
+          /plate\s*heat\s*exchanger|api\s*662|gasketed\s*chevron/i.test(row.join(' '))
+        );
+      if (isPheSheet) {
+        patch.hxKind = 'plate_phe';
+        matchedLabels.push('PHE');
+      }
+
+      const TEMA_RE = /\b(AES|AEM|AEU|AKT|AJW|BEM|BES|BEU|BKM|BKU|NEN|CEU|CFU|DEU)\b/;
+
+      for (const row of rawRows) {
+        const texts = row
+          .map((c) => String(c ?? '').trim())
+          .filter((t) => t.length > 0);
+        if (texts.length === 0) continue;
+        const joined = texts.join(' | ');
+        const labelIdx = texts.length > 1 && /^\d{1,2}$/.test(texts[0]) ? 1 : 0;
+        const label = texts[labelIdx] ?? '';
+        const labelLow = label.toLowerCase();
+        const rest = texts.slice(labelIdx + 1);
+
+        // TEMA Type
+        if (!patch.temaType && (/tema/i.test(joined) || /type/i.test(labelLow))) {
+          const tm = joined.match(TEMA_RE);
+          if (tm) {
+            const rawTema = tm[1];
+            const mappedTema: TemaConfiguration =
+              rawTema === 'AES' || rawTema === 'BES' || rawTema === 'AJW'
+                ? 'AES'
+                : rawTema === 'BKM' || rawTema === 'AKT' || rawTema === 'BKU'
+                ? 'BKM'
+                : rawTema === 'BEU' || rawTema === 'AEU' || rawTema === 'CEU' || rawTema === 'DEU'
+                ? 'BEU'
+                : 'BEM';
+            patch.temaType = mappedTema;
+            patch.hxKind = 'shell_tube';
+            matchedLabels.push(`TEMA ${mappedTema}`);
+          }
+        }
+
+        // Shell Count (Shells per Unit / Series)
+        if (patch.shellCount === undefined) {
+          const serM =
+            joined.match(/Shells?\s*(?:per\s*Unit)?\s*[:|]\s*(\d+)/i) ||
+            joined.match(/(\d+)\s*Series/i) ||
+            joined.match(/(\d+)\s*Shell\s*[×x]/i);
+          if (serM) {
+            const sc = Math.min(4, Math.max(1, parseInt(serM[1], 10)));
+            patch.shellCount = sc;
+            matchedLabels.push(`Shells ${sc}`);
+          }
+        }
+
+        // Shell ID & Tube Length
+        if (/size\s*\(|shell\s*id|쉘\s*내경/i.test(labelLow) || /^shell\s+od/i.test(labelLow)) {
+          const idM = joined.match(/(?:ID\s*[:=]?\s*Ø?|Ø)(\d+(?:\.\d+)?)\s*(?:mm)?/i);
+          if (idM) {
+            const v = parseFloat(idM[1]);
+            if (Number.isFinite(v) && v >= 100 && v <= 5000) {
+              shellIdMm = v;
+              patch.ratingShellIdMm = Math.round(v);
+              matchedLabels.push(`Shell ID Ø${Math.round(v)}`);
+            }
+          }
+          const lenMmM = joined.match(/(?:\/|×|L\s*[:=]?)\s*(\d{3,5}(?:\.\d+)?)\s*mm/i);
+          if (lenMmM && patch.tubeLengthM === undefined) {
+            const lm = parseFloat(lenMmM[1]) / 1000;
+            if (lm >= 1.0 && lm <= 15.0) {
+              patch.tubeLengthM = snapNearest(lm, [2.44, 3.05, 3.66, 4.88, 6.1] as const);
+              patch.ratingTubeLengthM = Number(lm.toFixed(2));
+              matchedLabels.push(`L=${patch.tubeLengthM}m`);
+            }
+          }
+        }
+
+        // Tube Passes
+        if (/no\.?\s*passes|tube\s*passes|패스/i.test(labelLow)) {
+          const nums = rest
+            .filter((t) => t !== '-' && !/pass/i.test(t))
+            .map(parseNum)
+            .filter((n) => Number.isFinite(n) && n >= 1 && n <= 16);
+          if (nums.length > 0) {
+            const tp = snapNearest(nums[nums.length - 1], [1, 2, 4, 6] as const);
+            patch.tubePasses = tp;
+            matchedLabels.push(`${tp}P`);
+          }
+        }
+
+        // Tubes (No. / OD / Length / Pitch)
+        if (/tubes?\b|튜브/i.test(labelLow) && !/tubesheet|tube\s*side|tube\s*type|supports/i.test(labelLow)) {
+          const cntM =
+            joined.match(/Tubes\s+No\.?\s*(\d+)/i) ||
+            joined.match(/(\d+)\s*EA\b/i);
+          if (cntM) {
+            const cnt = parseInt(cntM[1], 10);
+            if (cnt >= 4 && cnt <= 20000) {
+              patch.ratingTubeCount = cnt;
+            }
+          } else {
+            const firstCnt = parseNum(rest[1] ?? rest[0]);
+            if (Number.isFinite(firstCnt) && firstCnt >= 4 && firstCnt <= 20000 && Number.isInteger(firstCnt)) {
+              patch.ratingTubeCount = firstCnt;
+            }
+          }
+
+          const odM = joined.match(/OD\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(mm|in|")?/i);
+          if (odM) {
+            let od = parseFloat(odM[1]);
+            const u = (odM[2] ?? '').toLowerCase();
+            if (u === 'in' || u === '"' || (od > 0.4 && od < 3.0)) od *= 25.4;
+            if (od >= 6 && od <= 60) {
+              patch.tubeOdMm = snapNearest(od, [15.88, 19.05, 25.4] as const);
+              matchedLabels.push(`OD ${patch.tubeOdMm}mm`);
+            }
+          }
+
+          const lenM = joined.match(/(?:Length|L)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(m|mm|ft)\b/i);
+          if (lenM) {
+            let lv = parseFloat(lenM[1]);
+            const u = lenM[2].toLowerCase();
+            if (u === 'mm') lv /= 1000;
+            else if (u === 'ft') lv *= 0.3048;
+            if (lv >= 1.0 && lv <= 15.0) {
+              patch.tubeLengthM = snapNearest(lv, [2.44, 3.05, 3.66, 4.88, 6.1] as const);
+              patch.ratingTubeLengthM = Number(lv.toFixed(2));
+              if (!matchedLabels.some((m) => m.startsWith('L='))) {
+                matchedLabels.push(`L=${patch.tubeLengthM}m`);
+              }
+            }
+          }
+
+          const pitchM = joined.match(/(?:Pitch\s*deg|Layout|Pitch)\s*[:=]?\s*(30|45|60|90)\s*°?/i);
+          if (pitchM) {
+            const deg = parseInt(pitchM[1], 10);
+            patch.pitchAngle = deg === 45 ? 45 : deg === 90 ? 90 : 30;
+            matchedLabels.push(`Layout ${patch.pitchAngle}°`);
+          }
+        }
+
+        // Baffle Cut & Spacing
+        if (/baffle|배플/i.test(joined) && !/baffles?\s*long|clearance/i.test(labelLow)) {
+          const cutM = joined.match(
+            /(?:%?\s*Cut\s*(?:\(d\))?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?)|(\d+(?:\.\d+)?)\s*%\s*Cut/i
+          );
+          if (cutM) {
+            const cut = parseFloat(cutM[1] || cutM[2]);
+            if (Number.isFinite(cut) && cut >= 10 && cut <= 50) {
+              patch.baffleCutPct = Math.min(45, Math.max(15, Math.round(cut)));
+              matchedLabels.push(`Cut ${patch.baffleCutPct}%`);
+            }
+          }
+          const spM =
+            joined.match(/(?:Spacing(?:\s*C\/C)?|B)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*mm/i) ||
+            joined.match(/(\d+(?:\.\d+)?)\s*mm\s*C\/C/i);
+          if (spM) {
+            const sp = parseFloat(spM[1]);
+            if (Number.isFinite(sp) && sp >= 30 && sp <= 3000) {
+              baffleSpacingMm = sp;
+              patch.ratingBaffleSpacingMm = Math.round(sp);
+              matchedLabels.push(`B=${Math.round(sp)}mm`);
+            }
+          }
+        }
+
+        // Fouling Factor / Resistance
+        if (/fouling|오염\s*계수/i.test(labelLow)) {
+          const isWm2K = /m²·?k\/w|m2k\/w/i.test(joined);
+          const rfVals = rest
+            .filter((t) => !/h_[io]=/i.test(t) && !/m²|m2/i.test(t))
+            .map(parseNum)
+            .filter((n) => Number.isFinite(n) && n >= 0 && n < 0.05);
+          if (rfVals.length >= 2) {
+            const conv = isWm2K ? 1.163 : 1.0;
+            const sRf = Number((rfVals[0] * conv).toFixed(5));
+            const tRf = Number((rfVals[1] * conv).toFixed(5));
+            const isProcTube = (hxCfg.allocation ?? dRes.allocation) === 'process_tube';
+            patch.foulingProcM2HKcal = isProcTube ? tRf : sRf;
+            patch.foulingUtilM2HKcal = isProcTube ? sRf : tRf;
+            matchedLabels.push('Fouling');
+          }
+        }
+
+        // Temperature & Duty (captured for inline verification summary)
+        if (/temperature\s*\(?in|온도/i.test(labelLow) && !/design\s*temp/i.test(labelLow)) {
+          const nums = rest
+            .filter((t) => !/pinch/i.test(t) && /^[-+]?\d/.test(t))
+            .map(parseNum)
+            .filter(Number.isFinite);
+          if (nums.length >= 4) {
+            parsedTempInfo = `Shell ${nums[0]}→${nums[1]}°C / Tube ${nums[2]}→${nums[3]}°C`;
+          }
+        }
+        if (/heat\s*(?:exchanged|duty)|열교환\s*용량/i.test(labelLow)) {
+          const qM = joined.match(/(\d[\d,]*(?:\.\d+)?)\s*kW/i);
+          if (qM) parsedDutyInfo = `Q=${qM[1]} kW`;
+        }
+      }
+
+      if (Number.isFinite(baffleSpacingMm) && Number.isFinite(shellIdMm) && shellIdMm > 0) {
+        patch.baffleSpacingRatio = Number(
+          Math.min(0.95, Math.max(0.22, baffleSpacingMm / shellIdMm)).toFixed(2)
+        );
+      }
+
+      const appliedCount = Object.keys(patch).length;
+      if (appliedCount > 0) {
+        patchHxCfg(patch);
+        setWorkbenchView('mechanical');
+        const extra = [parsedDutyInfo, parsedTempInfo].filter(Boolean).join(' · ');
+        setTemaImportNotice({
+          count: appliedCount,
+          summary:
+            matchedLabels.slice(0, 6).join(', ') + (extra ? ` (${extra})` : ''),
+        });
+      } else {
+        setTemaImportNotice({
+          count: 0,
+          summary: '인식 가능한 TEMA 설계 항목을 찾지 못했습니다.',
+          isError: true,
+        });
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setTemaImportNotice({
+        count: 0,
+        summary: `엑셀 파싱 오류: ${msg}`,
+        isError: true,
+      });
+    } finally {
+      e.target.value = '';
+    }
   };
 
   const isLiquefier = unitType === 'liquefier';
@@ -991,6 +1300,54 @@ export default function HeatExchangerWorkbenchModal({
             >
               📥 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx
             </button>
+            <input
+              ref={temaFileInputRef}
+              type="file"
+              accept=".xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={handleImportTemaExcel}
+            />
+            <button
+              type="button"
+              onClick={() => temaFileInputRef.current?.click()}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid #38BDF8',
+                background: '#0C4A6E',
+                color: '#E0F2FE',
+                fontSize: 11,
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+              title="TEMA / API 662 엑셀 데이터시트(.xlsx) 불러오기"
+            >
+              📂 TEMA .xlsx 가져오기
+            </button>
+            {temaImportNotice && (
+              <span
+                title={temaImportNotice.summary}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 6,
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  background: temaImportNotice.isError ? '#7F1D1D' : '#14532D',
+                  color: temaImportNotice.isError ? '#FECACA' : '#BBF7D0',
+                  border: temaImportNotice.isError
+                    ? '1px solid #F87171'
+                    : '1px solid #4ADE80',
+                  maxWidth: 220,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {temaImportNotice.isError
+                  ? `⚠ ${temaImportNotice.summary}`
+                  : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
+              </span>
+            )}
             {onOpenChemProDesign && (
               <button
                 type="button"
@@ -2558,22 +2915,60 @@ export default function HeatExchangerWorkbenchModal({
                         <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
                           노즐 스케줄 (Nozzle Sizing & Momentum ρv² Check — TEMA RCB-4.6)
                         </div>
-                        <button
-                          type="button"
-                          onClick={exportHxExcelDatasheet}
-                          style={{
-                            padding: '4px 10px',
-                            borderRadius: 6,
-                            border: '1px solid #059669',
-                            background: '#ECFDF5',
-                            color: '#065F46',
-                            fontSize: 10.8,
-                            fontWeight: 900,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          📥 공식 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} 엑셀 데이터시트 (.xlsx)
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            onClick={exportHxExcelDatasheet}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: '1px solid #059669',
+                              background: '#ECFDF5',
+                              color: '#065F46',
+                              fontSize: 10.8,
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            📥 공식 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} 엑셀 데이터시트 (.xlsx)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => temaFileInputRef.current?.click()}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 6,
+                              border: '1px solid #0284C7',
+                              background: '#F0F9FF',
+                              color: '#0369A1',
+                              fontSize: 10.8,
+                              fontWeight: 900,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            📂 TEMA .xlsx 가져오기
+                          </button>
+                          {temaImportNotice && (
+                            <span
+                              title={temaImportNotice.summary}
+                              style={{
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                fontSize: 10.5,
+                                fontWeight: 800,
+                                background: temaImportNotice.isError ? '#FEF2F2' : '#DCFCE7',
+                                color: temaImportNotice.isError ? '#991B1B' : '#166534',
+                                border: temaImportNotice.isError
+                                  ? '1px solid #FCA5A5'
+                                  : '1px solid #86EFAC',
+                              }}
+                            >
+                              {temaImportNotice.isError
+                                ? `⚠ ${temaImportNotice.summary}`
+                                : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: MONO }}>
                         <thead>

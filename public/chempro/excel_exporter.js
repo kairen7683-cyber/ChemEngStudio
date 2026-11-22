@@ -1167,7 +1167,510 @@ window.ChemEngExcelExporter = (function () {
     }
   }
 
+  // =========================================================================
+  // TEMA / API 662 HEAT EXCHANGER EXCEL (.xlsx) DATASHEET IMPORTER
+  // =========================================================================
+  function extractCellText(cell) {
+    if (!cell || cell.value === null || cell.value === undefined) return '';
+    let v = cell.value;
+    if (typeof v === 'object') {
+      if (Array.isArray(v.richText)) {
+        v = v.richText.map(rt => rt.text || '').join('');
+      } else if (v.result !== undefined && v.result !== null) {
+        v = v.result;
+      } else if (v.text !== undefined && v.text !== null) {
+        v = v.text;
+      } else if (v instanceof Date) {
+        return v.toISOString().slice(0, 10);
+      } else {
+        return '';
+      }
+    }
+    return String(v).trim();
+  }
+
+  function parseFirstNumber(str) {
+    if (str === null || str === undefined) return NaN;
+    const s = String(str).replace(/,/g, '');
+    const m = s.match(/[-+]?\d+(?:\.\d+)?/);
+    return m ? parseFloat(m[0]) : NaN;
+  }
+
+  function parseAllNumbers(str) {
+    if (str === null || str === undefined) return [];
+    const s = String(str).replace(/,/g, '');
+    const matches = s.match(/[-+]?\d+(?:\.\d+)?/g);
+    return matches ? matches.map(Number).filter(Number.isFinite) : [];
+  }
+
+  function parseTempPair(str) {
+    if (!str) return null;
+    const s = String(str).replace(/,/g, '');
+    const m = s.match(/([-+]?\d+(?:\.\d+)?)\s*(?:°?C)?\s*(?:→|->|\/|~|to)\s*(?:Out\s*[:=]?\s*)?([-+]?\d+(?:\.\d+)?)/i);
+    if (m) {
+      const a = parseFloat(m[1]);
+      const b = parseFloat(m[2]);
+      if (Number.isFinite(a) && Number.isFinite(b)) return [a, b];
+    }
+    const inOut = s.match(/In\s*[:=]?\s*([-+]?\d+(?:\.\d+)?)\D+Out\s*[:=]?\s*([-+]?\d+(?:\.\d+)?)/i);
+    if (inOut) {
+      const a = parseFloat(inOut[1]);
+      const b = parseFloat(inOut[2]);
+      if (Number.isFinite(a) && Number.isFinite(b)) return [a, b];
+    }
+    return null;
+  }
+
+  function convertFlowToKgH(val, unitText) {
+    if (!Number.isFinite(val)) return NaN;
+    const u = String(unitText || '').toLowerCase();
+    if (/kg\s*\/\s*s/.test(u)) return val * 3600;
+    if (/\b(t|ton|mt|tonne)\s*\/\s*h/.test(u)) return val * 1000;
+    if (/\b(t|ton|mt|tonne)\s*\/\s*d/.test(u)) return (val * 1000) / 24;
+    if (/kg\s*\/\s*min/.test(u)) return val * 60;
+    if (/lb\s*\/\s*h/.test(u)) return val * 0.45359237;
+    return val;
+  }
+
+  function matchFluidKey(rawName) {
+    if (!rawName) return null;
+    const cleaned = String(rawName)
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned || cleaned === '-' || cleaned === '—') return null;
+    const low = cleaned.toLowerCase();
+    const db = (typeof window !== 'undefined' && window.FLUID_DB) ? window.FLUID_DB : null;
+    const pickIfExists = (candidates) => {
+      for (const id of candidates) {
+        if (!db || db[id]) return id;
+      }
+      return null;
+    };
+
+    // 1) Direct ID match
+    if (db && db[low]) return low;
+
+    // 2) Exact or high-confidence alias rules (Korean + English)
+    const aliasRules = [
+      { re: /chilled|ccw|냉수|저온\s*냉각수/i, ids: ['chilled_water_7c', 'water'] },
+      { re: /steam|스팀|증기/i, ids: ['steam_13k', 'steam_lp', 'steam', 'water'] },
+      { re: /naoh.*50|50\s*%?\s*(naoh|가성소다|caustic)/i, ids: ['naoh_50', 'naoh_32', 'naoh_30'] },
+      { re: /naoh.*42|42\s*%?\s*(naoh|가성소다|caustic)/i, ids: ['naoh_42', 'naoh_32', 'naoh_30'] },
+      { re: /naoh|caustic|가성소다|수산화나트륨/i, ids: ['naoh_32', 'naoh_30', 'naoh_50'] },
+      { re: /hcl.*35|35\s*%?\s*(hcl|염산)/i, ids: ['hcl_35_up', 'hcl_32', 'hcl_20_azeo'] },
+      { re: /hcl.*20|20(?:\.2)?\s*%?\s*(hcl|염산)|공비\s*염산/i, ids: ['hcl_20_azeo', 'hcl_32'] },
+      { re: /anhydrous\s*hcl|무수염산/i, ids: ['ahcl_liq', 'ahcl_gas', 'hcl_32'] },
+      { re: /\bhcl\b|hydrochloric|염산/i, ids: ['hcl_32', 'hcl_35_up', 'hcl_20_azeo'] },
+      { re: /h2o2|hydrogen\s*peroxide|과산화수소/i, ids: ['h2o2', 'h2o2_50', 'h2o2_35', 'water'] },
+      { re: /therminol\s*66|therminol/i, ids: ['therminol_66', 'dowtherm_a'] },
+      { re: /dowtherm|다우썸|열매체/i, ids: ['dowtherm_a', 'therminol_66'] },
+      { re: /methanol|메탄올|ch3oh/i, ids: ['methanol'] },
+      { re: /ethanol|에탄올|c2h5oh/i, ids: ['ethanol'] },
+      { re: /toluene|톨루엔/i, ids: ['toluene'] },
+      { re: /benzene|벤젠/i, ids: ['benzene'] },
+      { re: /\bnmp\b|methylpyrrolidone|메틸피롤리돈/i, ids: ['nmp'] },
+      { re: /crude|원유/i, ids: ['crude_oil'] },
+      { re: /brine|염수|nacl/i, ids: ['brine_25', 'brine_nacl20'] },
+      { re: /wet\s*cl2|습염소/i, ids: ['cl2_wet_gas', 'chlorine'] },
+      { re: /chlorine|\bcl2\b|염소/i, ids: ['chlorine', 'cl2_wet_gas'] },
+      { re: /hydrogen|\bh2\b|수소/i, ids: ['h2_wet_gas', 'hydrogen'] },
+      { re: /epichlorohydrin|\bech\b|에피클로로히드린/i, ids: ['ech_pure'] },
+      { re: /ethylene\s*glycol|\bmeg\b|에틸렌글리콜/i, ids: ['ethylene_glycol'] },
+      { re: /propylene\s*glycol|\bmpg\b|프로필렌글리콜/i, ids: ['propylene_glycol'] },
+      { re: /acetone|아세톤/i, ids: ['acetone'] },
+      { re: /ammonia|\bnh3\b|암모니아/i, ids: ['ammonia'] },
+      { re: /water|cooling\s*water|\bcw\b|\bcwr\b|\bcws\b|냉각수|공업용수|순수|물/i, ids: ['water'] }
+    ];
+
+    for (const rule of aliasRules) {
+      if (rule.re.test(cleaned)) {
+        const hit = pickIfExists(rule.ids);
+        if (hit) return hit;
+      }
+    }
+
+    // 3) Fuzzy scan across window.FLUID_DB (name / formula / id)
+    if (db) {
+      const entries = Object.values(db);
+      for (const f of entries) {
+        if (!f || !f.id) continue;
+        const fname = String(f.name || '').toLowerCase();
+        const fid = String(f.id || '').toLowerCase();
+        if (fname === low || fid === low) return f.id;
+        if (fname && (fname.includes(low) || low.includes(fname))) return f.id;
+      }
+      // Token overlap fallback
+      const tokens = low.split(/[\s(),\/\-_]+/).filter(t => t.length >= 2);
+      let bestId = null;
+      let bestScore = 0;
+      for (const f of entries) {
+        if (!f || !f.id) continue;
+        const hay = `${f.id} ${f.name || ''} ${f.formula || ''}`.toLowerCase();
+        let score = 0;
+        for (const tk of tokens) {
+          if (hay.includes(tk)) score += tk.length;
+        }
+        if (score > bestScore && score >= 3) {
+          bestScore = score;
+          bestId = f.id;
+        }
+      }
+      if (bestId) return bestId;
+    }
+
+    return null;
+  }
+
+  async function importHxExcelDatasheet(arrayBuffer) {
+    if (!window.ExcelJS) {
+      throw new Error('ExcelJS 라이브러리를 불러오지 못했습니다.');
+    }
+    const wb = new window.ExcelJS.Workbook();
+    await wb.xlsx.load(arrayBuffer);
+
+    const priorityNames = [
+      '1_TEMA_HX_Datasheet',
+      'TEMA_HX_Datasheet',
+      'HX DATASHEET',
+      '1_API662_PHE_Datasheet',
+      'API662_PHE_Datasheet'
+    ];
+    let ws = null;
+    for (const pname of priorityNames) {
+      const found = wb.worksheets.find(s => String(s.name || '').trim().toLowerCase() === pname.toLowerCase());
+      if (found) { ws = found; break; }
+    }
+    if (!ws) {
+      ws = wb.worksheets.find(s => /tema|hx|datasheet|phe|heat\s*exch/i.test(String(s.name || ''))) || wb.worksheets[0];
+    }
+    if (!ws) {
+      return { fields: {}, matchedCount: 0, sheetName: '', warnings: ['워크시트를 찾을 수 없습니다.'] };
+    }
+
+    const sheetName = ws.name;
+    const warnings = [];
+    const fields = {};
+
+    // Extract deduplicated cell entries per row
+    const rows = [];
+    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      const cells = [];
+      const maxCol = Math.max(row.cellCount || 0, 26);
+      for (let c = 1; c <= maxCol; c++) {
+        const cell = row.getCell(c);
+        if (cell.isMerged && cell.master && cell.master.address !== cell.address) continue;
+        const text = extractCellText(cell);
+        if (text !== '') cells.push({ col: c, text });
+      }
+      if (cells.length > 0) {
+        rows.push({ rowNumber, cells, joined: cells.map(x => x.text).join(' | ') });
+      }
+    });
+
+    const isPheSheet = /phe|api\s*662|plate\s*heat\s*exchanger/i.test(sheetName) ||
+      rows.slice(0, 6).some(r => /plate\s*heat\s*exchanger|api\s*662|gasketed\s*chevron\s*phe/i.test(r.joined));
+    if (isPheSheet) {
+      fields.hx_type = 'plate_phe';
+    }
+
+    let allocHint = null; // 'hot_shell' | 'hot_tube'
+    let shellFluidRaw = null;
+    let tubeFluidRaw = null;
+    let shellFlowKgH = NaN;
+    let tubeFlowKgH = NaN;
+    let shellTin = NaN;
+    let shellTout = NaN;
+    let tubeTin = NaN;
+    let tubeTout = NaN;
+    let shellIdMm = NaN;
+    let baffleSpacingMm = NaN;
+
+    const TEMA_RE = /\b(AES|AEM|AEU|AKT|AJW|BEM|BES|BEU|BKM|BKU|NEN|CEU|CFU|DEU|AET|BET|AEP|BEP)\b/;
+
+    for (const r of rows) {
+      const cells = r.cells;
+      const joined = r.joined;
+      // Label is usually first non-numeric cell (skipping line number in col 1)
+      let labelIdx = 0;
+      if (cells.length > 1 && /^\d{1,2}$/.test(cells[0].text)) {
+        labelIdx = 1;
+      }
+      const label = cells[labelIdx]?.text || '';
+      const labelLow = label.toLowerCase();
+      const rest = cells.slice(labelIdx + 1);
+      const restTexts = rest.map(x => x.text);
+
+      // 1) TEMA Type anywhere in row
+      if (!fields.tema_type) {
+        if (/tema\s*type|형식/i.test(joined) || /\bTEMA\s+[A-Z]{3}\b/.test(joined)) {
+          const tm = joined.match(TEMA_RE);
+          if (tm) {
+            fields.tema_type = tm[1];
+            fields.hx_type = 'shell_tube';
+          }
+        }
+      }
+
+      // 2) Shells per Unit / Connected in (series)
+      if (fields.hx_nshell === undefined) {
+        const spuIdx = cells.findIndex(c => /shells?\s*per\s*unit/i.test(c.text));
+        if (spuIdx >= 0 && cells[spuIdx + 1]) {
+          const n = parseFirstNumber(cells[spuIdx + 1].text);
+          if (Number.isFinite(n) && n >= 1 && n <= 10) fields.hx_nshell = Math.round(n);
+        } else {
+          const serM = joined.match(/(\d+)\s*Series/i) || joined.match(/Shells?\s*[:=]\s*(\d+)/i) || joined.match(/(\d+)\s*Shell\s*[×x]/i);
+          if (serM) {
+            const n = parseInt(serM[1], 10);
+            if (n >= 1 && n <= 10) fields.hx_nshell = n;
+          }
+        }
+      }
+
+      // 3) Fluid Allocation hint
+      if (/fluid\s*allocation/i.test(labelLow)) {
+        if (/shell(?:\s*side)?[^|]*cold|tube(?:\s*side)?[^|]*hot/i.test(joined)) allocHint = 'hot_tube';
+        else if (/shell(?:\s*side)?[^|]*hot|tube(?:\s*side)?[^|]*cold/i.test(joined)) allocHint = 'hot_shell';
+      }
+
+      // 4) Fluid Name (TEMA row OR datasheetExport row)
+      if (/^shell\s*side\s*fluid|쉘측.*유체/i.test(label)) {
+        if (restTexts[0]) shellFluidRaw = restTexts[0];
+        if (/고온|hot/i.test(label)) allocHint = 'hot_shell';
+      } else if (/^tube\s*side\s*fluid|튜브측.*유체/i.test(label)) {
+        if (restTexts[0]) tubeFluidRaw = restTexts[0];
+        if (/저온|cold/i.test(label)) allocHint = allocHint || 'hot_shell';
+      } else if (/fluid\s*name|유체명/i.test(labelLow)) {
+        const vals = restTexts.filter(t => t !== '-' && t !== '—');
+        if (vals.length >= 2) {
+          shellFluidRaw = vals[0];
+          tubeFluidRaw = vals[1];
+        } else if (vals.length === 1 && !shellFluidRaw) {
+          shellFluidRaw = vals[0];
+        }
+      }
+
+      // 5) Flow Total (TEMA row OR datasheetExport row)
+      if (/^shell\s*side\s*flow|쉘측\s*유량/i.test(label)) {
+        const v = parseFirstNumber(restTexts[0]);
+        const unitCell = restTexts[1] || '';
+        if (Number.isFinite(v) && v > 0) shellFlowKgH = convertFlowToKgH(v, unitCell);
+        const tp = parseTempPair(joined);
+        if (tp) { shellTin = tp[0]; shellTout = tp[1]; }
+      } else if (/^tube\s*side\s*flow|튜브측\s*유량/i.test(label)) {
+        const v = parseFirstNumber(restTexts[0]);
+        const unitCell = restTexts[1] || '';
+        if (Number.isFinite(v) && v > 0) tubeFlowKgH = convertFlowToKgH(v, unitCell);
+        const tp = parseTempPair(joined);
+        if (tp) { tubeTin = tp[0]; tubeTout = tp[1]; }
+      } else if (/flow\s*total|mass\s*flowrate\s*total|총\s*유량|유량\s*\(/i.test(labelLow)) {
+        let unitText = 'kg/h';
+        const nums = [];
+        for (const t of restTexts) {
+          if (/kg\/h|kg\/s|t\/h|ton\/h|lb\/h|kg\/min/i.test(t) && !/^\d/.test(t)) {
+            unitText = t;
+          } else {
+            const n = parseFirstNumber(t);
+            if (Number.isFinite(n) && n > 0) nums.push(n);
+          }
+        }
+        if (nums.length >= 4) {
+          // Shell In, Shell Out, Tube In, Tube Out
+          shellFlowKgH = convertFlowToKgH(nums[0], unitText);
+          tubeFlowKgH = convertFlowToKgH(nums[2], unitText);
+        } else if (nums.length >= 2) {
+          shellFlowKgH = convertFlowToKgH(nums[0], unitText);
+          tubeFlowKgH = convertFlowToKgH(nums[1], unitText);
+        }
+      }
+
+      // 6) Temperature (In / Out)
+      if (/temperature\s*\(?in|온도\s*\(?입구|^temperature$/i.test(labelLow) && !/design\s*temp/i.test(labelLow)) {
+        const pairs = [];
+        const singleNums = [];
+        for (const t of restTexts) {
+          if (/^°?c$|^k$|^°?f$/i.test(t) || /pinch/i.test(t)) continue;
+          const p = parseTempPair(t);
+          if (p) {
+            pairs.push(p);
+          } else if (/^[-+]?\d+(?:\.\d+)?$/.test(t.replace(/,/g, ''))) {
+            singleNums.push(parseFloat(t.replace(/,/g, '')));
+          }
+        }
+        if (pairs.length >= 2) {
+          shellTin = pairs[0][0]; shellTout = pairs[0][1];
+          tubeTin = pairs[1][0]; tubeTout = pairs[1][1];
+        } else if (singleNums.length >= 4) {
+          shellTin = singleNums[0]; shellTout = singleNums[1];
+          tubeTin = singleNums[2]; tubeTout = singleNums[3];
+        } else if (singleNums.length === 2 && pairs.length === 1) {
+          shellTin = pairs[0][0]; shellTout = pairs[0][1];
+          tubeTin = singleNums[0]; tubeTout = singleNums[1];
+        }
+      }
+
+      // 7) No. Passes per Shell / Tube Passes
+      if (/no\.?\s*passes|tube\s*passes|패스\s*수/i.test(labelLow)) {
+        const nums = restTexts
+          .filter(t => t !== '-' && !/pass/i.test(t))
+          .map(parseFirstNumber)
+          .filter(n => Number.isFinite(n) && n >= 1 && n <= 16);
+        if (nums.length >= 2) {
+          fields.hx_passes = Math.round(nums[nums.length - 1]);
+        } else if (nums.length === 1) {
+          fields.hx_passes = Math.round(nums[0]);
+        }
+      } else if (/shell\s*[×x]\s*\d+\s*pass/i.test(joined) && fields.hx_passes === undefined) {
+        const pm = joined.match(/(\d+)\s*Pass/i);
+        if (pm) fields.hx_passes = parseInt(pm[1], 10);
+      }
+
+      // 8) Shell ID & Tube Length (from Size row, Shell row, or Tubes row)
+      if (/size\s*\(|shell\s*id|쉘\s*내경/i.test(labelLow) || /^shell\s+od/i.test(labelLow)) {
+        const idM = joined.match(/(?:ID\s*[:=]?\s*Ø?|Ø)(\d+(?:\.\d+)?)\s*(?:mm)?/i);
+        if (idM) {
+          const v = parseFloat(idM[1]);
+          if (Number.isFinite(v) && v >= 100 && v <= 5000) shellIdMm = v;
+        }
+        // Size (ID / Length): "Ø600 mm / 4880 mm" or "ID 600 mm × L 4880 mm"
+        const lenMmM = joined.match(/(?:\/|×|L\s*[:=]?)\s*(\d{3,5}(?:\.\d+)?)\s*mm/i);
+        if (lenMmM && fields.hx_tube_L === undefined) {
+          const lm = parseFloat(lenMmM[1]) / 1000;
+          if (lm >= 1.0 && lm <= 15.0) fields.hx_tube_L = Number(lm.toFixed(2));
+        }
+      }
+
+      // 9) Tubes No. / OD / Length / Pitch
+      if (/tubes?\b|튜브/i.test(labelLow) && !/tubesheet|tube\s*side|tube\s*type|supports/i.test(labelLow)) {
+        const odM = joined.match(/OD\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(mm|in|")?/i);
+        if (odM) {
+          let od = parseFloat(odM[1]);
+          const u = (odM[2] || '').toLowerCase();
+          if (u === 'in' || u === '"' || (od > 0.4 && od < 3.0)) od *= 25.4;
+          if (od >= 6 && od <= 60) fields.hx_tube_od = Number(od.toFixed(2));
+        }
+        const lenM = joined.match(/(?:Length|L)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*(m|mm|ft)\b/i);
+        if (lenM) {
+          let lv = parseFloat(lenM[1]);
+          const u = lenM[2].toLowerCase();
+          if (u === 'mm') lv /= 1000;
+          else if (u === 'ft') lv *= 0.3048;
+          if (lv >= 1.0 && lv <= 15.0) fields.hx_tube_L = Number(lv.toFixed(2));
+        }
+        const pitchM = joined.match(/(?:Pitch\s*deg|Layout|Pitch)\s*[:=]?\s*(30|45|60|90)\s*°?/i);
+        if (pitchM) {
+          fields.hx_layout = parseInt(pitchM[1], 10);
+        }
+      }
+
+      // 10) Baffles (Cut % & Spacing mm)
+      if (/baffle|배플/i.test(joined) && !/baffles?\s*long|clearance/i.test(labelLow)) {
+        const cutM = joined.match(/(?:%?\s*Cut\s*(?:\(d\))?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?)|(\d+(?:\.\d+)?)\s*%\s*Cut/i);
+        if (cutM) {
+          const cut = parseFloat(cutM[1] || cutM[2]);
+          if (Number.isFinite(cut) && cut >= 10 && cut <= 50) fields.hx_baffle_cut = Math.round(cut);
+        }
+        const spM = joined.match(/(?:Spacing(?:\s*C\/C)?|B)\s*[:=]?\s*(\d+(?:\.\d+)?)\s*mm/i) ||
+          joined.match(/(\d+(?:\.\d+)?)\s*mm\s*C\/C/i);
+        if (spM) {
+          const sp = parseFloat(spM[1]);
+          if (Number.isFinite(sp) && sp >= 30 && sp <= 3000) baffleSpacingMm = sp;
+        }
+      }
+
+      // 11) Service Coeff. (U)
+      if (/service\s*coeff|overall\s*(?:coeff\.?\s*)?u\b|총괄전열계수/i.test(labelLow)) {
+        const dirtyIdx = cells.findIndex(c => /dirty|service/i.test(c.text));
+        if (dirtyIdx >= 0) {
+          const sameCell = cells[dirtyIdx].text.match(/(?:Dirty|Service)[^0-9]*(\d+(?:\.\d+)?)/i);
+          if (sameCell) {
+            fields.hx_U_assumed = Number(parseFloat(sameCell[1]).toFixed(1));
+          } else if (cells[dirtyIdx + 1]) {
+            const uVal = parseFirstNumber(cells[dirtyIdx + 1].text);
+            if (Number.isFinite(uVal) && uVal > 5 && uVal < 20000) fields.hx_U_assumed = Number(uVal.toFixed(1));
+          }
+        }
+        if (fields.hx_U_assumed === undefined) {
+          const nums = restTexts
+            .filter(t => !/w\/m|kcal/i.test(t) || /^\d/.test(t))
+            .flatMap(parseAllNumbers)
+            .filter(n => n > 5 && n < 20000);
+          if (nums.length >= 2 && /clean\s*\/\s*service/i.test(labelLow)) {
+            fields.hx_U_assumed = Number(nums[1].toFixed(1));
+          } else if (nums.length >= 1) {
+            fields.hx_U_assumed = Number(nums[0].toFixed(1));
+          }
+        }
+      }
+    }
+
+    // Resolve Hot vs Cold side & Allocation (temperature physics takes priority when available)
+    let allocation = allocHint;
+    if (isPheSheet) {
+      allocation = 'hot_shell';
+    } else if (Number.isFinite(shellTin) && Number.isFinite(shellTout) && shellTin !== shellTout) {
+      allocation = shellTin > shellTout ? 'hot_shell' : 'hot_tube';
+    } else if (Number.isFinite(tubeTin) && Number.isFinite(tubeTout) && tubeTin !== tubeTout) {
+      allocation = tubeTin > tubeTout ? 'hot_tube' : 'hot_shell';
+    } else if (!allocation) {
+      if (Number.isFinite(shellTin) && Number.isFinite(tubeTin)) {
+        allocation = shellTin >= tubeTin ? 'hot_shell' : 'hot_tube';
+      } else {
+        allocation = 'hot_shell';
+      }
+    }
+
+    if (!isPheSheet && (Number.isFinite(shellTin) || Number.isFinite(tubeTin) || shellFluidRaw || tubeFluidRaw)) {
+      fields.hx_allocation = allocation;
+    }
+
+    const isHotShell = allocation !== 'hot_tube';
+    const hotFluidRaw = isHotShell ? shellFluidRaw : tubeFluidRaw;
+    const coldFluidRaw = isHotShell ? tubeFluidRaw : shellFluidRaw;
+    const hotFlow = isHotShell ? shellFlowKgH : tubeFlowKgH;
+    const coldFlow = isHotShell ? tubeFlowKgH : shellFlowKgH;
+    const Th_in = isHotShell ? shellTin : tubeTin;
+    const Th_out = isHotShell ? shellTout : tubeTout;
+    const Tc_in = isHotShell ? tubeTin : shellTin;
+    const Tc_out = isHotShell ? tubeTout : shellTout;
+
+    if (hotFluidRaw) {
+      const hk = matchFluidKey(hotFluidRaw);
+      if (hk) fields.hx_hot_fluid = hk;
+      else warnings.push(`고온 유체 "${hotFluidRaw}"는 FLUID_DB에서 정확히 일치하는 항목을 찾지 못했습니다.`);
+    }
+    if (coldFluidRaw) {
+      const ck = matchFluidKey(coldFluidRaw);
+      if (ck) fields.hx_cold_fluid = ck;
+      else warnings.push(`저온 유체 "${coldFluidRaw}"는 FLUID_DB에서 정확히 일치하는 항목을 찾지 못했습니다.`);
+    }
+    if (Number.isFinite(hotFlow) && hotFlow > 0) fields.hx_mh = Number(hotFlow.toFixed(1));
+    if (Number.isFinite(coldFlow) && coldFlow > 0) fields.hx_mc = Number(coldFlow.toFixed(1));
+    if (Number.isFinite(Th_in)) fields.hx_Thi = Number(Th_in.toFixed(2));
+    if (Number.isFinite(Th_out)) fields.hx_Tho = Number(Th_out.toFixed(2));
+    if (Number.isFinite(Tc_in)) fields.hx_Tci = Number(Tc_in.toFixed(2));
+    if (Number.isFinite(Tc_out)) fields.hx_Tco = Number(Tc_out.toFixed(2));
+
+    if (Number.isFinite(baffleSpacingMm) && Number.isFinite(shellIdMm) && shellIdMm > 0) {
+      const ratio = Math.min(0.6, Math.max(0.2, baffleSpacingMm / shellIdMm));
+      fields.hx_baffle_ratio = Number(ratio.toFixed(2));
+    }
+
+    const matchedCount = Object.keys(fields).length;
+    if (matchedCount === 0) {
+      warnings.push('인식 가능한 TEMA 열교환기 항목을 찾지 못했습니다. 표준 TEMA .xlsx 시트인지 확인해 주세요.');
+    }
+
+    return {
+      fields,
+      matchedCount,
+      sheetName,
+      warnings
+    };
+  }
+
   return {
-    exportEquipmentExcel
+    exportEquipmentExcel,
+    importHxExcelDatasheet
   };
 })();

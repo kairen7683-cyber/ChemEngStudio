@@ -2042,6 +2042,127 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     window.ChemEngExcelExporter.exportEquipmentExcel(state.tab, activeRes, state.mode);
   }
 
+  function showImportToast(message, isError) {
+    let toast = document.getElementById('chempro_import_toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'chempro_import_toast';
+      toast.style.cssText =
+        'position:fixed;bottom:76px;right:20px;z-index:9999;max-width:420px;padding:12px 16px;border-radius:10px;' +
+        'font-size:12.5px;font-weight:700;line-height:1.5;box-shadow:0 10px 25px rgba(15,23,42,0.28);' +
+        'white-space:pre-line;transition:opacity 0.25s ease;';
+      document.body.appendChild(toast);
+    }
+    toast.style.background = isError ? '#991b1b' : '#065f46';
+    toast.style.color = '#ffffff';
+    toast.style.border = isError ? '1px solid #f87171' : '1px solid #34d399';
+    toast.textContent = message;
+    toast.style.opacity = '1';
+    toast.style.display = 'block';
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; }, 260);
+    }, 5200);
+  }
+
+  async function importHxExcelDatasheet(inputEl) {
+    const file = inputEl && inputEl.files && inputEl.files[0];
+    if (!file) return;
+    try {
+      if (!window.ChemEngExcelExporter || !window.ChemEngExcelExporter.importHxExcelDatasheet) {
+        alert('TEMA 엑셀 가져오기 모듈을 불러오지 못했습니다.');
+        return;
+      }
+      const buf = await file.arrayBuffer();
+      const parsed = await window.ChemEngExcelExporter.importHxExcelDatasheet(buf);
+      const f = parsed.fields || {};
+
+      if (state.tab !== 'hx') {
+        setTab('hx');
+      }
+
+      const setSelectVal = (id, val, numericNearest) => {
+        const el = document.getElementById(id);
+        if (!el || val === undefined || val === null) return false;
+        const targetStr = String(val);
+        const opts = Array.from(el.options || []);
+        if (opts.some(o => o.value === targetStr)) {
+          el.value = targetStr;
+          return true;
+        }
+        if (numericNearest && Number.isFinite(Number(val))) {
+          const num = Number(val);
+          let bestOpt = null;
+          let bestDiff = Infinity;
+          for (const o of opts) {
+            const ov = Number(o.value);
+            if (!Number.isFinite(ov)) continue;
+            const diff = Math.abs(ov - num);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              bestOpt = o;
+            }
+          }
+          if (bestOpt) {
+            el.value = bestOpt.value;
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const setNumVal = (id, val, decimals) => {
+        const el = document.getElementById(id);
+        if (!el || !Number.isFinite(Number(val))) return false;
+        const n = Number(val);
+        el.value = decimals !== undefined ? n.toFixed(decimals) : String(n);
+        return true;
+      };
+
+      let applied = 0;
+      const hxTypeToSet = f.hx_type || (f.tema_type ? 'shell_tube' : undefined);
+      if (hxTypeToSet && setSelectVal('hx_type', hxTypeToSet, false)) applied++;
+      if (f.hx_hot_fluid && setSelectVal('hx_hot_fluid', f.hx_hot_fluid, false)) applied++;
+      if (f.hx_cold_fluid && setSelectVal('hx_cold_fluid', f.hx_cold_fluid, false)) applied++;
+      if (f.hx_allocation && setSelectVal('hx_allocation', f.hx_allocation, false)) applied++;
+
+      if (f.hx_mh !== undefined && setNumVal('hx_mh', f.hx_mh, 1)) applied++;
+      if (f.hx_Thi !== undefined && setNumVal('hx_Thi', f.hx_Thi, 2)) applied++;
+      if (f.hx_Tho !== undefined && setNumVal('hx_Tho', f.hx_Tho, 2)) applied++;
+      if (f.hx_mc !== undefined && setNumVal('hx_mc', f.hx_mc, 1)) applied++;
+      if (f.hx_Tci !== undefined && setNumVal('hx_Tci', f.hx_Tci, 2)) applied++;
+      if (f.hx_Tco !== undefined && setNumVal('hx_Tco', f.hx_Tco, 2)) applied++;
+
+      if (f.hx_U_assumed !== undefined && setNumVal('hx_U_assumed', f.hx_U_assumed, 1)) applied++;
+      if (f.hx_tube_od !== undefined && setSelectVal('hx_tube_od', f.hx_tube_od, true)) applied++;
+      if (f.hx_tube_L !== undefined && setSelectVal('hx_tube_L', f.hx_tube_L, true)) applied++;
+      if (f.hx_passes !== undefined && setSelectVal('hx_passes', f.hx_passes, true)) applied++;
+      if (f.hx_nshell !== undefined && setSelectVal('hx_nshell', f.hx_nshell, true)) applied++;
+      if (f.hx_baffle_cut !== undefined && setNumVal('hx_baffle_cut', f.hx_baffle_cut, 0)) applied++;
+      if (f.hx_baffle_ratio !== undefined && setNumVal('hx_baffle_ratio', f.hx_baffle_ratio, 2)) applied++;
+      if (f.hx_layout !== undefined && setSelectVal('hx_layout', f.hx_layout, true)) applied++;
+
+      if (typeof onHXTypeChange === 'function') onHXTypeChange();
+      if (typeof onHXFluidOrTempChange === 'function') onHXFluidOrTempChange('temp');
+      if (typeof recalc === 'function') recalc();
+
+      const warnLines = (parsed.warnings || []).length > 0
+        ? `\n주의: ${(parsed.warnings || []).join(' / ')}`
+        : '';
+      const temaBadge = f.tema_type ? ` (TEMA ${f.tema_type})` : '';
+      showImportToast(
+        `TEMA 엑셀 가져오기 완료 [${parsed.sheetName || file.name}]${temaBadge}\n총 ${applied}개 항목 적용 및 재계산 완료${warnLines}`,
+        applied === 0
+      );
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      showImportToast(`TEMA 엑셀 가져오기 실패: ${msg}`, true);
+    } finally {
+      if (inputEl) inputEl.value = '';
+    }
+  }
+
   // =========================================================================
   // DATASHEET EXPORT / SHARE / PRINT
   // =========================================================================
@@ -3580,6 +3701,7 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     onBottomRightClick,
     downloadDWGImage,
     downloadExcelDatasheet,
+    importHxExcelDatasheet,
     copyDatasheet,
     shareDatasheet,
     printDatasheet

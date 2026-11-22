@@ -114,10 +114,15 @@ import {
   HexCircleIcon,
   SlidersParamIcon,
   SubprocessTreeIcon,
+  FolderOpenIcon,
   DownloadFileIcon,
   TableGridIcon,
   CardsStackIcon,
 } from '@/components/ui/EngIcons';
+import {
+  parseProcessTextFile,
+  exportProcessTextFile,
+} from '@/lib/interop/processTextInterop';
 import {
   consumeUiSwitchHandoff,
   saveUiSwitchHandoff,
@@ -2461,6 +2466,12 @@ export function FlowsheetWorkspace({
   const [activeCaseName, setActiveCaseName] = useState<string | null>(null);
   const [projectNameInput, setProjectNameInput] = useState<string>('');
   const [showStorageBar, setShowStorageBar] = useState(false);
+  const processTextInputRef = useRef<HTMLInputElement | null>(null);
+  const [interopNotice, setInteropNotice] = useState<{
+    kind: 'success' | 'error';
+    text: string;
+    warnings?: string[];
+  } | null>(null);
 
   const rfWrapperRef = useRef<HTMLDivElement>(null);
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
@@ -4201,6 +4212,148 @@ export function FlowsheetWorkspace({
     a.download = `ChemPlant_FullPackage_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleImportProcessText = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const rawText = await file.text();
+      const res = parseProcessTextFile(rawText, file.name);
+      const importedDefs: FlowNodeDef[] = Array.isArray(res.defs) ? res.defs : Object.values(res.defs ?? {});
+      if (importedDefs.length === 0) {
+        setInteropNotice({
+          kind: 'error',
+          text: `"${file.name}" 파일에서 가져올 수 있는 공정 장치 블록을 찾지 못했습니다.`,
+          warnings: res.warnings,
+        });
+        return;
+      }
+
+      skipNextDirtyRef.current = true;
+      const nextMethod: SimPropertyMethod =
+        res.propertyMethod === 'ENRTL' ||
+        res.propertyMethod === 'NRTL' ||
+        res.propertyMethod === 'PR' ||
+        res.propertyMethod === 'SRK' ||
+        res.propertyMethod === 'AUTO'
+          ? res.propertyMethod
+          : propertyMethod;
+
+      const baseComps =
+        Array.isArray(res.activeComponents) && res.activeComponents.length > 0
+          ? (res.activeComponents.filter(c => SIM_COMPS.includes(c)) as SimCompKey[])
+          : activeComponents;
+      const nextComps = mergeSheetFeedComponents(importedDefs, baseComps);
+
+      const posMap = new Map<string, { x: number; y: number }>();
+      (res.rfNodes ?? []).forEach(n => {
+        if (n?.id && n.position) {
+          posMap.set(n.id, { x: Math.round(n.position.x), y: Math.round(n.position.y) });
+        }
+      });
+
+      const nextPositions: Record<string, { x: number; y: number }> = {};
+      const nextRfNodes: Node<FlowCanvasNodeData>[] = importedDefs.map((d, idx) => {
+        const pos = posMap.get(d.id) ?? { x: 80 + idx * 180, y: 120 };
+        nextPositions[d.id] = { x: Math.round(pos.x), y: Math.round(pos.y) };
+        return {
+          id: d.id,
+          type: 'flowUnit',
+          position: { x: Math.round(pos.x), y: Math.round(pos.y) },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+        };
+      });
+
+      const importedTitle =
+        (res.title || file.name.replace(/\.(bkp|inp|txt)$/i, '') || 'imported_case').trim();
+
+      setPropertyMethod(nextMethod);
+      setActiveComponents(nextComps);
+      setPresetId('custom');
+      setActiveSheetId('master');
+      setHierarchySheets(prev => ({
+        ...prev,
+        master: {
+          ...(prev.master ?? initialSheets.master),
+          simDefs: importedDefs,
+          positions: nextPositions,
+          flowEdges: res.edges,
+          cachedSolvedMeta: undefined,
+        },
+      }));
+      setBoundarySyncBanner([]);
+      setSimDefs(importedDefs);
+      setRfNodes(nextRfNodes);
+      setFlowEdges(res.edges);
+      setSolvedMeta({
+        result: createIdleFlowsheetResult(importedDefs, res.edges, {
+          propertyMethod: nextMethod,
+          activeComponents: nextComps,
+        }),
+        elapsedMs: 0,
+        runCount: 0,
+        lastRunTime: '미실행 (▶ RUN 대기)',
+      });
+      setIsSimDirty(true);
+      setSelectedNodeId(res.defs[0]?.id ?? null);
+      setSelectedEdgeId(null);
+      setActiveCaseTitle(importedTitle, workspacePlantId);
+      setActiveCaseName(importedTitle);
+      setProjectNameInput(importedTitle);
+
+      const unmapped = res.summary?.unmappedComps ?? [];
+      const unmappedSuffix =
+        unmapped.length > 0
+          ? ` · 미매핑 성분 ${unmapped.length}종(${unmapped.slice(0, 6).join(', ')}${unmapped.length > 6 ? ' 외' : ''})`
+          : '';
+      setInteropNotice({
+        kind: 'success',
+        text: `"${importedTitle}" 가져오기 완료 — 장치 ${res.summary?.unitCount ?? res.defs.length}개 · 스트림 ${res.summary?.edgeCount ?? res.edges.length}개 · 성분 ${res.summary?.mappedCompCount ?? nextComps.length}종${unmappedSuffix}`,
+        warnings: res.warnings && res.warnings.length > 0 ? res.warnings : undefined,
+      });
+      setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 80);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : '알 수 없는 오류';
+      setInteropNotice({
+        kind: 'error',
+        text: `공정 텍스트 파일 가져오기 실패: ${errMsg}`,
+      });
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleExportProcessText = () => {
+    try {
+      const rawTitle = (activeCaseName || projectNameInput || 'chemplant_case').trim();
+      const inpText = exportProcessTextFile({
+        title: rawTitle,
+        defs: simDefs,
+        edges: flowEdges,
+        activeComponents,
+        propertyMethod,
+      });
+      const safeName =
+        rawTitle.replace(/[\\/:*?"<>|\s]+/g, '_').replace(/^_+|_+$/g, '') || 'chemplant_case';
+      const blob = new Blob([inpText], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.inp`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setInteropNotice({
+        kind: 'success',
+        text: `"${safeName}.inp" 공정 텍스트 파일 내보내기 완료 (장치 ${simDefs.length}개 · 스트림 ${flowEdges.length}개)`,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : '알 수 없는 오류';
+      setInteropNotice({
+        kind: 'error',
+        text: `공정 텍스트 파일 내보내기 실패: ${errMsg}`,
+      });
+    }
   };
 
   // 단위 예제 프리셋 로드
@@ -6315,6 +6468,15 @@ export function FlowsheetWorkspace({
         </div>
       )}
 
+      {/* ── 공정 텍스트(.bkp/.inp) 파일 가져오기 숨김 입력 ── */}
+      <input
+        type="file"
+        accept=".bkp,.inp,.txt"
+        ref={processTextInputRef}
+        onChange={handleImportProcessText}
+        className="hidden"
+      />
+
       {/* ── 케이스 저장 및 JSON 백업 바 ── */}
       {showStorageBar && (() => {
         const activeMatchedProj = activeCaseName
@@ -6398,7 +6560,45 @@ export function FlowsheetWorkspace({
               </button>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => processTextInputRef.current?.click()}
+                title="공정 시뮬레이션 텍스트 파일(.bkp / .inp) 가져오기"
+                style={{
+                  height: 27,
+                  padding: '0 9px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  borderRadius: 5,
+                  border: '1px solid #93C5FD',
+                  background: '#EFF6FF',
+                  color: '#1D4ED8',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FolderOpenIcon size={12} /> .bkp/.inp 가져오기</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportProcessText}
+                title="현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기"
+                style={{
+                  height: 27,
+                  padding: '0 9px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  borderRadius: 5,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#1E293B',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> .inp 내보내기</span>
+              </button>
               <button
                 type="button"
                 onClick={exportJsonFile}
@@ -6439,6 +6639,51 @@ export function FlowsheetWorkspace({
           </div>
         );
       })()}
+
+      {/* ── 공정 텍스트 파일 입출력 알림 배너 ── */}
+      {interopNotice && (
+        <div
+          style={{
+            padding: '6px 14px',
+            background: interopNotice.kind === 'error' ? '#FEF2F2' : '#EFF6FF',
+            borderBottom: `1px solid ${interopNotice.kind === 'error' ? '#FECACA' : '#BFDBFE'}`,
+            color: interopNotice.kind === 'error' ? '#991B1B' : '#1E3A8A',
+            fontSize: 11,
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 700 }}>{interopNotice.text}</span>
+            {interopNotice.warnings && interopNotice.warnings.length > 0 && (
+              <span style={{ fontSize: 10.5, color: '#92400E' }}>
+                참고: {interopNotice.warnings.slice(0, 3).join(' / ')}
+                {interopNotice.warnings.length > 3 ? ` 외 ${interopNotice.warnings.length - 3}건` : ''}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setInteropNotice(null)}
+            title="알림 닫기"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'inherit',
+              fontWeight: 800,
+              cursor: 'pointer',
+              fontSize: 12,
+              lineHeight: 1,
+              padding: '2px 4px',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* ── 메인 워크스페이스 (중앙 풀폭 캔버스 + 하단 가로형 장치모델 팔레트 + 스트림표 | 우측 슬림 속성창) ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
