@@ -99,7 +99,7 @@ import {
   type DistillSideCutConfig,
 } from '@/lib/calculations/rigorousDistillation';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_GROUP_TO_ID, isPlantAllowed, showPlantNumbersForUser } from '@/lib/plantRegistry';
+import { PLANT_GROUP_TO_ID, isPlantAllowed, isSimulatorOnlyUser, showPlantNumbersForUser } from '@/lib/plantRegistry';
 import {
   type SimPropertyMethod,
   type ResolvedPropertyMethod,
@@ -198,6 +198,53 @@ const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
       { id: 'ce_2', streamNo: 'S2', source: 'cb_hx1', target: 'cb_flash1', sourcePort: 'out', targetPort: 'in' },
       { id: 'ce_3', streamNo: 'S3', source: 'cb_flash1', target: 'cb_pgas', sourcePort: 'vapor', targetPort: 'in' },
       { id: 'ce_4', streamNo: 'S4', source: 'cb_flash1', target: 'cb_pliq', sourcePort: 'liquid', targetPort: 'in' },
+    ],
+  },
+  {
+    id: 'ex_bt_distill',
+    label: '벤젠–톨루엔 다단 정밀증류탑 (Peng-Robinson · 20단)',
+    nodes: [
+      {
+        id: 'cbt_feed',
+        tag: 'FEED-101',
+        name: 'Benzene-Toluene Feed',
+        unitType: 'feed',
+        position: { x: 50, y: 155 },
+        params: {
+          feedTempC: 85,
+          feedPressKgcm2g: 0.8,
+          feedFlowsKgH: emptySimFlows({ Benzene: 5000, Toluene: 5000 }),
+        },
+      },
+      {
+        id: 'cbt_t101',
+        tag: 'T-101',
+        name: 'B/T Column (20 Stages)',
+        unitType: 'distillation',
+        position: { x: 340, y: 130 },
+        params: {
+          calcMode: 'rigorous',
+          distillConfig: {
+            columnCalcMode: 'rigorous_mesh',
+            thermoModel: 'PENG_ROB',
+            totalStages: 20,
+            feedStage: 10,
+            topPressKgcm2g: 0.5,
+            murphreeEffPct: 80,
+            topSpecType: 'reflux_ratio',
+            topSpecValue: 2.0,
+            splitSpecType: 'd_over_f_mass',
+            splitSpecValue: 0.5,
+          },
+        },
+      },
+      { id: 'cbt_top', tag: 'PROD-BZ', name: 'Benzene Distillate', unitType: 'product', position: { x: 640, y: 70 }, params: {} },
+      { id: 'cbt_bot', tag: 'PROD-TOL', name: 'Toluene Bottoms', unitType: 'product', position: { x: 640, y: 210 }, params: {} },
+    ],
+    edges: [
+      { id: 'cbte_1', streamNo: 'S1', source: 'cbt_feed', target: 'cbt_t101', sourcePort: 'out', targetPort: 'in' },
+      { id: 'cbte_2', streamNo: 'S2', source: 'cbt_t101', target: 'cbt_top', sourcePort: 'vapor', targetPort: 'in' },
+      { id: 'cbte_3', streamNo: 'S3', source: 'cbt_t101', target: 'cbt_bot', sourcePort: 'liquid', targetPort: 'in' },
     ],
   },
   {
@@ -1571,7 +1618,7 @@ export default function ClassicSimulatorPage() {
         onOpenSaveBar={() => setShowProjectBar(v => !v)}
         onExportJson={exportJson}
         onSwitchToModernUi={switchToModernUi}
-        examples={CLASSIC_EXAMPLES.map(x => ({ id: x.id, label: x.label }))}
+        examples={CLASSIC_EXAMPLES.filter(x => !isSimulatorOnlyUser(user) || x.id !== 'ex_ech_distill').map(x => ({ id: x.id, label: x.label }))}
         onSelectExample={exId => {
           const found = CLASSIC_EXAMPLES.find(x => x.id === exId);
           if (found) loadExample(found);

@@ -83,7 +83,7 @@ import {
   syncMdiSubDefsFromMaster,
 } from '@/lib/calculations/mdiPlantHierarchy';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_GROUP_TO_ID, isPlantAllowed, formatPlantLabelForUser } from '@/lib/plantRegistry';
+import { PLANT_GROUP_TO_ID, isPlantAllowed, isSimulatorOnlyUser, formatPlantLabelForUser } from '@/lib/plantRegistry';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { useUnitStore } from '@/lib/stores/unitStore';
@@ -1067,6 +1067,7 @@ const NODE_TYPES = { flowUnit: FlowUnitNode };
 interface PresetScenario {
   id: string;
   group?: 'general' | 'plant02' | 'plant03' | 'plant04' | 'plant05' | 'plant06';
+  isPublicTextbook?: boolean;
   btnLabel: string;
   title: string;
   nodes: Array<FlowNodeDef & { position: { x: number; y: number } }>;
@@ -1076,23 +1077,24 @@ interface PresetScenario {
 const PRESETS: PresetScenario[] = [
   {
     id: 'new_plant_starter',
-    btnLabel: '▶ 신규공장 기본 스타터: 원료공급 → 열교환기 → 기액분리기 → 가스/액상 제품',
-    title: '신규공장 기본 모델: FEED-101 원료 공급 → E-101 공정 열교환기(냉각/응축) → V-101 기액분리기 → 상부 가스 / 하부 액상 제품 분리',
+    isPublicTextbook: true,
+    btnLabel: '기초 1: 원료공급 → 열교환기(E-101) → 기액분리기(D-101) 기본 공정',
+    title: '기본 자유설계 예제: FEED-101(MeOH/H₂O/N₂) → E-101 냉각기 → D-101 기액분리기 → 기상/액상 제품 분리',
     nodes: [
       {
         id: 'np_feed1', tag: 'FEED-101', name: '혼합 원료 공급', unitType: 'feed',
         position: { x: 60, y: 120 },
-        params: { feedTempC: 85.0, feedPressKgcm2g: 2.2, feedFlowsKgH: { H2O: 4200, Cl2: 6800, H2: 120 } },
+        params: { feedTempC: 95.0, feedPressKgcm2g: 2.0, feedFlowsKgH: { MeOH: 3000, H2O: 5000, N2: 200 } },
       },
       {
-        id: 'np_hex1', tag: 'E-101', name: '공정 가스 냉각기', unitType: 'hex',
+        id: 'np_hex1', tag: 'E-101', name: '공정 냉각기', unitType: 'hex',
         position: { x: 320, y: 112 },
-        params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 32.0, overallU: 460 },
+        params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 35.0, overallU: 460 },
       },
       {
-        id: 'np_sep1', tag: 'V-101', name: '기액 분리기', unitType: 'separator',
+        id: 'np_sep1', tag: 'D-101', name: '기액 분리기', unitType: 'separator',
         position: { x: 590, y: 105 },
-        params: { operTempC: 32.0, operPressKgcm2g: 2.1 },
+        params: { operTempC: 35.0, operPressKgcm2g: 1.9 },
       },
       {
         id: 'np_pvap', tag: 'PROD-GAS', name: '상부 가스 제품(G)', unitType: 'product',
@@ -1110,6 +1112,106 @@ const PRESETS: PresetScenario[] = [
       { id: 'np_e2', streamNo: 'S-102', source: 'np_hex1', target: 'np_sep1', sourcePort: 'out', targetPort: 'in' },
       { id: 'np_e3', streamNo: 'S-103', source: 'np_sep1', target: 'np_pvap', sourcePort: 'vapor', targetPort: 'in' },
       { id: 'np_e4', streamNo: 'S-104', source: 'np_sep1', target: 'np_pliq', sourcePort: 'liquid', targetPort: 'in' },
+    ],
+  },
+  {
+    id: 'textbook_bt_distillation',
+    isPublicTextbook: true,
+    btnLabel: '기초 2: 벤젠–톨루엔(B/T) 다단 정밀증류탑 (Peng-Robinson · 20단)',
+    title: '교과서 표준 2성분 증류: FEED-101(Benzene 50% / Toluene 50%, 10 t/h) → E-101 예열기 → T-101 20단 정밀증류탑 (PR)',
+    nodes: [
+      {
+        id: 'bt_feed', tag: 'FEED-101', name: '벤젠-톨루엔 원료', unitType: 'feed',
+        position: { x: 50, y: 155 },
+        params: { feedTempC: 75.0, feedPressKgcm2g: 0.8, feedFlowsKgH: { Benzene: 5000, Toluene: 5000 } },
+      },
+      {
+        id: 'bt_hx', tag: 'E-101', name: '원료 예열기', unitType: 'hex',
+        position: { x: 290, y: 150 },
+        params: { hexSpecMode: 'proc_temp', operTempC: 92.0, overallU: 520 },
+      },
+      {
+        id: 'bt_col', tag: 'T-101', name: 'B/T 정밀증류탑 (20단)', unitType: 'distillation',
+        position: { x: 545, y: 120 },
+        params: {
+          calcMode: 'rigorous',
+          distillConfig: {
+            columnCalcMode: 'rigorous_mesh',
+            thermoModel: 'PENG_ROB',
+            totalStages: 20,
+            feedStage: 10,
+            topPressKgcm2g: 0.5,
+            murphreeEffPct: 80,
+            topSpecType: 'reflux_ratio',
+            topSpecValue: 2.0,
+            splitSpecType: 'd_over_f_mass',
+            splitSpecValue: 0.5,
+          },
+        },
+      },
+      {
+        id: 'bt_top', tag: 'PROD-BZ', name: '탑정 벤젠 제품', unitType: 'product',
+        position: { x: 830, y: 55 },
+        params: {},
+      },
+      {
+        id: 'bt_bot', tag: 'PROD-TOL', name: '탑저 톨루엔 제품', unitType: 'product',
+        position: { x: 830, y: 215 },
+        params: {},
+      },
+    ],
+    edges: [
+      { id: 'bt_e1', streamNo: 'S-101', source: 'bt_feed', target: 'bt_hx', sourcePort: 'out', targetPort: 'in' },
+      { id: 'bt_e2', streamNo: 'S-102', source: 'bt_hx', target: 'bt_col', sourcePort: 'out', targetPort: 'in' },
+      { id: 'bt_e3', streamNo: 'S-103', source: 'bt_col', target: 'bt_top', sourcePort: 'vapor', targetPort: 'in' },
+      { id: 'bt_e4', streamNo: 'S-104', source: 'bt_col', target: 'bt_bot', sourcePort: 'liquid', targetPort: 'in' },
+    ],
+  },
+  {
+    id: 'textbook_etoh_h2o_nrtl',
+    isPublicTextbook: true,
+    btnLabel: '기초 3: 에탄올–물 공비 증류탑 (NRTL · 24단)',
+    title: '비이상 공비계 증류: FEED-101(EtOH 25 wt% / H₂O 75 wt%, 8 t/h) → T-101 24단 NRTL 정밀증류탑',
+    nodes: [
+      {
+        id: 'ew_feed', tag: 'FEED-101', name: '에탄올 수용액 원료', unitType: 'feed',
+        position: { x: 70, y: 155 },
+        params: { feedTempC: 65.0, feedPressKgcm2g: 0.3, feedFlowsKgH: { EtOH: 2000, H2O: 6000 } },
+      },
+      {
+        id: 'ew_col', tag: 'T-101', name: '에탄올 정류탑 (24단)', unitType: 'distillation',
+        position: { x: 380, y: 120 },
+        params: {
+          calcMode: 'rigorous',
+          distillConfig: {
+            columnCalcMode: 'rigorous_mesh',
+            thermoModel: 'NRTL',
+            totalStages: 24,
+            feedStage: 16,
+            topPressKgcm2g: 0.05,
+            murphreeEffPct: 75,
+            topSpecType: 'reflux_ratio',
+            topSpecValue: 2.5,
+            splitSpecType: 'd_over_f_mass',
+            splitSpecValue: 0.27,
+          },
+        },
+      },
+      {
+        id: 'ew_top', tag: 'PROD-ETOH', name: '탑정 농축 에탄올', unitType: 'product',
+        position: { x: 700, y: 55 },
+        params: {},
+      },
+      {
+        id: 'ew_bot', tag: 'PROD-H2O', name: '탑저 폐수(H₂O)', unitType: 'product',
+        position: { x: 700, y: 215 },
+        params: {},
+      },
+    ],
+    edges: [
+      { id: 'ew_e1', streamNo: 'S-101', source: 'ew_feed', target: 'ew_col', sourcePort: 'out', targetPort: 'in' },
+      { id: 'ew_e2', streamNo: 'S-102', source: 'ew_col', target: 'ew_top', sourcePort: 'vapor', targetPort: 'in' },
+      { id: 'ew_e3', streamNo: 'S-103', source: 'ew_col', target: 'ew_bot', sourcePort: 'liquid', targetPort: 'in' },
     ],
   },
   {
@@ -5420,7 +5522,7 @@ export function FlowsheetWorkspace({
               </option>
               <optgroup label="기본 자유설계">
                 {getAllPresets()
-                  .filter(p => p.group === 'general')
+                  .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
                   .map(p => (
                     <option key={p.id} value={p.id}>
                       {p.btnLabel}
@@ -5953,7 +6055,7 @@ export function FlowsheetWorkspace({
                 </option>
                 <optgroup label="기본 자유설계 템플릿">
                   {getAllPresets()
-                    .filter(p => p.group === 'general')
+                    .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
                     .map(p => (
                       <option key={p.id} value={p.id}>
                         {p.btnLabel}

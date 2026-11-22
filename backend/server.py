@@ -865,7 +865,7 @@ def api_auth_register(payload: RegisterPayload, request: Request, response: Resp
             new_status = "active"
             msg = "회원가입이 완료되었습니다."
 
-        default_beta_acl = json.dumps(["hcl_synth", "mdi_plant"], ensure_ascii=False)
+        default_beta_acl = json.dumps(["simulator_only"], ensure_ascii=False)
         plant_prod_val = (payload.plant_product or "").strip()[:120]
         cur = conn.execute(
             """
