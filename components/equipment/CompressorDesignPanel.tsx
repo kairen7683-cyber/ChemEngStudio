@@ -9,6 +9,8 @@ import {
 } from '@/lib/calculations/compressorDesign';
 import { type SimCompKey } from '@/lib/calculations/flowsheetSolver';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { useAuth } from '@/components/auth/AuthContext';
+import { isPlantAllowed, isSimulatorOnlyUser } from '@/lib/plantRegistry';
 import {
   UnitNumberInput,
   UnitSelect,
@@ -264,16 +266,78 @@ const PRESETS: PresetOption[] = [
   },
 ];
 
+const GENERIC_PRESETS: PresetOption[] = [
+  {
+    id: 'GEN_N2_CENT',
+    plantIds: ['new_builder', 'classic_sim'],
+    name: '질소(N₂) 2단 원심압축기 (API 617)',
+    desc: '범용 질소(N₂) 2단 원심식 승압 압축 (0.50 → 8.00 kg/cm²G)',
+    inputs: {
+      tag: 'K-101',
+      name: 'Nitrogen 2-Stage Centrifugal Compressor',
+      type: 'centrifugal',
+      moleFrac: { N2: 0.995, O2: 0.005 } as Record<SimCompKey, number>,
+      massFlowKgH: 8500,
+      suctionPressKgcm2g: 0.50,
+      suctionTempC: 30.0,
+      dischargePressKgcm2g: 8.00,
+      numStages: 2,
+      polytropicEfficiency: 0.78,
+      mechanicalEfficiency: 0.98,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 38.0,
+      interstagePressureDropBar: 0.20,
+      speedRpm: 8500,
+    },
+  },
+  {
+    id: 'GEN_CH4_RECIP',
+    plantIds: ['new_builder', 'classic_sim'],
+    name: '메탄(CH₄) 2단 왕복동 압축기 (API 618)',
+    desc: '범용 메탄/천연가스(CH₄) 2단 왕복동 고압 압축 (1.00 → 18.0 kg/cm²G)',
+    inputs: {
+      tag: 'K-102',
+      name: 'Methane 2-Stage Reciprocating Compressor',
+      type: 'reciprocating',
+      moleFrac: { CH4: 0.95, C2H6: 0.05 } as Record<SimCompKey, number>,
+      massFlowKgH: 2400,
+      suctionPressKgcm2g: 1.00,
+      suctionTempC: 32.0,
+      dischargePressKgcm2g: 18.0,
+      numStages: 2,
+      mechanicalEfficiency: 0.96,
+      motorEfficiency: 0.95,
+      intercoolerExitTempC: 38.0,
+      interstagePressureDropBar: 0.25,
+      clearanceFraction: 0.10,
+      strokeMm: 240,
+      recipSpeedRpm: 450,
+    },
+  },
+];
+
 export default function CompressorDesignPanel() {
+  const { user } = useAuth();
   const activePlantId = useBalanceStore(s => s.activePlantId);
   const plantPresets = useMemo(() => {
-    if (!activePlantId || activePlantId === 'new_builder') return PRESETS;
-    const matched = PRESETS.filter(p => p.plantIds.includes(activePlantId));
-    return matched.length > 0 ? matched : PRESETS;
-  }, [activePlantId]);
+    if (isSimulatorOnlyUser(user)) return GENERIC_PRESETS;
+    const allowedPresets = PRESETS.filter(p =>
+      p.plantIds.some(pid => isPlantAllowed(pid, user))
+    );
+    if (allowedPresets.length === 0) return GENERIC_PRESETS;
+    if (!activePlantId || activePlantId === 'new_builder' || activePlantId === 'classic_sim') {
+      return [...GENERIC_PRESETS, ...allowedPresets];
+    }
+    const matched = allowedPresets.filter(p => p.plantIds.includes(activePlantId));
+    return matched.length > 0 ? matched : GENERIC_PRESETS;
+  }, [activePlantId, user]);
 
-  const [selectedPresetId, setSelectedPresetId] = useState<string>(() => plantPresets[0]?.id || 'C470');
-  const [inputs, setInputs] = useState<CompressorInputs>(() => plantPresets[0]?.inputs || PRESETS[0].inputs);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>(
+    () => plantPresets[0]?.id || GENERIC_PRESETS[0].id
+  );
+  const [inputs, setInputs] = useState<CompressorInputs>(
+    () => plantPresets[0]?.inputs || GENERIC_PRESETS[0].inputs
+  );
 
   const [powerUnit, setPowerUnit] = useLocalUnit('power');
   const [tempUnit, setTempUnit] = useLocalUnit('temp');

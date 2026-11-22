@@ -2193,7 +2193,12 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       const params = new URLSearchParams(window.location.search);
       const qPlant = params.get('plant');
       if (qPlant) {
-        initialPlantId = normalizePlantId(qPlant);
+        if (isStandalonePlantContext(qPlant)) {
+          isStandaloneUnitMode = true;
+          initialPlantId = 'standalone';
+        } else {
+          initialPlantId = normalizePlantId(qPlant);
+        }
       }
       const qTab = params.get('tab');
       if (qTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(qTab)) {
@@ -2204,14 +2209,16 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         setSubView(qView);
       }
       const qTag = params.get('tag');
-      if (qTag) {
+      if (qTag && !isStandaloneUnitMode) {
         initialCaTag = qTag;
       }
       if (params.get('embed') === '1' || params.get('embed') === 'true') {
         document.body.classList.add('embed-mode');
       }
-      if (params.get('standalone') === '1' || params.get('standalone') === 'true') {
+      if (params.get('standalone') === '1' || params.get('standalone') === 'true' || isStandaloneUnitMode) {
         isStandaloneUnitMode = true;
+        initialPlantId = 'standalone';
+        initialCaTag = '';
         const syncBar = document.getElementById('caPlantSyncBar');
         if (syncBar) syncBar.style.display = 'none';
       }
@@ -2226,9 +2233,9 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     } catch (_) {}
 
     setActivePlantContext(initialPlantId, {
-      tag: initialCaTag,
+      tag: isStandaloneUnitMode ? '' : initialCaTag,
       subTab: requestedSubTab,
-      skipPresetLoad: false,
+      skipPresetLoad: isStandaloneUnitMode,
     });
     rebuildPerTabSyncDropdowns();
 
@@ -2236,10 +2243,15 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (!applySimulatorHandoff(null)) {
         recalc();
       }
-    } else if (!isStandaloneUnitMode) {
+    } else if (!isStandaloneUnitMode && !isStandalonePlantContext(initialPlantId)) {
       const activeCfg = getActivePlantConfig();
       const targetTag = initialCaTag || activeCfg.defaultByTab[requestedSubTab || state.tab || 'hx'] || activeCfg.defaultByTab.hx;
-      loadChlorAlkaliPreset(targetTag, requestedSubTab);
+      if (targetTag) {
+        loadChlorAlkaliPreset(targetTag, requestedSubTab);
+      } else {
+        syncAllCustomSelects();
+        recalc();
+      }
     } else {
       syncAllCustomSelects();
       recalc();
@@ -2252,20 +2264,27 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
         if (Array.isArray(d.allowedPlants)) {
           state.allowedPlants = d.allowedPlants;
         }
+        const standaloneCtx = isStandaloneUnitMode || isStandalonePlantContext(d.plantId);
+        if (standaloneCtx) {
+          isStandaloneUnitMode = true;
+        }
         setActivePlantContext(d.plantId, {
-          tag: d.tag || '',
+          tag: standaloneCtx ? '' : (d.tag || ''),
           subTab: d.subTab || '',
-          skipPresetLoad: Boolean(d.skipPresetLoad),
+          skipPresetLoad: standaloneCtx ? true : Boolean(d.skipPresetLoad),
         });
-        if (!d.skipPresetLoad) {
+        if (!d.skipPresetLoad && !standaloneCtx) {
           const cfg = getActivePlantConfig();
           const chosenTag = d.tag || cfg.defaultByTab[d.subTab || state.tab || 'hx'] || cfg.defaultByTab.hx;
-          if (!isStandaloneUnitMode && chosenTag) {
+          if (chosenTag) {
             loadChlorAlkaliPreset(chosenTag, d.subTab || '');
           } else {
             syncAllCustomSelects();
             recalc();
           }
+        } else {
+          syncAllCustomSelects();
+          recalc();
         }
         rebuildPerTabSyncDropdowns();
       }
@@ -2504,16 +2523,43 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     mdi_plant: 'PLANT 05 MDI (10만톤)'
   };
 
+  function isStandalonePlantContext(rawId) {
+    const id = String(rawId || '').trim().toLowerCase();
+    if (id === 'new_builder' || id === 'classic_sim' || id === 'simulator_only' || id === 'standalone') {
+      return true;
+    }
+    if (Array.isArray(state.allowedPlants) && state.allowedPlants.length === 0) {
+      return true;
+    }
+    return false;
+  }
+
+  function getStandalonePlantConfig() {
+    return {
+      unitAreaName: 'STANDALONE ENGINEERING WORKSPACE',
+      syncLabel: 'STANDALONE MODE',
+      defaultByTab: {},
+      presets: {},
+    };
+  }
+
   function normalizePlantId(rawId) {
     const id = String(rawId || '').trim().toLowerCase();
+    if (isStandalonePlantContext(id)) return 'standalone';
     if (id === 'hcl_synth' || id === 'hcl_1a_plant') return 'hcl_synth';
     if (id === 'ech_gte' || id === 'ech_gte_plant') return 'ech_gte';
     if (id === 'cms_plant') return 'cms_plant';
     if (id === 'mdi_plant') return 'mdi_plant';
-    if (id === 'clorsim' || id === 'clorsim_sim') return 'clorsim_sim';
-    if (Array.isArray(state.allowedPlants) && state.allowedPlants.length > 0) {
+    if (id === 'clorsim' || id === 'clorsim_sim') {
+      if (Array.isArray(state.allowedPlants) && !state.allowedPlants.includes('clorsim_sim')) {
+        const firstAllowed = state.allowedPlants.find(pid => PLANT_EQUIP_REGISTRY[pid]);
+        return firstAllowed || 'standalone';
+      }
+      return 'clorsim_sim';
+    }
+    if (Array.isArray(state.allowedPlants)) {
       const firstAllowed = state.allowedPlants.find(pid => PLANT_EQUIP_REGISTRY[pid]);
-      if (firstAllowed) return firstAllowed;
+      return firstAllowed || 'standalone';
     }
     return 'clorsim_sim';
   }
@@ -2645,14 +2691,18 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
 
   function getActivePlantConfig(overridePlantId) {
     const pid = normalizePlantId(overridePlantId || state.plantId);
-    return PLANT_EQUIP_REGISTRY[pid] || PLANT_EQUIP_REGISTRY.clorsim_sim;
+    if (pid === 'standalone' || isStandalonePlantContext(pid)) {
+      return getStandalonePlantConfig();
+    }
+    return PLANT_EQUIP_REGISTRY[pid] || getStandalonePlantConfig();
   }
 
   function resolveChlorAlkaliTag(rawTag) {
+    if (isStandalonePlantContext(state.plantId)) return String(rawTag || '').trim();
     const plant = getActivePlantConfig();
-    const presets = plant.presets || CA_EQUIP_PRESETS;
+    const presets = plant.presets || {};
     if (!rawTag) {
-      return plant.defaultByTab?.[state.tab || 'hx'] || plant.defaultByTab?.hx || 'E-332';
+      return plant.defaultByTab?.[state.tab || 'hx'] || plant.defaultByTab?.hx || '';
     }
     const t = String(rawTag).trim();
     if (t === 'D-940' && presets['T-730']) return 'T-730';
@@ -2828,7 +2878,26 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     const prevPid = state.plantId;
     const pid = normalizePlantId(plantId);
     state.plantId = pid;
-    const plant = PLANT_EQUIP_REGISTRY[pid] || PLANT_EQUIP_REGISTRY.clorsim_sim;
+    const syncBar = document.getElementById('caPlantSyncBar');
+
+    if (pid === 'standalone' || isStandalonePlantContext(plantId)) {
+      if (syncBar) syncBar.style.display = 'none';
+      if (typeof window !== 'undefined') {
+        window.ACTIVE_PLANT_UNIT_AREA = 'STANDALONE ENGINEERING WORKSPACE';
+      }
+      const lblEl = document.getElementById('ca_plant_sync_label');
+      if (lblEl) lblEl.textContent = 'STANDALONE MODE';
+      const sel = document.getElementById('ca_equip_tag');
+      if (sel) sel.innerHTML = '';
+      const st = document.getElementById('ca_sync_status');
+      if (st) st.textContent = '';
+      if (opts?.subTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(opts.subTab)) {
+        setTab(opts.subTab);
+      }
+      return;
+    }
+
+    const plant = PLANT_EQUIP_REGISTRY[pid] || getStandalonePlantConfig();
     if (typeof window !== 'undefined') {
       window.ACTIVE_PLANT_UNIT_AREA = plant.unitAreaName;
     }
@@ -2881,9 +2950,17 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
     state.handoffEquip = null;
     const banner = document.getElementById('simHandoffBanner');
     if (banner) banner.style.display = 'none';
+    if (isStandalonePlantContext(state.plantId)) {
+      if (fallbackSubTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(fallbackSubTab)) {
+        setTab(fallbackSubTab);
+      }
+      syncAllCustomSelects();
+      recalc();
+      return;
+    }
     const plant = getActivePlantConfig();
     const tag = resolveChlorAlkaliTag(rawTag);
-    const p = plant.presets[tag] || CA_EQUIP_PRESETS[tag];
+    const p = plant.presets[tag] || (state.plantId === 'clorsim_sim' ? CA_EQUIP_PRESETS[tag] : null);
     if (!p) {
       if (fallbackSubTab && ['hx', 'pump', 'column', 'piping', 'vessel', 'psv'].includes(fallbackSubTab)) {
         setTab(fallbackSubTab);
@@ -2913,9 +2990,9 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
   function saveToChlorAlkaliEquipList() {
     recalc();
     const plant = getActivePlantConfig();
-    const rawTag = document.getElementById('ca_equip_tag')?.value || plant.defaultByTab?.[state.tab || 'hx'] || 'E-332';
+    const rawTag = document.getElementById('ca_equip_tag')?.value || plant.defaultByTab?.[state.tab || 'hx'] || '';
     const tag = resolveChlorAlkaliTag(rawTag);
-    const preset = plant.presets[tag] || CA_EQUIP_PRESETS[tag] || {};
+    const preset = plant.presets[tag] || (state.plantId === 'clorsim_sim' ? CA_EQUIP_PRESETS[tag] : null) || {};
     const saveTag = tag.replace(/A\/B$/i, '');
     const tab = state.tab;
     let payload = { tag: saveTag, rawTag: tag, tab, name: preset.name };

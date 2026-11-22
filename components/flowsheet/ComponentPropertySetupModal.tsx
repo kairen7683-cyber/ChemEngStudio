@@ -28,7 +28,7 @@ import {
   resetCustomSlot,
 } from '@/lib/calculations/customComponentEngine';
 import { useAuth } from '@/components/auth/AuthContext';
-import { isPlantAllowed } from '@/lib/plantRegistry';
+import { isPlantAllowed, isSimulatorOnlyUser } from '@/lib/plantRegistry';
 
 export interface ComponentPropertySetupModalProps {
   open: boolean;
@@ -62,6 +62,11 @@ export default function ComponentPropertySetupModal({
   onApply,
 }: ComponentPropertySetupModalProps) {
   const { user } = useAuth();
+  const isSimOnly = isSimulatorOnlyUser(user);
+  const visibleGeneralPacks = useMemo(
+    () => (isSimOnly ? GENERAL_COMPONENT_PACKS.filter(pk => pk.id !== 'chlorinated_org') : GENERAL_COMPONENT_PACKS),
+    [isSimOnly]
+  );
   const allowedPlantPresets = useMemo(
     () => PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)),
     [user]
@@ -1050,7 +1055,7 @@ export default function ComponentPropertySetupModal({
                     ⚡ 빠른 프리셋:
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {GENERAL_COMPONENT_PACKS.map(pk => (
+                    {visibleGeneralPacks.map(pk => (
                       <button
                         key={pk.id}
                         type="button"

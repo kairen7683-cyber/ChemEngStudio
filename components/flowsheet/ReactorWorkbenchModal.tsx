@@ -28,6 +28,28 @@ import {
   type ReactorThermalMode,
   type StoicReactionSpec,
 } from '../../lib/calculations/chemicalReactor';
+import { useAuth } from '@/components/auth/AuthContext';
+import { isSimulatorOnlyUser } from '@/lib/plantRegistry';
+
+const PRIVATE_PLANT_REACTION_IDS = new Set([
+  'cms_aibn_liquid_chlorination',
+  'gte_glycerol_hydrochlorination',
+  'ech_saponification',
+  'hcl_synthesis_burner',
+  'cl2_caustic_scrubbing',
+]);
+
+function isPrivatePlantReactionTemplate(id: string): boolean {
+  if (PRIVATE_PLANT_REACTION_IDS.has(id)) return true;
+  const lower = id.toLowerCase();
+  return (
+    lower.startsWith('mdi_') ||
+    lower.startsWith('mda_') ||
+    lower.startsWith('phosgenation') ||
+    lower.startsWith('fecl3') ||
+    lower.startsWith('brine')
+  );
+}
 
 export interface ReactorWorkbenchModalProps {
   open: boolean;
@@ -104,7 +126,8 @@ function cloneConfig(
   inletTempC: number,
   inletPressKgcm2g: number,
   propMethod: ResolvedPropertyMethod,
-  activeComps: SimCompKey[]
+  activeComps: SimCompKey[],
+  isSimOnly = false
 ): ReactorConfig {
   if (!cfg) {
     return {
@@ -125,16 +148,27 @@ function cloneConfig(
       gibbsSpeciesPool: [...activeComps],
       gibbsInertSet: [],
       reactions: [
-        {
-          id: 'R1',
-          name: '주반응 1',
-          stoic: { H2: -1, Cl2: -1, HCl: 2 },
-          keyComp: 'Cl2',
-          conversion: 0.99,
-          k0Forward: 1.0e4,
-          EaForwardKJmol: 60,
-          reversible: false,
-        },
+        isSimOnly
+          ? {
+              id: 'R1',
+              name: '주반응 1 (수성가스 전환)',
+              stoic: { CO: -1, H2O: -1, CO2: 1, H2: 1 },
+              keyComp: 'CO',
+              conversion: 0.85,
+              k0Forward: 1.0e4,
+              EaForwardKJmol: 60,
+              reversible: false,
+            }
+          : {
+              id: 'R1',
+              name: '주반응 1',
+              stoic: { H2: -1, Cl2: -1, HCl: 2 },
+              keyComp: 'Cl2',
+              conversion: 0.99,
+              k0Forward: 1.0e4,
+              EaForwardKJmol: 60,
+              reversible: false,
+            },
       ],
     };
   }
@@ -431,11 +465,21 @@ export function ReactorWorkbenchModal({
   initialConfig,
   onApplyConfig,
 }: ReactorWorkbenchModalProps) {
+  const { user } = useAuth();
+  const isSimOnly = isSimulatorOnlyUser(user);
+  const visibleTemplates = useMemo(
+    () =>
+      isSimOnly
+        ? INDUSTRIAL_REACTION_TEMPLATES.filter((t) => !isPrivatePlantReactionTemplate(t.id))
+        : INDUSTRIAL_REACTION_TEMPLATES,
+    [isSimOnly]
+  );
+
   const [isMobile, setIsMobile] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
   const [cfg, setCfg] = useState<ReactorConfig>(() =>
-    cloneConfig(initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents)
+    cloneConfig(initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, isSimOnly)
   );
   const [useSampleFeed, setUseSampleFeed] = useState<boolean>(false);
   const [compToAddByRxn, setCompToAddByRxn] = useState<Record<string, SimCompKey>>({});
@@ -449,14 +493,15 @@ export function ReactorWorkbenchModal({
         inletTempC,
         inletPressKgcm2g,
         propertyMethod,
-        activeComponents
+        activeComponents,
+        isSimOnly
       );
       setCfg(next);
       let liveSum = 0;
       for (const v of Object.values(inletFlowsKgH)) liveSum += v ?? 0;
       setUseSampleFeed(liveSum <= 1e-9);
     }
-  }, [open, initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, inletFlowsKgH]);
+  }, [open, initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, inletFlowsKgH, isSimOnly]);
 
   // 반응형 브레이크포인트 감지
   useEffect(() => {
@@ -538,14 +583,15 @@ export function ReactorWorkbenchModal({
   if (!open) return null;
 
   const applyTemplate = (tplId: string) => {
-    const tpl = INDUSTRIAL_REACTION_TEMPLATES.find((t) => t.id === tplId);
+    const tpl = visibleTemplates.find((t) => t.id === tplId);
     if (!tpl) return;
     const cloned = cloneConfig(
       tpl.defaultConfig,
       inletTempC,
       inletPressKgcm2g,
       tpl.defaultConfig.propertyMethod ?? propertyMethod,
-      activeComponents
+      activeComponents,
+      isSimOnly
     );
     setCfg(cloned);
     // 실제 피드에 해당 반응물이 없으면 자동으로 샘플 피드 프리뷰 활성화
@@ -801,7 +847,7 @@ export function ReactorWorkbenchModal({
                 }}
               >
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1A2F44' }}>
-                  산업 표준 반응 템플릿 (14종)
+                  산업 표준 반응 템플릿 ({visibleTemplates.length}종)
                 </span>
                 <label
                   style={{
@@ -823,20 +869,20 @@ export function ReactorWorkbenchModal({
                 </label>
               </div>
               <select
-                value={cfg.presetId ?? ''}
+                value={visibleTemplates.some((t) => t.id === cfg.presetId) ? (cfg.presetId ?? '') : ''}
                 onChange={(e) => applyTemplate(e.target.value)}
                 style={selectStyle}
               >
-                <option value="">-- 직접 구성 또는 14종 산업 반응 템플릿 선택 --</option>
-                {INDUSTRIAL_REACTION_TEMPLATES.map((tpl) => (
+                <option value="">-- 직접 구성 또는 {visibleTemplates.length}종 산업 반응 템플릿 선택 --</option>
+                {visibleTemplates.map((tpl) => (
                   <option key={tpl.id} value={tpl.id}>
                     [{tpl.category}] {tpl.labelKo}
                   </option>
                 ))}
               </select>
-              {cfg.presetId && (
+              {cfg.presetId && visibleTemplates.some((t) => t.id === cfg.presetId) && (
                 <div style={{ fontSize: 11, color: '#475569', marginTop: 6 }}>
-                  {INDUSTRIAL_REACTION_TEMPLATES.find((t) => t.id === cfg.presetId)?.descKo}
+                  {visibleTemplates.find((t) => t.id === cfg.presetId)?.descKo}
                 </div>
               )}
             </div>

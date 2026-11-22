@@ -138,6 +138,16 @@ interface ClassicExampleCase {
   edges: FlowEdgeDef[];
 }
 
+const CLASSIC_GENERIC_DEFAULT_COMPS: SimCompKey[] = [
+  'H2O',
+  'MeOH',
+  'EtOH',
+  'Benzene',
+  'Toluene',
+  'N2',
+  'CH4',
+];
+
 const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
   {
     id: 'ex_flash_loop',
@@ -152,7 +162,7 @@ const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
         params: {
           feedTempC: 85,
           feedPressKgcm2g: 2.0,
-          feedFlowsKgH: emptySimFlows({ H2O: 3500, Cl2: 4500, H2: 80 }),
+          feedFlowsKgH: emptySimFlows({ MeOH: 3000, H2O: 5000, N2: 150 }),
         },
       },
       {
@@ -425,15 +435,19 @@ function defaultParamsForClassic(unitType: FlowUnitType): FlowNodeDef['params'] 
         pressureDropKgcm2: 2.0,
       };
     case 'reactor':
-      return { reactionPreset: 'hcl_burner', conversion: 0.99, operTempC: 180 };
+      return {
+        reactionPreset: 'custom' as unknown as FlowNodeDef['params']['reactionPreset'],
+        conversion: 0.99,
+        operTempC: 180,
+      };
     case 'distillation':
       return {
         calcMode: 'rigorous',
         distillConfig: {
           columnCalcMode: 'design_stages',
           thermoModel: 'NRTL',
-          designLkComp: 'DCP',
-          designHkComp: 'ECH',
+          designLkComp: 'Benzene',
+          designHkComp: 'Toluene',
           designRefluxMult: 1.25,
           topPressKgcm2g: 0.0,
           murphreeEffPct: 75,
@@ -464,7 +478,7 @@ export default function ClassicSimulatorPage() {
   );
   const [flowEdges, setFlowEdges] = useState<FlowEdgeDef[]>(() => initialEx.edges.map(e => ({ ...e })));
   const [activeComponents, setActiveComponents] = useState<SimCompKey[]>(() =>
-    mergeFeedComponents(initialEx.nodes, getPlantDefaultComponents('clorsim_sim'))
+    mergeFeedComponents(initialEx.nodes, CLASSIC_GENERIC_DEFAULT_COMPS)
   );
   const [thermoMethod, setThermoMethod] = useState<SimPropertyMethod>('AUTO');
   const [compModalOpen, setCompModalOpen] = useState(false);
@@ -541,7 +555,7 @@ export default function ClassicSimulatorPage() {
       initialEx.edges,
       {
         propertyMethod: 'AUTO',
-        activeComponents: mergeFeedComponents(initialEx.nodes, getPlantDefaultComponents('clorsim_sim')),
+        activeComponents: mergeFeedComponents(initialEx.nodes, CLASSIC_GENERIC_DEFAULT_COMPS),
       }
     ),
     elapsedMs: 0,
@@ -649,7 +663,7 @@ export default function ClassicSimulatorPage() {
             const restoredMethod = normalizePropertyMethod(parsed.thermoMethod);
             const baseComps = Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
               ? (parsed.activeComponents.filter((c: string) => SIM_COMPS.includes(c as SimCompKey)) as SimCompKey[])
-              : getPlantDefaultComponents('clorsim_sim');
+              : CLASSIC_GENERIC_DEFAULT_COMPS;
             const restoredComps = mergeFeedComponents(parsed.simDefs, baseComps);
             setSimDefs(parsed.simDefs);
             setFlowEdges(parsed.flowEdges);
@@ -2464,7 +2478,7 @@ export default function ClassicSimulatorPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 7, borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
                   <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>🌐 범용 물질 패키지</span>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {GENERAL_COMPONENT_PACKS.map(pk => (
+                    {GENERAL_COMPONENT_PACKS.filter(pk => !isSimulatorOnlyUser(user) || pk.id !== 'chlorinated_org').map(pk => (
                       <button
                         key={pk.id}
                         onClick={() => {

@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PLANT_REGISTRY, isPlantAllowed, formatPlantLabelForUser } from '@/lib/plantRegistry';
+import { PLANT_REGISTRY, isPlantAllowed, isSimulatorOnlyUser, formatPlantLabelForUser } from '@/lib/plantRegistry';
 import { usePFDStore } from '@/lib/stores/pfdStore';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { useUnitStore } from '@/lib/stores/unitStore';
@@ -65,6 +65,40 @@ const MDI_DESIGN_TABS = [
   { key: 'psv_flare',  label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
+const STANDALONE_BETA_TABS = [
+  { key: 'psv_flare',  label: 'PSV · 플레어 안전설계 (API 520/521)' },
+  { key: 'compressor', label: '압축기 설계 (API 617/618)' },
+  { key: 'chempro',    label: '단품 숏컷 설계기 (6종)' },
+];
+
+const STANDALONE_TAB_KEYS = ['psv_flare', 'compressor', 'chempro'] as const;
+
+function isDesignTabAllowedForUser(
+  tab: string,
+  user: Parameters<typeof isPlantAllowed>[1]
+): boolean {
+  if (isSimulatorOnlyUser(user)) {
+    return (STANDALONE_TAB_KEYS as readonly string[]).includes(tab);
+  }
+  if (tab === 'mdi_hub') return isPlantAllowed('mdi_plant', user);
+  if (tab === 'cms_hub') return isPlantAllowed('cms_plant', user);
+  if (tab === 'distill') return isPlantAllowed('ech_gte', user);
+  if (tab === 'hcl_hub') return isPlantAllowed('hcl_synth', user);
+  if (tab === 'evap' || tab === 'evap_studio' || tab === 'brine' || tab === 'standards') {
+    return isPlantAllowed('clorsim_sim', user);
+  }
+  if (tab === 'packing') {
+    return (
+      isPlantAllowed('clorsim_sim', user) ||
+      isPlantAllowed('hcl_synth', user) ||
+      isPlantAllowed('ech_gte', user) ||
+      isPlantAllowed('cms_plant', user) ||
+      isPlantAllowed('mdi_plant', user)
+    );
+  }
+  return true;
+}
+
 interface EchHxHandoffConfig {
   sourceLabel?: string;
   plantId?: string;
@@ -124,6 +158,7 @@ function saveEchChemProHXHandoff(cfg: EchHxHandoffConfig) {
 }
 
 function getDefaultChemProTag(plantId: string): string {
+  if (plantId === 'new_builder' || plantId === 'classic_sim') return '';
   if (plantId === 'hcl_synth') return 'E-102A';
   if (plantId === 'ech_gte') return 'E-102';
   if (plantId === 'cms_plant') return 'E-101';
@@ -134,19 +169,22 @@ function getDefaultChemProTag(plantId: string): string {
 export default function EquipmentDesignPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const simOnly = isSimulatorOnlyUser(user);
   const allowedPlants = useMemo(
     () =>
-      PLANT_REGISTRY.filter(
-        p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
-      ).map(p => p.id),
-    [user]
+      simOnly
+        ? []
+        : PLANT_REGISTRY.filter(
+            p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+          ).map(p => p.id),
+    [simOnly, user]
   );
   const { activePlantId, setActivePlantId, requestSimSheet, requestSimNodeAction } = useBalanceStore();
   const units = useUnitStore(s => s.units);
   const hydrateUnits = useUnitStore(s => s.hydrate);
-  const activeTab = usePFDStore(s => s.equipSubTab || 'evap');
+  const activeTab = usePFDStore(s => s.equipSubTab || (simOnly ? 'psv_flare' : 'evap'));
   const setActiveTab = usePFDStore(s => s.setEquipSubTab);
-  const [chemproTag, setChemproTag] = useState<string>(() => getDefaultChemProTag(activePlantId));
+  const [chemproTag, setChemproTag] = useState<string>(() => (simOnly ? '' : getDefaultChemProTag(activePlantId)));
   const [chemproSubTab, setChemproSubTab] = useState<string>('');
   const [chemproHandoff, setChemproHandoff] = useState<boolean>(false);
   const activeDesignRequest = usePFDStore(s => s.activeDesignRequest);
@@ -171,80 +209,109 @@ export default function EquipmentDesignPage() {
       const qSub = p.get('sub');
       const qTag = p.get('tag');
       const qHandoff = p.get('handoff') === '1';
-      if (qTab && VALID_TABS.includes(qTab)) {
+      if (qTab && VALID_TABS.includes(qTab) && isDesignTabAllowedForUser(qTab, user)) {
         setActiveTab(qTab);
+      } else if (simOnly) {
+        setActiveTab('psv_flare');
       }
       if (qSub) setChemproSubTab(qSub);
-      if (qTag) setChemproTag(qTag);
+      if (qTag && !simOnly) setChemproTag(qTag);
       if (qHandoff) setChemproHandoff(true);
     }
-  }, [setActiveTab]);
+  }, [setActiveTab, simOnly, user]);
 
   // 공장 전환 시 다른 공장의 전용 설계 탭(및 전해 전용 설계기준)이 남지 않도록 자동 정합성 보정
   useEffect(() => {
+    if (simOnly) {
+      if (!(STANDALONE_TAB_KEYS as readonly string[]).includes(activeTab)) {
+        setActiveTab('psv_flare');
+      }
+      return;
+    }
     if (activeTab === 'equip') return;
+    if (!isDesignTabAllowedForUser(activeTab, user)) {
+      if (activePlantId === 'mdi_plant' && isPlantAllowed('mdi_plant', user)) setActiveTab('mdi_hub');
+      else if (activePlantId === 'cms_plant' && isPlantAllowed('cms_plant', user)) setActiveTab('cms_hub');
+      else if (activePlantId === 'ech_gte' && isPlantAllowed('ech_gte', user)) setActiveTab('distill');
+      else if (activePlantId === 'hcl_synth' && isPlantAllowed('hcl_synth', user)) setActiveTab('hcl_hub');
+      else if ((activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') && isPlantAllowed('clorsim_sim', user)) setActiveTab('evap');
+      else setActiveTab('psv_flare');
+      return;
+    }
     const isElectrolysis = activePlantId === 'clorsim' || activePlantId === 'clorsim_sim';
     if (activeTab === 'standards' && !isElectrolysis) {
-      if (activePlantId === 'hcl_synth') setActiveTab('hcl_hub');
-      else if (activePlantId === 'ech_gte') setActiveTab('distill');
-      else if (activePlantId === 'cms_plant') setActiveTab('cms_hub');
-      else if (activePlantId === 'mdi_plant') setActiveTab('mdi_hub');
+      if (activePlantId === 'hcl_synth' && isPlantAllowed('hcl_synth', user)) setActiveTab('hcl_hub');
+      else if (activePlantId === 'ech_gte' && isPlantAllowed('ech_gte', user)) setActiveTab('distill');
+      else if (activePlantId === 'cms_plant' && isPlantAllowed('cms_plant', user)) setActiveTab('cms_hub');
+      else if (activePlantId === 'mdi_plant' && isPlantAllowed('mdi_plant', user)) setActiveTab('mdi_hub');
       else setActiveTab('chempro');
       return;
     }
     if (activeTab === 'standards') return;
     if (typeof window !== 'undefined') {
       const qTab = new URLSearchParams(window.location.search).get('tab');
-      if (qTab && VALID_TABS.includes(qTab) && qTab !== activeTab) return;
-      if (qTab === 'distill' && activeTab === 'distill') return;
+      if (qTab && VALID_TABS.includes(qTab) && isDesignTabAllowedForUser(qTab, user) && qTab !== activeTab) return;
+      if (qTab === 'distill' && activeTab === 'distill' && isPlantAllowed('ech_gte', user)) return;
     }
-    if (activePlantId === 'hcl_synth') {
+    if (activePlantId === 'hcl_synth' && isPlantAllowed('hcl_synth', user)) {
       if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'distill' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('hcl_hub');
       }
-    } else if (activePlantId === 'ech_gte') {
+    } else if (activePlantId === 'ech_gte' && isPlantAllowed('ech_gte', user)) {
       if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('distill');
       }
-    } else if (activePlantId === 'cms_plant') {
+    } else if (activePlantId === 'cms_plant' && isPlantAllowed('cms_plant', user)) {
       if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'mdi_hub') {
         setActiveTab('cms_hub');
       }
-    } else if (activePlantId === 'mdi_plant') {
+    } else if (activePlantId === 'mdi_plant' && isPlantAllowed('mdi_plant', user)) {
       if (activeTab === 'evap' || activeTab === 'evap_studio' || activeTab === 'brine' || activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub') {
         setActiveTab('mdi_hub');
       }
-    } else if (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') {
+    } else if ((activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') && isPlantAllowed('clorsim_sim', user)) {
       if (activeTab === 'hcl_hub' || activeTab === 'distill' || activeTab === 'cms_hub' || activeTab === 'mdi_hub') {
         setActiveTab('evap');
       }
     }
-  }, [activePlantId, activeTab, setActiveTab]);
+  }, [activePlantId, activeTab, setActiveTab, simOnly, user]);
 
   // 활성 공장 전환 시 ChemPro 상세설계 기본 장치 태그·유체·드롭다운 즉시 동기화
   useEffect(() => {
     if (lastSyncedPlantRef.current === activePlantId) return;
     lastSyncedPlantRef.current = activePlantId;
     lastSyncedAllowedRef.current = allowedPlants.join(',');
-    const defaultTag = getDefaultChemProTag(activePlantId);
+    const targetPlantId = simOnly ? 'new_builder' : activePlantId;
+    const defaultTag = simOnly ? '' : getDefaultChemProTag(activePlantId);
     setChemproTag(defaultTag);
     setChemproSubTab('');
     setChemproHandoff(false);
     iframeRef.current?.contentWindow?.postMessage(
-      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, tag: defaultTag },
+      {
+        type: 'CHEMPRO_SET_PLANT',
+        plantId: targetPlantId,
+        allowedPlants,
+        tag: defaultTag,
+        skipPresetLoad: simOnly,
+      },
       '*'
     );
-  }, [activePlantId, allowedPlants]);
+  }, [activePlantId, allowedPlants, simOnly]);
 
   useEffect(() => {
     const key = allowedPlants.join(',');
     if (lastSyncedAllowedRef.current === key) return;
     lastSyncedAllowedRef.current = key;
     iframeRef.current?.contentWindow?.postMessage(
-      { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, skipPresetLoad: true },
+      {
+        type: 'CHEMPRO_SET_PLANT',
+        plantId: simOnly ? 'new_builder' : activePlantId,
+        allowedPlants,
+        skipPresetLoad: true,
+      },
       '*'
     );
-  }, [allowedPlants, activePlantId]);
+  }, [allowedPlants, activePlantId, simOnly]);
 
   useEffect(() => {
     if (activeDesignRequest?.tab) {
@@ -287,9 +354,10 @@ export default function EquipmentDesignPage() {
       const d = e?.data;
       if (!d || typeof d !== 'object') return;
       if (d.type === 'CHEMPRO_READY') {
+        const targetPlantId = simOnly ? 'new_builder' : activePlantId;
         if (chemproHandoff) {
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, skipPresetLoad: true },
+            { type: 'CHEMPRO_SET_PLANT', plantId: targetPlantId, allowedPlants, skipPresetLoad: true },
             '*'
           );
           iframeRef.current?.contentWindow?.postMessage(
@@ -297,9 +365,16 @@ export default function EquipmentDesignPage() {
             '*'
           );
         } else {
-          const targetTag = chemproTag || getDefaultChemProTag(activePlantId);
+          const targetTag = simOnly ? '' : (chemproTag || getDefaultChemProTag(activePlantId));
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SET_PLANT', plantId: activePlantId, allowedPlants, tag: targetTag, subTab: chemproSubTab },
+            {
+              type: 'CHEMPRO_SET_PLANT',
+              plantId: targetPlantId,
+              allowedPlants,
+              tag: targetTag,
+              subTab: chemproSubTab,
+              skipPresetLoad: simOnly,
+            },
             '*'
           );
         }
@@ -325,19 +400,24 @@ export default function EquipmentDesignPage() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [setEquipmentSpecOverride, activePlantId, allowedPlants, chemproTag, chemproSubTab, chemproHandoff, units]);
+  }, [setEquipmentSpecOverride, activePlantId, allowedPlants, chemproTag, chemproSubTab, chemproHandoff, units, simOnly]);
 
-  // 1) 장치목록 탭: 선택된 공장의 장치목록만 정확히 출력
-  if (activeTab === 'equip') {
+  // 1) 장치목록 탭: 선택된 공장의 장치목록만 정확히 출력 (simulator_only 계정은 차단)
+  if (!simOnly && activeTab === 'equip') {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F6F7F2' }}>
-        {activePlantId === 'clorsim' ? <EquipmentList /> : <PlantScopedEquipmentList />}
+        {activePlantId === 'clorsim' && isPlantAllowed('clorsim_sim', user) ? <EquipmentList /> : <PlantScopedEquipmentList />}
       </div>
     );
   }
 
-  // 2) 설계기준 탭 (전해공장 전용 — 타 공정에서는 자동 제외)
-  if (activeTab === 'standards' && (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim')) {
+  // 2) 설계기준 탭 (전해공장 전용 — 타 공정 및 simulator_only에서는 자동 제외)
+  if (
+    !simOnly &&
+    activeTab === 'standards' &&
+    (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') &&
+    isPlantAllowed('clorsim_sim', user)
+  ) {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F6F7F2' }}>
         <DesignStandards />
@@ -346,28 +426,41 @@ export default function EquipmentDesignPage() {
   }
 
   // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공)
-  const isMdiMode = activePlantId === 'mdi_plant' || activeTab === 'mdi_hub';
-  const isCmsMode = !isMdiMode && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
-  const isEchMode = !isMdiMode && !isCmsMode && (activePlantId === 'ech_gte' || activeTab === 'distill');
-  const subTabs = isMdiMode
-    ? MDI_DESIGN_TABS
-    : isCmsMode
-      ? CMS_DESIGN_TABS
-      : isEchMode
-        ? ECH_DESIGN_TABS
-        : activePlantId === 'hcl_synth'
-          ? HCL1A_DESIGN_TABS
-          : CA_DESIGN_TABS;
-  const effectiveDesignTab =
-    isMdiMode && !MDI_DESIGN_TABS.some(t => t.key === activeTab)
+  const isMdiMode = !simOnly && isPlantAllowed('mdi_plant', user) && (activePlantId === 'mdi_plant' || activeTab === 'mdi_hub');
+  const isCmsMode = !simOnly && !isMdiMode && isPlantAllowed('cms_plant', user) && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
+  const isEchMode = !simOnly && !isMdiMode && !isCmsMode && isPlantAllowed('ech_gte', user) && (activePlantId === 'ech_gte' || activeTab === 'distill');
+  const isHclMode = !simOnly && !isMdiMode && !isCmsMode && !isEchMode && isPlantAllowed('hcl_synth', user) && (activePlantId === 'hcl_synth' || activeTab === 'hcl_hub');
+  const isCaMode = !simOnly && !isMdiMode && !isCmsMode && !isEchMode && !isHclMode && isPlantAllowed('clorsim_sim', user);
+  const subTabs = simOnly
+    ? STANDALONE_BETA_TABS
+    : isMdiMode
+      ? MDI_DESIGN_TABS
+      : isCmsMode
+        ? CMS_DESIGN_TABS
+        : isEchMode
+          ? ECH_DESIGN_TABS
+          : isHclMode
+            ? HCL1A_DESIGN_TABS
+            : isCaMode
+              ? CA_DESIGN_TABS
+              : STANDALONE_BETA_TABS;
+  const effectiveDesignTab = simOnly
+    ? (STANDALONE_TAB_KEYS as readonly string[]).includes(activeTab)
+      ? activeTab
+      : 'psv_flare'
+    : isMdiMode && !MDI_DESIGN_TABS.some(t => t.key === activeTab)
       ? 'mdi_hub'
       : isCmsMode && !CMS_DESIGN_TABS.some(t => t.key === activeTab)
         ? 'cms_hub'
         : isEchMode && !ECH_DESIGN_TABS.some(t => t.key === activeTab)
           ? 'distill'
-          : !isMdiMode && !isCmsMode && !isEchMode && activePlantId === 'hcl_synth' && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
+          : isHclMode && !HCL1A_DESIGN_TABS.some(t => t.key === activeTab)
             ? 'hcl_hub'
-            : activeTab;
+            : isCaMode && !CA_DESIGN_TABS.some(t => t.key === activeTab)
+              ? 'evap'
+              : !isMdiMode && !isCmsMode && !isEchMode && !isHclMode && !isCaMode && !(STANDALONE_TAB_KEYS as readonly string[]).includes(activeTab)
+                ? 'psv_flare'
+                : activeTab;
 
   const switchDesignSubTab = (key: string) => {
     setActiveTab(key);
@@ -936,18 +1029,20 @@ export default function EquipmentDesignPage() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
           <span style={{ fontSize: 10.5, fontWeight: 800, color: '#64748B', marginRight: 4, whiteSpace: 'nowrap' }}>
-            {formatPlantLabelForUser(
-              isMdiMode
-                ? 'PLANT 05 MDI:'
-                : isCmsMode
-                  ? 'PLANT 04 클로로메탄(CMS):'
-                  : isEchMode
-                    ? 'PLANT 03 바이오 ECH:'
-                    : activePlantId === 'hcl_synth'
-                      ? 'PLANT 02 1A 염산:'
-                      : '전해공장 상세설계:',
-              user
-            )}
+            {simOnly || (!isMdiMode && !isCmsMode && !isEchMode && !isHclMode && !isCaMode)
+              ? '범용 장치설계:'
+              : formatPlantLabelForUser(
+                  isMdiMode
+                    ? 'PLANT 05 MDI:'
+                    : isCmsMode
+                      ? 'PLANT 04 클로로메탄(CMS):'
+                      : isEchMode
+                        ? 'PLANT 03 바이오 ECH:'
+                        : isHclMode
+                          ? 'PLANT 02 1A 염산:'
+                          : '전해공장 상세설계:',
+                  user
+                )}
           </span>
           {subTabs.map(st => {
             const isSel = effectiveDesignTab === st.key;
@@ -974,7 +1069,7 @@ export default function EquipmentDesignPage() {
           })}
         </div>
 
-        {(activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode || isCmsMode || isMdiMode) && (
+        {!simOnly && (isCaMode || isHclMode || isEchMode || isCmsMode || isMdiMode) && (activePlantId === 'clorsim_sim' || activePlantId === 'hcl_synth' || isEchMode || isCmsMode || isMdiMode) && (
           <button
             type="button"
             onClick={() => {
@@ -1006,7 +1101,7 @@ export default function EquipmentDesignPage() {
         <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#F6F7F2' }}>
           <iframe
             ref={iframeRef}
-            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261119a&plant=${encodeURIComponent(activePlantId)}&tag=${encodeURIComponent(chemproTag)}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}`}
+            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261119a&plant=${encodeURIComponent(simOnly ? 'new_builder' : activePlantId)}${!simOnly && chemproTag ? `&tag=${encodeURIComponent(chemproTag)}` : ''}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}${simOnly ? '&standalone=1' : ''}`}
             onLoad={() => {
               iframeRef.current?.contentWindow?.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
             }}

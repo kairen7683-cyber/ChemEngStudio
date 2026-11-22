@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
-import { getPlantRegistryItem, showPlantNumbersForUser } from '@/lib/plantRegistry';
+import { getPlantRegistryItem, isPlantAllowed, isSimulatorOnlyUser, showPlantNumbersForUser } from '@/lib/plantRegistry';
 import { useAuth } from '@/components/auth/AuthContext';
 
 const DesignStandards = dynamic(() => import('@/components/DesignStandards'), { ssr: false });
@@ -270,41 +270,71 @@ const PROCESS_ECONOMICS_DB: Record<string, ProcessEconomicsItem> = {
   },
 };
 
-function getPlantEconomicsKeys(plantId: PlantId): string[] {
-  switch (plantId) {
-    case 'clorsim':
-    case 'clorsim_sim':
-      return ['chlor_alkali', 'naoh_evap'];
-    case 'hcl_synth':
-      return ['hcl_1a'];
-    case 'ech_gte':
-      return ['ech_gte'];
-    case 'cms_plant':
-      return ['cms_plant'];
-    case 'mdi_plant':
-      return ['mdi_plant'];
-    case 'new_builder':
-    default:
-      return ['mdi_plant', 'cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
+const ECON_KEY_TO_PLANT_ID: Record<string, string | null> = {
+  mdi_plant: 'mdi_plant',
+  cms_plant: 'cms_plant',
+  ech_gte: 'ech_gte',
+  hcl_1a: 'hcl_synth',
+  chlor_alkali: 'clorsim_sim',
+  naoh_evap: 'clorsim_sim',
+  amine_ccus: null,
+  methanol_purif: null,
+};
+
+const GENERIC_ECONOMICS_KEYS = ['amine_ccus', 'methanol_purif'];
+
+function getPlantEconomicsKeys(
+  plantId: PlantId,
+  user?: { role?: string; allowed_plants?: string[] | null } | null
+): string[] {
+  if (isSimulatorOnlyUser(user)) {
+    return GENERIC_ECONOMICS_KEYS;
   }
+  const baseKeys = (() => {
+    switch (plantId) {
+      case 'clorsim':
+      case 'clorsim_sim':
+        return ['chlor_alkali', 'naoh_evap'];
+      case 'hcl_synth':
+        return ['hcl_1a'];
+      case 'ech_gte':
+        return ['ech_gte'];
+      case 'cms_plant':
+        return ['cms_plant'];
+      case 'mdi_plant':
+        return ['mdi_plant'];
+      case 'new_builder':
+      case 'classic_sim':
+      default:
+        return ['mdi_plant', 'cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
+    }
+  })();
+
+  const filtered = baseKeys.filter(key => {
+    const mappedPlant = ECON_KEY_TO_PLANT_ID[key];
+    if (!mappedPlant) return true;
+    return isPlantAllowed(mappedPlant, user);
+  });
+  return filtered.length > 0 ? filtered : GENERIC_ECONOMICS_KEYS;
 }
 
 export default function ProcessEconomicsPage() {
+  const { user } = useAuth();
   const activePlantId = useBalanceStore(s => s.activePlantId);
   const plantMeta = getPlantRegistryItem(activePlantId);
-  const allowedKeys = useMemo(() => getPlantEconomicsKeys(activePlantId), [activePlantId]);
-
-  const { user } = useAuth();
+  const allowedKeys = useMemo(() => getPlantEconomicsKeys(activePlantId, user), [activePlantId, user]);
   const [subMode, setSubMode]         = useState<'econ' | 'standards'>('econ');
   const [procKey, setProcKey]         = useState<string>(() => allowedKeys[0]);
-  const [capTpy, setCapTpy]           = useState<number>(() => PROCESS_ECONOMICS_DB[allowedKeys[0]]?.baseCap_tpy ?? 165000);
+  const [capTpy, setCapTpy]           = useState<number>(() => PROCESS_ECONOMICS_DB[allowedKeys[0]]?.baseCap_tpy ?? 100000);
   const [opHours, setOpHours]         = useState<number>(8000);
   const [fxKrw, setFxKrw]             = useState<number>(1380);
   const [powerCost, setPowerCost]     = useState<number>(135);
   const [steamCost, setSteamCost]     = useState<number>(62000);
 
+  const canViewStandards = !isSimulatorOnlyUser(user) && isPlantAllowed('clorsim_sim', user) && activePlantId === 'clorsim';
+
   useEffect(() => {
-    if (activePlantId !== 'clorsim' && subMode === 'standards') {
+    if (!canViewStandards && subMode === 'standards') {
       setSubMode('econ');
     }
     if (!allowedKeys.includes(procKey)) {
@@ -313,9 +343,9 @@ export default function ProcessEconomicsPage() {
       const p = PROCESS_ECONOMICS_DB[nextKey];
       if (p) setCapTpy(p.baseCap_tpy);
     }
-  }, [activePlantId, allowedKeys, procKey, subMode]);
+  }, [canViewStandards, allowedKeys, procKey, subMode]);
 
-  const proc = PROCESS_ECONOMICS_DB[procKey] ?? PROCESS_ECONOMICS_DB[allowedKeys[0]] ?? PROCESS_ECONOMICS_DB.chlor_alkali;
+  const proc = PROCESS_ECONOMICS_DB[procKey] ?? PROCESS_ECONOMICS_DB[allowedKeys[0]] ?? PROCESS_ECONOMICS_DB.amine_ccus;
 
   const handleProcChange = (newKey: string) => {
     setProcKey(newKey);
@@ -379,7 +409,7 @@ export default function ProcessEconomicsPage() {
     XLSX.writeFile(wb, `${proc.code}_Process_Economics_Report.xlsx`);
   };
 
-  if (activePlantId === 'clorsim' && subMode === 'standards') {
+  if (canViewStandards && subMode === 'standards') {
     return (
       <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F6F7F2' }}>
         <div

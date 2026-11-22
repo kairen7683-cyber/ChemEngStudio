@@ -1961,10 +1961,12 @@ interface NamedProjectItem {
 }
 
 // 기본 신규 장치 초기 파라미터 생성기
-function createDefaultParamsForType(type: FlowUnitType) {
+function createDefaultParamsForType(type: FlowUnitType, useGenericDefault = false) {
   switch (type) {
     case 'feed':
-      return { feedTempC: 30, feedPressKgcm2g: 0.3, feedFlowsKgH: { Cl2: 5000, O2: 25 } };
+      return useGenericDefault
+        ? { feedTempC: 30, feedPressKgcm2g: 0.3, feedFlowsKgH: { MeOH: 3000, H2O: 5000 } }
+        : { feedTempC: 30, feedPressKgcm2g: 0.3, feedFlowsKgH: { Cl2: 5000, O2: 25 } };
     case 'saturator':
       return {
         calcMode: 'rigorous' as const,
@@ -2050,7 +2052,13 @@ function createDefaultParamsForType(type: FlowUnitType) {
     case 'evaporator':
       return { evapTargetConcWt: 50.0, operTempC: 112.0, operPressKgcm2g: 0.0 };
     case 'reactor':
-      return { reactionPreset: 'hcl_burner' as const, conversion: 0.995, operTempC: 180.0 };
+      return {
+        reactionPreset: (useGenericDefault
+          ? 'custom'
+          : 'hcl_burner') as FlowNodeDef['params']['reactionPreset'],
+        conversion: 0.995,
+        operTempC: 180.0,
+      };
     case 'mixer':
       return { multiplier: 1 };
     case 'splitter':
@@ -2074,6 +2082,7 @@ export function FlowsheetWorkspace({
   embeddedInPlant = false,
 }: FlowsheetWorkspaceProps) {
   const { user } = useAuth();
+  const useGenericDefault = isSimulatorOnlyUser(user) || workspaceMode === 'new_plant_builder';
   const isElectrolyzerMode = workspaceMode === 'electrolyzer_plant';
   const isHcl1AMode = workspaceMode === 'hcl_1a_plant';
   const isEchGteMode = workspaceMode === 'ech_gte_plant';
@@ -4626,7 +4635,9 @@ export function FlowsheetWorkspace({
             ? {
                 feedTempC: 65,
                 feedPressKgcm2g: 0.2,
-                feedFlowsKgH: { ECH: 5000, DCH: 5000 } as Partial<Record<SimCompKey, number>>,
+                feedFlowsKgH: (useGenericDefault
+                  ? { Benzene: 5000, Toluene: 5000 }
+                  : { ECH: 5000, DCH: 5000 }) as Partial<Record<SimCompKey, number>>,
               }
             : rawH === 'liq_in' && originDef.unitType === 'absorber'
               ? {
@@ -4634,7 +4645,7 @@ export function FlowsheetWorkspace({
                   feedPressKgcm2g: 1.0,
                   feedFlowsKgH: { H2SO4: 980, H2O: 20 } as Partial<Record<SimCompKey, number>>,
                 }
-              : createDefaultParamsForType('feed');
+              : createDefaultParamsForType('feed', useGenericDefault);
 
         const newFeedDef: FlowNodeDef = {
           id: newNodeId,
@@ -4772,7 +4783,7 @@ export function FlowsheetWorkspace({
                       feedPressKgcm2g: 1.2,
                       feedFlowsKgH: { NaOH: 9000, H2O: 21000 } as Partial<Record<SimCompKey, number>>,
                     }
-                  : createDefaultParamsForType('feed');
+                  : createDefaultParamsForType('feed', useGenericDefault);
 
           addedDefs.push({ id: fid, tag: ftag, name: inp.label, unitType: 'feed', params: fParams });
           addedRfNodes.push({
@@ -4919,7 +4930,7 @@ export function FlowsheetWorkspace({
         tag,
         name: meta.label.split(' (')[0],
         unitType: type,
-        params: createDefaultParamsForType(type),
+        params: createDefaultParamsForType(type, useGenericDefault),
       };
 
       setSimDefs(prev => [...prev, newDef]);
@@ -4935,7 +4946,7 @@ export function FlowsheetWorkspace({
       setSelectedNodeId(id);
       setSelectedEdgeId(null);
     },
-    [simDefs, tagStandard]
+    [simDefs, tagStandard, useGenericDefault]
   );
 
   const handleDragStart = (e: React.DragEvent, unitType: FlowUnitType) => {
@@ -4981,10 +4992,18 @@ export function FlowsheetWorkspace({
   const selectedEdgeDef = useMemo(() => flowEdges.find(e => e.id === selectedEdgeId) ?? null, [flowEdges, selectedEdgeId]);
   const selectedStreamRes = selectedEdgeId ? streamResultMap.get(selectedEdgeId) : undefined;
 
-  const selectedUnitDesignRoute = useMemo(
-    () => (selectedDef ? getUnitDesignRouteInfo(selectedDef, isElectrolyzerMode, activeSheetId) : null),
-    [selectedDef, isElectrolyzerMode, activeSheetId]
-  );
+  const selectedUnitDesignRoute = useMemo(() => {
+    if (!selectedDef) return null;
+    const route = getUnitDesignRouteInfo(selectedDef, isElectrolyzerMode, activeSheetId);
+    if (
+      route &&
+      isSimulatorOnlyUser(user) &&
+      (route.kind === 'plant_brine' || route.kind === 'electrolyzer_sub')
+    ) {
+      return null;
+    }
+    return route;
+  }, [selectedDef, isElectrolyzerMode, activeSheetId, user]);
 
   const handleOpenUnitDesign = useCallback((overrideNodeId?: unknown) => {
     const explicitId = typeof overrideNodeId === 'string' ? overrideNodeId : undefined;
@@ -5053,6 +5072,10 @@ export function FlowsheetWorkspace({
     }
 
     if (targetRoute.kind === 'plant_brine') {
+      if (isSimulatorOnlyUser(user)) {
+        setBoundarySyncBanner(['범용 시뮬레이터 모드에서는 전용 공장 설계 모듈로 이동하지 않습니다. 시뮬레이터 내에서 직접 운전 조건을 설정하세요.']);
+        return;
+      }
       setEquipSubTab('brine');
       setActiveDesignRequest({ tab: 'brine', tag: targetDef.tag });
       router.push('/equipment-design?tab=brine');
@@ -5060,6 +5083,10 @@ export function FlowsheetWorkspace({
     }
 
     if (targetRoute.kind === 'electrolyzer_sub') {
+      if (isSimulatorOnlyUser(user)) {
+        setBoundarySyncBanner(['범용 시뮬레이터 모드에서는 전용 공장 설계 모듈로 이동하지 않습니다. 시뮬레이터 내에서 직접 운전 조건을 설정하세요.']);
+        return;
+      }
       setActivePlantId('clorsim_sim');
       requestSimSheet('sub_200_cell');
       router.push('/material-balance');
@@ -5082,6 +5109,7 @@ export function FlowsheetWorkspace({
     setActiveDesignRequest,
     setActivePlantId,
     requestSimSheet,
+    user,
   ]);
 
   const handlePendingCaseRef = useRef<(pending: PendingCaseLoadPayload) => void>(() => {});
@@ -9499,13 +9527,26 @@ export function FlowsheetWorkspace({
                   </button>
                   <div>
                     <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응 모델</label>
-                    <select value={selectedDef.params.reactionPreset ?? 'hcl_burner'} onChange={e => updateParam('reactionPreset', e.target.value)} style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}>
-                      <option value="hcl_burner">염산 합성 (Cl₂ + H₂ → 2HCl)</option>
-                      <option value="caustic_scrub">폐염소 가성제해 · 차아염소산소다 생성 (Cl₂ + 2NaOH → NaOCl + NaCl + H₂O)</option>
-                      <option value="fecl3_chlorination">1B 에칭폐액 염소화 재생 (2FeCl₂ + Cl₂ → 2FeCl₃)</option>
-                      <option value="gte_hydrochlorination">2순위 ECH 1단계 글리세린 염소화 (Glycerol + 2HCl → DCH + 2H₂O)</option>
-                      <option value="ech_saponification">2순위 ECH 2단계 비누화 고리화 (DCH + NaOH → ECH + NaCl + H₂O)</option>
-                      <option value="brine_electrolysis">염수 전해 총괄반응</option>
+                    <select
+                      value={
+                        isSimulatorOnlyUser(user)
+                          ? 'custom'
+                          : (selectedDef.params.reactionPreset ?? (useGenericDefault ? 'custom' : 'hcl_burner'))
+                      }
+                      onChange={e => updateParam('reactionPreset', e.target.value)}
+                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}
+                    >
+                      <option value="custom">사용자 지정 반응식 / 워크벤치 설정</option>
+                      {!isSimulatorOnlyUser(user) && (
+                        <>
+                          <option value="hcl_burner">염산 합성 (Cl₂ + H₂ → 2HCl)</option>
+                          <option value="caustic_scrub">폐염소 가성제해 · 차아염소산소다 생성 (Cl₂ + 2NaOH → NaOCl + NaCl + H₂O)</option>
+                          <option value="fecl3_chlorination">1B 에칭폐액 염소화 재생 (2FeCl₂ + Cl₂ → 2FeCl₃)</option>
+                          <option value="gte_hydrochlorination">2순위 ECH 1단계 글리세린 염소화 (Glycerol + 2HCl → DCH + 2H₂O)</option>
+                          <option value="ech_saponification">2순위 ECH 2단계 비누화 고리화 (DCH + NaOH → ECH + NaCl + H₂O)</option>
+                          <option value="brine_electrolysis">염수 전해 총괄반응</option>
+                        </>
+                      )}
                     </select>
                   </div>
                   <div>
