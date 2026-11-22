@@ -14,13 +14,43 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: 'ChemEng Studio — 화공 엔지니어링 통합 설계 플랫폼',
-  description: '화공 단위장치 설계(ChemPro) · 플랜트 공정 PFD & 물질수지 · 특수공정 · PEP 경제성 · 열역학 물성 시뮬레이션 통합 엔지니어링 워크스테이션',
+  metadataBase: new URL('https://chemplantstudio.com'),
+  title: 'ChemPlant Studio — Chemical Process Simulator & Equipment Design Suite',
+  description:
+    'Web-native chemical process flowsheet simulation (MESH distillation, reactors, LLE), rigorous TEMA & API 662 heat exchanger rating, API 520/526 PSV & API 521 flare network design, electrolyte thermodynamics, and official .xlsx engineering datasheets.',
+  alternates: {
+    canonical: '/',
+  },
+  openGraph: {
+    title: 'ChemPlant Studio — Chemical Process Simulator & Equipment Design Suite',
+    description:
+      'Rigorous chemical process flowsheet simulation, TEMA / API 662 heat exchanger rating, API 520/521 PSV & flare design, and official engineering datasheets in one web workspace.',
+    url: 'https://chemplantstudio.com',
+    siteName: 'ChemPlant Studio',
+    type: 'website',
+    locale: 'en_US',
+    alternateLocale: ['ko_KR'],
+    images: [
+      {
+        url: '/icon-512-v2.png',
+        width: 512,
+        height: 512,
+        alt: 'ChemPlant Studio',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary',
+    title: 'ChemPlant Studio — Chemical Process Simulator & Equipment Design Suite',
+    description:
+      'Web-native chemical process simulation, TEMA/API 662 heat exchanger rating, API 520/521 PSV & flare sizing, and official .xlsx datasheets.',
+    images: ['/icon-512-v2.png'],
+  },
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'ChemEng',
+    title: 'ChemPlant Studio',
   },
   icons: {
     icon: [

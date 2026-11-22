@@ -8,6 +8,7 @@ import {
   setRememberMePreference,
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+import LandingPage from '@/components/landing/LandingPage';
 import { useAuth } from './AuthContext';
 
 function RememberMeOption({
@@ -58,6 +59,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     handleLoginSuccess,
   } = useAuth();
 
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -70,7 +72,37 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setRememberMe(getRememberMePreference());
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('login') === '1') {
+        setTab('login');
+        setAuthModalOpen(true);
+      } else if (params.get('register') === '1') {
+        setTab('register');
+        setAuthModalOpen(true);
+      }
+    } catch {
+      // ignore URL parsing errors
+    }
   }, []);
+
+  useEffect(() => {
+    if (!authModalOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setAuthModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [authModalOpen]);
+
+  const handleOpenAuth = (defaultTab: 'login' | 'register' = 'login') => {
+    setTab(defaultTab);
+    setFormError(null);
+    setFormSuccess(null);
+    setAuthModalOpen(true);
+  };
 
   const handleToggleRememberMe = (checked: boolean) => {
     setRememberMe(checked);
@@ -104,7 +136,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         >
           <img
             src="/icon-192-v2.png"
-            alt="ChemEng Studio"
+            alt="ChemPlant Studio"
             style={{
               width: 52,
               height: 52,
@@ -112,11 +144,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               margin: '0 auto 10px',
               display: 'block',
               objectFit: 'cover',
-              border: '1px solid rgba(56, 189, 248, 0.35)',
+              border: '1px solid rgba(148, 163, 184, 0.35)',
             }}
           />
           <div style={{ fontSize: 16, fontWeight: 900, color: '#FFFFFF', marginBottom: 6 }}>
-            ChemEng Studio
+            ChemPlant Studio
           </div>
           <div style={{ fontSize: 12.5, color: '#94A3B8' }}>
             개인 워크스페이스 보안 연결 및 데이터 동기화 중...
@@ -196,78 +228,117 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         : '자유 회원가입';
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: 'linear-gradient(145deg, #09111E 0%, #0F2342 52%, #172554 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: 440,
-          background: '#FFFFFF',
-          borderRadius: 16,
-          overflow: 'hidden',
-          boxShadow: '0 28px 70px rgba(0, 0, 0, 0.45)',
-          border: '1px solid rgba(255, 255, 255, 0.14)',
-        }}
-      >
-        {/* Header Band */}
+    <>
+      <LandingPage
+        onOpenAuth={handleOpenAuth}
+        registrationMode={registrationMode}
+        authError={authError}
+      />
+
+      {authModalOpen && (
         <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="ChemPlant Studio Sign In"
+          onClick={() => setAuthModalOpen(false)}
           style={{
-            background: '#0F172A',
-            color: '#FFFFFF',
-            padding: '22px 26px 18px',
-            borderBottom: '1px solid #1E293B',
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+            overflowY: 'auto',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-              <img
-                src="/icon-192-v2.png"
-                alt="ChemEng Studio"
-                style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 9,
-                  objectFit: 'cover',
-                  flexShrink: 0,
-                  border: '1px solid rgba(56, 189, 248, 0.35)',
-                }}
-              />
-              <div>
-                <div style={{ fontSize: 16.5, fontWeight: 900, letterSpacing: '-0.02em' }}>
-                  ChemEng Studio
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              background: '#FFFFFF',
+              borderRadius: 16,
+              boxShadow: '0 28px 70px rgba(0, 0, 0, 0.45)',
+              border: '1px solid rgba(255, 255, 255, 0.14)',
+            }}
+          >
+            {/* Header Band */}
+            <div
+              style={{
+                background: '#0F172A',
+                color: '#FFFFFF',
+                padding: '20px 22px 16px',
+                borderBottom: '1px solid #1E293B',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  <img
+                    src="/icon-192-v2.png"
+                    alt="ChemPlant Studio"
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: 9,
+                      objectFit: 'cover',
+                      flexShrink: 0,
+                      border: '1px solid rgba(148, 163, 184, 0.35)',
+                    }}
+                  />
+                  <div>
+                    <div style={{ fontSize: 16.5, fontWeight: 900, letterSpacing: '-0.02em' }}>
+                      ChemPlant Studio
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>
+                      화학공정 설계 · 열역학 시뮬레이션 플랫폼
+                    </div>
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>
-                  화학공정 설계 · 열역학 시뮬레이션 플랫폼
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  <span
+                    style={{
+                      fontSize: 9.5,
+                      fontWeight: 800,
+                      padding: '2px 7px',
+                      borderRadius: 999,
+                      background: 'rgba(59, 130, 246, 0.18)',
+                      color: '#93C5FD',
+                      border: '1px solid rgba(96, 165, 250, 0.35)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {modeNotice}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="닫기"
+                    onClick={() => setAuthModalOpen(false)}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 7,
+                      border: '1px solid #334155',
+                      background: '#1E293B',
+                      color: '#E2E8F0',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      lineHeight: 1,
+                    }}
+                  >
+                    ✕
+                  </button>
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5, flexShrink: 0 }}>
-              <PwaInstallButton variant="login-header" />
-              <span
-                style={{
-                  fontSize: 9.5,
-                  fontWeight: 800,
-                  padding: '2px 7px',
-                  borderRadius: 999,
-                  background: 'rgba(59, 130, 246, 0.18)',
-                  color: '#93C5FD',
-                  border: '1px solid rgba(96, 165, 250, 0.35)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {modeNotice}
-              </span>
-            </div>
-          </div>
-        </div>
 
         {/* Mode Tabs */}
         <div style={{ display: 'flex', background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
@@ -331,7 +402,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 gap: 8,
               }}
             >
-              <span>⚠ {authError}</span>
+              <span>{authError}</span>
               <button
                 type="button"
                 onClick={() => void refreshAuthAndHydrate()}
@@ -602,7 +673,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
