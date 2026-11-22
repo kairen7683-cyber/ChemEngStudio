@@ -461,27 +461,46 @@ const TOP_LEVEL_KEYWORDS = new Set([
   'COMPONENTS',
   'SOLVE',
   'FLOWSHEET',
+  'HIERARCHY',
+  'END-HIERARCHY',
   'PROPERTIES',
   'PROP-DATA',
+  'PROP-SET',
+  'CHEMISTRY',
+  'REACTIONS',
+  'STREAM-CLASS',
   'STREAM',
   'BLOCK',
   'DESIGN-SPEC',
   'SENSITIVITY',
   'CALCULATOR',
+  'TRANSFER',
+  'OPTIMIZATION',
+  'CONSTRAINT',
+  'FORTRAN',
   'CONVERGENCE',
   'CONV-OPTIONS',
   'EO-OPTIONS',
   'SIM-OPTIONS',
+  'FLOWSHEET-OPTIONS',
   'RUN-CONTROL',
   'REPORT',
   'STREAM-REPORT',
+  'STREAM-RESULTS',
+  'BLOCK-RESULTS',
+  'UTILITY',
+  'COSTING',
+  'DYNAMICS',
+  'PRESSURE-RELIEF',
+  'GRAPHICS_BACKUP',
+  'PFD',
+  'VERSION',
+  'SECTION',
   'HISTORY',
   'END-INPUT',
 ]);
 
 const TRAILER_STOP_MARKERS = [
-  'STREAM-RESULTS',
-  'BLOCK-RESULTS',
   '*** SUMMARY',
   'SIMULATION RESULTS',
   'END-INPUT',
@@ -543,16 +562,17 @@ function splitIntoSections(rawText: string): ParsedSection[] {
   let pendingLine: { text: string; indented: boolean } | null = null;
 
   for (const raw of rawLines) {
-    // 바이너리 바이트(NUL 등) 감지 시 즉시 입력부 종료
-    if (/[\x00-\x08\x0E-\x1F]/.test(raw)) {
-      break;
+    // NUL 바이트가 포함된 순수 바이너리 행만 건너뛰고, 단일 제어문자(FF/Ctrl-Z 등)로 전체 파일을 조기 중단하지 않음
+    if (raw.includes('\x00')) {
+      continue;
     }
-    const upperTrim = raw.trim().toUpperCase();
+    const sanitizedRaw = raw.replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+    const upperTrim = sanitizedRaw.trim().toUpperCase();
     if (TRAILER_STOP_MARKERS.some((m) => upperTrim.startsWith(m))) {
       break;
     }
 
-    const noComment = stripInlineComment(raw);
+    const noComment = stripInlineComment(sanitizedRaw);
     const trimmedRight = noComment.replace(/\s+$/, '');
     if (trimmedRight.trim().length === 0) {
       continue;
@@ -917,49 +937,59 @@ export function parseProcessTextFile(
 
   for (const sec of sections) {
     if (sec.keyword !== 'FLOWSHEET') continue;
+    let currentEntry: FlowsheetBlockEntry | null = null;
+    let mode: 'none' | 'in' | 'out' = 'none';
+
     for (const line of sec.bodyLines) {
       const toks = tokenizeLine(line);
-      if (toks.length < 2) continue;
-      if (toks[0].toUpperCase() !== 'BLOCK') continue;
-      const bId = toks[1];
+      if (toks.length === 0) continue;
 
-      let mode: 'none' | 'in' | 'out' = 'none';
-      const inStreams: string[] = [];
-      const outStreams: string[] = [];
+      let startIdx = 0;
+      if (toks[0].toUpperCase() === 'BLOCK' && toks.length >= 2) {
+        const bId = toks[1];
+        const existing = blockMap.get(bId);
+        if (existing) {
+          currentEntry = existing;
+        } else {
+          currentEntry = { id: bId, inStreams: [], outStreams: [] };
+          flowsheetBlocks.push(currentEntry);
+          blockMap.set(bId, currentEntry);
+        }
+        mode = 'none';
+        startIdx = 2;
+      } else if (!currentEntry) {
+        continue;
+      }
 
-      for (let i = 2; i < toks.length; i++) {
-        const tok = toks[i];
+      for (let i = startIdx; i < toks.length; i++) {
+        const tok = toks[i].replace(/,+$/, '');
+        if (!tok) continue;
         const upper = tok.toUpperCase();
+
         if (upper.startsWith('IN=')) {
           mode = 'in';
-          const rest = tok.slice(3);
-          if (rest) inStreams.push(rest);
+          const rest = tok.slice(3).replace(/,+$/, '');
+          if (rest && !/\((HEAT|WORK)\)$/i.test(rest)) currentEntry.inStreams.push(rest);
         } else if (upper === 'IN') {
           mode = 'in';
         } else if (upper.startsWith('OUT=')) {
           mode = 'out';
-          const rest = tok.slice(4);
-          if (rest) outStreams.push(rest);
+          const rest = tok.slice(4).replace(/,+$/, '');
+          if (rest && !/\((HEAT|WORK)\)$/i.test(rest)) currentEntry.outStreams.push(rest);
         } else if (upper === 'OUT') {
           mode = 'out';
+        } else if (upper === '(HEAT)' || upper === '(WORK)') {
+          // 직전 스트림이 열/일 스트림으로 표시된 경우 물질 스트림 목록에서 제거
+          if (mode === 'in' && currentEntry.inStreams.length > 0) currentEntry.inStreams.pop();
+          else if (mode === 'out' && currentEntry.outStreams.length > 0) currentEntry.outStreams.pop();
         } else if (tok.startsWith('(') && tok.endsWith(')')) {
-          // 열/일 스트림 태그 (HEAT)/(WORK) 무시
+          continue;
+        } else if (/\((HEAT|WORK)\)$/i.test(tok)) {
           continue;
         } else {
-          if (mode === 'in') inStreams.push(tok);
-          else if (mode === 'out') outStreams.push(tok);
+          if (mode === 'in') currentEntry.inStreams.push(tok);
+          else if (mode === 'out') currentEntry.outStreams.push(tok);
         }
-      }
-
-      // 열/일 스트림 필터링 (예: Q1, W1 등이 (HEAT)/(WORK)로 명시된 경우 앞 스트림 제거는 보수적으로 유지)
-      const existing = blockMap.get(bId);
-      if (existing) {
-        existing.inStreams.push(...inStreams);
-        existing.outStreams.push(...outStreams);
-      } else {
-        const entry: FlowsheetBlockEntry = { id: bId, inStreams, outStreams };
-        flowsheetBlocks.push(entry);
-        blockMap.set(bId, entry);
       }
     }
   }
