@@ -606,7 +606,9 @@ export async function submitBetaFeedback(payload: {
   page_path: string;
   lang: string;
   unit_preset: string;
-}): Promise<{ ok: boolean; id: number }> {
+  attachment_name?: string;
+  attachment_base64?: string;
+}): Promise<{ ok: boolean; id: number; attachment_saved?: string }> {
   const res = await fetch('/api/feedback', {
     method: 'POST',
     credentials: 'include',

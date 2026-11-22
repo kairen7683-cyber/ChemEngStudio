@@ -696,6 +696,8 @@ class FeedbackCreatePayload(BaseModel):
     page_path: str = ""
     lang: str = "ko"
     unit_preset: str = "METRIC_ENG"
+    attachment_name: Optional[str] = None
+    attachment_base64: Optional[str] = None
 
 
 class AdminUpdateFeedbackPayload(BaseModel):
@@ -1565,8 +1567,38 @@ def api_submit_feedback(
             ),
         )
         new_id = int(cur.lastrowid)
+
+        attachment_saved = ""
+        if payload.attachment_base64 and payload.attachment_name:
+            import base64
+            raw_b64 = payload.attachment_base64.strip()
+            if "," in raw_b64[:64]:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            try:
+                raw_bytes = base64.b64decode(raw_b64, validate=True)
+            except Exception:
+                raise HTTPException(status_code=400, detail="첨부파일 인코딩이 올바르지 않습니다.")
+            if len(raw_bytes) > 8 * 1024 * 1024:
+                raise HTTPException(status_code=400, detail="첨부파일은 최대 8MB까지 업로드할 수 있습니다.")
+            safe_orig = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(payload.attachment_name.strip()))[:80] or "upload.bin"
+            uploads_dir = DATA_DIR / "feedback_uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            saved_name = f"fb_{new_id}_{safe_orig}"
+            dest = uploads_dir / saved_name
+            dest.write_bytes(raw_bytes)
+            try:
+                os.chmod(dest, 0o600)
+            except OSError:
+                pass
+            attachment_saved = saved_name
+            size_kb = max(1, round(len(raw_bytes) / 1024))
+            conn.execute(
+                "UPDATE feedback_items SET admin_note = ? WHERE id = ?",
+                (f"[첨부파일: {saved_name} ({size_kb} KB)]", new_id),
+            )
+
         sync_feedback_backlog_md(conn)
-    return {"ok": True, "id": new_id}
+    return {"ok": True, "id": new_id, "attachment_saved": attachment_saved}
 
 
 @app.get("/api/admin/feedback")

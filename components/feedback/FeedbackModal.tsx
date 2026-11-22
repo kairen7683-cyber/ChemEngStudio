@@ -26,6 +26,7 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
   const [category, setCategory] = useState<FeedbackCategory>('bug');
   const [message, setMessage] = useState('');
+  const [attachedFile, setAttachedFile] = useState<{ name: string; sizeKb: number; base64: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submittedId, setSubmittedId] = useState<number | null>(null);
@@ -50,6 +51,31 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
 
   const trimmedLen = message.trim().length;
   const canSubmit = !submitting && trimmedLen >= 2 && trimmedLen <= 2000;
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setErrorMsg(
+        isEn ? 'Attachment must be 8 MB or smaller.' : '첨부파일은 최대 8MB까지 업로드할 수 있습니다.'
+      );
+      e.target.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',', 2)[1] : result;
+      setAttachedFile({
+        name: file.name,
+        sizeKb: Math.max(1, Math.round(file.size / 1024)),
+        base64,
+      });
+      setErrorMsg(null);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,9 +105,12 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
         page_path: pathname,
         lang,
         unit_preset: presetId,
+        attachment_name: attachedFile?.name,
+        attachment_base64: attachedFile?.base64,
       });
       setSubmittedId(res.id);
       setMessage('');
+      setAttachedFile(null);
     } catch (err) {
       setErrorMsg(
         err instanceof Error
@@ -309,6 +338,75 @@ export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {
                     fontFamily: 'inherit',
                   }}
                 />
+              </div>
+
+              {/* Optional File Attachment (.bkp / .inp / .xlsx / screenshot) */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  padding: '7px 10px',
+                  borderRadius: 8,
+                  border: '1px dashed #CBD5E1',
+                  background: '#F8FAFC',
+                }}
+              >
+                <div style={{ fontSize: 11, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {attachedFile ? (
+                    <span style={{ fontWeight: 700, color: '#1D4ED8' }}>
+                      📎 {attachedFile.name} ({attachedFile.sizeKb} KB)
+                    </span>
+                  ) : (
+                    <span>
+                      {isEn
+                        ? 'Optional file (.bkp, .inp, .xlsx, screenshot, max 8MB)'
+                        : '선택 첨부파일 (.bkp, .inp, .xlsx, 캡처 등 최대 8MB)'}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                  {attachedFile && (
+                    <button
+                      type="button"
+                      onClick={() => setAttachedFile(null)}
+                      style={{
+                        padding: '3px 7px',
+                        borderRadius: 5,
+                        border: '1px solid #FCA5A5',
+                        background: '#FEF2F2',
+                        color: '#B91C1C',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {isEn ? 'Remove' : '삭제'}
+                    </button>
+                  )}
+                  <label
+                    style={{
+                      padding: '4px 9px',
+                      borderRadius: 6,
+                      border: '1px solid #93C5FD',
+                      background: '#EFF6FF',
+                      color: '#1D4ED8',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isEn ? 'Attach File' : '파일 첨부'}
+                    <input
+                      type="file"
+                      accept=".bkp,.inp,.xlsx,.xls,.json,.txt,.png,.jpg,.jpeg,.pdf"
+                      onChange={handleFileChange}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                </div>
               </div>
 
               {/* Auto-captured Context Line */}
