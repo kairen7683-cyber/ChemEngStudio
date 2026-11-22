@@ -4,14 +4,19 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   type ActiveDeviceSession,
   type AdminUserSummary,
+  type BetaFeedbackItem,
+  type FeedbackCategory,
+  type FeedbackStatus,
   type InviteCodeItem,
   type RegistrationMode,
   adminCreateInviteCode,
   adminCreateUser,
   adminDeleteUser,
   adminFetchOverview,
+  adminListFeedback,
   adminRevokeUserSessions,
   adminToggleInviteCode,
+  adminUpdateFeedback,
   adminUpdateSettings,
   adminUpdateUser,
   changeMyPassword,
@@ -26,6 +31,19 @@ import { useAuth } from './AuthContext';
 const SELECTABLE_PLANTS = PLANT_REGISTRY.filter(p => !p.hiddenFromSelector && !p.isSandbox);
 
 type PlantPermissionScope = 'simulator_only' | 'all' | 'custom';
+
+const FEEDBACK_CATEGORY_LABELS: Record<FeedbackCategory, { label: string; bg: string; border: string; color: string }> = {
+  bug: { label: '버그 신고', bg: '#FEF2F2', border: '#FCA5A5', color: '#991B1B' },
+  calc: { label: '계산·수식', bg: '#EFF6FF', border: '#93C5FD', color: '#1E40AF' },
+  feature: { label: '기능 제안', bg: '#F0FDF4', border: '#86EFAC', color: '#166534' },
+  ux: { label: 'UI·사용성', bg: '#F8FAFC', border: '#CBD5E1', color: '#334155' },
+};
+
+const FEEDBACK_STATUS_OPTIONS: Array<{ value: FeedbackStatus; label: string }> = [
+  { value: 'new', label: '신규' },
+  { value: 'in_progress', label: '진행' },
+  { value: 'done', label: '완료' },
+];
 
 function formatSessionTime(iso?: string | null): string {
   if (!iso) return '-';
@@ -356,6 +374,8 @@ export default function AdminConsoleModal() {
   const [newGeminiKey, setNewGeminiKey] = useState('');
   const [users, setUsers] = useState<AdminUserSummary[]>([]);
   const [invites, setInvites] = useState<InviteCodeItem[]>([]);
+  const [feedbackItems, setFeedbackItems] = useState<BetaFeedbackItem[]>([]);
+  const [updatingFeedbackId, setUpdatingFeedbackId] = useState<number | null>(null);
 
   // 초대코드 생성 폼
   const [invMemo, setInvMemo] = useState('');
@@ -396,12 +416,16 @@ export default function AdminConsoleModal() {
     if (!user || user.role !== 'admin') return;
     setAdminLoading(true);
     try {
-      const ov = await adminFetchOverview();
+      const [ov, fb] = await Promise.all([
+        adminFetchOverview(),
+        adminListFeedback().catch(() => [] as BetaFeedbackItem[]),
+      ]);
       setRegMode(ov.registration_mode);
       setAiLimit(ov.daily_ai_limit);
       setHasGeminiKey(ov.has_gemini_key);
       setUsers(ov.users);
       setInvites(ov.invites);
+      setFeedbackItems(fb);
     } catch (err) {
       setAdminMsg({
         type: 'err',
@@ -677,6 +701,25 @@ export default function AdminConsoleModal() {
       await loadAdminOverview();
     } catch (err) {
       setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '삭제 실패' });
+    }
+  };
+
+  const handleUpdateFeedbackStatus = async (item: BetaFeedbackItem, nextStatus: FeedbackStatus) => {
+    if (item.status === nextStatus) return;
+    setAdminMsg(null);
+    setUpdatingFeedbackId(item.id);
+    try {
+      const updated = await adminUpdateFeedback(item.id, { status: nextStatus });
+      setFeedbackItems(prev => prev.map(f => (f.id === item.id ? updated : f)));
+      const label = FEEDBACK_STATUS_OPTIONS.find(o => o.value === nextStatus)?.label ?? nextStatus;
+      setAdminMsg({ type: 'ok', text: `피드백 #${item.id} 상태가 [${label}]로 변경되었습니다.` });
+    } catch (err) {
+      setAdminMsg({
+        type: 'err',
+        text: err instanceof Error ? err.message : '피드백 상태 변경 실패',
+      });
+    } finally {
+      setUpdatingFeedbackId(null);
     }
   };
 
@@ -1751,6 +1794,192 @@ export default function AdminConsoleModal() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* 5. 베타 피드백 백로그 */}
+              <div style={{ padding: 13, borderRadius: 10, border: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
+                      5. 베타 피드백 백로그 ({feedbackItems.length}건)
+                    </span>
+                    <span
+                      style={{
+                        padding: '1.5px 6px',
+                        borderRadius: 4,
+                        background: '#F1F5F9',
+                        border: '1px solid #CBD5E1',
+                        color: '#334155',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      신규 {feedbackItems.filter(f => f.status === 'new').length} · 진행{' '}
+                      {feedbackItems.filter(f => f.status === 'in_progress').length} · 완료{' '}
+                      {feedbackItems.filter(f => f.status === 'done').length}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadAdminOverview()}
+                    disabled={adminLoading}
+                    style={{
+                      padding: '3px 8px',
+                      borderRadius: 5,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      fontSize: 10.5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {adminLoading ? '갱신 중...' : '새로고침'}
+                  </button>
+                </div>
+
+                {feedbackItems.length === 0 ? (
+                  <div
+                    style={{
+                      padding: '14px 12px',
+                      borderRadius: 7,
+                      border: '1px solid #E2E8F0',
+                      background: '#F8FAFC',
+                      color: '#64748B',
+                      fontSize: 11.2,
+                      textAlign: 'center',
+                    }}
+                  >
+                    접수된 베타 피드백이 아직 없습니다.
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      maxHeight: 280,
+                      overflowY: 'auto',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 7,
+                      display: 'flex',
+                      flexDirection: 'column',
+                    }}
+                  >
+                    {feedbackItems.map((item, idx) => {
+                      const catMeta = FEEDBACK_CATEGORY_LABELS[item.category] ?? FEEDBACK_CATEGORY_LABELS.bug;
+                      const showEmail = Boolean(
+                        item.email && item.email.toLowerCase() !== item.username.toLowerCase()
+                      );
+                      const busy = updatingFeedbackId === item.id;
+                      return (
+                        <div
+                          key={item.id}
+                          style={{
+                            padding: '9px 11px',
+                            borderTop: idx === 0 ? 'none' : '1px solid #F1F5F9',
+                            background: item.status === 'done' ? '#F8FAFC' : '#FFFFFF',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 5,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 6,
+                            }}
+                          >
+                            <div style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                              <span
+                                style={{
+                                  fontFamily: 'JetBrains Mono, monospace',
+                                  fontWeight: 800,
+                                  color: '#475569',
+                                }}
+                              >
+                                #{item.id}
+                              </span>
+                              <span
+                                style={{
+                                  padding: '1.5px 6px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  background: catMeta.bg,
+                                  border: `1px solid ${catMeta.border}`,
+                                  color: catMeta.color,
+                                }}
+                              >
+                                {catMeta.label}
+                              </span>
+                              <span style={{ fontWeight: 800, color: '#0F172A' }}>
+                                {item.username}
+                              </span>
+                              {showEmail && (
+                                <span style={{ color: '#64748B', fontSize: 10.5 }}>
+                                  ({item.email})
+                                </span>
+                              )}
+                              <span
+                                style={{
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  background: '#F1F5F9',
+                                  color: '#475569',
+                                  fontSize: 10,
+                                  fontFamily: 'JetBrains Mono, monospace',
+                                }}
+                              >
+                                {item.page_path || '/'}
+                              </span>
+                              <span style={{ color: '#94A3B8', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+                                {formatSessionTime(item.created_at)}
+                              </span>
+                            </div>
+
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                              {FEEDBACK_STATUS_OPTIONS.map(opt => {
+                                const active = item.status === opt.value;
+                                return (
+                                  <button
+                                    key={opt.value}
+                                    type="button"
+                                    disabled={busy}
+                                    onClick={() => void handleUpdateFeedbackStatus(item, opt.value)}
+                                    style={{
+                                      padding: '2px 7px',
+                                      borderRadius: 4,
+                                      border: active ? '1px solid #0F172A' : '1px solid #CBD5E1',
+                                      background: active ? '#0F172A' : '#FFFFFF',
+                                      color: active ? '#FFFFFF' : '#475569',
+                                      fontSize: 10.2,
+                                      fontWeight: active ? 800 : 600,
+                                      cursor: busy ? 'wait' : 'pointer',
+                                    }}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: item.status === 'done' ? '#64748B' : '#1E293B',
+                              lineHeight: 1.48,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                            }}
+                          >
+                            {item.message}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           )}

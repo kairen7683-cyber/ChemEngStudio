@@ -282,6 +282,22 @@ def init_db() -> str:
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS feedback_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT NOT NULL,
+            email TEXT DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'bug',
+            page_path TEXT DEFAULT '',
+            device_type TEXT DEFAULT 'desktop',
+            lang TEXT DEFAULT 'ko',
+            unit_preset TEXT DEFAULT 'METRIC_ENG',
+            message TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'new',
+            admin_note TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
         """
     )
 
@@ -296,6 +312,9 @@ def init_db() -> str:
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sessions_user_device_exp ON sessions(user_id, device_type, expires_at)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_feedback_status_created ON feedback_items(status, created_at DESC)"
     )
 
     defaults = {
@@ -665,6 +684,19 @@ class AdminToggleInvitePayload(BaseModel):
 
 class AiAdvisePayload(BaseModel):
     prompt: str
+
+
+class FeedbackCreatePayload(BaseModel):
+    category: Literal["bug", "calc", "feature", "ux"] = "bug"
+    message: str
+    page_path: str = ""
+    lang: str = "ko"
+    unit_preset: str = "METRIC_ENG"
+
+
+class AdminUpdateFeedbackPayload(BaseModel):
+    status: Optional[Literal["new", "in_progress", "done"]] = None
+    admin_note: Optional[str] = None
 
 
 # ── Health & Auth Endpoints ─────────────────────────────────────────────
@@ -1397,6 +1429,185 @@ def api_admin_toggle_invite(
             (1 if payload.is_active else 0, code.strip().upper()),
         )
     return {"ok": True}
+
+
+# ── In-App Beta Feedback & Markdown Backlog ─────────────────────────────
+FEEDBACK_BACKLOG_PATH = DATA_DIR / "beta_feedback_backlog.md"
+
+
+def serialize_feedback(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "username": row["username"],
+        "email": row["email"] or "",
+        "category": row["category"],
+        "page_path": row["page_path"] or "",
+        "device_type": row["device_type"] or "desktop",
+        "lang": row["lang"] or "ko",
+        "unit_preset": row["unit_preset"] or "METRIC_ENG",
+        "message": row["message"],
+        "status": row["status"],
+        "admin_note": row["admin_note"] or "",
+        "created_at": row["created_at"],
+    }
+
+
+def sync_feedback_backlog_md(conn: sqlite3.Connection) -> None:
+    """Write grouped Markdown backlog to DATA_DIR / 'beta_feedback_backlog.md'."""
+    rows = conn.execute(
+        """
+        SELECT id, user_id, username, email, category, page_path,
+               device_type, lang, unit_preset, message, status, admin_note, created_at
+        FROM feedback_items
+        ORDER BY id DESC
+        """
+    ).fetchall()
+
+    grouped: dict[str, list[sqlite3.Row]] = {"new": [], "in_progress": [], "done": []}
+    for r in rows:
+        st = r["status"] if r["status"] in grouped else "new"
+        grouped[st].append(r)
+
+    updated_kst = (utcnow() + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S KST")
+    lines: list[str] = [
+        "# ChemPlant Studio — Beta Feedback Backlog",
+        "",
+        f"- Updated: `{updated_kst}`",
+        f"- Summary: Total **{len(rows)}** | New **{len(grouped['new'])}** | In Progress **{len(grouped['in_progress'])}** | Done **{len(grouped['done'])}**",
+        "",
+    ]
+
+    sections = [
+        ("new", "New"),
+        ("in_progress", "In Progress"),
+        ("done", "Done"),
+    ]
+    for status_key, title in sections:
+        items = grouped[status_key]
+        lines.append(f"## {title} ({len(items)})")
+        lines.append("")
+        if not items:
+            lines.append("_No items._")
+            lines.append("")
+            continue
+        for r in items:
+            who = r["username"]
+            email_val = (r["email"] or "").strip()
+            if email_val and email_val.lower() != who.lower():
+                who = f"{who} ({email_val})"
+            lines.append(
+                f"### #{r['id']} [{r['category']}] {who} — `{r['created_at']}`"
+            )
+            lines.append(
+                f"- Page: `{r['page_path'] or '/'}` | Device: `{r['device_type'] or 'desktop'}` | Lang: `{r['lang'] or 'ko'}` | Units: `{r['unit_preset'] or 'METRIC_ENG'}`"
+            )
+            msg_lines = (r["message"] or "").splitlines() or [""]
+            for ml in msg_lines:
+                lines.append(f"> {ml}")
+            note = (r["admin_note"] or "").strip()
+            if note:
+                lines.append(f"- Admin Note: {note}")
+            lines.append("")
+
+    FEEDBACK_BACKLOG_PATH.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        os.chmod(FEEDBACK_BACKLOG_PATH, 0o600)
+    except OSError:
+        pass
+
+
+@app.post("/api/feedback")
+def api_submit_feedback(
+    payload: FeedbackCreatePayload,
+    request: Request,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    msg = payload.message.strip()
+    if len(msg) < 2 or len(msg) > 2000:
+        raise HTTPException(
+            status_code=400,
+            detail="피드백 내용은 2자 이상 2000자 이하로 입력해야 합니다.",
+        )
+    ua_raw = request.headers.get("user-agent", "")[:240]
+    device_type, _ = parse_user_agent(ua_raw)
+    page_path = (payload.page_path or "").strip()[:240]
+    lang = "en" if (payload.lang or "").strip().lower() == "en" else "ko"
+    unit_preset = ((payload.unit_preset or "METRIC_ENG").strip()[:60]) or "METRIC_ENG"
+    user_email = (user["email"] if "email" in user.keys() else "") or ""
+
+    with get_db() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO feedback_items(
+                user_id, username, email, category, page_path,
+                device_type, lang, unit_preset, message, status, admin_note, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', '', ?)
+            """,
+            (
+                user["id"],
+                user["username"],
+                user_email,
+                payload.category,
+                page_path,
+                device_type,
+                lang,
+                unit_preset,
+                msg,
+                iso_now(),
+            ),
+        )
+        new_id = int(cur.lastrowid)
+        sync_feedback_backlog_md(conn)
+    return {"ok": True, "id": new_id}
+
+
+@app.get("/api/admin/feedback")
+def api_admin_list_feedback(
+    _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
+):
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, user_id, username, email, category, page_path,
+                   device_type, lang, unit_preset, message, status, admin_note, created_at
+            FROM feedback_items
+            ORDER BY id DESC
+            """
+        ).fetchall()
+        return {"items": [serialize_feedback(r) for r in rows]}
+
+
+@app.patch("/api/admin/feedback/{item_id}")
+def api_admin_update_feedback(
+    item_id: int,
+    payload: AdminUpdateFeedbackPayload,
+    _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
+):
+    with get_db() as conn:
+        existing = conn.execute(
+            "SELECT * FROM feedback_items WHERE id = ?",
+            (item_id,),
+        ).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="피드백 항목을 찾을 수 없습니다.")
+        if payload.status is not None:
+            conn.execute(
+                "UPDATE feedback_items SET status = ? WHERE id = ?",
+                (payload.status, item_id),
+            )
+        if payload.admin_note is not None:
+            conn.execute(
+                "UPDATE feedback_items SET admin_note = ? WHERE id = ?",
+                (payload.admin_note.strip()[:1000], item_id),
+            )
+        sync_feedback_backlog_md(conn)
+        updated = conn.execute(
+            "SELECT * FROM feedback_items WHERE id = ?",
+            (item_id,),
+        ).fetchone()
+        return {"ok": True, "item": serialize_feedback(updated)}
 
 
 # ── Protected Proprietary Data + Next.js Static Export Hosting ──────────

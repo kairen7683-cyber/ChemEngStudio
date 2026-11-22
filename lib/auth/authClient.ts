@@ -55,6 +55,25 @@ export interface InviteCodeItem {
   created_by_name?: string;
 }
 
+export type FeedbackCategory = 'bug' | 'calc' | 'feature' | 'ux';
+export type FeedbackStatus = 'new' | 'in_progress' | 'done';
+
+export interface BetaFeedbackItem {
+  id: number;
+  user_id: number | null;
+  username: string;
+  email: string;
+  category: FeedbackCategory;
+  page_path: string;
+  device_type: string;
+  lang: string;
+  unit_preset: string;
+  message: string;
+  status: FeedbackStatus;
+  admin_note: string;
+  created_at: string;
+}
+
 const ACTIVE_UID_KEY = '__chemplant_active_uid__';
 const REMEMBER_PREF_KEY = '__chemplant_remember_pref__';
 const REMEMBER_MODE_KEY = '__chemplant_remember_mode__';
@@ -576,4 +595,48 @@ export async function adminToggleInviteCode(code: string, isActive: boolean): Pr
     body: JSON.stringify({ is_active: isActive }),
   });
   if (!res.ok) throw new Error('초대코드 변경 실패');
+}
+
+// ── Beta Feedback API ──────────────────────────────────────────────────
+export async function submitBetaFeedback(payload: {
+  category: FeedbackCategory;
+  message: string;
+  page_path: string;
+  lang: string;
+  unit_preset: string;
+}): Promise<{ ok: boolean; id: number }> {
+  const res = await fetch('/api/feedback', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '피드백 접수에 실패했습니다.');
+  return data as { ok: boolean; id: number };
+}
+
+export async function adminListFeedback(): Promise<BetaFeedbackItem[]> {
+  const res = await fetch('/api/admin/feedback', {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '피드백 목록 조회 실패');
+  return Array.isArray(data.items) ? (data.items as BetaFeedbackItem[]) : [];
+}
+
+export async function adminUpdateFeedback(
+  id: number,
+  patch: { status?: FeedbackStatus; admin_note?: string }
+): Promise<BetaFeedbackItem> {
+  const res = await fetch(`/api/admin/feedback/${id}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '피드백 상태 변경 실패');
+  return data.item as BetaFeedbackItem;
 }

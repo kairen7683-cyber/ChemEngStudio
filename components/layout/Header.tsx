@@ -44,6 +44,7 @@ import {
   PlusSquareIcon,
 } from '@/components/ui/EngIcons';
 import ValidationReportModal from '@/components/validation/ValidationReportModal';
+import FeedbackModal from '@/components/feedback/FeedbackModal';
 
 function formatSavedDate(raw: string): string {
   if (!raw) return '';
@@ -66,6 +67,7 @@ export default function Header() {
   const [caseMenuOpen, setCaseMenuOpen] = useState(false);
   const [outputsMenuOpen, setOutputsMenuOpen] = useState(false);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
   const [outputsMenuPos, setOutputsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 260 });
   const [savedCases, setSavedCases] = useState<UnifiedSavedCaseEntry[]>([]);
@@ -1250,6 +1252,30 @@ export default function Header() {
             })}
           </div>
 
+          <button
+            type="button"
+            onClick={() => setFeedbackOpen(true)}
+            title={lang === 'en' ? 'Send beta feedback' : '베타 피드백 접수'}
+            style={{
+              padding: '4px 8px',
+              borderRadius: 6,
+              border: '1px solid #334155',
+              background: '#1E293B',
+              color: '#E2E8F0',
+              fontSize: 10.5,
+              fontWeight: 700,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              flexShrink: 0,
+            }}
+          >
+            <DocSheetIcon size={12} />
+            <span>{lang === 'en' ? 'Feedback' : '피드백'}</span>
+          </button>
+
           <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />
           <HeaderUserControls />
         </div>
@@ -1307,6 +1333,10 @@ export default function Header() {
       <ValidationReportModal
         open={validationModalOpen}
         onClose={() => setValidationModalOpen(false)}
+      />
+      <FeedbackModal
+        open={feedbackOpen}
+        onClose={() => setFeedbackOpen(false)}
       />
     </header>
   );
