@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
+import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
   UnitNumberInput,
@@ -450,6 +451,8 @@ export default function HeatExchangerWorkbenchModal({
         ]),
       );
     }
+
+    sheet1Rows.push(...ENGINEERING_DISCLAIMER_ROWS);
 
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.aoa_to_sheet(sheet1Rows);

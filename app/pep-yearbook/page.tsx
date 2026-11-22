@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import * as XLSX from 'xlsx';
+import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import { useBalanceStore, type PlantId } from '@/lib/stores/balanceStore';
 import { getPlantRegistryItem, showPlantNumbersForUser } from '@/lib/plantRegistry';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -371,6 +372,7 @@ export default function PepYearbookPage() {
         r.type === 'RAW' ? '원료 (Raw Material)' : '유틸리티 (Utility)',
         r.item, r.qty, r.unit, +r.hourlyQty.toFixed(2), r.appliedCost, Math.round(r.costPerTon)
       ]),
+      ...ENGINEERING_DISCLAIMER_ROWS,
     ];
     const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Process_Economics');

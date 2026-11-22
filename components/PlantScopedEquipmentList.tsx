@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx';
+import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { getPlantRegistryItem } from '@/lib/plantRegistry';
 import {
@@ -1082,6 +1083,7 @@ export default function PlantScopedEquipmentList() {
         r.ratingBadgeLabel,
         r.materialLabel,
       ]),
+      ...ENGINEERING_DISCLAIMER_ROWS,
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     XLSX.utils.book_append_sheet(wb, ws, 'Master_Equipment_List');

@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
+import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import {
   solvePSV,
   estimateFireEnvFactor,
@@ -488,6 +489,7 @@ export default function PsvFlareDesignPanel() {
       ['Outlet Pipe ID (mm)', pc.outlet_pipe_id_mm, 'Outlet Exit Mach', pc.outlet_mach],
       ['Discharge Reaction Force (N)', pc.reaction_force_N, 'Discharge Reaction Force (kgf)', pc.reaction_force_kgf],
       ['Acoustic Noise @ 30 m (dBA)', pc.noise_dBA_30m, 'Geometry Source', pc.is_inferred_geometry ? 'Flange Inferred' : 'User Specified'],
+      ...ENGINEERING_DISCLAIMER_ROWS,
     ];
 
     const ws1 = XLSX.utils.aoa_to_sheet(sheet1Data);
@@ -561,6 +563,7 @@ export default function PsvFlareDesignPanel() {
       ['Peak Ground Radiation (kW/m²)', radiation.peakGroundRadKwM2, 'Peak Distance Downwind (m)', radiation.peakGroundDistM],
       ['Safe Dist @ 1.58 kW/m² (Boundary, m)', radiation.safeDist_1_58_m, 'Safe Dist @ 4.73 kW/m² (Emergency, m)', radiation.safeDist_4_73_m],
       ['Safe Dist @ 6.31 kW/m² (Short Exp, m)', radiation.safeDist_6_31_m, 'Safe Dist @ 9.46 kW/m² (Structure, m)', radiation.safeDist_9_46_m],
+      ...ENGINEERING_DISCLAIMER_ROWS,
     ];
     const ws1 = XLSX.utils.aoa_to_sheet(s1);
     ws1['!cols'] = [{ wch: 34 }, { wch: 24 }, { wch: 32 }, { wch: 24 }];

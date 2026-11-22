@@ -7,6 +7,51 @@
 
 window.ChemEngExcelExporter = (function () {
 
+  const ENGINEERING_DISCLAIMER_KO =
+    '본 계산 결과 및 데이터시트는 공정 검토·기본설계 보조 목적의 참고 자료이며, 최종 제작·시공·인허가(PSM 등) 전에는 반드시 공인 기술사(PE) 및 관련 규격(ASME/TEMA/API)에 따른 공식 검증이 필요합니다.';
+  const ENGINEERING_DISCLAIMER_EN =
+    'NOTICE: Calculation results and datasheets are provided for preliminary process design and engineering reference only. Final fabrication, installation, and regulatory approvals (e.g., PSM) require formal verification by a licensed Professional Engineer (PE) per applicable ASME/TEMA/API codes.';
+
+  function appendDisclaimerRow(ws, maxCol) {
+    const endCol = Math.max(2, maxCol || 10);
+    const startRow = (ws.lastRow ? ws.lastRow.number : 0) + 2;
+    const enRow = startRow + 1;
+    const subtleBorder = { style: 'thin', color: { argb: 'FFCBD5E1' } };
+    const mutedFont = { name: 'Calibri', size: 8.5, italic: true, color: { argb: 'FF64748B' } };
+    const mutedFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+
+    ws.mergeCells(startRow, 1, startRow, endCol);
+    const koCell = ws.getCell(startRow, 1);
+    koCell.value = `[면책 고지 / Engineering Disclaimer] ${ENGINEERING_DISCLAIMER_KO}`;
+    koCell.font = mutedFont;
+    koCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    ws.getRow(startRow).height = 26;
+
+    ws.mergeCells(enRow, 1, enRow, endCol);
+    const enCell = ws.getCell(enRow, 1);
+    enCell.value = ENGINEERING_DISCLAIMER_EN;
+    enCell.font = mutedFont;
+    enCell.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+    ws.getRow(enRow).height = 26;
+
+    for (let c = 1; c <= endCol; c++) {
+      const topCell = ws.getCell(startRow, c);
+      topCell.fill = mutedFill;
+      topCell.border = {
+        top: subtleBorder,
+        left: c === 1 ? subtleBorder : undefined,
+        right: c === endCol ? subtleBorder : undefined
+      };
+      const botCell = ws.getCell(enRow, c);
+      botCell.fill = mutedFill;
+      botCell.border = {
+        bottom: subtleBorder,
+        left: c === 1 ? subtleBorder : undefined,
+        right: c === endCol ? subtleBorder : undefined
+      };
+    }
+  }
+
   function getCanvasBase64(canvasId, fallbackRenderFn) {
     let canvas = document.getElementById(canvasId);
     if (fallbackRenderFn) {
@@ -1087,6 +1132,7 @@ window.ChemEngExcelExporter = (function () {
     } else {
       populateOtherEquipmentSheet1(wb, ws1, eqType, res, dateStr);
     }
+    appendDisclaimerRow(ws1, 10);
 
     populateSheet2Sketches(wb, ws2, eqType, res, dateStr);
 

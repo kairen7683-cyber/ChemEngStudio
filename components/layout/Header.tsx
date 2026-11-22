@@ -40,6 +40,7 @@ import {
   PfdSchematicIcon,
   PlusSquareIcon,
 } from '@/components/ui/EngIcons';
+import ValidationReportModal from '@/components/validation/ValidationReportModal';
 
 function formatSavedDate(raw: string): string {
   if (!raw) return '';
@@ -61,6 +62,7 @@ export default function Header() {
   const [simUiMode, setSimUiMode] = useState<SimUiMode>('modern');
   const [caseMenuOpen, setCaseMenuOpen] = useState(false);
   const [outputsMenuOpen, setOutputsMenuOpen] = useState(false);
+  const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
   const [outputsMenuPos, setOutputsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 260 });
   const [savedCases, setSavedCases] = useState<UnifiedSavedCaseEntry[]>([]);
@@ -1035,6 +1037,38 @@ export default function Header() {
                     </button>
                   );
                 })}
+                <div
+                  style={{
+                    height: 1,
+                    background: '#E2E8F0',
+                    margin: '4px 4px',
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutputsMenuOpen(false);
+                    setValidationModalOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 6,
+                    border: '1px solid transparent',
+                    background: '#F8FAFC',
+                    color: '#0F172A',
+                    fontSize: 11.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    textAlign: 'left',
+                  }}
+                >
+                  <DocSheetIcon size={13} />
+                  <span>검증 리포트 (Golden Cases)</span>
+                </button>
               </div>
             )}
           </div>
@@ -1150,6 +1184,11 @@ export default function Header() {
           </button>
         </div>
       )}
+
+      <ValidationReportModal
+        open={validationModalOpen}
+        onClose={() => setValidationModalOpen(false)}
+      />
     </header>
   );
 }
