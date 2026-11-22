@@ -167,6 +167,11 @@ export function idealTubeBankJF(Re: number, pitchRatio: number, deg: LayoutDeg):
   return { j, f };
 }
 
+/** TEMA-style default pass-partition lane width Lpl [m] in crossflow direction. */
+export function defaultPassLaneWidthM(tubePasses: number, tubeOdM: number): number {
+  return tubePasses > 1 ? Math.max(0.012, tubeOdM * 0.75) : 0;
+}
+
 /** TEMA-style default clearances. */
 export function temaDefaultClearances(shellIdM: number, maxSpanM: number): { Lsb: number; Ltb: number; Lbb: number } {
   const DsMm = shellIdM * 1000;
@@ -200,7 +205,12 @@ export function bellDelawareShellSide(g: ShellTubeGeometry, fl: FluidState): Bel
   const Lsb = g.shellBaffleClearanceM ?? tema.Lsb;
   const Ltb = g.tubeBaffleClearanceM ?? tema.Ltb;
   const Nss = g.sealingStripPairs ?? 0;
-  const Lpl = g.passLaneWidthM ?? 0;
+  const Lpl =
+    g.passLaneWidthM !== undefined && g.passLaneWidthM > 0
+      ? g.passLaneWidthM
+      : g.tubePasses > 1
+        ? defaultPassLaneWidthM(g.tubePasses, d)
+        : 0;
   const Dctl = Dotl - d;
   const { Lpp, LtpEff } = pitchComponents(Ltp, g.layoutDeg);
 
@@ -453,6 +463,128 @@ export function shellBoilingH(fl: TwoPhaseFluid, qWm2: number, bundleFactor = 1.
   return 0.104 * Math.pow(Pc, 0.69) * Math.pow(Math.max(qWm2, 100), 0.7) * Fp * bundleFactor;
 }
 
+/**
+ * Silver–Bell–Ghaly (SBG) condensation film coefficient correction for
+ * non-condensable gases (NCG) and/or sensible vapor-phase cooling resistance.
+ */
+export function silverBellGhalyCondensationH(
+  hCondWm2K: number,
+  hGasSensibleWm2K: number,
+  qSensibleFrac: number,
+  ncgMolFrac = 0,
+): number {
+  const hCond = Math.max(50, hCondWm2K);
+  const hGas = Math.max(15, hGasSensibleWm2K);
+  const yNcg = Math.min(1, Math.max(0, ncgMolFrac || 0));
+  const qSens = Math.min(1, Math.max(0, qSensibleFrac || 0));
+  const Zg = Math.min(0.98, Math.max(0, qSens + 0.85 * yNcg));
+  const hEff = 1 / (1 / hCond + Zg / hGas);
+  return Math.min(hCond, Math.max(20, hEff));
+}
+
+/**
+ * N-segment composite midpoint integration of local phase-change heat transfer
+ * coefficient along vapor quality xIn -> xOut (clamping local x to [0.02, 0.98]).
+ */
+export function integratedPhaseChangeH(
+  xIn: number,
+  xOut: number,
+  evalLocalH: (x: number) => number,
+  segments = 10,
+): number {
+  const N = Math.max(1, Math.round(segments));
+  const a = Math.min(0.98, Math.max(0.02, xIn));
+  const b = Math.min(0.98, Math.max(0.02, xOut));
+  if (Math.abs(b - a) < 1e-5) {
+    return Math.max(20, evalLocalH(0.5 * (a + b)));
+  }
+  let sumH = 0;
+  for (let i = 0; i < N; i++) {
+    const xMid = a + ((i + 0.5) / N) * (b - a);
+    const xClamped = Math.min(0.98, Math.max(0.02, xMid));
+    sumH += Math.max(20, evalLocalH(xClamped));
+  }
+  return sumH / N;
+}
+
+export interface ChfCheckInput {
+  rhoL: number;
+  rhoV: number;
+  sigmaNm?: number;
+  hfgJkg: number;
+  pitchRatio?: number;
+  bundleDiaM?: number;
+  heatFluxWm2: number;
+}
+
+export interface ChfCheckResult {
+  qChfPoolWm2: number;
+  qChfBundleWm2: number;
+  heatFluxWm2: number;
+  chfRatio: number;
+  status: 'OK' | 'WARN' | 'CRITICAL';
+}
+
+/**
+ * Zuber pool-boiling Critical Heat Flux (CHF) with Palen–Small bundle correction.
+ */
+export function zuberPalenSmallChfWm2(params: ChfCheckInput): ChfCheckResult {
+  const rhoL = Math.max(10, params.rhoL);
+  const rhoV = Math.max(0.05, Math.min(params.rhoV, rhoL * 0.85));
+  const sigma = Math.max(0.001, params.sigmaNm ?? 0.02);
+  const hfg = Math.max(1e4, params.hfgJkg);
+  const qChfPoolWm2 =
+    0.131 * hfg * Math.sqrt(rhoV) * Math.pow(sigma * G_ACC * Math.max(1, rhoL - rhoV), 0.25);
+
+  const pr = Math.max(1.1, params.pitchRatio ?? 1.25);
+  const db = params.bundleDiaM && params.bundleDiaM > 0 ? params.bundleDiaM : 0.6;
+  const phiB = Math.min(0.85, Math.max(0.65, 0.75 + 0.18 * (pr - 1.25) - 0.06 * (db - 0.6)));
+  const qChfBundleWm2 = qChfPoolWm2 * phiB;
+  const heatFluxWm2 = Math.max(0, params.heatFluxWm2);
+  const chfRatio = heatFluxWm2 / Math.max(1, qChfBundleWm2);
+  const status: 'OK' | 'WARN' | 'CRITICAL' =
+    chfRatio > 0.85 ? 'CRITICAL' : chfRatio > 0.7 ? 'WARN' : 'OK';
+
+  return {
+    qChfPoolWm2,
+    qChfBundleWm2,
+    heatFluxWm2,
+    chfRatio,
+    status,
+  };
+}
+
+export interface TemaImpingementResult {
+  rhoV2Pa: number;
+  limitPa: number;
+  impingementRequired: boolean;
+  status: 'OK' | 'IMPINGEMENT_REQ' | 'OVERSIZE_NOZZLE';
+}
+
+/**
+ * TEMA RCB-4.6 shell-side nozzle ρv² & impingement protection check.
+ */
+export function checkTemaImpingement(
+  rhoKgM3: number,
+  nozzleVelMs: number,
+  isTwoPhaseOrCorrosive = false,
+): TemaImpingementResult {
+  const rho = Math.max(0.05, rhoKgM3);
+  const vel = Math.max(0, nozzleVelMs);
+  const rhoV2Pa = rho * vel * vel;
+  const limitPa = isTwoPhaseOrCorrosive ? 740 : 2230;
+  const impingementRequired = rhoV2Pa > limitPa;
+  const status: 'OK' | 'IMPINGEMENT_REQ' | 'OVERSIZE_NOZZLE' =
+    rhoV2Pa > 5950 ? 'OVERSIZE_NOZZLE' : impingementRequired ? 'IMPINGEMENT_REQ' : 'OK';
+
+  return {
+    rhoV2Pa,
+    limitPa,
+    impingementRequired,
+    status,
+  };
+}
+
 /** Tube-side two-phase pressure drop (Friedel), all passes, plus return losses on homogeneous basis. */
 export function tubeSideTwoPhaseDP(
   g: ShellTubeGeometry,
@@ -513,9 +645,17 @@ export interface VibrationInput {
   shellPhase: 'liquid' | 'gas' | 'twophase';
   /** speed of sound in shell gas [m/s] (acoustic check) */
   soundSpeedMs?: number;
+  /** gas molecular weight [kg/kmol] for acoustic speed c = sqrt(k·R·T/MW) */
+  gasMw?: number;
+  /** gas heat capacity ratio cp/cv (default 1.3) */
+  gasK?: number;
+  /** gas absolute temperature [K] */
+  gasTempK?: number;
+  /** true for NTIW (no-tubes-in-window) bundles where unsupported span is centralSpanM */
+  noTubesInWindow?: boolean;
   /** end condition: 'pinned' both ends (inner spans), 'fixed-pinned' (end spans) */
   spanType?: 'pinned' | 'fixed-pinned' | 'fixed';
-  /** largest unsupported span [m] (default: max(Lbi, Lbo, 2Lb for every-other-tube support? → Lb)) */
+  /** explicit unsupported span override [m] (default: windowSpanM = 2·Lb, or centralSpanM if noTubesInWindow) */
   spanM?: number;
   /** damping ratio ζ (default liquid 0.03, two-phase 0.04, gas 0.01) */
   dampingRatio?: number;
@@ -523,6 +663,10 @@ export interface VibrationInput {
 
 export interface VibrationResult {
   spanM: number;
+  centralSpanM: number;
+  windowSpanM: number;
+  effectiveSpanM: number;
+  soundSpeedMs?: number;
   hydroMassCoef: number;
   massPerLenKgM: number;
   naturalFreqHz: number;
@@ -536,6 +680,7 @@ export interface VibrationResult {
   criticalVelMs: number;
   fluidelasticRatio: number;
   acousticFreqsHz: number[];
+  acousticRatio: number;
   acousticRisk: boolean;
   status: 'ok' | 'warning' | 'error';
   notes: string[];
@@ -546,7 +691,10 @@ export function temaVibrationCheck(v: VibrationInput): VibrationResult {
   const d = g.tubeOdM;
   const di = g.tubeIdM;
   const pr = g.tubePitchM / d;
-  const span = v.spanM ?? Math.max(g.baffleSpacingM, g.inletBaffleSpacingM ?? 0, g.outletBaffleSpacingM ?? 0);
+  const centralSpanM = Math.max(g.baffleSpacingM, g.inletBaffleSpacingM ?? 0, g.outletBaffleSpacingM ?? 0);
+  const windowSpanM = 2 * g.baffleSpacingM;
+  const effectiveSpanM = v.spanM ?? (v.noTubesInWindow ? centralSpanM : Math.max(windowSpanM, centralSpanM));
+  const span = effectiveSpanM;
   const E = v.eModPa ?? 1.98e11;
   const rhoM = v.metalRho ?? 7900;
   const I = (Math.PI / 64) * (d ** 4 - di ** 4);
@@ -580,18 +728,28 @@ export function temaVibrationCheck(v: VibrationInput): VibrationResult {
   const feRatio = V / Math.max(Vc, 1e-9);
 
   // Acoustic resonance (gas only): standing transverse waves across Ds, effective c with solidity
+  let resolvedSoundSpeedMs: number | undefined =
+    v.soundSpeedMs && v.soundSpeedMs > 0 ? v.soundSpeedMs : undefined;
+  if (!resolvedSoundSpeedMs && v.shellPhase === 'gas' && (v.gasMw || v.gasTempK || v.gasK)) {
+    const kGas = Math.min(1.67, Math.max(1.05, v.gasK ?? 1.3));
+    const tK = Math.max(80, v.gasTempK ?? 323.15);
+    const mw = Math.max(2.0, v.gasMw ?? 28.97);
+    resolvedSoundSpeedMs = Math.sqrt((kGas * 8314.46 * tK) / mw);
+  }
+
   const acousticFreqs: number[] = [];
   let acousticRisk = false;
-  if (v.shellPhase === 'gas' && v.soundSpeedMs && v.soundSpeedMs > 0) {
+  if (v.shellPhase === 'gas' && resolvedSoundSpeedMs && resolvedSoundSpeedMs > 0) {
     const cellArea = g.layoutDeg === 90 || g.layoutDeg === 45 ? g.tubePitchM ** 2 : 0.866 * g.tubePitchM ** 2;
     const solidity = ((Math.PI / 4) * d * d) / cellArea;
-    const cEff = v.soundSpeedMs / Math.sqrt(1 + solidity);
+    const cEff = resolvedSoundSpeedMs / Math.sqrt(1 + solidity);
     for (let n = 1; n <= 3; n++) {
       const fa = (n * cEff) / (2 * g.shellIdM);
       acousticFreqs.push(fa);
       if (Math.abs(fvs - fa) / fa < 0.2) acousticRisk = true;
     }
   }
+  const acousticRatio = acousticFreqs.length > 0 ? fvs / Math.max(acousticFreqs[0], 1e-6) : 0;
 
   const notes: string[] = [];
   let status: 'ok' | 'warning' | 'error' = 'ok';
@@ -617,7 +775,11 @@ export function temaVibrationCheck(v: VibrationInput): VibrationResult {
   if (notes.length === 0) notes.push('TEMA V 진동 검토 만족');
 
   return {
-    spanM: span,
+    spanM: effectiveSpanM,
+    centralSpanM,
+    windowSpanM,
+    effectiveSpanM,
+    soundSpeedMs: resolvedSoundSpeedMs,
     hydroMassCoef: Cm,
     massPerLenKgM: mPerLen,
     naturalFreqHz: fn,
@@ -631,6 +793,7 @@ export function temaVibrationCheck(v: VibrationInput): VibrationResult {
     criticalVelMs: Vc,
     fluidelasticRatio: feRatio,
     acousticFreqsHz: acousticFreqs,
+    acousticRatio,
     acousticRisk,
     status,
     notes,

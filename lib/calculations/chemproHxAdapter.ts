@@ -1,11 +1,16 @@
 import { resolveFluidProps, type FluidProps } from './chemproFluidBridge';
 import {
   bellDelawareShellSide,
+  defaultPassLaneWidthM,
   tubeSideSinglePhase,
   shahCondensationH,
   gungorWintertonBoilingH,
   shellCondensationH,
   shellBoilingH,
+  silverBellGhalyCondensationH,
+  integratedPhaseChangeH,
+  zuberPalenSmallChfWm2,
+  checkTemaImpingement,
   tubeSideTwoPhaseDP,
   shellSideTwoPhaseDP,
   temaVibrationCheck,
@@ -15,6 +20,8 @@ import {
   type TwoPhaseFluid,
   type BellDelawareResult,
   type VibrationResult,
+  type ChfCheckResult,
+  type TemaImpingementResult,
 } from './shellTubeRating';
 
 const R_GAS_KJ_KMOL_K = 8.31446;
@@ -305,7 +312,23 @@ export interface ChemproHXResult {
   criticalVelMs: number;
   fivStatus: 'ok' | 'warning' | 'error';
   vibDetails: VibrationResult | null;
+  fivDetails?: VibrationResult | null;
   status: 'ok' | 'warning' | 'error';
+  // Real datasheet & TEMA mechanical/safety metadata
+  hotVaporFracIn?: number;
+  hotVaporFracOut?: number;
+  coldVaporFracIn?: number;
+  coldVaporFracOut?: number;
+  inletPressHotBarG?: number;
+  inletPressColdBarG?: number;
+  designPressBarG?: number;
+  hydrotestPressBarG?: number;
+  corrosionAllowMm?: number;
+  materialSpec?: string;
+  nozzleRhoV2Pa?: number;
+  impingementRequired?: boolean;
+  impingementCheck?: TemaImpingementResult;
+  chfCheck?: ChfCheckResult | null;
   // PHE-specific fields & datasheet aliases
   N_plates?: number;
   N_eff_plates?: number;
@@ -840,8 +863,12 @@ function adjustFilmForPheRegime(
     else {
       hCond = 2050.0 * Math.pow(Math.max(0.055, fluidProps.k) / 0.1, 0.72) * Math.pow(0.25 / Math.max(0.08, fluidProps.mu), 0.25) * 1.32;
     }
-    const ncgFactor = xPhaseFrac !== undefined && xPhaseFrac < 0.99 ? 0.45 + 0.55 * xPhaseFrac : 1.0;
-    return clampNum(hCond * ncgFactor, 550.0, 8500.0);
+    if (xPhaseFrac !== undefined && xPhaseFrac < 0.99) {
+      const hGasEst = clampNum(hBaseSinglePhase * 0.24, 65.0, 620.0);
+      const yNcg = clampNum(1.0 - xPhaseFrac, 0, 0.98);
+      return clampNum(silverBellGhalyCondensationH(hCond, hGasEst, 0, yNcg), 120.0, 8500.0);
+    }
+    return clampNum(hCond, 550.0, 8500.0);
   }
   if (regime === 'boil') {
     let hBoil = 2650.0;
@@ -1207,6 +1234,22 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
         ? 'warning'
         : 'ok';
 
+    const pheHotPBar = inp.shell_p_bar || Math.max(1.01325, hotProps.pv_bar || 3.5);
+    const pheColdPBar = inp.tube_p_bar || Math.max(1.01325, coldProps.pv_bar || 3.5);
+    const inletPressHotBarG = Number(Math.max(0, pheHotPBar - 1.01325).toFixed(2));
+    const inletPressColdBarG = Number(Math.max(0, pheColdPBar - 1.01325).toFixed(2));
+    const designPressBarG = Math.max(3.5, Math.ceil((Math.max(inletPressHotBarG, inletPressColdBarG) * 1.15 + 1.0) * 2) / 2);
+    const hydrotestPressBarG = Number((designPressBarG * 1.3).toFixed(2));
+    const hotVaporFracIn = hotMode === 'sensible' ? (hotProps.rho < 45 ? 1 : 0) : 1;
+    const hotVaporFracOut =
+      hotMode === 'sensible' ? (hotProps.rho < 45 ? 1 : 0) : hotMode === 'cond_full' ? 0 : Math.max(0, Number((1 - hotBreak.xFrac).toFixed(3)));
+    const coldVaporFracIn = coldMode === 'sensible' ? (coldProps.rho < 45 ? 1 : 0) : 0;
+    const coldVaporFracOut =
+      coldMode === 'sensible' ? (coldProps.rho < 45 ? 1 : 0) : coldMode === 'boil_full' ? 1 : Number(coldBreak.xFrac.toFixed(3));
+    const pheNozArea = (Math.PI * Math.pow(nozzle_hot_dn / 1000.0, 2)) / 4.0;
+    const pheNozVel = (mh / 3600.0) / Math.max(1e-6, rhoh * pheNozArea);
+    const pheImp = checkTemaImpingement(rhoh, pheNozVel, hotMode !== 'sensible');
+
     return {
       equipTag: inp.equipTag || 'E-332',
       equipName: inp.equipName || `${hotProps.name} / ${coldProps.name} Plate Heat Exchanger`,
@@ -1267,7 +1310,14 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
       J_total: phi_enlarge,
       f_vs_Hz: 0, f_nat_Hz: 120, vibRatio: 0.12,
       fluidelasticRatio: 0.05, criticalVelMs: 10.0,
-      fivStatus: 'ok', vibDetails: null, status,
+      fivStatus: 'ok', vibDetails: null, fivDetails: null, status,
+      hotVaporFracIn, hotVaporFracOut, coldVaporFracIn, coldVaporFracOut,
+      inletPressHotBarG, inletPressColdBarG, designPressBarG, hydrotestPressBarG,
+      corrosionAllowMm: 0, materialSpec: matName,
+      nozzleRhoV2Pa: Math.round(pheImp.rhoV2Pa),
+      impingementRequired: false,
+      impingementCheck: pheImp,
+      chfCheck: null,
       iterations, warnings,
     };
   }
@@ -1385,8 +1435,17 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
     baffleSpacingM: bM,
     baffleCutFrac: baffleCutPct / 100.0,
     bundleDiaM: dBundleM,
+    passLaneWidthM: defaultPassLaneWidthM(nPasses, do_m),
     baffleCount: Math.max(1, Math.floor(L_m / Math.max(0.08, bM)) - 1),
   });
+
+  const shellGasMw = Math.max(2.0, shellProps.mw || 28.97);
+  const shellCpVap = isHotShell ? cphVap : cpcVap;
+  const shellGasK =
+    shellCpVap > 0 && shellGasMw > 0
+      ? clampNum((shellCpVap * shellGasMw) / Math.max(1.0, shellCpVap * shellGasMw - R_GAS_KJ_KMOL_K), 1.08, 1.66)
+      : 1.3;
+  const shellGasTempK = 0.5 * (isHotShell ? Th_in + Th_out : Tc_in + Tc_out) + 273.15;
 
   const evaluateSideFilmForZone = (
     sideIsShell: boolean,
@@ -1422,17 +1481,27 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
       const tp = sideIsShell ? shellTPFluid : tubeTPFluid;
       const xP = sideIsShell ? shellXfrac : tubeXfrac;
       if (!tp) return spH;
-      const ncgFactor = xP < 0.99 ? 0.45 + 0.55 * xP : 1.0;
+      const yNcg = xP < 0.99 ? clampNum(1.0 - xP, 0, 0.98) : 0;
+      const qSensFrac =
+        hotBreak.dh_tot > 0 && hotBreak.dh_desup > 0 ? clampNum(hotBreak.dh_desup / hotBreak.dh_tot, 0, 0.85) : 0;
+
+      const applySbg = (hCondRaw: number): number => {
+        if (yNcg > 0 || qSensFrac > 0) {
+          const vapState = buildVaporFluidStateSI(fid, fprops, zoneTavg, fP_bar, m_kgs, cpV);
+          const hGas = sideIsShell ? bellDelawareShellSide(geom, vapState).h : tubeSideSinglePhase(geom, vapState).h;
+          return silverBellGhalyCondensationH(hCondRaw, hGas, qSensFrac, yNcg);
+        }
+        return hCondRaw;
+      };
+
       if (sideIsShell) {
-        const hC = shellCondensationH(tp, geom);
-        return clampNum(hC * ncgFactor, 350, 14000);
+        const hC = applySbg(shellCondensationH(tp, geom));
+        return clampNum(hC, 120, 14000);
       }
-      // 3-point Gauss-like average along condensation quality span inside tubes
-      const qMax = Math.max(0.1, xP);
-      const xPts = [0.15 * qMax, 0.5 * qMax, 0.85 * qMax];
-      const hMean =
-        xPts.reduce((acc, xk) => acc + shahCondensationH(tp, Gt_kgm2s, di_m, xk), 0) / xPts.length;
-      return clampNum(hMean * ncgFactor, 350, 14000);
+      const xStart = 1.0;
+      const xEnd = Math.max(0.0, 1.0 - clampNum(xP, 0.05, 1.0));
+      const hMean = integratedPhaseChangeH(xStart, xEnd, (xk) => shahCondensationH(tp, Gt_kgm2s, di_m, xk), 10);
+      return clampNum(applySbg(hMean), 120, 14000);
     }
 
     if (regime === 'boil') {
@@ -1444,8 +1513,8 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
         const hB = shellBoilingH(tp, qFlux, 1.5);
         return clampNum(hB, 450, 16000);
       }
-      const xMid = clampNum(0.5 * xP, 0.05, 0.92);
-      const hB = gungorWintertonBoilingH(tp, Gt_kgm2s, di_m, xMid, qFlux);
+      const xEnd = clampNum(xP, 0.05, 0.98);
+      const hB = integratedPhaseChangeH(0.02, xEnd, (xk) => gungorWintertonBoilingH(tp, Gt_kgm2s, di_m, xk, qFlux), 10);
       return clampNum(hB, 450, 16000);
     }
 
@@ -1507,7 +1576,7 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
     // Representative quick-mode geometry sized from U_assumed
     A_req_m2 = Q_W / Math.max(1.0, U_calc * Math.max(0.8, CMTD));
     A_prov_m2 = A_req_m2 * 1.15;
-    let ntQuick = Math.max(16, Math.ceil(A_prov_m2 / (Math.PI * do_m * L_m)));
+    let ntQuick = Math.max(16, Math.ceil(A_prov_m2 / (Math.PI * do_m * L_m * nShell)));
     if (ntQuick % nPasses !== 0) ntQuick += nPasses - (ntQuick % nPasses);
     N_tubes = ntQuick;
     const D_bundle_m = do_m * Math.pow((N_tubes * CL * pitchRatio * pitchRatio) / (0.7854 * CTP), 1.0 / 2.15);
@@ -1527,7 +1596,7 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
     CMTD = zQuick.CMTD_eff;
     Ft = Math.min(1.0, CMTD / Math.max(0.5, lmtd));
     A_req_m2 = Q_W / Math.max(1.0, U_calc * CMTD);
-    A_prov_m2 = Math.max(A_req_m2 * 1.15, N_tubes * Math.PI * do_m * L_m);
+    A_prov_m2 = Math.max(A_req_m2 * 1.15, N_tubes * Math.PI * do_m * L_m * nShell);
     overdesign_pct = ((A_prov_m2 - A_req_m2) / Math.max(0.1, A_req_m2)) * 100.0;
 
     vt = ts.velMs;
@@ -1538,16 +1607,17 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
     ho = bd.h;
     Jc = bd.Jc; Jl = bd.Jl; Jb = bd.Jb; Js = bd.Js; Jr = bd.Jr; J_total = bd.Jtotal;
     Rl = bd.Rl; Rb = bd.Rb; Rs = bd.Rs;
-    dPt_bar = ts.dpTotalPa / 1e5;
-    dPs_bar = bd.dpTotalPa / 1e5;
+    dPt_bar = (ts.dpTotalPa / 1e5) * nShell;
+    dPs_bar = (bd.dpTotalPa / 1e5) * nShell;
     vibDetails = temaVibrationCheck({
       g: geom,
       crossVelMs: bd.crossVelMs,
       shellRho: rhos,
       tubeRhoInside: rhot,
       shellPhase: shellMode !== 'sensible' ? 'twophase' : rhos < 45 ? 'gas' : 'liquid',
-      soundSpeedMs: shellMode === 'sensible' && rhos < 45 ? 340 : undefined,
-      spanM: B_m,
+      gasMw: shellGasMw,
+      gasK: shellGasK,
+      gasTempK: shellGasTempK,
     });
     f_vs_Hz = vibDetails.vortexFreqHz;
     f_nat_Hz = vibDetails.naturalFreqHz;
@@ -1577,10 +1647,10 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
 
     for (let it = 1; it <= 16; it++) {
       const A_trial = (Q_W / Math.max(10.0, Uk * Math.max(0.8, CMTD))) * 1.12;
-      let Nt_trial = Math.max(20, Math.ceil(A_trial / (Math.PI * do_m * L_m)));
+      let Nt_trial = Math.max(20, Math.ceil(A_trial / (Math.PI * do_m * L_m * nShell)));
       if (Nt_trial % nPasses !== 0) Nt_trial += nPasses - (Nt_trial % nPasses);
       N_tubes = Nt_trial;
-      A_prov_m2 = N_tubes * Math.PI * do_m * L_m;
+      A_prov_m2 = N_tubes * Math.PI * do_m * L_m * nShell;
 
       const D_bundle_m = do_m * Math.pow((N_tubes * CL * pitchRatio * pitchRatio) / (0.7854 * CTP), 1.0 / 2.15);
       const clearance_m = 0.012 + 0.018 * D_bundle_m;
@@ -1680,29 +1750,31 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
       const xIn = tubeMode === 'cond_full' || tubeMode === 'cond_partial' ? Math.max(0.2, tubeXfrac) : 0.02;
       const xOut = tubeMode === 'cond_full' ? 0.0 : tubeMode === 'cond_partial' ? Math.max(0.05, 1.0 - tubeXfrac) : clampNum(tubeXfrac, 0.1, 1.0);
       const dpT2p = tubeSideTwoPhaseDP(geomStd, tubeTPFluid, xIn, xOut);
-      dPt_bar = dpT2p.totalPa / 1e5;
+      dPt_bar = (dpT2p.totalPa / 1e5) * nShell;
     } else {
-      dPt_bar = tsStd.dpTotalPa / 1e5;
+      dPt_bar = (tsStd.dpTotalPa / 1e5) * nShell;
     }
 
     if (shellMode !== 'sensible' && shellTPFluid) {
       const xIn = shellMode === 'cond_full' || shellMode === 'cond_partial' ? Math.max(0.2, shellXfrac) : 0.02;
       const xOut = shellMode === 'cond_full' ? 0.0 : shellMode === 'cond_partial' ? Math.max(0.05, 1.0 - shellXfrac) : clampNum(shellXfrac, 0.1, 1.0);
       const dpS2p = shellSideTwoPhaseDP(geomStd, shellTPFluid, xIn, xOut);
-      dPs_bar = dpS2p.dpPa / 1e5;
+      dPs_bar = (dpS2p.dpPa / 1e5) * nShell;
     } else {
-      dPs_bar = bdStd.dpTotalPa / 1e5;
+      dPs_bar = (bdStd.dpTotalPa / 1e5) * nShell;
     }
 
     // TEMA Flow-Induced Vibration (Connors Fluidelastic + Vortex Shedding + Acoustic)
+    // Uses windowSpanM = 2 * Lb automatically for segmental baffles
     vibDetails = temaVibrationCheck({
       g: geomStd,
       crossVelMs: bdStd.crossVelMs,
       shellRho: rhos,
       tubeRhoInside: rhot,
       shellPhase: shellMode !== 'sensible' ? 'twophase' : rhos < 45 ? 'gas' : 'liquid',
-      soundSpeedMs: shellMode === 'sensible' && rhos < 45 ? 340 : undefined,
-      spanM: B_std_m,
+      gasMw: shellGasMw,
+      gasK: shellGasK,
+      gasTempK: shellGasTempK,
     });
     f_vs_Hz = vibDetails.vortexFreqHz;
     f_nat_Hz = vibDetails.naturalFreqHz;
@@ -1730,6 +1802,50 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
   const nozzle_shell_nps = DN_TO_NPS_MAP[nozzle_shell_dn] || `${Math.round(nozzle_shell_dn / 25)}"`;
   const nozzle_tube_nps = DN_TO_NPS_MAP[nozzle_tube_dn] || `${Math.round(nozzle_tube_dn / 25)}"`;
 
+  // Real shell nozzle inlet/outlet velocity & TEMA RCB-4.6 ρv² impingement check
+  const A_noz_shell_m2 = (Math.PI * Math.pow(nozzle_shell_dn / 1000.0, 2)) / 4.0;
+  const rhoShellNozIn =
+    shellMode === 'cond_full' || shellMode === 'cond_partial'
+      ? (shellTPFluid?.rhoG ?? rhos)
+      : shellMode === 'boil_full' || shellMode === 'boil_partial'
+        ? (shellTPFluid?.rhoL ?? rhos)
+        : rhos;
+  const rhoShellNozOut =
+    shellMode === 'cond_full'
+      ? (shellTPFluid?.rhoL ?? rhos)
+      : shellMode === 'boil_full' || shellMode === 'boil_partial'
+        ? shellTPFluid
+          ? 1.0 / (shellXfrac / shellTPFluid.rhoG + (1.0 - shellXfrac) / shellTPFluid.rhoL)
+          : rhos
+        : rhos;
+  const vNozShellIn = (ms_kgs / Math.max(0.08, rhoShellNozIn)) / Math.max(1e-6, A_noz_shell_m2);
+  const vNozShellOut = (ms_kgs / Math.max(0.08, rhoShellNozOut)) / Math.max(1e-6, A_noz_shell_m2);
+  const impShellIn = checkTemaImpingement(rhoShellNozIn, vNozShellIn, shellMode !== 'sensible');
+  const impShellOut = checkTemaImpingement(rhoShellNozOut, vNozShellOut, shellMode !== 'sensible');
+  const impingementCheck: TemaImpingementResult =
+    impShellIn.rhoV2Pa >= impShellOut.rhoV2Pa ? impShellIn : impShellOut;
+  const nozzleRhoV2Pa = Math.round(impingementCheck.rhoV2Pa);
+  const impingementRequired = impShellIn.impingementRequired || impShellOut.impingementRequired;
+
+  // Critical Heat Flux (CHF / Dryout) check when boiling is active
+  let chfCheck: ChfCheckResult | null = null;
+  const isShellBoiling = shellMode === 'boil_full' || shellMode === 'boil_partial';
+  const isTubeBoiling = tubeMode === 'boil_full' || tubeMode === 'boil_partial';
+  if (isShellBoiling || isTubeBoiling) {
+    const boilTP = isShellBoiling ? shellTPFluid : tubeTPFluid;
+    if (boilTP) {
+      chfCheck = zuberPalenSmallChfWm2({
+        rhoL: boilTP.rhoL,
+        rhoV: boilTP.rhoG,
+        sigmaNm: boilTP.sigma,
+        hfgJkg: boilTP.hfg,
+        pitchRatio,
+        bundleDiaM: D_bundle_mm / 1000.0,
+        heatFluxWm2: Q_W / Math.max(1.0, A_prov_m2),
+      });
+    }
+  }
+
   const W_tubes_kg = N_tubes * (Math.PI / 4.0) * (do_m * do_m - di_m * di_m) * L_m * 7850 * nShell;
   const W_baffles_ts_kg =
     (N_baffles * 0.75 * (Math.PI / 4.0) * Math.pow(D_shell_std_mm / 1000.0, 2) * 0.0095 * 7850 +
@@ -1742,8 +1858,43 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
   const W_filled_kg = W_empty_kg + V_internal_m3 * 1000.0;
 
   const matFactor = kw < 25 ? 2.4 : kw > 80 ? 1.8 : 1.0;
-  const cost_usd = Math.round((8500 + 340 * Math.pow(A_prov_m2 * nShell, 0.72)) * matFactor);
+  const cost_usd = Math.round((8500 + 340 * Math.pow(A_prov_m2, 0.72)) * matFactor);
   const cost_krw = Math.round((cost_usd * 1380) / 10000) * 10000;
+
+  const inletPressHotBarG = Number(Math.max(0, (isHotShell ? shellP_bar : tubeP_bar) - 1.01325).toFixed(2));
+  const inletPressColdBarG = Number(Math.max(0, (isHotShell ? tubeP_bar : shellP_bar) - 1.01325).toFixed(2));
+  const designPressBarG = Math.max(
+    3.5,
+    Math.ceil((Math.max(inletPressHotBarG, inletPressColdBarG) * 1.15 + 1.0) * 2) / 2
+  );
+  const hydrotestPressBarG = Number((designPressBarG * 1.3).toFixed(2));
+  const corrosionAllowMm = kw < 25 ? 1.5 : 3.0;
+  const materialSpec =
+    kw < 18
+      ? 'SA-213 TP316L / SA-240 316L'
+      : kw < 25
+        ? 'SB-338 Gr.2 (Titanium)'
+        : kw > 60
+          ? 'SB-163 UNS N02200 (Nickel 200)'
+          : 'SA-179 / SA-516 Gr.70 (CS)';
+  const hotVaporFracIn = hotMode === 'sensible' ? (hotProps.rho < 45 ? 1 : 0) : 1;
+  const hotVaporFracOut =
+    hotMode === 'sensible'
+      ? hotProps.rho < 45
+        ? 1
+        : 0
+      : hotMode === 'cond_full'
+        ? 0
+        : Math.max(0, Number((1 - hotBreak.xFrac).toFixed(3)));
+  const coldVaporFracIn = coldMode === 'sensible' ? (coldProps.rho < 45 ? 1 : 0) : 0;
+  const coldVaporFracOut =
+    coldMode === 'sensible'
+      ? coldProps.rho < 45
+        ? 1
+        : 0
+      : coldMode === 'boil_full'
+        ? 1
+        : Number(coldBreak.xFrac.toFixed(3));
 
   const reqExchUpper = (inp.exchangerType || '').toUpperCase();
   const tema_type =
@@ -1820,10 +1971,27 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
         text: `TEMA 튜브 진동 안전: f_vs=${f_vs_Hz.toFixed(1)} Hz vs f_n=${f_nat_Hz.toFixed(1)} Hz (비율 ${vibRatio.toFixed(2)}), Connors v/v_crit=${fluidelasticRatio.toFixed(2)} < 0.80`,
       });
     }
+    if (chfCheck && chfCheck.status !== 'OK') {
+      warnings.push({
+        level: chfCheck.status === 'CRITICAL' ? 'danger' : 'warn',
+        text: `비등 임계열유속(CHF) 주의: q/q_CHF = ${(chfCheck.chfRatio * 100).toFixed(1)}% (${(chfCheck.heatFluxWm2 / 1000).toFixed(1)} vs ${(chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m²)`,
+      });
+    }
+    if (impingementCheck.status === 'OVERSIZE_NOZZLE') {
+      warnings.push({
+        level: 'warn',
+        text: `동체 노즐 ρv² = ${nozzleRhoV2Pa} Pa > 5950 Pa (TEMA RCB-4.6) — 충격판 설치 및 노즐 구경 확대 필요`,
+      });
+    } else if (impingementRequired) {
+      warnings.push({
+        level: 'ok',
+        text: `동체 노즐 ρv² = ${nozzleRhoV2Pa} Pa > ${impingementCheck.limitPa} Pa (TEMA RCB-4.6) — 충격방지판(Impingement Plate) 적용`,
+      });
+    }
   }
 
   const status: 'ok' | 'warning' | 'error' =
-    tempCross || pwProfile.minPinchDT <= 0.5 || Ft < 0.75 || fivStatus === 'error'
+    tempCross || pwProfile.minPinchDT <= 0.5 || Ft < 0.75 || fivStatus === 'error' || chfCheck?.status === 'CRITICAL'
       ? 'error'
       : fivStatus === 'warning' || warnings.some((w) => w.level === 'warn')
         ? 'warning'
@@ -1876,7 +2044,11 @@ export function solveHX(inp: ChemproHXInput, mode: SolveMode = 'rigorous'): Chem
     J_total,
     f_vs_Hz, f_nat_Hz, vibRatio,
     fluidelasticRatio, criticalVelMs,
-    fivStatus, vibDetails, status,
+    fivStatus, vibDetails, fivDetails: vibDetails, status,
+    hotVaporFracIn, hotVaporFracOut, coldVaporFracIn, coldVaporFracOut,
+    inletPressHotBarG, inletPressColdBarG, designPressBarG, hydrotestPressBarG,
+    corrosionAllowMm, materialSpec,
+    nozzleRhoV2Pa, impingementRequired, impingementCheck, chfCheck,
     iterations, warnings,
   };
 }

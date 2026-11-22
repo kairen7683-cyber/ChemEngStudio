@@ -21,16 +21,22 @@ import {
 } from './flowsheetSolver';
 import {
   bellDelawareShellSide,
+  defaultPassLaneWidthM,
   kernShellSide,
   tubeSideSinglePhase,
   shahCondensationH,
   gungorWintertonBoilingH,
   shellCondensationH,
   shellBoilingH,
+  silverBellGhalyCondensationH,
+  integratedPhaseChangeH,
+  zuberPalenSmallChfWm2,
+  checkTemaImpingement,
   tubeSideTwoPhaseDP,
   shellSideTwoPhaseDP,
   temaVibrationCheck,
   type BellDelawareResult,
+  type ChfCheckResult,
   type FluidState,
   type LayoutDeg,
   type ShellTubeGeometry,
@@ -199,6 +205,9 @@ export interface HxNozzleSpec {
   npsInch: string;
   velocityMs: number;
   rhoV2Pa: number;
+  impingementRequired?: boolean;
+  rhoV2LimitPa?: number;
+  rhoV2Status?: 'OK' | 'IMPINGEMENT_REQ' | 'OVERSIZE_NOZZLE';
 }
 
 export interface HxDiagnosticItem {
@@ -301,6 +310,10 @@ export interface HxDesignSolveResult {
   dutyCapabilityKW?: number;
   tubeDpBreakdown?: { frictionBar: number; accelerationBar: number; returnBar: number; model: string };
   shellDpBreakdown?: { crossBar: number; windowBar: number; endBar: number; twoPhaseMultiplier?: number };
+  chfCheck?: ChfCheckResult;
+  impingementRequired?: boolean;
+  rhoV2LimitPa?: number;
+  rhoV2Status?: 'OK' | 'IMPINGEMENT_REQ' | 'OVERSIZE_NOZZLE';
 }
 
 export interface HxZoneRatingRow {
@@ -337,7 +350,8 @@ function sizeNozzle(
   side: 'Shell' | 'Tube',
   massKgH: number,
   rhoKgM3: number,
-  isGasOrTwoPhase: boolean
+  isGasOrTwoPhase: boolean,
+  isTwoPhaseOrCorrosive = false
 ): HxNozzleSpec {
   const mDot = Math.max(0.01, massKgH / 3600);
   const rho = Math.max(0.25, rhoKgM3);
@@ -356,6 +370,7 @@ function sizeNozzle(
   }
   const actualArea = (Math.PI * Math.pow(chosen.idMm / 1000, 2)) / 4;
   const vel = qM3S / Math.max(1e-6, actualArea);
+  const imp = checkTemaImpingement(rho, vel, isTwoPhaseOrCorrosive);
   return {
     id,
     service,
@@ -363,7 +378,10 @@ function sizeNozzle(
     dnMm: chosen.dn,
     npsInch: chosen.nps,
     velocityMs: Number(vel.toFixed(2)),
-    rhoV2Pa: Math.round(rho * vel * vel),
+    rhoV2Pa: Math.round(imp.rhoV2Pa),
+    impingementRequired: imp.impingementRequired,
+    rhoV2LimitPa: imp.limitPa,
+    rhoV2Status: imp.status,
   };
 }
 
@@ -883,65 +901,6 @@ function buildUtilitySideSummary(
 }
 
 /**
- * 막열전달계수 h (W/m²·K) 계산 보조 (액상·기상·응축·비등 통합)
- */
-function calcSideFilmCoeffWm2K(
-  fluid: HxSideFluidSummary,
-  velMs: number,
-  hydDiaM: number,
-  isShellOrPlate: boolean
-): { hWm2K: number; re: number } {
-  const rho = Math.max(0.25, fluid.densityKgM3);
-  const muPas = Math.max(8e-6, fluid.viscosityCp * 1e-3);
-  const cpJkgK = Math.max(450, fluid.cpKcalKgC * 4184);
-  const k = Math.max(0.008, fluid.conductivityWmK);
-  const d = Math.max(0.002, hydDiaM);
-  const v = Math.max(0.03, velMs);
-
-  const re = (rho * v * d) / muPas;
-  const pr = Math.max(0.55, Math.min(250, (cpJkgK * muPas) / k));
-
-  if (fluid.phaseRegime === 'condensing') {
-    // Nusselt / Boyko-Kruzhilin 응축 막계수 + Silver-Bell-Ghaly 비응축가스 물질전달 저항
-    const baseCondH =
-      fluid.fluidName.includes('Steam') || fluid.fluidName.includes('스팀')
-        ? 6800
-        : k > 0.35
-        ? 3600
-        : 1550 * Math.pow(Math.max(0.3, v), 0.25);
-    if (fluid.nonCondensableMolFrac > 0.005) {
-      // 비응축가스가 경막에 축적되어 유효 응축계수 저하
-      const hGas = 0.023 * (k / d) * Math.pow(Math.max(2500, re), 0.8) * Math.pow(pr, 0.33);
-      const penalty = 1 + 4.8 * fluid.nonCondensableMolFrac * (baseCondH / Math.max(35, hGas));
-      return { hWm2K: Math.max(120, baseCondH / penalty), re };
-    }
-    return { hWm2K: baseCondH, re };
-  }
-
-  if (fluid.phaseRegime === 'boiling') {
-    // Mostinski / Chen 핵비등 상관식 근사
-    const baseBoilH = fluid.fluidName.includes('암모니아')
-      ? 3900
-      : k > 0.4
-      ? 3200
-      : 1950;
-    return { hWm2K: baseBoilH, re };
-  }
-
-  // 단상 현열: 관측 Gnielinski/Dittus-Boelter vs 쉘측 Kern/Bell-Delaware
-  let nu = 4.36;
-  if (isShellOrPlate) {
-    nu = 0.36 * Math.pow(Math.max(50, re), 0.55) * Math.pow(pr, 1 / 3);
-  } else if (re >= 2300) {
-    nu = 0.023 * Math.pow(re, 0.8) * Math.pow(pr, 0.35);
-  } else {
-    nu = Math.max(3.66, 1.86 * Math.pow(re * pr * (d / 3.5), 1 / 3));
-  }
-  const h = Math.max(45, (nu * k) / d);
-  return { hWm2K: h, re };
-}
-
-/**
  * 25점 구간별 T-Q 열교환 프로파일 생성 & 최소 접근온도(Pinch ΔT) 산출
  */
 function buildPiecewiseTQProfile(
@@ -1227,8 +1186,33 @@ export function solveHeatExchangerDesign(
   let shellDpBreakdownDetail: { crossBar: number; windowBar: number; endBar: number; twoPhaseMultiplier?: number } | undefined;
   let zoneRatingRows: HxZoneRatingRow[] | undefined;
   let dutyCapabilityKWVal: number | undefined;
+  let chfCheckDetail: ChfCheckResult | undefined;
 
   const isRatingMode = hxCfg.designMode === 'rating' || (hxCfg.ratingTubeCount !== undefined && hxCfg.ratingTubeCount > 0);
+
+  // Estimate process gas MW for true acoustic speed when shell side is gas
+  const procTotalMoles = SIM_COMPS.reduce((s, k) => s + (procPack.flows[k] || 0) / COMP_META[k].mw, 0);
+  const procTotalMass = SIM_COMPS.reduce((s, k) => s + (procPack.flows[k] || 0), 0);
+  const procAvgMw = procTotalMoles > 1e-6 ? procTotalMass / procTotalMoles : 28.97;
+  const shellGasMw = allocation === 'process_shell' ? procAvgMw : 28.97;
+  const shellGasTempK = 0.5 * (shellSide.inTempC + shellSide.outTempC) + 273.15;
+
+  const applySbgIfNeeded = (
+    hCondRaw: number,
+    side: HxSideFluidSummary,
+    isShell: boolean,
+    geom: ShellTubeGeometry,
+  ): number => {
+    const isProcSide = (isShell && allocation === 'process_shell') || (!isShell && allocation === 'process_tube');
+    const hasDesup = !isHeatingProcess && isProcSide && procPack.desupMcalH > 0.01;
+    const qSensFrac = hasDesup && dutyMcalH > 0 ? Math.min(0.85, procPack.desupMcalH / dutyMcalH) : 0;
+    if (side.nonCondensableMolFrac > 0 || qSensFrac > 0) {
+      const vapFl = sideToFluidState(side, 'vap');
+      const hGas = isShell ? bellDelawareShellSide(geom, vapFl).h : tubeSideSinglePhase(geom, vapFl).h;
+      return silverBellGhalyCondensationH(hCondRaw, hGas, qSensFrac, side.nonCondensableMolFrac);
+    }
+    return hCondRaw;
+  };
 
   if (hxKind === 'shell_tube') {
     const doM = tubeOdMm / 1000;
@@ -1263,6 +1247,7 @@ export function solveHeatExchangerDesign(
         inletBaffleSpacingM: hxCfg.inletBaffleSpacingMm ? hxCfg.inletBaffleSpacingMm / 1000 : undefined,
         outletBaffleSpacingM: hxCfg.outletBaffleSpacingMm ? hxCfg.outletBaffleSpacingMm / 1000 : undefined,
         sealingStripPairs: hxCfg.sealingStripPairs ?? 0,
+        passLaneWidthM: defaultPassLaneWidthM(tubePasses, doM),
         shellBaffleClearanceM: hxCfg.shellBaffleClearanceMm ? hxCfg.shellBaffleClearanceMm / 1000 : undefined,
         tubeBaffleClearanceM: hxCfg.tubeBaffleClearanceMm ? hxCfg.tubeBaffleClearanceMm / 1000 : undefined,
         baffleCount,
@@ -1277,7 +1262,7 @@ export function solveHeatExchangerDesign(
 
       if (shellSide.phaseRegime === 'condensing') {
         const tpS = buildTwoPhaseFluid(shellSide);
-        hShellWm2K = shellCondensationH(tpS, geom);
+        hShellWm2K = applySbgIfNeeded(shellCondensationH(tpS, geom), shellSide, true, geom);
         const qr = phaseQualityRange(shellSide);
         const sdp = shellSideTwoPhaseDP(geom, tpS, qr.xIn, qr.xOut);
         dpShellPa = shellCount * sdp.dpPa;
@@ -1317,8 +1302,8 @@ export function solveHeatExchangerDesign(
         const nPerPass = tubeCountPerShell / tubePasses;
         const G_t = tpT.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * diM * diM);
         const qr = phaseQualityRange(tubeSide);
-        const hMid = shahCondensationH(tpT, G_t, diM, 0.5 * (qr.xIn + qr.xOut));
-        hTubeWm2K = hMid;
+        const hCondInt = integratedPhaseChangeH(qr.xIn, qr.xOut, (x) => shahCondensationH(tpT, G_t, diM, x), 10);
+        hTubeWm2K = applySbgIfNeeded(hCondInt, tubeSide, false, geom);
         const tdp = tubeSideTwoPhaseDP(geom, tpT, qr.xIn, qr.xOut);
         dpTubePa = shellCount * tdp.totalPa;
         tubeDpBreakdownDetail = {
@@ -1335,8 +1320,7 @@ export function solveHeatExchangerDesign(
         const G_t = tpT.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * diM * diM);
         const qr = phaseQualityRange(tubeSide);
         const qFlux = Q_Watts / Math.max(1, areaProvM2);
-        const hMid = gungorWintertonBoilingH(tpT, G_t, diM, 0.5 * (qr.xIn + qr.xOut), qFlux);
-        hTubeWm2K = hMid;
+        hTubeWm2K = integratedPhaseChangeH(qr.xIn, qr.xOut, (x) => gungorWintertonBoilingH(tpT, G_t, diM, x, qFlux), 10);
         const tdp = tubeSideTwoPhaseDP(geom, tpT, qr.xIn, qr.xOut);
         dpTubePa = shellCount * tdp.totalPa;
         tubeDpBreakdownDetail = {
@@ -1381,7 +1365,9 @@ export function solveHeatExchangerDesign(
         shellRho: Math.max(0.25, shellSide.densityKgM3),
         tubeRhoInside: Math.max(0.25, tubeSide.densityKgM3),
         shellPhase: shellSide.phaseRegime === 'sensible_gas' ? 'gas' : shellSide.phaseRegime === 'sensible_liq' ? 'liquid' : 'twophase',
-        soundSpeedMs: shellSide.phaseRegime === 'sensible_gas' ? 340 : undefined,
+        gasMw: shellSide.phaseRegime === 'sensible_gas' ? shellGasMw : undefined,
+        gasK: shellSide.phaseRegime === 'sensible_gas' ? 1.3 : undefined,
+        gasTempK: shellSide.phaseRegime === 'sensible_gas' ? shellGasTempK : undefined,
       });
       vortexFreqHz = vibResDetail.vortexFreqHz;
       naturalFreqHz = vibResDetail.naturalFreqHz;
@@ -1422,6 +1408,7 @@ export function solveHeatExchangerDesign(
           inletBaffleSpacingM: hxCfg.inletBaffleSpacingMm ? hxCfg.inletBaffleSpacingMm / 1000 : undefined,
           outletBaffleSpacingM: hxCfg.outletBaffleSpacingMm ? hxCfg.outletBaffleSpacingMm / 1000 : undefined,
           sealingStripPairs: hxCfg.sealingStripPairs ?? 0,
+          passLaneWidthM: defaultPassLaneWidthM(tubePasses, doM),
           shellBaffleClearanceM: hxCfg.shellBaffleClearanceMm ? hxCfg.shellBaffleClearanceMm / 1000 : undefined,
           tubeBaffleClearanceM: hxCfg.tubeBaffleClearanceMm ? hxCfg.tubeBaffleClearanceMm / 1000 : undefined,
           baffleCount,
@@ -1436,7 +1423,7 @@ export function solveHeatExchangerDesign(
 
         if (shellSide.phaseRegime === 'condensing') {
           const tpS = buildTwoPhaseFluid(shellSide);
-          hShellWm2K = shellCondensationH(tpS, geom);
+          hShellWm2K = applySbgIfNeeded(shellCondensationH(tpS, geom), shellSide, true, geom);
           const qr = phaseQualityRange(shellSide);
           const sdp = shellSideTwoPhaseDP(geom, tpS, qr.xIn, qr.xOut);
           dpShellPa = shellCount * sdp.dpPa;
@@ -1476,7 +1463,8 @@ export function solveHeatExchangerDesign(
           const nPerPass = tubeCountPerShell / tubePasses;
           const G_t = tpT.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * diM * diM);
           const qr = phaseQualityRange(tubeSide);
-          hTubeWm2K = shahCondensationH(tpT, G_t, diM, 0.5 * (qr.xIn + qr.xOut));
+          const hCondInt = integratedPhaseChangeH(qr.xIn, qr.xOut, (x) => shahCondensationH(tpT, G_t, diM, x), 10);
+          hTubeWm2K = applySbgIfNeeded(hCondInt, tubeSide, false, geom);
           const tdp = tubeSideTwoPhaseDP(geom, tpT, qr.xIn, qr.xOut);
           dpTubePa = shellCount * tdp.totalPa;
           tubeDpBreakdownDetail = {
@@ -1493,7 +1481,7 @@ export function solveHeatExchangerDesign(
           const G_t = tpT.massFlowKgS / Math.max(1e-6, nPerPass * (Math.PI / 4) * diM * diM);
           const qr = phaseQualityRange(tubeSide);
           const qFlux = Q_Watts / Math.max(1, areaProvM2);
-          hTubeWm2K = gungorWintertonBoilingH(tpT, G_t, diM, 0.5 * (qr.xIn + qr.xOut), qFlux);
+          hTubeWm2K = integratedPhaseChangeH(qr.xIn, qr.xOut, (x) => gungorWintertonBoilingH(tpT, G_t, diM, x, qFlux), 10);
           const tdp = tubeSideTwoPhaseDP(geom, tpT, qr.xIn, qr.xOut);
           dpTubePa = shellCount * tdp.totalPa;
           tubeDpBreakdownDetail = {
@@ -1539,7 +1527,13 @@ export function solveHeatExchangerDesign(
         tubeLengthM,
         baffleSpacingM: baffleSpacingMm / 1000,
         baffleCutFrac: baffleCutPct / 100,
+        inletBaffleSpacingM: hxCfg.inletBaffleSpacingMm ? hxCfg.inletBaffleSpacingMm / 1000 : undefined,
+        outletBaffleSpacingM: hxCfg.outletBaffleSpacingMm ? hxCfg.outletBaffleSpacingMm / 1000 : undefined,
+        bundleDiaM: bundleDiaMm / 1000,
+        shellBaffleClearanceM: hxCfg.shellBaffleClearanceMm ? hxCfg.shellBaffleClearanceMm / 1000 : undefined,
+        tubeBaffleClearanceM: hxCfg.tubeBaffleClearanceMm ? hxCfg.tubeBaffleClearanceMm / 1000 : undefined,
         sealingStripPairs: hxCfg.sealingStripPairs ?? 0,
+        passLaneWidthM: defaultPassLaneWidthM(tubePasses, doM),
         baffleCount,
       };
 
@@ -1555,11 +1549,29 @@ export function solveHeatExchangerDesign(
         shellRho: Math.max(0.25, shellSide.densityKgM3),
         tubeRhoInside: Math.max(0.25, tubeSide.densityKgM3),
         shellPhase: shellSide.phaseRegime === 'sensible_gas' ? 'gas' : shellSide.phaseRegime === 'sensible_liq' ? 'liquid' : 'twophase',
-        soundSpeedMs: shellSide.phaseRegime === 'sensible_gas' ? 340 : undefined,
+        gasMw: shellSide.phaseRegime === 'sensible_gas' ? shellGasMw : undefined,
+        gasK: shellSide.phaseRegime === 'sensible_gas' ? 1.3 : undefined,
+        gasTempK: shellSide.phaseRegime === 'sensible_gas' ? shellGasTempK : undefined,
       });
       vortexFreqHz = vibResDetail.vortexFreqHz;
       naturalFreqHz = vibResDetail.naturalFreqHz;
       vibRatio = vibResDetail.vortexRatio;
+    }
+
+    // Critical Heat Flux (CHF / Dryout) check when boiling/evaporating is active
+    if (shellSide.phaseRegime === 'boiling' || tubeSide.phaseRegime === 'boiling') {
+      const boilSide = shellSide.phaseRegime === 'boiling' ? shellSide : tubeSide;
+      const tpB = buildTwoPhaseFluid(boilSide);
+      const qFlux = Q_Watts / Math.max(1, areaProvM2);
+      chfCheckDetail = zuberPalenSmallChfWm2({
+        rhoL: tpB.rhoL,
+        rhoV: tpB.rhoG,
+        sigmaNm: tpB.sigma,
+        hfgJkg: tpB.hfg,
+        pitchRatio: tubePitchMm / tubeOdMm,
+        bundleDiaM: bundleDiaMm / 1000,
+        heatFluxWm2: qFlux,
+      });
     }
 
     // Zone-by-zone incremental rating
@@ -1688,6 +1700,15 @@ export function solveHeatExchangerDesign(
   const dpUtilityKgcm2 = dpUtilityBar * 1.01972;
 
   // 4개 주 노즐 사이징 (N1/N2 동체측 입출구, N3/N4 관측 입출구)
+  const isShellTwoPhaseOrCorrosive =
+    shellSide.phaseRegime === 'condensing' ||
+    shellSide.phaseRegime === 'boiling' ||
+    (allocation === 'process_shell' && (matInfo.isWetCl2 || matInfo.isStrongHcl));
+  const isTubeTwoPhaseOrCorrosive =
+    tubeSide.phaseRegime === 'condensing' ||
+    tubeSide.phaseRegime === 'boiling' ||
+    (allocation === 'process_tube' && (matInfo.isWetCl2 || matInfo.isStrongHcl));
+
   const nozzles: HxNozzleSpec[] = [
     sizeNozzle(
       'N1',
@@ -1695,7 +1716,8 @@ export function solveHeatExchangerDesign(
       'Shell',
       shellSide.massFlowKgH,
       shellSide.densityKgM3,
-      shellSide.phaseRegime === 'sensible_gas' || shellSide.phaseRegime === 'condensing'
+      shellSide.phaseRegime === 'sensible_gas' || shellSide.phaseRegime === 'condensing',
+      isShellTwoPhaseOrCorrosive
     ),
     sizeNozzle(
       'N2',
@@ -1703,7 +1725,8 @@ export function solveHeatExchangerDesign(
       'Shell',
       shellSide.massFlowKgH,
       shellSide.phaseRegime === 'condensing' ? Math.max(850, shellSide.densityKgM3) : shellSide.densityKgM3,
-      shellSide.phaseRegime === 'sensible_gas' || shellSide.phaseRegime === 'boiling'
+      shellSide.phaseRegime === 'sensible_gas' || shellSide.phaseRegime === 'boiling',
+      isShellTwoPhaseOrCorrosive
     ),
     sizeNozzle(
       'N3',
@@ -1711,7 +1734,8 @@ export function solveHeatExchangerDesign(
       'Tube',
       tubeSide.massFlowKgH,
       tubeSide.densityKgM3,
-      tubeSide.phaseRegime === 'sensible_gas' || tubeSide.phaseRegime === 'condensing'
+      tubeSide.phaseRegime === 'sensible_gas' || tubeSide.phaseRegime === 'condensing',
+      isTubeTwoPhaseOrCorrosive
     ),
     sizeNozzle(
       'N4',
@@ -1719,9 +1743,21 @@ export function solveHeatExchangerDesign(
       'Tube',
       tubeSide.massFlowKgH,
       tubeSide.phaseRegime === 'condensing' ? Math.max(850, tubeSide.densityKgM3) : tubeSide.densityKgM3,
-      tubeSide.phaseRegime === 'sensible_gas' || tubeSide.phaseRegime === 'boiling'
+      tubeSide.phaseRegime === 'sensible_gas' || tubeSide.phaseRegime === 'boiling',
+      isTubeTwoPhaseOrCorrosive
     ),
   ];
+
+  // TEMA RCB-4.6 shell nozzle impingement summary (governing between N1 inlet and N2 outlet)
+  const shellNozGov = nozzles[0].rhoV2Pa >= nozzles[1].rhoV2Pa ? nozzles[0] : nozzles[1];
+  const topImpingementRequired = Boolean(nozzles[0].impingementRequired || nozzles[1].impingementRequired);
+  const topRhoV2LimitPa = shellNozGov.rhoV2LimitPa ?? (isShellTwoPhaseOrCorrosive ? 740 : 2230);
+  const topRhoV2Status: 'OK' | 'IMPINGEMENT_REQ' | 'OVERSIZE_NOZZLE' =
+    nozzles[0].rhoV2Status === 'OVERSIZE_NOZZLE' || nozzles[1].rhoV2Status === 'OVERSIZE_NOZZLE'
+      ? 'OVERSIZE_NOZZLE'
+      : topImpingementRequired
+        ? 'IMPINGEMENT_REQ'
+        : 'OK';
 
   // 엔지니어링 진단 및 원클릭 보정 제안
   const diagnostics: HxDiagnosticItem[] = [];
@@ -1848,6 +1884,28 @@ export function solveHeatExchangerDesign(
     });
   }
 
+  if (hxKind === 'shell_tube' && chfCheckDetail && chfCheckDetail.status !== 'OK') {
+    diagnostics.push({
+      level: chfCheckDetail.status === 'CRITICAL' ? 'error' : 'warning',
+      code: 'CHF_DRYOUT_RISK',
+      message: `비등 임계열유속(CHF/Dryout) 주의: q/q_CHF = ${(chfCheckDetail.chfRatio * 100).toFixed(1)}% (열유속 ${(chfCheckDetail.heatFluxWm2 / 1000).toFixed(1)} vs 번들 한계 ${(chfCheckDetail.qChfBundleWm2 / 1000).toFixed(1)} kW/m²) — 전열면적 확대 또는 피치비 상향 검토`,
+    });
+  }
+
+  if (hxKind === 'shell_tube' && topRhoV2Status === 'OVERSIZE_NOZZLE') {
+    diagnostics.push({
+      level: 'warning',
+      code: 'TEMA_NOZZLE_OVERSIZE',
+      message: `동체 노즐 ρv² = ${shellNozGov.rhoV2Pa} Pa > 5950 Pa (TEMA RCB-4.6 한계 초과) — 충격판 설치와 함께 노즐 구경 확대 필요`,
+    });
+  } else if (hxKind === 'shell_tube' && topRhoV2Status === 'IMPINGEMENT_REQ') {
+    diagnostics.push({
+      level: 'ok',
+      code: 'TEMA_IMPINGEMENT_REQ',
+      message: `동체 노즐 ρv² = ${shellNozGov.rhoV2Pa} Pa > ${topRhoV2LimitPa} Pa (TEMA RCB-4.6) — 충격방지판(Impingement Plate) 설치 필수`,
+    });
+  }
+
   if (diagnostics.length === 0) {
     diagnostics.push({
       level: 'ok',
@@ -1944,5 +2002,9 @@ export function solveHeatExchangerDesign(
     dutyCapabilityKW: dutyCapabilityKWVal,
     tubeDpBreakdown: tubeDpBreakdownDetail,
     shellDpBreakdown: shellDpBreakdownDetail,
+    chfCheck: chfCheckDetail,
+    impingementRequired: topImpingementRequired,
+    rhoV2LimitPa: topRhoV2LimitPa,
+    rhoV2Status: topRhoV2Status,
   };
 }

@@ -11,7 +11,7 @@ import { saveChemProHandoffPayload } from '@/lib/calculations/unitDesignHandoff'
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 
-const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'cms_hub', 'mdi_hub', 'compressor'];
+const VALID_TABS = ['evap', 'evap_studio', 'brine', 'packing', 'chempro', 'equip', 'standards', 'hcl_hub', 'distill', 'cms_hub', 'mdi_hub', 'compressor', 'psv_flare'];
 
 const PackingTower             = dynamic(() => import('@/components/equipment-design/PackingTower'),             { ssr: false });
 const BrinePurificationDesign  = dynamic(() => import('@/components/equipment-design/BrinePurificationDesign'),  { ssr: false });
@@ -21,6 +21,7 @@ const EquipmentList            = dynamic(() => import('@/components/EquipmentLis
 const PlantScopedEquipmentList = dynamic(() => import('@/components/PlantScopedEquipmentList'),                  { ssr: false });
 const DesignStandards          = dynamic(() => import('@/components/DesignStandards'),                           { ssr: false });
 const CompressorDesignPanel    = dynamic(() => import('@/components/equipment/CompressorDesignPanel'),           { ssr: false });
+const PsvFlareDesignPanel      = dynamic(() => import('@/components/equipment/PsvFlareDesignPanel'),             { ssr: false });
 
 const CA_DESIGN_TABS = [
   { key: 'evap',        label: '300 가성소다 3효 증발관' },
@@ -29,6 +30,7 @@ const CA_DESIGN_TABS = [
   { key: 'packing',     label: '400/700 건조·흡수·제해 패킹타워' },
   { key: 'chempro',     label: '펌프·열교환기·용기 상세설계' },
   { key: 'compressor',  label: '공정가스 압축기(Compressor) 상세설계' },
+  { key: 'psv_flare',   label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
 const HCL1A_DESIGN_TABS = [
@@ -36,6 +38,7 @@ const HCL1A_DESIGN_TABS = [
   { key: 'packing', label: '100/300 염산 흡수·제해 패킹타워 설계' },
   { key: 'chempro', label: '펌프·압력용기·안전밸브 상세설계' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+  { key: 'psv_flare', label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
 const ECH_DESIGN_TABS = [
@@ -43,6 +46,7 @@ const ECH_DESIGN_TABS = [
   { key: 'packing',    label: 'C-101·C-102 진공 패킹타워 설계' },
   { key: 'chempro',    label: '열교환기(E-102/E-301)·펌프·용기 상세설계' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+  { key: 'psv_flare',  label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
 const CMS_DESIGN_TABS = [
@@ -50,6 +54,7 @@ const CMS_DESIGN_TABS = [
   { key: 'packing',    label: 'C-201~203 · C-301~302 5탑 패킹/트레이 설계' },
   { key: 'chempro',    label: '기화기(E-101)·냉각기(E-301)·펌프(P-202) 상세설계' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+  { key: 'psv_flare',  label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
 const MDI_DESIGN_TABS = [
@@ -57,6 +62,7 @@ const MDI_DESIGN_TABS = [
   { key: 'packing',    label: 'C-101·C-301·C-302·C-401 증류·회수탑 패킹/트레이 설계' },
   { key: 'chempro',    label: '예열기(E-401)·펌프(P-101/P-302)·안전밸브(PSV-201)' },
   { key: 'compressor', label: '공정가스 압축기(Compressor) 상세설계' },
+  { key: 'psv_flare',  label: 'PSV · 플레어 안전설계 (API 520/521)' },
 ];
 
 interface EchHxHandoffConfig {
@@ -1011,6 +1017,10 @@ export default function EquipmentDesignPage() {
       ) : effectiveDesignTab === 'compressor' ? (
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, background: '#F8FAFC' }}>
           <CompressorDesignPanel />
+        </div>
+      ) : effectiveDesignTab === 'psv_flare' ? (
+        <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, background: '#F8FAFC' }}>
+          <PsvFlareDesignPanel />
         </div>
       ) : effectiveDesignTab === 'evap_studio' ? (
         <div style={{ flex: 1, width: '100%', overflow: 'auto', minHeight: 0, background: '#F6F7F2' }}>

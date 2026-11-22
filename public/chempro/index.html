@@ -1531,7 +1531,24 @@
                   <option value="vapor" selected>기상 / 증기 (Gas / Vapor)</option>
                   <option value="steam">수증기 (Steam)</option>
                   <option value="liquid">액상 (Liquid Relief)</option>
+                  <option value="twophase">2상 플래싱 (API 520 Omega)</option>
                 </select>
+              </div>
+            </div>
+            <div class="form-grid cols-2" style="margin-top:8px;">
+              <div class="field">
+                <label>밸브 형식 (API 520 Valve Type)</label>
+                <select id="psv_valve_type" onchange="App.recalc()">
+                  <option value="conventional" selected>일반형 (Conventional, ≤10% BP)</option>
+                  <option value="balanced_bellows">밸런스드 벨로우즈 (Balanced Bellows, Kb/Kw)</option>
+                  <option value="pilot">파일럿 작동식 (Pilot-Operated, ≤70% BP)</option>
+                </select>
+              </div>
+              <div class="field" style="display:flex;align-items:flex-end;padding-bottom:6px;">
+                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;">
+                  <input type="checkbox" id="psv_rupture_disk" onchange="App.recalc()" style="width:auto;margin:0;" />
+                  <span>파열판 조합 설치 (Rupture Disk · Kc = 0.90)</span>
+                </label>
               </div>
             </div>
             <div class="auto-prop-strip" id="psv_prop_strip"></div>
@@ -1575,12 +1592,28 @@
                 <input type="number" id="psv_Awet" value="48.0" step="2" oninput="App.recalc()" />
               </div>
               <div class="field">
+                <label>단열계수 (F_env)</label>
+                <input type="number" id="psv_F_env" value="1.0" step="0.05" min="0.05" max="1.0" oninput="App.recalc()" />
+              </div>
+              <div class="field">
                 <label>기화 잠열 (ΔH_vap) <span class="unit">kJ/kg</span></label>
                 <input type="number" id="psv_hv" value="365" step="5" oninput="App.recalc()" />
               </div>
               <div class="field">
                 <label>압축성 인자 (Z)</label>
                 <input type="number" id="psv_Z" value="0.90" step="0.02" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>액체 밀도 (ρ_L) <span class="unit">kg/m³</span></label>
+                <input type="number" id="psv_rhoL" value="800" step="10" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>액체 점도 (μ) <span class="unit">cP</span></label>
+                <input type="number" id="psv_mu_cP" value="1.0" step="0.1" min="0.05" oninput="App.recalc()" />
+              </div>
+              <div class="field">
+                <label>2상 입구 기상분율 (x₀)</label>
+                <input type="number" id="psv_x0" value="0.15" step="0.02" min="0" max="1" oninput="App.recalc()" />
               </div>
             </div>
           </div>

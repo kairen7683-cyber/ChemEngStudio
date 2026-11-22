@@ -1911,7 +1911,7 @@ window.ChemEngSolvers = (function () {
             <tr>
               <td class="ln">16</td>
               <td colspan="2"><b>Plate Thickness & Material</b></td>
-              <td colspan="4" class="val-hi">Thickness t_p = ${res.phe_tp_mm} mm · Material: Titanium Gr.1 / Nickel 200 / Hastelloy C-276 (Process Duty Spec)</td>
+              <td colspan="4" class="val-hi">Thickness t_p = ${res.phe_tp_mm} mm · Material: ${res.materialSpec || res.phe_mat_name || res.matName || 'Titanium Gr.1 / SS316L'}</td>
             </tr>
             <tr>
               <td class="ln">17</td>
@@ -1921,7 +1921,7 @@ window.ChemEngSolvers = (function () {
             <tr>
               <td class="ln">18</td>
               <td colspan="2"><b>Frame Design Press / Weights</b></td>
-              <td colspan="4" class="val">Design: 10.0 barG @ 160°C · Empty Weight: <b>${res.W_empty_kg.toFixed(0)} kg</b> / Plate Pack: <b>${res.W_bundle_kg.toFixed(0)} kg</b> / Operating: <b>${res.W_filled_kg.toFixed(0)} kg</b></td>
+              <td colspan="4" class="val">Design: ${(Number.isFinite(res.designPressBarG) ? res.designPressBarG : 10.0).toFixed(1)} / Test ${(Number.isFinite(res.hydrotestPressBarG) ? res.hydrotestPressBarG : 15.0).toFixed(1)} barG @ ${Math.ceil((Math.max(res.Th_in, res.Th_out, res.Tc_in, res.Tc_out) + 25) / 5) * 5}°C · Empty: <b>${res.W_empty_kg.toFixed(0)} kg</b> / Pack: <b>${res.W_bundle_kg.toFixed(0)} kg</b> / Op: <b>${res.W_filled_kg.toFixed(0)} kg</b></td>
             </tr>
           </tbody>
         </table>
@@ -1944,8 +1944,61 @@ window.ChemEngSolvers = (function () {
       const bwgGauge = res.tw_mm >= 2.6 ? '12 BWG (2.77mm)' : (res.tw_mm >= 2.0 ? '14 BWG (2.11mm)' : '16 BWG (1.65mm)');
       const pitchRatio = (res.pt_mm / res.do_mm).toFixed(2);
       const aPerShell = (res.A_prov_m2 / Math.max(1, res.nShell)).toFixed(1);
-      const eqTag = res.equipTag || 'E-101';
+      const eqTag = res.equipTag || res.tag || 'E-101';
       const eqService = res.equipName || `${sFluid?.name || 'Hot'} / ${tFluid?.name || 'Cold'} Exchanger`;
+
+      // Real vapor/liquid split, pressures, materials, impingement, FIV & CHF
+      const hotVIn = Number.isFinite(res.hotVaporFracIn) ? res.hotVaporFracIn : (res.hotMode && res.hotMode !== 'sensible' ? 1 : 0);
+      const hotVOut = Number.isFinite(res.hotVaporFracOut)
+        ? res.hotVaporFracOut
+        : (res.hotMode === 'cond_full' ? 0 : res.hotMode === 'cond_partial' ? Math.max(0, 1 - (res.hotBreak?.xFrac ?? 0)) : hotVIn);
+      const coldVIn = Number.isFinite(res.coldVaporFracIn) ? res.coldVaporFracIn : 0;
+      const coldVOut = Number.isFinite(res.coldVaporFracOut)
+        ? res.coldVaporFracOut
+        : (res.coldMode === 'boil_full' ? 1 : res.coldMode === 'boil_partial' ? (res.coldBreak?.xFrac ?? 0) : coldVIn);
+      const sVIn = isHotShell ? hotVIn : coldVIn;
+      const sVOut = isHotShell ? hotVOut : coldVOut;
+      const tVIn = isHotShell ? coldVIn : hotVIn;
+      const tVOut = isHotShell ? coldVOut : hotVOut;
+      const sMode = isHotShell ? res.hotMode : res.coldMode;
+      const tMode = isHotShell ? res.coldMode : res.hotMode;
+      const sBreak = isHotShell ? res.hotBreak : res.coldBreak;
+      const tBreak = isHotShell ? res.coldBreak : res.hotBreak;
+      const sIsSteam = sFluid?.id === 'steam' || /steam/i.test(sFluid?.name || '');
+      const tIsSteam = tFluid?.id === 'steam' || /steam/i.test(tFluid?.name || '');
+      const fmtLatent = (mode, fl, brk) => {
+        if (mode && mode !== 'sensible') {
+          const modeTxt = mode.startsWith('cond') ? '응축 잠열' : '비등 잠열';
+          const dhLat = brk && Number.isFinite(brk.dh_lat) && brk.dh_lat > 0 ? brk.dh_lat.toFixed(1) : (fl?.hv || '-');
+          return `${dhLat} kJ/kg (${modeTxt})`;
+        }
+        return `${fl?.hv || '-'} (단상 현열교환)`;
+      };
+      const pHotIn = Number.isFinite(res.inletPressHotBarG) ? res.inletPressHotBarG : 4.5;
+      const pColdIn = Number.isFinite(res.inletPressColdBarG) ? res.inletPressColdBarG : 5.0;
+      const sPin = isHotShell ? pHotIn : pColdIn;
+      const tPin = isHotShell ? pColdIn : pHotIn;
+      const pDes = Number.isFinite(res.designPressBarG) ? res.designPressBarG : Math.max(10, Math.ceil((Math.max(sPin, tPin) + 2) * 1.15));
+      const pTest = Number.isFinite(res.hydrotestPressBarG) ? res.hydrotestPressBarG : Number((pDes * 1.5).toFixed(1));
+      const caMm = Number.isFinite(res.corrosionAllowMm) ? res.corrosionAllowMm : 3.0;
+      const matSpec = res.materialSpec || 'Carbon Steel (SA-179 / SA-516 Gr.70)';
+      const nozRhoV2 = Number.isFinite(res.nozzleRhoV2Pa)
+        ? res.nozzleRhoV2Pa
+        : (res.impingementCheck?.rhoV2Pa ?? (sFluid?.rho * res.vs * res.vs));
+      const impStatus = res.impingementCheck?.status;
+      const impColor = impStatus === 'OVERSIZE_NOZZLE' ? '#fda4af' : (res.impingementRequired ? '#fcd34d' : '#34d399');
+      const impLabel = impStatus === 'OVERSIZE_NOZZLE'
+        ? 'OVERSIZE NOZZLE REQ (TEMA RCB-4.6)'
+        : (res.impingementRequired ? 'REQUIRED (TEMA RCB-4.6)' : 'NOT REQ');
+      const fiv = res.fivDetails || res.vibDetails || null;
+      const fivStatRaw = res.fivStatus || fiv?.status || (res.vibRatio > 0.8 ? 'warning' : 'ok');
+      const fivStatText = fivStatRaw === 'error' ? 'FAIL' : (fivStatRaw === 'warning' ? 'WARN' : 'SAFE');
+      const fivColor = fivStatRaw === 'error' ? '#fda4af' : (fivStatRaw === 'warning' ? '#fcd34d' : '#34d399');
+      const feRatio = fiv?.fluidelasticRatio ?? res.fluidelasticRatio;
+      const winSpanMm = fiv?.windowSpanM != null ? Math.round(fiv.windowSpanM * 1000) : Math.round((res.B_spacing_mm || 0) * 2);
+      const chfHtml = res.chfCheck
+        ? ` · <b style="color:${res.chfCheck.status === 'CRITICAL' ? '#fda4af' : res.chfCheck.status === 'WARN' ? '#fcd34d' : '#34d399'};">CHF [${res.chfCheck.status}] q/q_CHF=${res.chfCheck.chfRatio.toFixed(2)}</b>`
+        : '';
 
       const miniSketchSvg = `
         <svg viewBox="0 0 260 145" style="width:100%;height:135px;background:#060d1f;border:1px solid #1e293b;border-radius:4px;">
@@ -2027,29 +2080,29 @@ window.ChemEngSolvers = (function () {
               <td class="ln">8</td>
               <td colspan="2">&nbsp;&nbsp;Vapor (기상 유량 In / Out)</td>
               <td class="unit-c">kg/h</td>
-              <td class="val">0</td><td colspan="2" class="val">0</td>
-              <td class="val">0</td><td colspan="2" class="val">0</td>
+              <td class="val">${(sFlow * sVIn).toFixed(0)}</td><td colspan="2" class="val">${(sFlow * sVOut).toFixed(0)}</td>
+              <td class="val">${(tFlow * tVIn).toFixed(0)}</td><td colspan="2" class="val">${(tFlow * tVOut).toFixed(0)}</td>
             </tr>
             <tr>
               <td class="ln">9</td>
               <td colspan="2">&nbsp;&nbsp;Liquid (액상 유량 In / Out)</td>
               <td class="unit-c">kg/h</td>
-              <td class="val">${sFlow.toFixed(0)}</td><td colspan="2" class="val">${sFlow.toFixed(0)}</td>
-              <td class="val">${tFlow.toFixed(0)}</td><td colspan="2" class="val">${tFlow.toFixed(0)}</td>
+              <td class="val">${(sFlow * (1 - sVIn)).toFixed(0)}</td><td colspan="2" class="val">${(sFlow * (1 - sVOut)).toFixed(0)}</td>
+              <td class="val">${(tFlow * (1 - tVIn)).toFixed(0)}</td><td colspan="2" class="val">${(tFlow * (1 - tVOut)).toFixed(0)}</td>
             </tr>
             <tr>
               <td class="ln">10</td>
               <td colspan="2">&nbsp;&nbsp;Steam (스팀 유량 In / Out)</td>
               <td class="unit-c">kg/h</td>
-              <td class="val">-</td><td colspan="2" class="val">-</td>
-              <td class="val">-</td><td colspan="2" class="val">-</td>
+              <td class="val">${sIsSteam ? (sFlow * sVIn).toFixed(0) : '-'}</td><td colspan="2" class="val">${sIsSteam ? (sFlow * sVOut).toFixed(0) : '-'}</td>
+              <td class="val">${tIsSteam ? (tFlow * tVIn).toFixed(0) : '-'}</td><td colspan="2" class="val">${tIsSteam ? (tFlow * tVOut).toFixed(0) : '-'}</td>
             </tr>
             <tr>
               <td class="ln">11</td>
               <td colspan="2">&nbsp;&nbsp;Water (냉각수/물 유량 In / Out)</td>
               <td class="unit-c">kg/h</td>
-              <td class="val">${sFluid?.id === 'water' ? sFlow.toFixed(0) : '-'}</td><td colspan="2" class="val">${sFluid?.id === 'water' ? sFlow.toFixed(0) : '-'}</td>
-              <td class="val">${tFluid?.id === 'water' ? tFlow.toFixed(0) : '-'}</td><td colspan="2" class="val">${tFluid?.id === 'water' ? tFlow.toFixed(0) : '-'}</td>
+              <td class="val">${sFluid?.id === 'water' ? (sFlow * (1 - sVIn)).toFixed(0) : '-'}</td><td colspan="2" class="val">${sFluid?.id === 'water' ? (sFlow * (1 - sVOut)).toFixed(0) : '-'}</td>
+              <td class="val">${tFluid?.id === 'water' ? (tFlow * (1 - tVIn)).toFixed(0) : '-'}</td><td colspan="2" class="val">${tFluid?.id === 'water' ? (tFlow * (1 - tVOut)).toFixed(0) : '-'}</td>
             </tr>
             <tr>
               <td class="ln">12</td>
@@ -2106,15 +2159,15 @@ window.ChemEngSolvers = (function () {
               <td class="ln">19</td>
               <td colspan="2"><b>Latent Heat (증발잠열 ΔH_v)</b></td>
               <td class="unit-c">kJ/kg</td>
-              <td colspan="3" class="val" style="text-align:center;">${sFluid?.hv || '-'} (단상 현열교환)</td>
-              <td colspan="3" class="val" style="text-align:center;">${tFluid?.hv || '-'} (단상 현열교환)</td>
+              <td colspan="3" class="val" style="text-align:center;">${fmtLatent(sMode, sFluid, sBreak)}</td>
+              <td colspan="3" class="val" style="text-align:center;">${fmtLatent(tMode, tFluid, tBreak)}</td>
             </tr>
             <tr>
               <td class="ln">20</td>
               <td colspan="2"><b>Inlet Pressure (운전 입구압력)</b></td>
               <td class="unit-c">barG (psig)</td>
-              <td colspan="3" class="val" style="text-align:center;">4.50 barG (65.3 psig)</td>
-              <td colspan="3" class="val" style="text-align:center;">5.00 barG (72.5 psig)</td>
+              <td colspan="3" class="val" style="text-align:center;">${sPin.toFixed(2)} barG (${(sPin * 14.5038).toFixed(1)} psig)</td>
+              <td colspan="3" class="val" style="text-align:center;">${tPin.toFixed(2)} barG (${(tPin * 14.5038).toFixed(1)} psig)</td>
             </tr>
             <tr>
               <td class="ln">21</td>
@@ -2174,8 +2227,8 @@ window.ChemEngSolvers = (function () {
               <td class="ln">28</td>
               <td colspan="2"><b>Design / Hydrotest Pressure</b></td>
               <td class="unit-c">barG</td>
-              <td colspan="2" class="val">10.0 / 15.0 barG</td>
-              <td colspan="2" class="val">10.0 / 15.0 barG</td>
+              <td colspan="2" class="val">${pDes.toFixed(1)} / ${pTest.toFixed(1)} barG</td>
+              <td colspan="2" class="val">${pDes.toFixed(1)} / ${pTest.toFixed(1)} barG</td>
               <td colspan="2" rowspan="7" style="padding:4px;vertical-align:middle;background:#050b18;">${miniSketchSvg}</td>
             </tr>
             <tr>
@@ -2196,8 +2249,8 @@ window.ChemEngSolvers = (function () {
               <td class="ln">31</td>
               <td colspan="2"><b>Corrosion Allowance (부식여유)</b></td>
               <td class="unit-c">mm (in)</td>
-              <td colspan="2" class="val">3.0 mm (0.118 in)</td>
-              <td colspan="2" class="val">3.0 mm (Tube: 0.0 mm)</td>
+              <td colspan="2" class="val">${caMm.toFixed(1)} mm (${(caMm / 25.4).toFixed(3)} in)</td>
+              <td colspan="2" class="val">${caMm.toFixed(1)} mm (Tube: 0.0 mm)</td>
             </tr>
             <tr>
               <td class="ln">32</td>
@@ -2233,7 +2286,7 @@ window.ChemEngSolvers = (function () {
               <td class="ln">36</td>
               <td><b>Tube Spec</b></td>
               <td colspan="2"><b>Type:</b> Plain Seamless</td>
-              <td colspan="3"><b>Material:</b> ASTM A179 / SA-213 TP316L</td>
+              <td colspan="3"><b>Material:</b> ${matSpec}</td>
               <td colspan="3"><b>Pitch Ratio (P_T / d_o):</b> ${pitchRatio}</td>
             </tr>
             <tr>
@@ -2242,26 +2295,26 @@ window.ChemEngSolvers = (function () {
               <td colspan="2"><b>OD:</b> Ø${res.D_shell_mm + 2 * res.t_shell_mm} mm</td>
               <td colspan="2"><b>ID:</b> <span style="color:#38bdf8;font-weight:800;">Ø${res.D_shell_mm} mm (${(res.D_shell_mm / 25.4).toFixed(2)} in)</span></td>
               <td><b>Thick:</b> ${res.t_shell_mm} mm</td>
-              <td colspan="3"><b>Material:</b> ASME SA-516 Gr.70</td>
+              <td colspan="3"><b>Material:</b> ${matSpec}</td>
             </tr>
             <tr>
               <td class="ln">38</td>
               <td colspan="2"><b>Channel or Bonnet (전방 채널)</b></td>
               <td colspan="2"><b>ID:</b> Ø${res.D_shell_mm} mm</td>
               <td colspan="2"><b>Thick:</b> ${res.t_shell_mm} mm</td>
-              <td colspan="3"><b>Channel Cover:</b> Bolted Flat Cover (SA-266 Gr.2)</td>
+              <td colspan="3"><b>Channel Cover:</b> Bolted Flat Cover (${matSpec})</td>
             </tr>
             <tr>
               <td class="ln">39</td>
               <td colspan="2"><b>Tubesheet Type (튜브시트)</b></td>
               <td colspan="3">Stationary Fixed / Floating (${res.t_tubesheet_mm} mm thick)</td>
-              <td colspan="4"><b>Bundle Dia:</b> Ø${res.D_bundle_mm} mm (SA-266 Gr.2 Forged)</td>
+              <td colspan="4"><b>Bundle Dia:</b> Ø${res.D_bundle_mm} mm (${matSpec})</td>
             </tr>
             <tr>
               <td class="ln">40</td>
               <td colspan="2"><b>Floating Head / Impingement</b></td>
               <td colspan="3">TEMA Type ${res.tema_type.charAt(2) || 'M'} Rear Head</td>
-              <td colspan="4"><b>Impingement Protection:</b> Circular Plate (ρv² = ${(sFluid?.rho * res.vs * res.vs).toFixed(0)} Pa)</td>
+              <td colspan="4"><b>Impingement Protection:</b> <span style="color:${impColor};font-weight:800;">${impLabel}</span> (Nozzle ρv² = ${Number(nozRhoV2 || 0).toFixed(0)} Pa)</td>
             </tr>
             <tr>
               <td class="ln">41</td>
@@ -2279,8 +2332,8 @@ window.ChemEngSolvers = (function () {
             <tr>
               <td class="ln">43</td>
               <td colspan="2"><b>Supports — Tube / Vibration</b></td>
-              <td colspan="3">Tie Rods & Spacers (8 EA × Ø12.7 mm)</td>
-              <td colspan="4"><b>TEMA Vibration Check:</b> f_vs/f_n = ${res.vibRatio.toFixed(2)} (${res.f_vs_Hz.toFixed(1)} / ${res.f_nat_Hz.toFixed(1)} Hz — SAFE)</td>
+              <td colspan="3">Tie Rods & Spacers · Window Span 2·Lb = <b>${winSpanMm} mm</b></td>
+              <td colspan="4"><b>TEMA FIV:</b> f_vs/f_n=${res.vibRatio.toFixed(2)}${Number.isFinite(feRatio) ? ` · V/V_c=${feRatio.toFixed(2)}` : ''} (${res.f_vs_Hz.toFixed(1)}/${res.f_nat_Hz.toFixed(1)} Hz — <span style="color:${fivColor};font-weight:800;">${fivStatText}</span>)${chfHtml}</td>
             </tr>
             <tr>
               <td class="ln">44</td>

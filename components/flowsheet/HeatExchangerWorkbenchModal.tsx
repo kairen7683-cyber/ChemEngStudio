@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
   UnitNumberInput,
@@ -280,6 +281,206 @@ export default function HeatExchangerWorkbenchModal({
       setIsAiBusy(false);
       setAiStepLabel('');
     }
+  };
+
+  const exportHxExcelDatasheet = () => {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const isPhe = dRes.hxKind === 'plate_phe';
+    const isProcTube = dRes.allocation === 'process_tube';
+    const shellFluid = isProcTube ? dRes.utilitySide : dRes.processSide;
+    const tubeFluid = isProcTube ? dRes.processSide : dRes.utilitySide;
+
+    const getVapLiq = (side: typeof shellFluid) => {
+      const m = side.massFlowKgH;
+      const dPhase = Math.min(m, Math.max(0, side.phaseChangeMassKgH));
+      if (side.phaseRegime === 'condensing') {
+        return { vIn: m, vOut: Math.max(0, m - dPhase), lIn: 0, lOut: dPhase };
+      }
+      if (side.phaseRegime === 'boiling') {
+        return { vIn: 0, vOut: dPhase, lIn: m, lOut: Math.max(0, m - dPhase) };
+      }
+      if (side.phaseRegime === 'sensible_gas') {
+        return { vIn: m, vOut: m, lIn: 0, lOut: 0 };
+      }
+      return { vIn: 0, vOut: 0, lIn: m, lOut: m };
+    };
+
+    const sVL = getVapLiq(shellFluid);
+    const tVL = getVapLiq(tubeFluid);
+    const sPinBarG = Number((shellFluid.pressKgcm2g * 0.980665).toFixed(2));
+    const tPinBarG = Number((tubeFluid.pressKgcm2g * 0.980665).toFixed(2));
+    const sDesP = Math.max(6, Math.ceil((sPinBarG + 2) * 1.15));
+    const tDesP = Math.max(6, Math.ceil((tPinBarG + 2) * 1.15));
+    const sTestP = Number((sDesP * 1.5).toFixed(1));
+    const tTestP = Number((tDesP * 1.5).toFixed(1));
+    const sDesT = Math.ceil((Math.max(shellFluid.inTempC, shellFluid.outTempC) + 25) / 5) * 5;
+    const tDesT = Math.ceil((Math.max(tubeFluid.inTempC, tubeFluid.outTempC) + 25) / 5) * 5;
+    const uReqWm2K = (dRes.dutyKW * 1000) / Math.max(1e-6, dRes.areaProvM2 * Math.max(0.1, dRes.cmtdC));
+    const shellNozzle = dRes.nozzles.find((n) => n.side === 'Shell') ?? dRes.nozzles[0];
+    const tubeNozzle = dRes.nozzles.find((n) => n.side === 'Tube') ?? dRes.nozzles[2];
+    const vib = dRes.vibration;
+    const chf = dRes.chfCheck;
+    const impText =
+      dRes.rhoV2Status === 'OVERSIZE_NOZZLE'
+        ? `OVERSIZE NOZZLE REQUIRED (ρv²=${shellNozzle?.rhoV2Pa ?? 0} Pa > 5950 Pa)`
+        : dRes.impingementRequired
+        ? `IMPINGEMENT PLATE REQUIRED (TEMA RCB-4.6, ρv²=${shellNozzle?.rhoV2Pa ?? 0} Pa > ${dRes.rhoV2LimitPa ?? 2230} Pa)`
+        : `NOT REQUIRED (ρv²=${shellNozzle?.rhoV2Pa ?? 0} Pa ≤ ${dRes.rhoV2LimitPa ?? 2230} Pa)`;
+    const vibText = vib
+      ? `${vib.status.toUpperCase()} | Vortex f_vs/f_n=${vib.vortexRatio.toFixed(2)} (${vib.vortexFreqHz.toFixed(1)}/${vib.naturalFreqHz.toFixed(1)} Hz) | Fluidelastic V/Vc=${vib.fluidelasticRatio.toFixed(2)} (Vc=${vib.criticalVelMs.toFixed(2)} m/s) | Acoustic=${vib.acousticFreqsHz.length > 0 ? `${vib.acousticRatio.toFixed(2)}${vib.acousticRisk ? ' RISK' : ' OK'}` : 'N/A'} | Span 2·Lb=${(vib.windowSpanM * 1000).toFixed(0)}mm (Lb=${(vib.centralSpanM * 1000).toFixed(0)}mm)`
+      : `f_vs/f_n=${dRes.vibRatio.toFixed(2)} (${dRes.vortexFreqHz.toFixed(1)}/${dRes.naturalFreqHz.toFixed(1)} Hz)`;
+    const chfText = chf
+      ? `${chf.status} | q''=${(chf.heatFluxWm2 / 1000).toFixed(1)} kW/m² vs q_CHF,bundle=${(chf.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (Ratio=${chf.chfRatio.toFixed(2)})`
+      : 'N/A (No Boiling)';
+
+    const sheet1Rows: (string | number)[][] = isPhe
+      ? [
+          ['API 662 / ISO 15547-1 — PLATE HEAT EXCHANGER (PHE) SPECIFICATION SHEET', '', '', '', '', 'Date:', dateStr],
+          ['Equipment Tag', unitTag, 'Service', unitLabel, 'Type', `Gasketed Chevron PHE (β=${dRes.pheChevronDeg}°)`],
+          ['Line', 'Parameter', 'Units', 'Hot Side', 'Cold Side', 'Notes / Basis'],
+          [1, 'Plate Pack Size (W × H × Pack L)', 'mm', `${dRes.phePlateWidthMm} × ${dRes.phePlateHeightMm} × ${dRes.phePackLengthMm}`, '', `Gap b = ${dRes.pheGapMm} mm`],
+          [2, 'Heat Transfer Surface (Provided / Required)', 'm²', Number(dRes.areaProvM2.toFixed(2)), Number(dRes.areaReqM2.toFixed(2)), `Overdesign +${dRes.actualOverdesignPct.toFixed(1)}%`],
+          [3, 'Total Plates / Channels per Side', 'EA', dRes.phePlateCount, dRes.pheChannelsPerSide, `Material: ${dRes.material.label}`],
+          [4, 'Fluid Name', '-', dRes.hotSide.fluidName, dRes.coldSide.fluidName, `${dRes.hotSide.phaseLabel} / ${dRes.coldSide.phaseLabel}`],
+          [5, 'Mass Flowrate Total', 'kg/h', Number(dRes.hotSide.massFlowKgH.toFixed(1)), Number(dRes.coldSide.massFlowKgH.toFixed(1)), ''],
+          [6, 'Temperature In / Out', '°C', `${dRes.hotSide.inTempC.toFixed(1)} → ${dRes.hotSide.outTempC.toFixed(1)}`, `${dRes.coldSide.inTempC.toFixed(1)} → ${dRes.coldSide.outTempC.toFixed(1)}`, `Min Pinch ΔT = ${dRes.minPinchDeltaTC.toFixed(1)} °C`],
+          [7, 'Inlet Pressure', 'barG', Number((dRes.hotSide.pressKgcm2g * 0.980665).toFixed(2)), Number((dRes.coldSide.pressKgcm2g * 0.980665).toFixed(2)), ''],
+          [8, 'Density / Viscosity', 'kg/m³ / cP', `${dRes.hotSide.densityKgM3.toFixed(1)} / ${dRes.hotSide.viscosityCp.toFixed(3)}`, `${dRes.coldSide.densityKgM3.toFixed(1)} / ${dRes.coldSide.viscosityCp.toFixed(3)}`, ''],
+          [9, 'Specific Heat / Conductivity', 'kJ/kg·K / W/m·K', `${(dRes.hotSide.cpKcalKgC * 4.1868).toFixed(3)} / ${dRes.hotSide.conductivityWmK.toFixed(3)}`, `${(dRes.coldSide.cpKcalKgC * 4.1868).toFixed(3)} / ${dRes.coldSide.conductivityWmK.toFixed(3)}`, ''],
+          [10, 'Channel Velocity / Reynolds No.', 'm/s / -', `${dRes.velShellMs.toFixed(2)} / ${Math.round(dRes.reShell)}`, `${dRes.velTubeMs.toFixed(2)} / ${Math.round(dRes.reTube)}`, ''],
+          [11, 'Pressure Drop (Calc / Allow)', 'bar', `${dRes.dpShellBar.toFixed(3)} / 0.700`, `${dRes.dpTubeBar.toFixed(3)} / 0.700`, ''],
+          [12, 'Fouling Factor (Rf)', 'm²·K/W', Number((dRes.hotSide.foulingM2HKcal / 1.163).toFixed(5)), Number((dRes.coldSide.foulingM2HKcal / 1.163).toFixed(5)), ''],
+          [13, 'Heat Duty (Q)', 'kW / Mcal/h', Number(dRes.dutyKW.toFixed(1)), Number(dRes.dutyMcalH.toFixed(1)), `USRT = ${dRes.usrt.toFixed(1)}`],
+          [14, 'LMTD / CMTD / Ft', '°C / -', Number(dRes.lmtdCounterC.toFixed(2)), Number(dRes.cmtdC.toFixed(2)), `Ft = ${dRes.ftFactor.toFixed(3)}`],
+          [15, 'Overall U (Clean / Service / Req)', 'W/m²·K', `${dRes.uCleanWm2K.toFixed(1)} / ${dRes.uCalcWm2K.toFixed(1)} / ${uReqWm2K.toFixed(1)}`, '', `h_A=${dRes.hTubeWm2K.toFixed(0)}, h_B=${dRes.hShellWm2K.toFixed(0)} W/m²·K`],
+          [16, 'Design / Hydrotest Pressure', 'barG', `${sDesP} / ${sTestP}`, `${tDesP} / ${tTestP}`, `Design Temp: ${sDesT} / ${tDesT} °C`],
+          [17, 'Port Nozzles', 'NPS', shellNozzle ? `DN${shellNozzle.dnMm} (${shellNozzle.npsInch})` : '-', tubeNozzle ? `DN${tubeNozzle.dnMm} (${tubeNozzle.npsInch})` : '-', 'ASME B16.5 CL150'],
+          [18, 'CHF (Boiling Dryout) Check', '-', chfText, '', ''],
+        ]
+      : [
+          ['OFFICIAL TEMA SHELL-AND-TUBE HEAT EXCHANGER SPECIFICATION SHEET', '', '', '', '', '', 'Date:', dateStr],
+          ['Equipment Tag', unitTag, 'Service', unitLabel, 'TEMA Type', `${dRes.temaType} (Class R)`, 'Status', dRes.overallStatus.toUpperCase()],
+          ['Line', 'TEMA Specification Item', 'Units', 'Shell Side In', 'Shell Side Out', 'Tube Side In', 'Tube Side Out', 'Notes / Basis'],
+          [1, 'Size (Shell ID / Tube Length)', 'mm', `Ø${dRes.shellIdMm} / ${(dRes.tubeLengthM * 1000).toFixed(0)}`, '', `TEMA ${dRes.temaType}`, `${dRes.shellCount} Series / 1 Parallel`, ''],
+          [2, 'Surface per Unit (Prov / Req)', 'm²', Number(dRes.areaProvM2.toFixed(2)), Number(dRes.areaReqM2.toFixed(2)), `Shells: ${dRes.shellCount}`, `Per Shell: ${(dRes.areaProvM2 / Math.max(1, dRes.shellCount)).toFixed(2)}`, `Overdesign +${dRes.actualOverdesignPct.toFixed(1)}%`],
+          [3, 'PERFORMANCE OF ONE UNIT', '', '', '', '', '', ''],
+          [4, 'Fluid Allocation', '-', `Shell (${shellFluid.roleLabel})`, '', `Tube (${tubeFluid.roleLabel})`, '', ''],
+          [5, 'Fluid Name', '-', shellFluid.fluidName, '', tubeFluid.fluidName, '', `${shellFluid.phaseLabel} / ${tubeFluid.phaseLabel}`],
+          [6, 'Fluid Quantities (In / Out)', 'kg/h', '', '', '', '', ''],
+          [7, 'Flow Total', 'kg/h', Number(shellFluid.massFlowKgH.toFixed(1)), Number(shellFluid.massFlowKgH.toFixed(1)), Number(tubeFluid.massFlowKgH.toFixed(1)), Number(tubeFluid.massFlowKgH.toFixed(1)), ''],
+          [8, '  Vapor', 'kg/h', Number(sVL.vIn.toFixed(1)), Number(sVL.vOut.toFixed(1)), Number(tVL.vIn.toFixed(1)), Number(tVL.vOut.toFixed(1)), ''],
+          [9, '  Liquid', 'kg/h', Number(sVL.lIn.toFixed(1)), Number(sVL.lOut.toFixed(1)), Number(tVL.lIn.toFixed(1)), Number(tVL.lOut.toFixed(1)), ''],
+          [10, '  Phase Change Mass', 'kg/h', Number(shellFluid.phaseChangeMassKgH.toFixed(1)), '', Number(tubeFluid.phaseChangeMassKgH.toFixed(1)), '', ''],
+          [11, '  Water / Utility', '-', shellFluid.roleLabel, '', tubeFluid.roleLabel, '', ''],
+          [12, '  Noncondensable Mol Frac', 'mol/mol', Number(shellFluid.nonCondensableMolFrac.toFixed(4)), '', Number(tubeFluid.nonCondensableMolFrac.toFixed(4)), '', ''],
+          [13, 'Temperature (In / Out)', '°C', Number(shellFluid.inTempC.toFixed(2)), Number(shellFluid.outTempC.toFixed(2)), Number(tubeFluid.inTempC.toFixed(2)), Number(tubeFluid.outTempC.toFixed(2)), `Min Pinch ΔT = ${dRes.minPinchDeltaTC.toFixed(1)} °C`],
+          [14, 'Density', 'kg/m³', Number(shellFluid.densityKgM3.toFixed(1)), Number(shellFluid.densityKgM3.toFixed(1)), Number(tubeFluid.densityKgM3.toFixed(1)), Number(tubeFluid.densityKgM3.toFixed(1)), ''],
+          [15, 'Viscosity', 'cP', Number(shellFluid.viscosityCp.toFixed(3)), Number(shellFluid.viscosityCp.toFixed(3)), Number(tubeFluid.viscosityCp.toFixed(3)), Number(tubeFluid.viscosityCp.toFixed(3)), ''],
+          [16, 'Phase Regime', '-', shellFluid.phaseRegime, '', tubeFluid.phaseRegime, '', ''],
+          [17, 'Specific Heat (Cp)', 'kJ/kg·K', Number((shellFluid.cpKcalKgC * 4.1868).toFixed(3)), '', Number((tubeFluid.cpKcalKgC * 4.1868).toFixed(3)), '', ''],
+          [18, 'Thermal Conductivity (k)', 'W/m·K', Number(shellFluid.conductivityWmK.toFixed(3)), '', Number(tubeFluid.conductivityWmK.toFixed(3)), '', ''],
+          [19, 'Latent Heat', 'kJ/kg', shellFluid.latentHeatKcalKg > 0 ? Number((shellFluid.latentHeatKcalKg * 4.1868).toFixed(1)) : '-', '', tubeFluid.latentHeatKcalKg > 0 ? Number((tubeFluid.latentHeatKcalKg * 4.1868).toFixed(1)) : '-', '', ''],
+          [20, 'Inlet Pressure', 'barG', sPinBarG, '', tPinBarG, '', ''],
+          [21, 'Velocity / Reynolds No.', 'm/s / -', Number(dRes.velShellMs.toFixed(2)), `Re=${Math.round(dRes.reShell)}`, Number(dRes.velTubeMs.toFixed(2)), `Re=${Math.round(dRes.reTube)}`, ''],
+          [22, 'Pressure Drop (Allow / Calc)', 'bar', 0.700, Number(dRes.dpShellBar.toFixed(3)), 0.700, Number(dRes.dpTubeBar.toFixed(3)), ''],
+          [23, 'Fouling Resistance (Rf)', 'm²·K/W', Number((shellFluid.foulingM2HKcal / 1.163).toFixed(5)), `h_o=${dRes.hShellWm2K.toFixed(0)} W/m²K`, Number((tubeFluid.foulingM2HKcal / 1.163).toFixed(5)), `h_i=${dRes.hTubeWm2K.toFixed(0)} W/m²K`, ''],
+          [24, 'Heat Exchanged / LMTD (CMTD)', 'kW / °C', `${dRes.dutyKW.toFixed(1)} kW (${dRes.dutyMcalH.toFixed(1)} Mcal/h)`, '', `CMTD=${dRes.cmtdC.toFixed(2)} °C`, `LMTD=${dRes.lmtdCounterC.toFixed(2)} °C`, `Ft=${dRes.ftFactor.toFixed(3)}`],
+          [25, 'Overall Coeff. U (Clean / Service / Req)', 'W/m²·K', Number(dRes.uCleanWm2K.toFixed(1)), Number(dRes.uCalcWm2K.toFixed(1)), Number(uReqWm2K.toFixed(1)), '', `Overdesign +${dRes.actualOverdesignPct.toFixed(1)}%`],
+          [26, 'CONSTRUCTION DATA FOR ONE SHELL', '', '', '', '', '', ''],
+          [27, 'Design / Hydrotest Pressure', 'barG', `${sDesP} / ${sTestP}`, '', `${tDesP} / ${tTestP}`, '', ''],
+          [28, 'Design Temperature', '°C', sDesT, '', tDesT, '', ''],
+          [29, 'No. Passes per Shell', '-', 1, '', dRes.tubePasses, '', ''],
+          [30, 'Corrosion Allowance', 'mm', 3.0, '', 3.0, '', 'Tube wall CA: 0.0 mm'],
+          [31, 'Connections — In', 'NPS', shellNozzle ? `DN${shellNozzle.dnMm} (${shellNozzle.npsInch})` : '-', '', tubeNozzle ? `DN${tubeNozzle.dnMm} (${tubeNozzle.npsInch})` : '-', '', 'ASME B16.5 CL150 RF'],
+          [32, 'Connections — Out', 'NPS', dRes.nozzles[1] ? `DN${dRes.nozzles[1].dnMm} (${dRes.nozzles[1].npsInch})` : '-', '', dRes.nozzles[3] ? `DN${dRes.nozzles[3].dnMm} (${dRes.nozzles[3].npsInch})` : '-', '', 'ASME B16.5 CL150 RF'],
+          [33, 'Connections — Intermediate', '-', dRes.shellCount > 1 ? 'Series Jumper' : 'N/A', '', 'Vent/Drain 3/4"', '', ''],
+          [34, 'Shell Method / Tube Method', '-', dRes.shellMethodLabel ?? 'Bell-Delaware', '', dRes.tubeMethodLabel ?? 'Gnielinski', '', ''],
+          [35, 'Tubes (No. / OD / ID / Length)', 'EA/mm/m', dRes.tubeCountPerShell, `OD ${dRes.tubeOdMm} / ID ${dRes.tubeIdMm.toFixed(2)} mm`, `L = ${dRes.tubeLengthM} m`, `Layout ${dRes.pitchAngle}° (Pt=${dRes.tubePitchMm.toFixed(2)}mm)`, ''],
+          [36, 'Tube Type & Material', '-', 'Plain Seamless', '', dRes.material.label, '', `k_w = ${dRes.material.kwWmK} W/m·K`],
+          [37, 'Shell ID / Bundle Dia / Material', 'mm', `ID Ø${dRes.shellIdMm}`, `DOTL Ø${dRes.bundleDiaMm}`, dRes.material.label, '', ''],
+          [38, 'Channel / Bonnet', '-', `ID Ø${dRes.shellIdMm} mm`, '', `TEMA ${dRes.temaType}`, '', ''],
+          [39, 'Tubesheet', '-', 'Fixed / Floating', '', dRes.material.shortLabel, '', ''],
+          [40, 'Nozzle ρv² & Impingement Protection', 'Pa', shellNozzle?.rhoV2Pa ?? 0, `Limit ${dRes.rhoV2LimitPa ?? 2230}`, impText, '', 'TEMA RCB-4.6'],
+          [41, 'Baffles — Cross (No. / % Cut / Spacing)', 'EA/%/mm', dRes.baffleCount, `${dRes.baffleCutPct}% Cut`, `${dRes.baffleSpacingMm} mm C/C`, '', 'Single Segmental'],
+          [42, 'Bell-Delaware J-Factors', '-', dRes.bellDelaware ? `Jtotal=${dRes.bellDelaware.Jtotal.toFixed(3)}` : '-', dRes.bellDelaware ? `Jc=${dRes.bellDelaware.Jc.toFixed(2)}, Jl=${dRes.bellDelaware.Jl.toFixed(2)}, Jb=${dRes.bellDelaware.Jb.toFixed(2)}` : '', '', '', ''],
+          [43, 'Flow-Induced Vibration (TEMA RCB-V)', '-', vibText, '', '', '', ''],
+          [44, 'Boiling CHF / Dryout Check', '-', chfText, '', '', '', dRes.material.serviceNote],
+        ];
+
+    const sheet2Rows: (string | number)[][] = [
+      ['1. T-Q THERMAL PROFILE', '', '', '', '', '', '', '', ''],
+      ['Q Fraction', 'Cum Duty (Mcal/h)', 'Hot Temp (°C)', 'Cold Temp (°C)', 'Local ΔT (°C)', 'Zone'],
+      ...dRes.tqProfile.map((pt) => [
+        Number(pt.fracQ.toFixed(3)),
+        Number(pt.cumDutyMcalH.toFixed(2)),
+        Number(pt.hotTempC.toFixed(2)),
+        Number(pt.coldTempC.toFixed(2)),
+        Number(pt.deltaTC.toFixed(2)),
+        pt.zoneLabel,
+      ]),
+      [],
+      ['2. NOZZLE SCHEDULE & TEMA RCB-4.6 IMPINGEMENT CHECK', '', '', '', '', '', '', '', ''],
+      ['Nozzle ID', 'Service', 'Side', 'DN (mm)', 'NPS', 'Velocity (m/s)', 'ρv² (Pa)', 'Limit (Pa)', 'Impingement / Status'],
+      ...dRes.nozzles.map((nz) => [
+        nz.id,
+        nz.service,
+        nz.side,
+        nz.dnMm,
+        nz.npsInch,
+        Number(nz.velocityMs.toFixed(2)),
+        nz.rhoV2Pa,
+        nz.rhoV2LimitPa ?? '-',
+        nz.rhoV2Status ?? (nz.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK'),
+      ]),
+    ];
+
+    if (dRes.zoneRating && dRes.zoneRating.length > 0) {
+      sheet2Rows.push(
+        [],
+        ['3. ZONAL HEAT TRANSFER RATING', '', '', '', '', '', '', '', ''],
+        ['Zone', 'Duty (kW)', 'ΔT (°C)', 'h_tube (W/m²·K)', 'h_shell (W/m²·K)', 'U (W/m²·K)', 'Area (m²)'],
+        ...dRes.zoneRating.map((z) => [
+          z.zone,
+          Number(z.dutyKW.toFixed(2)),
+          Number(z.dtC.toFixed(2)),
+          Number(z.hTubeWm2K.toFixed(1)),
+          Number(z.hShellWm2K.toFixed(1)),
+          Number(z.uWm2K.toFixed(1)),
+          Number(z.areaM2.toFixed(2)),
+        ]),
+      );
+    }
+
+    const wb = XLSX.utils.book_new();
+    const ws1 = XLSX.utils.aoa_to_sheet(sheet1Rows);
+    ws1['!cols'] = [
+      { wch: 7 },
+      { wch: 36 },
+      { wch: 13 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 28 },
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(sheet2Rows);
+    ws2['!cols'] = [
+      { wch: 12 },
+      { wch: 22 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 18 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 24 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws1, 'TEMA_HX_Datasheet');
+    XLSX.utils.book_append_sheet(wb, ws2, 'TQ_Profile_Nozzles');
+
+    const safeTag = (unitTag || 'E-101').replace(/[^A-Za-z0-9_-]/g, '_');
+    const stdTag = isPhe ? 'API662_PHE' : `TEMA_${dRes.temaType}`;
+    XLSX.writeFile(wb, `${safeTag}_${stdTag}_Datasheet_${dateStr}.xlsx`);
   };
 
   const isLiquefier = unitType === 'liquefier';
@@ -769,6 +970,23 @@ export default function HeatExchangerWorkbenchModal({
               }}
             >
               {isAiBusy ? (aiStepLabel || '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+            </button>
+            <button
+              type="button"
+              onClick={exportHxExcelDatasheet}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 6,
+                border: '1px solid #34D399',
+                background: '#065F46',
+                color: '#ECFDF5',
+                fontSize: 11,
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+              title="공식 TEMA / API 662 엑셀 데이터시트(.xlsx) 다운로드"
+            >
+              📥 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx
             </button>
             {onOpenChemProDesign && (
               <button
@@ -2166,7 +2384,7 @@ export default function HeatExchangerWorkbenchModal({
                     <div style={cardBox}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                          압력손실(ΔP ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} {getUnitLabel('deltaP', dpUnit)}) 및 유체유발진동(FIV &lt; 0.80) 검증 게이지
+                          압력손실(ΔP ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} {getUnitLabel('deltaP', dpUnit)}) 및 TEMA RCB-V 진동(FIV) 검증 게이지
                         </span>
                         <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                       </div>
@@ -2175,35 +2393,67 @@ export default function HeatExchangerWorkbenchModal({
                           label: `${dRes.hxKind === 'plate_phe' ? '유로 A' : '관측(Tube)'} 압력손실`,
                           val: dRes.dpTubeBar,
                           limit: 0.7,
+                          dangerAt: 0.7,
                           isDp: true,
+                          subText: '',
                         },
                         {
                           label: `${dRes.hxKind === 'plate_phe' ? '유로 B' : '동체(Shell)'} 압력손실`,
                           val: dRes.dpShellBar,
                           limit: 0.7,
+                          dangerAt: 0.7,
                           isDp: true,
+                          subText: '',
                         },
                         ...(dRes.hxKind === 'shell_tube'
                           ? [
                               {
-                                label: `TEMA 와류 진동비 (f_vs=${dRes.vortexFreqHz.toFixed(1)}Hz / f_nat=${dRes.naturalFreqHz.toFixed(1)}Hz)`,
-                                val: dRes.vibRatio,
+                                label: `① 와류 방출 진동비 Vortex Shedding (f_vs=${(dRes.vibration?.vortexFreqHz ?? dRes.vortexFreqHz).toFixed(1)}Hz / f_n=${(dRes.vibration?.naturalFreqHz ?? dRes.naturalFreqHz).toFixed(1)}Hz)`,
+                                val: dRes.vibration?.vortexRatio ?? dRes.vibRatio,
                                 limit: 0.8,
+                                dangerAt: 1.0,
                                 isDp: false,
+                                subText: '',
                               },
+                              ...(dRes.vibration
+                                ? [
+                                    {
+                                      label: `② 유체탄성 불안정 Connors Fluidelastic (V=${dRes.velShellMs.toFixed(2)}m/s / V_c=${dRes.vibration.criticalVelMs.toFixed(2)}m/s)`,
+                                      val: dRes.vibration.fluidelasticRatio,
+                                      limit: 0.8,
+                                      dangerAt: 1.0,
+                                      isDp: false,
+                                      subText: '',
+                                    },
+                                    {
+                                      label:
+                                        dRes.vibration.acousticFreqsHz.length > 0
+                                          ? `③ 음향 공진 Acoustic Resonance (f_vs=${dRes.vibration.vortexFreqHz.toFixed(1)}Hz / f_a1=${dRes.vibration.acousticFreqsHz[0].toFixed(1)}Hz)`
+                                          : '③ 음향 공진 Acoustic Resonance (액상/비공진 — 해당 없음)',
+                                      val: dRes.vibration.acousticRatio,
+                                      limit: 0.8,
+                                      dangerAt: 1.0,
+                                      isDp: false,
+                                      subText: dRes.vibration.acousticFreqsHz.length === 0 ? 'N/A (액상)' : dRes.vibration.acousticRisk ? '⚠ 공진대역 (±20%)' : 'OK',
+                                    },
+                                  ]
+                                : []),
                             ]
                           : []),
                       ].map((g, gi) => {
                         const pct = Math.min(100, (g.val / (g.limit * 1.25)) * 100);
+                        const danger = !g.isDp && g.val >= g.dangerAt;
                         const over = g.val > g.limit;
                         return (
                           <div key={gi} style={{ marginBottom: 9 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800, marginBottom: 3 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 800, marginBottom: 3, gap: 6 }}>
                               <span style={{ color: '#334155' }}>{g.label}</span>
-                              <span style={{ fontFamily: MONO, color: over ? '#92400E' : '#166534' }}>
+                              <span style={{ fontFamily: MONO, color: danger ? '#991B1B' : over ? '#92400E' : '#166534', whiteSpace: 'nowrap' }}>
                                 {g.isDp
                                   ? `${formatCanonicalValue('deltaP', g.val * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)} / 기준 ${formatCanonicalValue('deltaP', g.limit * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}`
-                                  : `${g.val.toFixed(2)} / 기준 ${g.limit.toFixed(2)}`}
+                                  : g.subText && g.val === 0
+                                  ? g.subText
+                                  : `${g.val.toFixed(2)} / 기준 ${g.limit.toFixed(2)}${g.subText ? ` (${g.subText})` : ''}`}
                               </span>
                             </div>
                             <div style={{ height: 8, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
@@ -2211,13 +2461,89 @@ export default function HeatExchangerWorkbenchModal({
                                 style={{
                                   width: `${pct}%`,
                                   height: '100%',
-                                  background: over ? '#D97706' : '#2563EB',
+                                  background: danger ? '#DC2626' : over ? '#D97706' : '#2563EB',
                                 }}
                               />
                             </div>
                           </div>
                         );
                       })}
+
+                      {/* FIV Span / Sound Speed + TEMA RCB-4.6 Impingement + CHF Dryout Badges */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, paddingTop: 8, borderTop: '1px solid #E2E8F0' }}>
+                        {dRes.hxKind === 'shell_tube' && dRes.vibration && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5, fontFamily: MONO }}>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155', fontWeight: 700 }}>
+                              Window Span 2·Lb = {(dRes.vibration.windowSpanM * 1000).toFixed(0)} mm
+                            </span>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155', fontWeight: 700 }}>
+                              Central Span Lb = {(dRes.vibration.centralSpanM * 1000).toFixed(0)} mm
+                            </span>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E3A8A', fontWeight: 800 }}>
+                              Effective Span = {(dRes.vibration.effectiveSpanM * 1000).toFixed(0)} mm
+                            </span>
+                            {dRes.vibration.soundSpeedMs != null && (
+                              <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 800 }}>
+                                음속 c = {dRes.vibration.soundSpeedMs.toFixed(0)} m/s
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                          {dRes.hxKind === 'shell_tube' && (() => {
+                            const shIn = dRes.nozzles.find((n) => n.side === 'Shell') ?? dRes.nozzles[0];
+                            const rStatus = dRes.rhoV2Status ?? shIn?.rhoV2Status ?? (dRes.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK');
+                            const tone =
+                              rStatus === 'OVERSIZE_NOZZLE'
+                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B', lbl: '노즐 확관 필요 (OVERSIZE)' }
+                                : rStatus === 'IMPINGEMENT_REQ'
+                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E', lbl: '충돌판 필수 (IMPINGEMENT PLATE REQ)' }
+                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534', lbl: '충돌판 불필요 (OK)' };
+                            return (
+                              <span
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: 6,
+                                  background: tone.bg,
+                                  border: `1px solid ${tone.bd}`,
+                                  color: tone.fg,
+                                  fontSize: 10.5,
+                                  fontWeight: 900,
+                                  fontFamily: MONO,
+                                }}
+                              >
+                                TEMA RCB-4.6 노즐 ρv² = {shIn?.rhoV2Pa ?? 0} Pa (기준 {dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · {tone.lbl}
+                              </span>
+                            );
+                          })()}
+
+                          {dRes.chfCheck && (() => {
+                            const cTone =
+                              dRes.chfCheck.status === 'CRITICAL'
+                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B' }
+                                : dRes.chfCheck.status === 'WARN'
+                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E' }
+                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534' };
+                            return (
+                              <span
+                                style={{
+                                  padding: '4px 8px',
+                                  borderRadius: 6,
+                                  background: cTone.bg,
+                                  border: `1px solid ${cTone.bd}`,
+                                  color: cTone.fg,
+                                  fontSize: 10.5,
+                                  fontWeight: 900,
+                                  fontFamily: MONO,
+                                }}
+                              >
+                                비등 CHF(Dryout) [{dRes.chfCheck.status}] q&quot;={(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF={(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (비율 {dRes.chfCheck.chfRatio.toFixed(2)})
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -2225,8 +2551,26 @@ export default function HeatExchangerWorkbenchModal({
                 {visualTab === 'datasheet' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                     <div style={cardBox}>
-                      <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                        노즐 스케줄 (Nozzle Sizing & Momentum ρv² Check)
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 7, flexWrap: 'wrap' }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
+                          노즐 스케줄 (Nozzle Sizing & Momentum ρv² Check — TEMA RCB-4.6)
+                        </div>
+                        <button
+                          type="button"
+                          onClick={exportHxExcelDatasheet}
+                          style={{
+                            padding: '4px 10px',
+                            borderRadius: 6,
+                            border: '1px solid #059669',
+                            background: '#ECFDF5',
+                            color: '#065F46',
+                            fontSize: 10.8,
+                            fontWeight: 900,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          📥 공식 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} 엑셀 데이터시트 (.xlsx)
+                        </button>
                       </div>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: MONO }}>
                         <thead>
@@ -2240,20 +2584,35 @@ export default function HeatExchangerWorkbenchModal({
                               </span>
                             </th>
                             <th style={{ padding: '5px 7px', textAlign: 'right' }}>ρv² (Pa)</th>
+                            <th style={{ padding: '5px 7px', textAlign: 'center', fontFamily: 'inherit' }}>충돌판 (RCB-4.6)</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {dRes.nozzles.map((nz) => (
-                            <tr key={nz.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                              <td style={{ padding: '4px 7px', fontWeight: 900, color: '#1E3A8A' }}>{nz.id}</td>
-                              <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>{nz.service}</td>
-                              <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 800 }}>
-                                DN{nz.dnMm} ({nz.npsInch})
-                              </td>
-                              <td style={{ padding: '4px 7px', textAlign: 'right' }}>{formatCanonicalValue('velocity', nz.velocityMs, velUnit, 2)}</td>
-                              <td style={{ padding: '4px 7px', textAlign: 'right' }}>{nz.rhoV2Pa}</td>
-                            </tr>
-                          ))}
+                          {dRes.nozzles.map((nz) => {
+                            const nStatus = nz.rhoV2Status ?? (nz.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK');
+                            const nBadge =
+                              nStatus === 'OVERSIZE_NOZZLE'
+                                ? { bg: '#FEF2F2', fg: '#991B1B', text: 'OVERSIZE' }
+                                : nStatus === 'IMPINGEMENT_REQ'
+                                ? { bg: '#FFFBEB', fg: '#92400E', text: '충돌판 필수' }
+                                : { bg: '#DCFCE7', fg: '#166534', text: 'OK' };
+                            return (
+                              <tr key={nz.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '4px 7px', fontWeight: 900, color: '#1E3A8A' }}>{nz.id}</td>
+                                <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>{nz.service}</td>
+                                <td style={{ padding: '4px 7px', textAlign: 'right', fontWeight: 800 }}>
+                                  DN{nz.dnMm} ({nz.npsInch})
+                                </td>
+                                <td style={{ padding: '4px 7px', textAlign: 'right' }}>{formatCanonicalValue('velocity', nz.velocityMs, velUnit, 2)}</td>
+                                <td style={{ padding: '4px 7px', textAlign: 'right' }}>{nz.rhoV2Pa}</td>
+                                <td style={{ padding: '4px 7px', textAlign: 'center' }}>
+                                  <span style={{ padding: '1.5px 6px', borderRadius: 4, background: nBadge.bg, color: nBadge.fg, fontSize: 10, fontWeight: 800 }}>
+                                    {nBadge.text}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

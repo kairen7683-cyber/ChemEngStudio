@@ -42,7 +42,45 @@ window.ChemEngExcelExporter = (function () {
     ctx.fillStyle = '#0f172a';
     ctx.font = 'bold 13px Arial, sans-serif';
 
-    if (eqType === 'hx') {
+    if (eqType === 'hx' && res.hxType === 'plate_phe') {
+      const wp = res.Wp_mm ?? res.phe_wp_mm ?? 500;
+      const lp = res.Lp_mm ?? res.phe_lp_mm ?? 1200;
+      const lpack = res.L_pack_mm ?? 400;
+      const beta = res.phe_beta_deg ?? res.phe_chevron_deg ?? res.beta_deg ?? 45;
+      const bmm = res.phe_b_mm ?? res.b_mm ?? 3.5;
+      const nPlates = res.N_plates ?? 50;
+      const nCh = res.N_channels ?? res.N_ch ?? Math.max(2, nPlates - 1);
+      ctx.fillText(`API 662 GASKETED PHE — ${nPlates} Plates (${nCh} Ch) · β=${beta}°`, 18, 26);
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2.2;
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(55, 62, 20, 130);
+      ctx.strokeRect(55, 62, 20, 130);
+      ctx.fillStyle = '#e0f2fe';
+      ctx.fillRect(75, 72, 185, 110);
+      ctx.strokeRect(75, 72, 185, 110);
+      ctx.strokeStyle = '#0284c7';
+      ctx.lineWidth = 1.2;
+      for (let x = 90; x < 260; x += 15) {
+        ctx.beginPath(); ctx.moveTo(x, 72); ctx.lineTo(x, 182); ctx.stroke();
+      }
+      ctx.fillStyle = '#0ea5e9';
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2;
+      ctx.fillRect(260, 66, 18, 122);
+      ctx.strokeRect(260, 66, 18, 122);
+      // Chevron plate front view
+      ctx.strokeRect(330, 62, 120, 130);
+      ctx.strokeStyle = '#0284c7';
+      for (let y = 92; y <= 162; y += 22) {
+        ctx.beginPath();
+        ctx.moveTo(345, y); ctx.lineTo(390, y - 14); ctx.lineTo(435, y);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 11px Arial, sans-serif';
+      ctx.fillText(`Plate W×L: ${wp}×${lp} mm (b=${bmm}mm) | Pack L: ${lpack} mm | Port: ${res.nozzle_shell_nps || '4"'} 150#`, 18, h - 18);
+    } else if (eqType === 'hx') {
       ctx.fillText(`TEMA ${res.tema_type} SHELL & TUBE SKETCH — ID Ø${res.D_shell_mm} × L ${(res.L_m * 1000).toFixed(0)} mm`, 18, 26);
       const sx = 75, sy = 72, sw = 310, sh = 95;
       // Front header + Shell + Rear head
@@ -235,9 +273,185 @@ window.ChemEngExcelExporter = (function () {
   }
 
   // =========================================================================
-  // SHEET 1 BUILDER FOR HEAT EXCHANGER (EXACT 44-ROW TEMA DATASHEET!)
+  // SHEET 1 BUILDER FOR HEAT EXCHANGER (EXACT 44-ROW TEMA OR API 662 PHE!)
   // =========================================================================
   function populateHXSheet1(wb, ws, res, dateStr) {
+    const eqTag = res.equipTag || res.tag || 'E-101';
+
+    // Real vapor fraction helpers (no hardcoded 0 / 100%)
+    const hotVIn = Number.isFinite(res.hotVaporFracIn)
+      ? res.hotVaporFracIn
+      : (res.hotMode && res.hotMode !== 'sensible' ? 1 : 0);
+    const hotVOut = Number.isFinite(res.hotVaporFracOut)
+      ? res.hotVaporFracOut
+      : (res.hotMode === 'cond_full'
+          ? 0
+          : res.hotMode === 'cond_partial'
+          ? Math.max(0, 1 - (res.hotBreak?.xFrac ?? 0))
+          : hotVIn);
+    const coldVIn = Number.isFinite(res.coldVaporFracIn) ? res.coldVaporFracIn : 0;
+    const coldVOut = Number.isFinite(res.coldVaporFracOut)
+      ? res.coldVaporFracOut
+      : (res.coldMode === 'boil_full'
+          ? 1
+          : res.coldMode === 'boil_partial'
+          ? (res.coldBreak?.xFrac ?? 0)
+          : coldVIn);
+
+    const pHotIn = Number.isFinite(res.inletPressHotBarG) ? res.inletPressHotBarG : 4.5;
+    const pColdIn = Number.isFinite(res.inletPressColdBarG) ? res.inletPressColdBarG : 5.0;
+    const pDes = Number.isFinite(res.designPressBarG)
+      ? res.designPressBarG
+      : Math.max(10, Math.ceil((Math.max(pHotIn, pColdIn) + 2) * 1.15));
+    const pTest = Number.isFinite(res.hydrotestPressBarG)
+      ? res.hydrotestPressBarG
+      : Number((pDes * 1.5).toFixed(1));
+    const caMm = Number.isFinite(res.corrosionAllowMm) ? res.corrosionAllowMm : 3.0;
+
+    // -----------------------------------------------------------------------
+    // BRANCH A: PLATE HEAT EXCHANGER (API 662 / ISO 15547-1)
+    // -----------------------------------------------------------------------
+    if (res.hxType === 'plate_phe') {
+      const hFluid = res.hotProps;
+      const cFluid = res.coldProps;
+      const eqService = res.equipName || `${hFluid?.name || 'Hot'} / ${cFluid?.name || 'Cold'} Plate Exchanger`;
+      const wpMm = res.Wp_mm ?? res.phe_wp_mm ?? 500;
+      const lpMm = res.Lp_mm ?? res.phe_lp_mm ?? 1200;
+      const lPackMm = res.L_pack_mm ?? 400;
+      const nPlates = res.N_plates ?? 50;
+      const nEff = res.N_eff ?? res.N_eff_plates ?? Math.max(1, nPlates - 2);
+      const nCh = res.N_channels ?? res.N_ch ?? Math.max(2, nPlates - 1);
+      const nChSide = res.N_ch_side ?? res.N_ch_per_pass ?? Math.max(1, Math.floor(nCh / 2));
+      const betaDeg = res.phe_beta_deg ?? res.phe_chevron_deg ?? res.beta_deg ?? 45;
+      const bMm = res.phe_b_mm ?? res.b_mm ?? 3.5;
+      const tpMm = res.phe_tp_mm ?? res.tp_mm ?? 0.6;
+      const phePasses = res.phe_passes ?? res.phePasses ?? 1;
+      const matSpec = res.materialSpec || res.phe_mat_name || res.matName || 'Titanium Gr.1 / SS316L';
+      const aPlate = res.A_plate_m2 ?? res.A_1plate_m2 ?? res.A_single_plate_m2 ?? ((wpMm * lpMm) / 1e6);
+
+      buildTopHeaderBlockExcel(
+        ws,
+        'GASKETED PLATE HEAT EXCHANGER (PHE) — API 662 / ISO 15547-1',
+        eqTag,
+        eqService,
+        `API662-${eqTag}`,
+        dateStr
+      );
+
+      const R = ln => ln + 4;
+      function addPheRow(ln, label, unit, hVal, cVal, boldVals) {
+        const r = R(ln);
+        ws.getCell(r, 1).value = ln;
+        ws.mergeCells(r, 2, r, 3);
+        ws.getCell(r, 2).value = label;
+        ws.getCell(r, 4).value = unit;
+        ws.getCell(r, 4).alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.mergeCells(r, 5, r, 7);
+        ws.getCell(r, 5).value = hVal;
+        ws.getCell(r, 5).alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.mergeCells(r, 8, r, 10);
+        ws.getCell(r, 8).value = cVal;
+        ws.getCell(r, 8).alignment = { horizontal: 'center', vertical: 'middle' };
+        if (boldVals) {
+          ws.getCell(r, 5).font = { name: 'Calibri', size: 9.5, bold: true };
+          ws.getCell(r, 8).font = { name: 'Calibri', size: 9.5, bold: true };
+        }
+        ws.getRow(r).height = 17;
+      }
+
+      // Line 1: Plate Size, Type, Pass Arrangement
+      ws.getCell(R(1), 1).value = 1;
+      ws.getCell(R(1), 2).value = 'Plate Size (W × L × Pack L)';
+      ws.mergeCells(R(1), 3, R(1), 4);
+      ws.getCell(R(1), 3).value = `${wpMm} × ${lpMm} × ${lPackMm} mm`;
+      ws.getCell(R(1), 3).font = { name: 'Calibri', size: 9.5, bold: true };
+      ws.getCell(R(1), 5).value = 'PHE Type';
+      ws.getCell(R(1), 6).value = `Chevron β=${betaDeg}°`;
+      ws.getCell(R(1), 6).font = { name: 'Calibri', size: 9.5, bold: true };
+      ws.mergeCells(R(1), 7, R(1), 8);
+      ws.getCell(R(1), 7).value = 'Pass Arrangement (H × C)';
+      ws.mergeCells(R(1), 9, R(1), 10);
+      ws.getCell(R(1), 9).value = `${phePasses} × ${phePasses} Counter-Current`;
+
+      // Line 2: Surface, N_plates, Channels
+      ws.getCell(R(2), 1).value = 2;
+      ws.getCell(R(2), 2).value = 'Effective Area (Prov / Req)';
+      ws.mergeCells(R(2), 3, R(2), 4);
+      ws.getCell(R(2), 3).value = `${res.A_prov_m2.toFixed(1)} m² (Req: ${res.A_req_m2.toFixed(1)} m²)`;
+      ws.getCell(R(2), 3).font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF0369A1' } };
+      ws.getCell(R(2), 5).value = 'Total Plates (N_p)';
+      ws.getCell(R(2), 6).value = `${nPlates} EA (Eff ${nEff})`;
+      ws.getCell(R(2), 6).font = { name: 'Calibri', size: 9.5, bold: true };
+      ws.mergeCells(R(2), 7, R(2), 8);
+      ws.getCell(R(2), 7).value = 'Channels (Total / Per Side)';
+      ws.mergeCells(R(2), 9, R(2), 10);
+      ws.getCell(R(2), 9).value = `${nCh} Ch (${nChSide}H / ${nChSide}C)`;
+
+      addSectionBanner(ws, R(3), 3, 'PERFORMANCE OF ONE PHE UNIT (API 662 / ISO 15547-1)');
+
+      addPheRow(4, 'Fluid Allocation', '-', 'HOT SIDE CHANNELS', 'COLD SIDE CHANNELS', true);
+      addPheRow(5, 'Fluid Name', '-', `${hFluid?.name || '-'} [${hFluid?.formula || ''}]`, `${cFluid?.name || '-'} [${cFluid?.formula || ''}]`, true);
+      addPheRow(6, 'Mass Flowrate Total', 'kg/h', Number(res.mh.toFixed(1)), Number(res.mc.toFixed(1)), true);
+      addPheRow(7, '   Vapor (In / Out)', 'kg/h', `${(res.mh * hotVIn).toFixed(0)} / ${(res.mh * hotVOut).toFixed(0)}`, `${(res.mc * coldVIn).toFixed(0)} / ${(res.mc * coldVOut).toFixed(0)}`, false);
+      addPheRow(8, '   Liquid (In / Out)', 'kg/h', `${(res.mh * (1 - hotVIn)).toFixed(0)} / ${(res.mh * (1 - hotVOut)).toFixed(0)}`, `${(res.mc * (1 - coldVIn)).toFixed(0)} / ${(res.mc * (1 - coldVOut)).toFixed(0)}`, false);
+      addPheRow(9, 'Temperature (In → Out)', '°C', `${res.Th_in.toFixed(1)} → ${res.Th_out.toFixed(2)}`, `${res.Tc_in.toFixed(1)} → ${res.Tc_out.toFixed(2)}`, true);
+      addPheRow(10, 'Inlet Pressure', 'barG', Number(pHotIn.toFixed(2)), Number(pColdIn.toFixed(2)), false);
+      addPheRow(11, 'Density / Viscosity', 'kg/m³ / cP', `${(hFluid?.rho ?? 0).toFixed(1)} / ${(hFluid?.mu ?? 0).toFixed(3)}`, `${(cFluid?.rho ?? 0).toFixed(1)} / ${(cFluid?.mu ?? 0).toFixed(3)}`, false);
+      addPheRow(12, 'Specific Heat / Conductivity', 'kJ/kgK / W/mK', `${(hFluid?.cp ?? 0).toFixed(3)} / ${(hFluid?.k ?? 0).toFixed(3)}`, `${(cFluid?.cp ?? 0).toFixed(3)} / ${(cFluid?.k ?? 0).toFixed(3)}`, false);
+      addPheRow(13, 'Channel Velocity / Re', 'm/s / -', `${res.vs.toFixed(2)} m/s · Re=${Math.round(res.Res).toLocaleString()} (Port ${(res.v_port_h ?? 0).toFixed(2)} m/s)`, `${res.vt.toFixed(2)} m/s · Re=${Math.round(res.Ret).toLocaleString()} (Port ${(res.v_port_c ?? 0).toFixed(2)} m/s)`, true);
+      addPheRow(14, 'Pressure Drop (Calc / Allow)', 'bar', `${res.dPs_bar.toFixed(3)} / 0.800 bar (${(res.dPs_bar * 100).toFixed(1)} kPa)`, `${res.dPt_bar.toFixed(3)} / 0.800 bar (${(res.dPt_bar * 100).toFixed(1)} kPa)`, true);
+      addPheRow(15, 'Film Coeff. (h) & Fouling (Rf)', 'W/m²K / m²K/W', `h_h=${res.ho.toFixed(0)} · Rf=${res.rfs.toFixed(5)}`, `h_c=${res.hi.toFixed(0)} · Rf=${res.rft.toFixed(5)}`, false);
+      addPheRow(16, 'Heat Duty (Q) & CMTD', 'kW / °C', `${res.Q_kW.toFixed(1)} kW (${(res.Q_kW * 0.85985).toFixed(1)} Mcal/h)`, `CMTD=${res.CMTD.toFixed(2)} °C (LMTD=${res.lmtd.toFixed(2)}°C, Ft=${res.Ft.toFixed(3)})`, true);
+      addPheRow(17, 'Overall U (Service / Clean)', 'W/m²·K', `Service: ${res.U_calc.toFixed(1)} · Clean: ${res.U_clean.toFixed(1)}`, `Req: ${res.U_req.toFixed(1)} (+${res.overdesign_pct.toFixed(1)}% Overdesign)`, true);
+
+      addSectionBanner(ws, R(18), 18, 'PLATE GEOMETRY, FRAME & MATERIALS OF CONSTRUCTION');
+
+      ws.mergeCells(R(19), 8, R(24), 10);
+      function addPheMechRow(ln, label, unit, val) {
+        const r = R(ln);
+        ws.getCell(r, 1).value = ln;
+        ws.mergeCells(r, 2, r, 3);
+        ws.getCell(r, 2).value = label;
+        ws.getCell(r, 4).value = unit;
+        ws.getCell(r, 4).alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.mergeCells(r, 5, r, 7);
+        ws.getCell(r, 5).value = val;
+        ws.getCell(r, 5).alignment = { horizontal: 'left', vertical: 'middle' };
+        ws.getRow(r).height = 18;
+      }
+
+      const hDesT = Math.ceil((Math.max(res.Th_in, res.Th_out) + 25) / 5) * 5;
+      const cDesT = Math.ceil((Math.max(res.Tc_in, res.Tc_out) + 25) / 5) * 5;
+      addPheMechRow(19, 'Chevron Angle (β) / Gap (b)', 'deg / mm', `β = ${betaDeg}° · Pressing Depth b = ${bMm} mm · Dh = ${(res.di_mm ?? (2 * bMm)).toFixed(2)} mm`);
+      addPheMechRow(20, 'Plate Dimensions & Area/Plate', 'mm / m²', `W = ${wpMm} mm × L = ${lpMm} mm · Pack L = ${lPackMm} mm · A_1 = ${Number(aPlate).toFixed(3)} m²`);
+      addPheMechRow(21, 'Plate Thickness & Material', 'mm / Spec', `t_p = ${tpMm} mm · Material: ${matSpec}`);
+      addPheMechRow(22, 'Port Nozzles & Gasket', 'NPS / Spec', `${res.nozzle_shell_nps || '4"'} ASME B16.5 CL150 (Port Ø${res.D_port_mm ?? '-'}mm) · EPDM / FKM / PTFE`);
+      addPheMechRow(23, 'Design / Hydrotest P & Temp', 'barG / °C', `${pDes.toFixed(1)} / ${pTest.toFixed(1)} barG @ ${Math.max(hDesT, cDesT)} °C (CA: ${caMm.toFixed(1)} mm)`);
+      addPheMechRow(24, 'Weights (Empty / Pack / Full)', 'kg', `Empty ${res.W_empty_kg.toFixed(0)} kg / Plate Pack ${res.W_bundle_kg.toFixed(0)} kg / Operating ${res.W_filled_kg.toFixed(0)} kg`);
+
+      try {
+        const miniBase64 = renderWhitePrintMiniSketchBase64('hx', res);
+        if (miniBase64) {
+          const imgId = wb.addImage({ base64: miniBase64, extension: 'png' });
+          ws.addImage(imgId, {
+            tl: { col: 7.08, row: R(19) - 0.9 },
+            ext: { width: 270, height: 135 }
+          });
+        }
+      } catch (e) {}
+
+      applyGridBorders(ws, R(1), R(24), 1, 10, true);
+      for (let ln = 1; ln <= 24; ln++) {
+        ws.getCell(R(ln), 1).alignment = { horizontal: 'center', vertical: 'middle' };
+        ws.getCell(R(ln), 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        ws.getCell(R(ln), 1).font = { name: 'Calibri', size: 9, bold: true, color: { argb: 'FF475569' } };
+      }
+      return;
+    }
+
+    // -----------------------------------------------------------------------
+    // BRANCH B: SHELL-AND-TUBE HEAT EXCHANGER (EXACT 44-ROW TEMA DATASHEET!)
+    // -----------------------------------------------------------------------
     const isHotShell = res.allocation !== 'hot_tube';
     const sFluid = isHotShell ? res.hotProps : res.coldProps;
     const tFluid = isHotShell ? res.coldProps : res.hotProps;
@@ -247,11 +461,21 @@ window.ChemEngExcelExporter = (function () {
     const sTout = isHotShell ? res.Th_out : res.Tc_out;
     const tTin = isHotShell ? res.Tc_in : res.Th_in;
     const tTout = isHotShell ? res.Tc_out : res.Th_out;
+    const sVIn = isHotShell ? hotVIn : coldVIn;
+    const sVOut = isHotShell ? hotVOut : coldVOut;
+    const tVIn = isHotShell ? coldVIn : hotVIn;
+    const tVOut = isHotShell ? coldVOut : hotVOut;
+    const sPin = isHotShell ? pHotIn : pColdIn;
+    const tPin = isHotShell ? pColdIn : pHotIn;
+    const sMode = isHotShell ? res.hotMode : res.coldMode;
+    const tMode = isHotShell ? res.coldMode : res.hotMode;
     const bwgGauge = res.tw_mm >= 2.6 ? '12 BWG (2.77mm)' : (res.tw_mm >= 2.0 ? '14 BWG (2.11mm)' : '16 BWG (1.65mm)');
     const pitchRatio = (res.pt_mm / res.do_mm).toFixed(2);
     const aPerShell = (res.A_prov_m2 / Math.max(1, res.nShell)).toFixed(1);
+    const eqService = res.equipName || `${sFluid?.name || 'Hot'} / ${tFluid?.name || 'Cold'} Exchanger`;
+    const matSpec = res.materialSpec || 'Carbon Steel (SA-179 / SA-516 Gr.70)';
 
-    buildTopHeaderBlockExcel(ws, 'SHELL-AND-TUBE HEAT EXCHANGER', 'E-101', `${sFluid?.name || 'Hot'} / ${tFluid?.name || 'Cold'} Exchanger`, 'TEMA-R-E101', dateStr);
+    buildTopHeaderBlockExcel(ws, 'SHELL-AND-TUBE HEAT EXCHANGER', eqTag, eqService, `TEMA-R-${eqTag}`, dateStr);
 
     // Row offset: Line 1 starts at Excel Row 5 (so Line N is at Excel Row N + 4)
     const R = ln => ln + 4;
@@ -370,11 +594,20 @@ window.ChemEngExcelExporter = (function () {
       ws.getRow(r).height = 16.5;
     }
 
+    const sIsSteam = sFluid?.id === 'steam' || /steam/i.test(sFluid?.name || '');
+    const tIsSteam = tFluid?.id === 'steam' || /steam/i.test(tFluid?.name || '');
+    const sLatentLabel = (sMode && sMode !== 'sensible')
+      ? `${sFluid?.hv || '-'} (${sMode.startsWith('cond') ? 'Condensing' : 'Boiling'})`
+      : (sFluid?.hv ? `${sFluid.hv} (Sensible)` : '-');
+    const tLatentLabel = (tMode && tMode !== 'sensible')
+      ? `${tFluid?.hv || '-'} (${tMode.startsWith('cond') ? 'Condensing' : 'Boiling'})`
+      : (tFluid?.hv ? `${tFluid.hv} (Sensible)` : '-');
+
     addPerfRow(7, 'Flow Total', 'kg/h', Number(sFlow.toFixed(0)), undefined, Number(tFlow.toFixed(0)), undefined, true);
-    addPerfRow(8, '   Vapor', 'kg/h (in/out)', 0, 0, 0, 0, false);
-    addPerfRow(9, '   Liquid', 'kg/h (in/out)', Number(sFlow.toFixed(0)), Number(sFlow.toFixed(0)), Number(tFlow.toFixed(0)), Number(tFlow.toFixed(0)), false);
-    addPerfRow(10, '   Steam', 'kg/h (in/out)', '-', '-', '-', '-', false);
-    addPerfRow(11, '   Water', 'kg/h (in/out)', sFluid?.id === 'water' ? Number(sFlow.toFixed(0)) : '-', sFluid?.id === 'water' ? Number(sFlow.toFixed(0)) : '-', tFluid?.id === 'water' ? Number(tFlow.toFixed(0)) : '-', tFluid?.id === 'water' ? Number(tFlow.toFixed(0)) : '-', false);
+    addPerfRow(8, '   Vapor', 'kg/h (in/out)', Number((sFlow * sVIn).toFixed(0)), Number((sFlow * sVOut).toFixed(0)), Number((tFlow * tVIn).toFixed(0)), Number((tFlow * tVOut).toFixed(0)), false);
+    addPerfRow(9, '   Liquid', 'kg/h (in/out)', Number((sFlow * (1 - sVIn)).toFixed(0)), Number((sFlow * (1 - sVOut)).toFixed(0)), Number((tFlow * (1 - tVIn)).toFixed(0)), Number((tFlow * (1 - tVOut)).toFixed(0)), false);
+    addPerfRow(10, '   Steam', 'kg/h (in/out)', sIsSteam ? Number((sFlow * sVIn).toFixed(0)) : '-', sIsSteam ? Number((sFlow * sVOut).toFixed(0)) : '-', tIsSteam ? Number((tFlow * tVIn).toFixed(0)) : '-', tIsSteam ? Number((tFlow * tVOut).toFixed(0)) : '-', false);
+    addPerfRow(11, '   Water', 'kg/h (in/out)', sFluid?.id === 'water' ? Number((sFlow * (1 - sVIn)).toFixed(0)) : '-', sFluid?.id === 'water' ? Number((sFlow * (1 - sVOut)).toFixed(0)) : '-', tFluid?.id === 'water' ? Number((tFlow * (1 - tVIn)).toFixed(0)) : '-', tFluid?.id === 'water' ? Number((tFlow * (1 - tVOut)).toFixed(0)) : '-', false);
     addPerfRow(12, '   Noncondensable', 'kg/h (in/out)', 0, 0, 0, 0, false);
     addPerfRow(13, 'Temperature (In / Out)', '°C', Number(sTin.toFixed(1)), Number(sTout.toFixed(2)), Number(tTin.toFixed(1)), Number(tTout.toFixed(2)), true);
     addPerfRow(14, 'Density', 'kg/m³', Number((sFluid?.rho * 0.995).toFixed(1)), Number((sFluid?.rho * 1.005).toFixed(1)), Number((tFluid?.rho * 1.004).toFixed(1)), Number((tFluid?.rho * 0.996).toFixed(1)), false);
@@ -382,8 +615,8 @@ window.ChemEngExcelExporter = (function () {
     addPerfRow(16, 'Molecular Weight, Fluid', 'g/mol', sFluid?.mw || '-', undefined, tFluid?.mw || '-', undefined, false);
     addPerfRow(17, 'Specific Heat', 'kJ/kg·K', Number(sFluid?.cp.toFixed(3)), Number(sFluid?.cp.toFixed(3)), Number(tFluid?.cp.toFixed(3)), Number(tFluid?.cp.toFixed(3)), false);
     addPerfRow(18, 'Thermal Conductivity', 'W/m·K', Number(sFluid?.k.toFixed(3)), Number(sFluid?.k.toFixed(3)), Number(tFluid?.k.toFixed(3)), Number(tFluid?.k.toFixed(3)), false);
-    addPerfRow(19, 'Latent Heat', 'kJ/kg', sFluid?.hv || '-', undefined, tFluid?.hv || '-', undefined, false);
-    addPerfRow(20, 'Inlet Pressure', 'barG (inlet)', 4.50, undefined, 5.00, undefined, false);
+    addPerfRow(19, 'Latent Heat', 'kJ/kg', sLatentLabel, undefined, tLatentLabel, undefined, false);
+    addPerfRow(20, 'Inlet Pressure', 'barG (inlet)', Number(sPin.toFixed(2)), undefined, Number(tPin.toFixed(2)), undefined, false);
     addPerfRow(21, 'Velocity', 'm/s', Number(res.vs.toFixed(2)), undefined, Number(res.vt.toFixed(2)), undefined, true);
     addPerfRow(22, 'Press Drop Allow / Calc', 'bar', 0.700, Number(res.dPs_bar.toFixed(3)), 0.700, Number(res.dPt_bar.toFixed(3)), true);
     addPerfRow(23, 'Fouling Factor', 'm²·K/W', Number(res.rfs.toFixed(5)), undefined, Number(res.rft.toFixed(5)), undefined, false);
@@ -453,10 +686,10 @@ window.ChemEngExcelExporter = (function () {
       ws.getRow(r).height = 17.5;
     }
 
-    addConstLeftRow(28, 'Design / Test Press', 'barG', '10.0 / 15.0', '10.0 / 15.0');
+    addConstLeftRow(28, 'Design / Test Press', 'barG', `${pDes.toFixed(1)} / ${pTest.toFixed(1)}`, `${pDes.toFixed(1)} / ${pTest.toFixed(1)}`);
     addConstLeftRow(29, 'Design Temperature', '°C', Math.ceil((Math.max(sTin, sTout) + 25) / 5) * 5, Math.ceil((Math.max(tTin, tTout) + 25) / 5) * 5);
     addConstLeftRow(30, 'No. Passes per Shell', '-', 1, res.nPasses);
-    addConstLeftRow(31, 'Corrosion Allowance', 'mm', 3.0, 3.0);
+    addConstLeftRow(31, 'Corrosion Allowance', 'mm', Number(caMm.toFixed(1)), Number(caMm.toFixed(1)));
     addConstLeftRow(32, 'Connections — In', 'NPS (ASME)', `${res.nozzle_shell_nps || '4"'} CL150 RF`, `${res.nozzle_tube_nps || '4"'} CL150 RF`);
     addConstLeftRow(33, 'Connections — Out', 'NPS (ASME)', `${res.nozzle_shell_nps || '4"'} CL150 RF`, `${res.nozzle_tube_nps || '4"'} CL150 RF`);
     addConstLeftRow(34, 'Connections — Intermediate', 'NPS', res.nShell > 1 ? `${res.nozzle_shell_nps || '4"'}` : 'N/A', 'Vent / Drain 3/4"');
@@ -491,7 +724,7 @@ window.ChemEngExcelExporter = (function () {
     ws.mergeCells(R(36), 2, R(36), 4);
     ws.getCell(R(36), 2).value = '   Type: Plain Seamless';
     ws.mergeCells(R(36), 5, R(36), 7);
-    ws.getCell(R(36), 5).value = 'Material: ASTM A179 / SA-213 TP316L';
+    ws.getCell(R(36), 5).value = `Material: ${matSpec}`;
     ws.mergeCells(R(36), 8, R(36), 10);
     ws.getCell(R(36), 8).value = `Pitch ratio: ${pitchRatio} (P_T=${res.pt_mm.toFixed(2)}mm)`;
 
@@ -503,7 +736,7 @@ window.ChemEngExcelExporter = (function () {
     ws.getCell(R(37), 5).value = `ID: ${res.D_shell_mm} mm (${(res.D_shell_mm / 25.4).toFixed(2)} in) × ${res.t_shell_mm}t`;
     ws.getCell(R(37), 5).font = { name: 'Calibri', size: 9.5, bold: true };
     ws.mergeCells(R(37), 8, R(37), 10);
-    ws.getCell(R(37), 8).value = 'Material: ASME SA-516 Gr.70';
+    ws.getCell(R(37), 8).value = `Material: ${matSpec}`;
 
     // Line 38: Channel or Bonnet
     ws.getCell(R(38), 1).value = 38;
@@ -512,7 +745,7 @@ window.ChemEngExcelExporter = (function () {
     ws.mergeCells(R(38), 5, R(38), 6);
     ws.getCell(R(38), 5).value = `Thick: ${res.t_shell_mm} mm`;
     ws.mergeCells(R(38), 7, R(38), 10);
-    ws.getCell(R(38), 7).value = 'Channel Cover: Bolted Flat Cover (SA-266 Gr.2)';
+    ws.getCell(R(38), 7).value = `Channel Cover: Bolted Flat Cover (${matSpec})`;
 
     // Line 39: Tubesheet Type
     ws.getCell(R(39), 1).value = 39;
@@ -521,12 +754,19 @@ window.ChemEngExcelExporter = (function () {
     ws.mergeCells(R(39), 5, R(39), 10);
     ws.getCell(R(39), 5).value = `Stationary & Rear Tubesheet (${res.t_tubesheet_mm} mm thick) · Bundle Dia Ø${res.D_bundle_mm} mm`;
 
-    // Line 40: Floating Head Cover & Impingement Protection
+    // Line 40: Floating Head Cover & Impingement Protection (REAL nozzle ρv²!)
+    const nozRhoV2 = Number.isFinite(res.nozzleRhoV2Pa)
+      ? res.nozzleRhoV2Pa
+      : (res.impingementCheck?.rhoV2Pa ?? (sFluid?.rho * res.vs * res.vs));
+    const impStatus = res.impingementCheck?.status;
+    const impLabel = impStatus === 'OVERSIZE_NOZZLE'
+      ? 'OVERSIZE NOZZLE REQ (TEMA RCB-4.6)'
+      : (res.impingementRequired ? 'REQUIRED (TEMA RCB-4.6)' : 'NOT REQ');
     ws.getCell(R(40), 1).value = 40;
     ws.mergeCells(R(40), 2, R(40), 5);
     ws.getCell(R(40), 2).value = `Floating Head Cover: TEMA Type ${res.tema_type}`;
     ws.mergeCells(R(40), 6, R(40), 10);
-    ws.getCell(R(40), 6).value = `Impingement Protection: Circular Baffle Plate (ρv² = ${(sFluid?.rho * res.vs * res.vs).toFixed(0)} Pa)`;
+    ws.getCell(R(40), 6).value = `Impingement Protection: ${impLabel} (Nozzle ρv² = ${Number(nozRhoV2 || 0).toFixed(0)} Pa)`;
 
     // Line 41: Baffles Cross (number), % Cut (d), Spacing C/C
     ws.getCell(R(41), 1).value = 41;
@@ -546,19 +786,27 @@ window.ChemEngExcelExporter = (function () {
     ws.mergeCells(R(42), 6, R(42), 10);
     ws.getCell(R(42), 6).value = `Seal Type: Longitudinal Sealing Strips (Bell-Delaware J=${res.J_total.toFixed(3)})`;
 
-    // Line 43: Supports Tube, U-Bend, Type
+    // Line 43: Supports Tube & REAL TEMA RCB-V FIV Status
+    const fiv = res.fivDetails || res.vibDetails || null;
+    const fivStatRaw = res.fivStatus || fiv?.status || (res.vibRatio > 0.8 ? 'warning' : 'ok');
+    const fivStatText = fivStatRaw === 'error' ? 'FAIL' : (fivStatRaw === 'warning' ? 'WARN' : 'SAFE');
+    const feRatio = fiv?.fluidelasticRatio ?? res.fluidelasticRatio;
+    const winSpanMm = fiv?.windowSpanM != null ? Math.round(fiv.windowSpanM * 1000) : Math.round((res.B_spacing_mm || 0) * 2);
     ws.getCell(R(43), 1).value = 43;
     ws.mergeCells(R(43), 2, R(43), 5);
-    ws.getCell(R(43), 2).value = 'Supports Tube: Tie Rods & Spacers (8 EA)';
+    ws.getCell(R(43), 2).value = `Supports Tube: Tie Rods & Spacers | 2·Lb=${winSpanMm}mm`;
     ws.mergeCells(R(43), 6, R(43), 7);
-    ws.getCell(R(43), 6).value = `Vib Ratio: ${res.vibRatio.toFixed(2)}`;
+    ws.getCell(R(43), 6).value = `fvs/fn=${res.vibRatio.toFixed(2)}${Number.isFinite(feRatio) ? ` · V/Vc=${feRatio.toFixed(2)}` : ''}`;
     ws.mergeCells(R(43), 8, R(43), 10);
-    ws.getCell(R(43), 8).value = `Type: Segmental (${res.f_vs_Hz.toFixed(1)}/${res.f_nat_Hz.toFixed(1)} Hz SAFE)`;
+    ws.getCell(R(43), 8).value = `FIV [${fivStatText}] (${res.f_vs_Hz.toFixed(1)}/${res.f_nat_Hz.toFixed(1)} Hz)`;
 
-    // Line 44: Bypass Seal Arrangement & Tube-Tubesheet Joint & Weights
+    // Line 44: Bypass Seal Arrangement & Tube-Tubesheet Joint & Weights (+ CHF if boiling)
+    const chfNote = res.chfCheck
+      ? ` | CHF [${res.chfCheck.status}] q/q_CHF=${res.chfCheck.chfRatio.toFixed(2)}`
+      : '';
     ws.getCell(R(44), 1).value = 44;
     ws.mergeCells(R(44), 2, R(44), 5);
-    ws.getCell(R(44), 2).value = 'Bypass Seal Arrangement: TEMA Standard';
+    ws.getCell(R(44), 2).value = `Bypass Seal: TEMA Std${chfNote}`;
     ws.mergeCells(R(44), 6, R(44), 10);
     ws.getCell(R(44), 6).value = `Joint: Welded+Expanded | Wt Empty ${res.W_empty_kg.toFixed(0)}kg / Bundle ${res.W_bundle_kg.toFixed(0)}kg / Filled ${res.W_filled_kg.toFixed(0)}kg`;
 
@@ -819,7 +1067,7 @@ window.ChemEngExcelExporter = (function () {
         ? '1_Packed_Column_DS'
         : '1_Tray_Column_DS';
     const sheet1NameMap = {
-      hx: '1_TEMA_HX_Datasheet',
+      hx: res.hxType === 'plate_phe' ? '1_API662_PHE_Datasheet' : '1_TEMA_HX_Datasheet',
       pump: '1_API610_Pump_Datasheet',
       column: colSheetName,
       piping: '1_B313_Piping_Datasheet',

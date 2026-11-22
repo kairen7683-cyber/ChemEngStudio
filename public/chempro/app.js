@@ -808,6 +808,8 @@ window.App = (function () {
 
     setVal('psv_mw', p.mw, 2);
     setVal('psv_hv', p.hv, 1);
+    if (Number.isFinite(p.rho) && p.rho > 0) setVal('psv_rhoL', p.rho, 1);
+    if (Number.isFinite(p.mu) && p.mu > 0) setVal('psv_mu_cP', p.mu, 3);
 
     const wrapW = document.getElementById('wrap_psv_W');
     if (wrapW) {
@@ -1054,10 +1056,16 @@ window.App = (function () {
       };
     }
     if (tab === 'psv') {
+      const valveType = document.getElementById('psv_valve_type')?.value || 'conventional';
+      const hasRuptureDisk = Boolean(document.getElementById('psv_rupture_disk')?.checked);
       return {
         ...eqInfo,
+        fluidId: document.getElementById('psv_fluid')?.value || 'propane',
         scenario: document.getElementById('psv_scenario')?.value || 'blocked_outlet',
         phase: document.getElementById('psv_phase')?.value || 'vapor',
+        valve_type: valveType,
+        is_balanced_bellows: valveType === 'balanced_bellows',
+        has_rupture_disk: hasRuptureDisk,
         W_kgh: numVal('psv_W', 14500),
         P_set_barG: numVal('psv_Pset', 15.0),
         P_back_barG: numVal('psv_Pback', 1.2),
@@ -1065,8 +1073,12 @@ window.App = (function () {
         mw: numVal('psv_mw', 44.1),
         k_cpcv: numVal('psv_k', 1.22),
         A_wet_m2: numVal('psv_Awet', 48.0),
+        F_env: numVal('psv_F_env', 1.0),
         hv_kJkg: numVal('psv_hv', 365),
-        Z_comp: numVal('psv_Z', 0.90)
+        Z_comp: numVal('psv_Z', 0.90),
+        rhoL: numVal('psv_rhoL', 800),
+        mu_cP: numVal('psv_mu_cP', 1.0),
+        vapor_mass_frac: numVal('psv_x0', 0.15)
       };
     }
     return {};
