@@ -98,6 +98,10 @@ import {
   getUnitLabel,
 } from '@/lib/units/unitSystem';
 import {
+  getDefaultTagPrefix,
+  formatEquipmentTag,
+} from '@/lib/units/tagNaming';
+import {
   PfdSchematicIcon,
   StreamFlowIcon,
   VesselEquipIcon,
@@ -2012,6 +2016,7 @@ export function FlowsheetWorkspace({
 
   // 전역 기본 단위 구독 및 로컬 오버라이드 단위 상태
   const globalUnits = useUnitStore(s => s.units);
+  const tagStandard = useUnitStore(s => s.tagStandard);
   const hydrateUnits = useUnitStore(s => s.hydrate);
   useEffect(() => {
     hydrateUnits();
@@ -4334,13 +4339,14 @@ export function FlowsheetWorkspace({
               : '연결 대기';
 
       const allowSubSheet = isPlantSimMode || Object.keys(hierarchySheets).length > 1;
+      const resolvedType = def?.unitType ?? n.data.unitType;
       return {
         ...n,
         selected: n.id === selectedNodeId,
         data: {
-          tag: def?.tag ?? n.data.tag,
+          tag: formatEquipmentTag(def?.tag ?? n.data.tag, resolvedType, tagStandard),
           name: def?.name ?? n.data.name,
-          unitType: def?.unitType ?? n.data.unitType,
+          unitType: resolvedType,
           calcMode: def?.params.calcMode ?? 'simple',
           liveSummary: summary,
           detectedFluid: uRes?.detectedFluidLabel,
@@ -4352,7 +4358,7 @@ export function FlowsheetWorkspace({
         },
       };
     });
-  }, [rfNodes, simDefs, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet]);
+  }, [rfNodes, simDefs, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet, tagStandard]);
 
   // 엣지(배관) 스타일 및 라벨 — 깔끔한 슬레이트 중심 + 선택(블루) + 순환Tear(보라)
   const displayEdges: Edge[] = useMemo(() => {
@@ -4792,7 +4798,15 @@ export function FlowsheetWorkspace({
       const meta = UNIT_CATALOG.find(u => u.type === type)!;
       const countOfType = simDefs.filter(d => d.unitType === type).length + 1;
       const id = `u_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-      const tag = `${meta.tagPrefix}-${100 + countOfType * 10}`;
+      const prefix =
+        type === 'feed' ||
+        type === 'product' ||
+        type === 'filter_visual' ||
+        type === 'valve_visual' ||
+        type === 'valve'
+          ? meta.tagPrefix
+          : getDefaultTagPrefix(type, tagStandard);
+      const tag = `${prefix}-${100 + countOfType * 10}`;
       const position = pos ?? {
         x: 240 + (simDefs.length % 5) * 185,
         y: 120 + Math.floor(simDefs.length / 5) * 130,
@@ -4819,7 +4833,7 @@ export function FlowsheetWorkspace({
       setSelectedNodeId(id);
       setSelectedEdgeId(null);
     },
-    [simDefs]
+    [simDefs, tagStandard]
   );
 
   const handleDragStart = (e: React.DragEvent, unitType: FlowUnitType) => {
@@ -6443,7 +6457,7 @@ export function FlowsheetWorkspace({
                                 flexShrink: 0,
                               }}
                             >
-                              {selectedDef.tag}
+                              {formatEquipmentTag(selectedDef.tag, selectedDef.unitType, tagStandard)}
                             </span>
                             <span
                               style={{
@@ -7047,8 +7061,10 @@ export function FlowsheetWorkspace({
                           const q = mobileSearch.trim().toLowerCase();
                           if (!q) return true;
                           const ed = flowEdges.find(e => e.id === st.edgeId);
-                          const srcTag = ed ? (simDefs.find(d => d.id === ed.source)?.tag ?? ed.source) : '';
-                          const dstTag = ed ? (simDefs.find(d => d.id === ed.target)?.tag ?? ed.target) : '';
+                          const srcDefF = ed ? simDefs.find(d => d.id === ed.source) : undefined;
+                          const dstDefF = ed ? simDefs.find(d => d.id === ed.target) : undefined;
+                          const srcTag = srcDefF ? formatEquipmentTag(srcDefF.tag, srcDefF.unitType, tagStandard) : (ed?.source ?? '');
+                          const dstTag = dstDefF ? formatEquipmentTag(dstDefF.tag, dstDefF.unitType, tagStandard) : (ed?.target ?? '');
                           const comps = Object.entries(st.flowsKgH)
                             .filter(([, v]) => v > 0.05)
                             .map(([k]) => k)
@@ -7106,7 +7122,7 @@ export function FlowsheetWorkspace({
                                       whiteSpace: 'nowrap',
                                     }}
                                   >
-                                    {srcDef?.tag ?? 'IN'} → {dstDef?.tag ?? 'OUT'}
+                                    {srcDef ? formatEquipmentTag(srcDef.tag, srcDef.unitType, tagStandard) : 'IN'} → {dstDef ? formatEquipmentTag(dstDef.tag, dstDef.unitType, tagStandard) : 'OUT'}
                                   </span>
                                   <span
                                     style={{
@@ -7242,12 +7258,14 @@ export function FlowsheetWorkspace({
                           const q = mobileSearch.trim().toLowerCase();
                           if (!q) return true;
                           const nDef = simDefs.find(d => d.id === u.nodeId);
-                          return `${u.tag} ${nDef?.name ?? ''} ${u.detectedFluidLabel} ${u.statusNote}`
+                          const fmtTag = formatEquipmentTag(u.tag, nDef?.unitType, tagStandard);
+                          return `${fmtTag} ${u.tag} ${nDef?.name ?? ''} ${u.detectedFluidLabel} ${u.statusNote}`
                             .toLowerCase()
                             .includes(q);
                         })
                         .map(u => {
                           const nDef = simDefs.find(d => d.id === u.nodeId);
+                          const fmtTag = formatEquipmentTag(u.tag, nDef?.unitType, tagStandard);
                           const isSel = u.nodeId === selectedNodeId;
                           return (
                             <div
@@ -7277,7 +7295,7 @@ export function FlowsheetWorkspace({
                                       flexShrink: 0,
                                     }}
                                   >
-                                    {u.tag}
+                                    {fmtTag}
                                   </span>
                                   <span
                                     style={{
@@ -7289,7 +7307,7 @@ export function FlowsheetWorkspace({
                                       whiteSpace: 'nowrap',
                                     }}
                                   >
-                                    {nDef?.name ?? u.tag}
+                                    {nDef?.name ?? fmtTag}
                                   </span>
                                 </div>
                                 <span
@@ -7429,7 +7447,16 @@ export function FlowsheetWorkspace({
                   )
                 ) : bottomTab === 'streams' ? (
                   <HorizontalFlowsheetStreamTable
-                    streams={solved.streams}
+                    streams={solved.streams.map(st => {
+                      const ed = flowEdges.find(e => e.id === st.edgeId);
+                      const srcDef = ed ? simDefs.find(d => d.id === ed.source) : undefined;
+                      const dstDef = ed ? simDefs.find(d => d.id === ed.target) : undefined;
+                      return {
+                        ...st,
+                        fromTag: srcDef ? formatEquipmentTag(st.fromTag, srcDef.unitType, tagStandard) : st.fromTag,
+                        toTag: dstDef ? formatEquipmentTag(st.toTag, dstDef.unitType, tagStandard) : st.toTag,
+                      };
+                    })}
                     configuredComps={activeComponents}
                     selectedEdgeId={selectedEdgeId}
                     onSelectStream={edgeId => {
@@ -7481,7 +7508,9 @@ export function FlowsheetWorkspace({
                     </tr>
                   </thead>
                   <tbody>
-                    {solved.units.map(u => (
+                    {solved.units.map(u => {
+                      const nDef = simDefs.find(d => d.id === u.nodeId);
+                      return (
                       <tr
                         key={u.nodeId}
                         onClick={() => {
@@ -7494,7 +7523,9 @@ export function FlowsheetWorkspace({
                           background: u.nodeId === selectedNodeId ? '#F0FDF4' : 'transparent',
                         }}
                       >
-                        <td style={{ padding: '5px 10px', fontWeight: 800 }}>{u.tag}</td>
+                        <td style={{ padding: '5px 10px', fontWeight: 800 }}>
+                          {formatEquipmentTag(u.tag, nDef?.unitType, tagStandard)}
+                        </td>
                         <td
                           style={{
                             padding: '5px 10px',
@@ -7526,7 +7557,8 @@ export function FlowsheetWorkspace({
                         </td>
                         <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', color: '#334155' }}>{u.statusNote}</td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
                   </>
@@ -7606,7 +7638,7 @@ export function FlowsheetWorkspace({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 900, color: '#1A2F44', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {selectedDef
-                      ? `[${selectedDef.tag}] ${selectedDef.name}`
+                      ? `[${formatEquipmentTag(selectedDef.tag, selectedDef.unitType, tagStandard)}] ${selectedDef.name}`
                       : selectedEdgeDef
                         ? `[${selectedEdgeDef.streamNo}] 배관 속성`
                         : '장치 · 배관 운전조건 시트'}
@@ -7673,7 +7705,17 @@ export function FlowsheetWorkspace({
                   </div>
                 )}
                 <div style={{ fontWeight: 800, color: '#0F172A', marginBottom: 4 }}>
-                  구간: {selectedStreamRes?.fromTag} → {selectedStreamRes?.toTag}{selectedStreamRes?.portRole ? ` (${selectedStreamRes.portRole})` : ''}
+                  구간: {(() => {
+                    const srcD = simDefs.find(d => d.id === selectedEdgeDef.source);
+                    const dstD = simDefs.find(d => d.id === selectedEdgeDef.target);
+                    const fTag = selectedStreamRes?.fromTag
+                      ? formatEquipmentTag(selectedStreamRes.fromTag, srcD?.unitType, tagStandard)
+                      : undefined;
+                    const tTag = selectedStreamRes?.toTag
+                      ? formatEquipmentTag(selectedStreamRes.toTag, dstD?.unitType, tagStandard)
+                      : undefined;
+                    return `${fTag ?? ''} → ${tTag ?? ''}`;
+                  })()}{selectedStreamRes?.portRole ? ` (${selectedStreamRes.portRole})` : ''}
                 </div>
                 <div style={{ color: '#475569', fontSize: 11 }}>
                   인식 유체: <b style={{ color: '#0F172A' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>

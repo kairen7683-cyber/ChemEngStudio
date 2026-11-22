@@ -2,10 +2,10 @@
 // PLANT 05 — 액상 2단 포스겐화 통합 공정 MDI 10만톤 (100,000 TPA · 12,500 kg/h) 5-Sheet 상용 계층 공정
 // ============================================================================
 // Master : Aniline + Formalin(37%) + HCl/NaOH → MDA 합성·중화(R-101) → 염수분리(D-101)
-//          → 진공 아닐린 회수(C-101) → CO+Cl2 포스겐 합성(R-201)
-//          → MCB 용매 2단 포스겐화(R-202) → HCl 탈거(S-201/S-202)
-//          → 탈포스겐(C-301) → MCB 진공 용매회수(C-302)
-//          → 고진공 Pure 4,4'-MDI / Polymeric MDI 정밀분별(C-401: 4,500 + 8,000 kg/h)
+//          → 진공 아닐린 회수(T-101) → CO+Cl2 포스겐 합성(R-201)
+//          → MCB 용매 2단 포스겐화(R-202) → HCl 탈거(D-201/S-202)
+//          → 탈포스겐(T-301) → MCB 진공 용매회수(T-302)
+//          → 고진공 Pure 4,4'-MDI / Polymeric MDI 정밀분별(T-401: 4,500 + 8,000 kg/h)
 // Sub 100: MDA 합성 · 가성중화 · 염수 디캔터 · 아닐린 진공회수 (sub_mdi_100_mda)
 // Sub 200: 포스겐(COCl2) 제조 · 2단 포스겐화 · 부생 HCl 회수 (sub_mdi_200_phos)
 // Sub 300: 잔류 포스겐 탈거 · MCB 진공 용매 회수 (sub_mdi_300_mcb)
@@ -186,7 +186,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi_mix1',
-      tag: 'MIX-100',
+      tag: 'A-100',
       name: 'MDA 원료 혼합조 (신규+순환 아닐린)',
       unitType: 'mixer',
       subSheetId: 'sub_mdi_100_mda',
@@ -236,7 +236,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi_s101',
-      tag: 'S-101',
+      tag: 'D-102',
       name: '유기층 진공 탈수 드럼 (Flash)',
       unitType: 'separator',
       subSheetId: 'sub_mdi_100_mda',
@@ -260,7 +260,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi_c101',
-      tag: 'C-101',
+      tag: 'T-101',
       name: '아닐린 감압 회수탑 (14단 · -0.88 kG)',
       unitType: 'distillation',
       subSheetId: 'sub_mdi_100_mda',
@@ -349,7 +349,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi_s201',
-      tag: 'S-201',
+      tag: 'D-201',
       name: '부생 HCl · 포스겐 냉각 기액분리기',
       unitType: 'separator',
       subSheetId: 'sub_mdi_200_phos',
@@ -375,7 +375,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     // 300 SEC: 탈포스겐 및 MCB 용매 회수
     {
       id: 'mdi_c301',
-      tag: 'C-301',
+      tag: 'T-301',
       name: '탈포스겐(COCl₂) 회수 스트리퍼 (18단)',
       unitType: 'distillation',
       subSheetId: 'sub_mdi_300_mcb',
@@ -388,7 +388,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi_c302',
-      tag: 'C-302',
+      tag: 'T-302',
       name: 'MCB 용매 진공 회수탑 (16단 · -0.90 kG)',
       unitType: 'distillation',
       subSheetId: 'sub_mdi_300_mcb',
@@ -425,7 +425,7 @@ export const MASTER_MDI_TEMPLATE: SubSheetTemplate = {
     // 400 SEC: 고진공 Pure / Polymeric MDI 정밀 분별증류
     {
       id: 'mdi_c401',
-      tag: 'C-401',
+      tag: 'T-401',
       name: '고진공 Pure 4,4\'-MDI / PMDI 정제탑 (16단 · 20 mbar)',
       unitType: 'distillation',
       subSheetId: 'sub_mdi_400_purif',
@@ -522,7 +522,7 @@ export const SUB_MDI_100_TEMPLATE: SubSheetTemplate = {
   sectionCode: '100 SEC',
   shortTabLabel: '100 MDA 합성·회수',
   title: '100 SEC — MDA 합성 · 가성중화 · 염수 디캔터 & 아닐린 진공회수',
-  subtitle: '2 Aniline + HCHO (HCl 촉매) → NaOH 중화 → LLE 염수분리(D-101) → C-101(24단 · -0.88 kG) 미반응 아닐린 회수',
+  subtitle: '2 Aniline + HCHO (HCl 촉매) → NaOH 중화 → LLE 염수분리(D-101) → T-101(24단 · -0.88 kG) 미반응 아닐린 회수',
   parentMasterNodeIds: ['mdi_f_anil', 'mdi_f_hcho', 'mdi_f_naoh', 'mdi_mix1', 'mdi_r101', 'mdi_d101', 'mdi_s101', 'mdi_c101'],
   nodes: [
     {
@@ -551,7 +551,7 @@ export const SUB_MDI_100_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi1_mix',
-      tag: 'MIX-100',
+      tag: 'A-100',
       name: '원료·순환 아닐린 혼합조',
       unitType: 'mixer',
       position: { x: 280, y: 190 },
@@ -583,7 +583,7 @@ export const SUB_MDI_100_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi1_s101',
-      tag: 'S-101',
+      tag: 'D-102',
       name: '유기층 진공 탈수 드럼 (Flash)',
       unitType: 'separator',
       position: { x: 840, y: 240 },
@@ -599,7 +599,7 @@ export const SUB_MDI_100_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi1_c101',
-      tag: 'C-101',
+      tag: 'T-101',
       name: '아닐린 감압 회수탑 (14단 · -0.88 kG)',
       unitType: 'distillation',
       position: { x: 960, y: 240 },
@@ -646,7 +646,7 @@ export const SUB_MDI_200_TEMPLATE: SubSheetTemplate = {
   sectionCode: '200 SEC',
   shortTabLabel: '200 포스겐화 반응',
   title: '200 SEC — CO + Cl₂ 포스겐(COCl₂) 합성 · MCB 용매 MDA 포스겐화 & HCl 회수',
-  subtitle: 'R-201(활성탄 고정층 COCl₂ 합성 90°C) → R-202(저온·고온 2단 포스겐화 145°C) → S-201 부생 무수 HCl 가스 분리',
+  subtitle: 'R-201(활성탄 고정층 COCl₂ 합성 90°C) → R-202(저온·고온 2단 포스겐화 145°C) → D-201 부생 무수 HCl 가스 분리',
   parentMasterNodeIds: ['mdi_f_co', 'mdi_f_cl2', 'mdi_r201', 'mdi_r202', 'mdi_s201'],
   nodes: [
     {
@@ -707,7 +707,7 @@ export const SUB_MDI_200_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi2_s201',
-      tag: 'S-201',
+      tag: 'D-201',
       name: '부생 HCl · 포스겐 냉각 플래시 드럼',
       unitType: 'separator',
       position: { x: 760, y: 280 },
@@ -750,7 +750,7 @@ export const SUB_MDI_300_TEMPLATE: SubSheetTemplate = {
   sectionCode: '300 SEC',
   shortTabLabel: '300 탈포스겐·MCB 회수',
   title: '300 SEC — 잔류 포스겐(COCl₂) 탈기 및 MCB 용매 진공 회수',
-  subtitle: 'C-301(18단 · 1.6 kG 탈포스겐 스트리핑 → COCl₂ 순환) → C-302(22단 · -0.90 kG MCB 진공 회수) → 무용매 Crude MDI',
+  subtitle: 'T-301(18단 · 1.6 kG 탈포스겐 스트리핑 → COCl₂ 순환) → T-302(22단 · -0.90 kG MCB 진공 회수) → 무용매 Crude MDI',
   parentMasterNodeIds: ['mdi_c301', 'mdi_c302'],
   nodes: [
     {
@@ -768,7 +768,7 @@ export const SUB_MDI_300_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi3_c301',
-      tag: 'C-301',
+      tag: 'T-301',
       name: '탈포스겐(COCl₂) 회수탑 (18단)',
       unitType: 'distillation',
       position: { x: 320, y: 240 },
@@ -784,7 +784,7 @@ export const SUB_MDI_300_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi3_c302',
-      tag: 'C-302',
+      tag: 'T-302',
       name: 'MCB 진공 용매 회수탑 (22단 · -0.90 kG)',
       unitType: 'distillation',
       position: { x: 580, y: 310 },
@@ -824,7 +824,7 @@ export const SUB_MDI_400_TEMPLATE: SubSheetTemplate = {
   sectionCode: '400 SEC',
   shortTabLabel: '400 Pure/PMDI 정제',
   title: '400 SEC — 고진공 박막예열 및 Pure 4,4\'-MDI / PMDI 정밀 분별 (100,000 TPA)',
-  subtitle: 'E-401(고진공 예열기) → C-401(16단 Mellapak 고진공 분별탑) → Pure 4,4\'-MDI (4,500 kg/h) + Polymeric MDI (8,000 kg/h)',
+  subtitle: 'E-401(고진공 예열기) → T-401(16단 Mellapak 고진공 분별탑) → Pure 4,4\'-MDI (4,500 kg/h) + Polymeric MDI (8,000 kg/h)',
   parentMasterNodeIds: ['mdi_c401'],
   nodes: [
     {
@@ -850,7 +850,7 @@ export const SUB_MDI_400_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'mdi4_c401',
-      tag: 'C-401',
+      tag: 'T-401',
       name: '고진공 Pure/PMDI 분별탑 (16단 · -0.99 kG)',
       unitType: 'distillation',
       position: { x: 540, y: 240 },
@@ -968,7 +968,7 @@ export function syncMdiSubDefsFromMaster(
   }
   const finalDefs = syncedDefs.map(def => {
     if (def.id === 'mdi2_mda_in' && mdaStream && mdaStream.totalMassKgH > 0) {
-      extraDescs.push(`FROM-100-MDA ← 마스터 [C-101 204] ${mdaStream.totalMassKgH.toFixed(1)} kg/h`);
+      extraDescs.push(`FROM-100-MDA ← 마스터 [T-101 204] ${mdaStream.totalMassKgH.toFixed(1)} kg/h`);
       return {
         ...def,
         params: {

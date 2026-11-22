@@ -62,7 +62,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_m100',
-      tag: 'M-100',
+      tag: 'A-100',
       name: '합성버너 혼합헤더',
       unitType: 'mixer',
       position: { x: 255, y: 140 },
@@ -121,7 +121,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_c110',
-      tag: 'C-110',
+      tag: 'T-110',
       name: '흑연 강하막 흡수탑',
       unitType: 'absorber',
       subSheetId: 'sub_1a_100_synth',
@@ -162,7 +162,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     // ── [200 SEC] 반도체 5N 액화 무수염산 (AHCl 99.999%) 정제 계통 ──────────
     {
       id: 'h1a_m200',
-      tag: 'M-200',
+      tag: 'A-200',
       name: '합성·PSD 회수 HCl 합류',
       unitType: 'mixer',
       position: { x: 1130, y: 80 },
@@ -237,7 +237,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_c230',
-      tag: 'C-230',
+      tag: 'T-230',
       name: '5N 무수염산 경질가스 정제탑',
       unitType: 'distillation',
       subSheetId: 'sub_1a_200_ahcl',
@@ -338,7 +338,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_m300',
-      tag: 'M-300',
+      tag: 'A-300',
       name: '폐염산·순환공비액 합류기',
       unitType: 'mixer',
       position: { x: 280, y: 500 },
@@ -346,7 +346,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_c310',
-      tag: 'C-310',
+      tag: 'T-310',
       name: '폐염산 진공 농축탑(0.15 barA)',
       unitType: 'distillation',
       subSheetId: 'sub_1a_300_psd',
@@ -408,7 +408,7 @@ export const MASTER_HCL_1A_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'h1a_c320',
-      tag: 'C-320',
+      tag: 'T-320',
       name: '가압 공비탈기 증류탑(7 barA)',
       unitType: 'distillation',
       subSheetId: 'sub_1a_300_psd',
@@ -616,7 +616,7 @@ export const SUB_1A_100_SYNTH_TEMPLATE: SubSheetTemplate = {
   shortTabLabel: '🔥 100 합성버너·강하막흡수',
   title: '100 SEC 세부공정 — SiC 합성로 · 폐열보일러 · 2단 불투명흑연 강하막 흡수계통',
   subtitle:
-    '2,000°C 직접 화염합성 부생스팀 회수 및 주흡수탑(C-110A) + 테일흡수탑(C-110B) 직렬 흡수',
+    '2,000°C 직접 화염합성 부생스팀 회수 및 주흡수탑(T-110A) + 테일흡수탑(T-110B) 직렬 흡수',
   parentMasterNodeIds: ['h1a_r101', 'h1a_c110'],
   nodes: [
     {
@@ -689,7 +689,7 @@ export const SUB_1A_100_SYNTH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's100_c110a',
-      tag: 'C-110A',
+      tag: 'T-110A',
       name: '1차 흑연 강하막 등온 흡수탑',
       unitType: 'absorber',
       position: { x: 1050, y: 225 },
@@ -822,7 +822,7 @@ export const SUB_1A_200_AHCL_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's200_c230',
-      tag: 'C-230A',
+      tag: 'T-230A',
       name: '5N AHCl 다단 스트리핑 정제탑',
       unitType: 'distillation',
       position: { x: 1055, y: 120 },
@@ -853,7 +853,7 @@ export const SUB_1A_200_AHCL_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's200_m240',
-      tag: 'M-240A',
+      tag: 'A-240A',
       name: '스니프·퍼지가스 합류기',
       unitType: 'mixer',
       position: { x: 1320, y: 35 },
@@ -913,7 +913,7 @@ export const SUB_1A_300_PSD_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's300_m300',
-      tag: 'M-300A',
+      tag: 'A-300A',
       name: '폐염산·순환액 혼합기',
       unitType: 'mixer',
       position: { x: 280, y: 170 },
@@ -921,7 +921,7 @@ export const SUB_1A_300_PSD_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's300_c310',
-      tag: 'C-310A',
+      tag: 'T-310A',
       name: '진공 농축탑 (-0.88 kG · 22단)',
       unitType: 'distillation',
       position: { x: 525, y: 170 },
@@ -987,7 +987,7 @@ export const SUB_1A_300_PSD_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 's300_c320',
-      tag: 'C-320A',
+      tag: 'T-320A',
       name: '가압 공비탈기탑 (6.0 kG · 22단)',
       unitType: 'distillation',
       position: { x: 1255, y: 200 },

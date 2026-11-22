@@ -15,6 +15,8 @@ import {
   formatPlantCodeAndName,
 } from '@/lib/plantRegistry';
 import type { PlantId } from '@/lib/stores/balanceStore';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import { formatEquipmentTag } from '@/lib/units/tagNaming';
 
 const UNIT_TYPE_KO: Partial<Record<FlowUnitType, string>> = {
   distillation: '증류탑',
@@ -51,6 +53,7 @@ export default function PlantUnitCopyBox({
   onCopyParams,
 }: PlantUnitCopyBoxProps) {
   const { user } = useAuth();
+  const tagStandard = useUnitStore((s) => s.tagStandard);
   const unitTypeLabel = UNIT_TYPE_KO[unitType] ?? unitType;
 
   const templates = useMemo(
@@ -138,11 +141,12 @@ export default function PlantUnitCopyBox({
       return;
     }
     onCopyParams(cloneUnitParams(found.params), found, includeInlet);
+    const displayTag = formatEquipmentTag(found.tag, found.unitType, tagStandard);
     setUiState({
       scope: scopeKey,
       selectedPlant,
       selectedId: tplId,
-      copiedNotice: `✓ [${found.tag}] 복사 완료 (${found.summary})`,
+      copiedNotice: `✓ [${displayTag}] 복사 완료 (${found.summary})`,
     });
   };
 
@@ -229,7 +233,7 @@ export default function PlantUnitCopyBox({
           <optgroup key={grp.plantId} label={grp.displayLabel}>
             {grp.items.map((tpl) => (
               <option key={tpl.id} value={tpl.id}>
-                [{tpl.tag}] {tpl.name} · {tpl.summary}
+                [{formatEquipmentTag(tpl.tag, tpl.unitType, tagStandard)}] {tpl.name} · {tpl.summary}
               </option>
             ))}
           </optgroup>

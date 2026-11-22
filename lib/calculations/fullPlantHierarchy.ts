@@ -436,7 +436,7 @@ export const MASTER_FULL_PLANT_TEMPLATE: SubSheetTemplate = {
     // ── [500 SEC] 불침투성 흑연 염산합성로 & 35 wt% 흡수탑 ──
     {
       id: 'fp_m500',
-      tag: 'M-500',
+      tag: 'A-500',
       name: '염산합성 원료혼합',
       unitType: 'mixer',
       position: { x: 2010, y: 345 },
@@ -471,7 +471,7 @@ export const MASTER_FULL_PLANT_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'fp_c502',
-      tag: 'C-502',
+      tag: 'T-502',
       name: '35% 고순도 염산흡수탑',
       unitType: 'absorber',
       subSheetId: 'sub_500_700_hcl_hypo',
@@ -722,7 +722,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
     id: 'sub_100_primary',
     sectionCode: '100-A SEC',
     shortTabLabel: '🧂 100-A 브라인 1차정제',
-    title: '[100-A 세부공정] 원염 포화조(D-010) · 약품반응조(D-020) · 침전조(T-030) · 캔들 프리코트 필터(F-140A/B/C)',
+    title: '[100-A 세부공정] 원염 포화조(D-010) · 약품반응조(TK-020) · 침전조(T-030) · 캔들 프리코트 필터(F-140A/B/C)',
     subtitle:
       '탈염소 반환 희박염수(17.5% NaCl)에 원염을 용해하여 25.6 wt%(310 g/L)로 포화시키고, Na₂CO₃·NaOH·BaCl₂ 침전 및 캔들필터 여과로 SS < 0.2 ppm을 달성합니다.',
     parentMasterNodeIds: ['fp_b110'],
@@ -771,7 +771,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'b1_d020',
-        tag: 'D-020',
+        tag: 'TK-020',
         name: '약품 정제반응조 (Ba/CO₃/OH)',
         unitType: 'tank_visual',
         position: { x: 510, y: 155 },
@@ -869,7 +869,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'b2_d150',
-        tag: 'D-150',
+        tag: 'TK-150',
         name: '2차 정제 완충조 (100 m³)',
         unitType: 'tank_visual',
         position: { x: 255, y: 165 },
@@ -905,7 +905,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'b2_d170',
-        tag: 'D-170',
+        tag: 'TK-170',
         name: '초순수 정제염수 저장조',
         unitType: 'tank_visual',
         position: { x: 955, y: 165 },
@@ -992,7 +992,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'c2_m210',
-        tag: 'M-210',
+        tag: 'A-210',
         name: '음극 순환액 혼합헤더',
         unitType: 'mixer',
         position: { x: 255, y: 265 },
@@ -1112,12 +1112,12 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
     ],
   },
 
-  // ── [200-B] 진공 감압 탈염소탑(T-280) & 아황산 환원조(D-280) ──
+  // ── [200-B] 진공 감압 탈염소탑(T-280) & 아황산 환원조(TK-280) ──
   {
     id: 'sub_200_dechlor',
     sectionCode: '200-B SEC',
     shortTabLabel: '🫧 200-B 진공 탈염소',
-    title: '[200-B 세부공정] 진공 감압 탈염소탑(T-280, -0.65 kG) · 회수염소 냉각기(E-282) · 아황산 완전환원조(D-280)',
+    title: '[200-B 세부공정] 진공 감압 탈염소탑(T-280, -0.65 kG) · 회수염소 냉각기(E-282) · 아황산 완전환원조(TK-280)',
     subtitle:
       '양극 배출 희박염수(17.5% NaCl) 내 용존 염소를 -0.65 kG 진공 플래시로 회수하고, 잔류 유리염소를 Na₂SO₃로 0 ppm 중화하여 100 SEC 포화조로 반송합니다.',
     parentMasterNodeIds: ['fp_t280'],
@@ -1180,7 +1180,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'dc_d280',
-        tag: 'D-280',
+        tag: 'TK-280',
         name: 'Na₂SO₃ 잔류염소 완전환원조',
         unitType: 'tank_visual',
         position: { x: 735, y: 255 },
@@ -1330,7 +1330,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'ev_m_vap',
-        tag: 'M-350',
+        tag: 'A-350',
         name: '1·2·3효 증발수증기 포집헤더',
         unitType: 'mixer',
         position: { x: 1125, y: 35 },
@@ -1747,7 +1747,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
     id: 'sub_500_700_hcl_hypo',
     sectionCode: '500·700 SEC',
     shortTabLabel: '🧪 500·700 염산·제해탑',
-    title: '[500 & 700 세부공정] 불침투성 흑연 염산합성(R-501 · C-502, 35% HCl) & 폐염소 2단 가성제해(T-730 · T-760, 12% NaOCl)',
+    title: '[500 & 700 세부공정] 불침투성 흑연 염산합성(R-501 · T-502, 35% HCl) & 폐염소 2단 가성제해(T-730 · T-760, 12% NaOCl)',
     subtitle:
       '상단은 Cl₂+H₂ 연소 합성 및 35% 고순도 염산 흡수 계통이며, 하단은 액화 테일가스를 2단 가성소다 타워로 완벽 제해(<1 ppm Cl₂)하여 12% 차아염소산소다를 생산합니다.',
     parentMasterNodeIds: ['fp_r500', 'fp_c502', 'fp_t730'],
@@ -1810,7 +1810,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       },
       {
         id: 'hy_c502',
-        tag: 'C-502',
+        tag: 'T-502',
         name: '흑연 강하막 35% 염산흡수탑',
         unitType: 'absorber',
         position: { x: 800, y: 65 },

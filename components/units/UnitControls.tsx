@@ -12,6 +12,7 @@ import {
   toCanonical,
   type UnitQuantity,
 } from '@/lib/units/unitSystem';
+import { TAG_STANDARDS } from '@/lib/units/tagNaming';
 
 function roundClean(v: number, digits = 5): number {
   if (!Number.isFinite(v)) return 0;
@@ -302,9 +303,11 @@ const MODAL_QUANTITIES: UnitQuantity[] = [
 export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: boolean }) {
   const units = useUnitStore(s => s.units);
   const presetId = useUnitStore(s => s.presetId);
+  const tagStandard = useUnitStore(s => s.tagStandard);
   const hydrate = useUnitStore(s => s.hydrate);
   const setUnit = useUnitStore(s => s.setUnit);
   const applyPreset = useUnitStore(s => s.applyPreset);
+  const setTagStandard = useUnitStore(s => s.setTagStandard);
   const resetDefaults = useUnitStore(s => s.resetDefaults);
 
   const [open, setOpen] = useState(false);
@@ -398,9 +401,9 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <SlidersParamIcon size={15} />
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800 }}>기본 보기 단위 설정 (Unit System)</div>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>기본 보기 단위 · 장치 태그 표준 설정</div>
                   <div style={{ fontSize: 10.5, color: '#94A3B8' }}>
-                    스트림 테이블 · 블록 입력 · 장치설계 · 숏컷 계산기 전역 기본 단위
+                    스트림 테이블 · 블록 입력 · 장치설계 단위계 및 장치 태그 명명 규칙(KR/JP · Global)
                   </div>
                 </div>
               </div>
@@ -424,6 +427,47 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
 
             {/* Body */}
             <div style={{ padding: 14, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Equipment Tag Naming Standard */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
+                  장치 태그 명명 표준 (Equipment Tagging Standard)
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                    gap: 6,
+                  }}
+                >
+                  {TAG_STANDARDS.map(std => {
+                    const active = tagStandard === std.id;
+                    return (
+                      <button
+                        key={std.id}
+                        type="button"
+                        onClick={() => setTagStandard(std.id)}
+                        style={{
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          borderRadius: 7,
+                          border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: active ? '#EFF6FF' : '#F8FAFC',
+                          color: '#0F172A',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: active ? '#1E3A8A' : '#0F172A' }}>
+                          {std.name}
+                        </div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, lineHeight: 1.35 }}>
+                          {std.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Presets */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>

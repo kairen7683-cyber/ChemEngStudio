@@ -119,6 +119,11 @@ import {
   formatCanonicalValue,
   getUnitLabel,
 } from '@/lib/units/unitSystem';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import {
+  getDefaultTagPrefix,
+  formatEquipmentTag,
+} from '@/lib/units/tagNaming';
 
 const CLASSIC_AUTO_SAVE_KEY = 'chemplant-classic-sim-auto-v1';
 const CLASSIC_PROJECTS_KEY = 'chemplant-classic-sim-projects-v1';
@@ -165,7 +170,7 @@ const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
       },
       {
         id: 'cb_flash1',
-        tag: 'V-101',
+        tag: 'D-101',
         name: 'Flash2 Separator',
         unitType: 'separator',
         position: { x: 470, y: 138 },
@@ -213,7 +218,7 @@ const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
       },
       {
         id: 'cd_c101',
-        tag: 'C-101',
+        tag: 'T-101',
         name: 'RadColumn (경질분 제거)',
         unitType: 'distillation',
         position: { x: 250, y: 120 },
@@ -240,7 +245,7 @@ const CLASSIC_EXAMPLES: ClassicExampleCase[] = [
       },
       {
         id: 'cd_c102',
-        tag: 'C-102',
+        tag: 'T-102',
         name: 'RadColumn (ECH 제품탑)',
         unitType: 'distillation',
         position: { x: 480, y: 205 },
@@ -434,6 +439,7 @@ export default function ClassicSimulatorPage() {
   const [mobilePane, setMobilePane] = useState<'pfd' | 'tree' | 'form' | 'summary'>('pfd');
 
   // 전역 기본 단위 연동 + 인라인 단위 선택 상태
+  const tagStandard = useUnitStore(s => s.tagStandard);
   const [tempUnit, setTempUnit] = useLocalUnit('temp');
   const [pressUnit, setPressUnit] = useLocalUnit('pressG');
   const [massFlowUnit, setMassFlowUnit] = useLocalUnit('massFlow');
@@ -1004,6 +1010,16 @@ export default function ClassicSimulatorPage() {
     return m;
   }, [solved.units]);
 
+  // Explorer Tree 표시용 태그 표준화 목록
+  const displaySimDefs = useMemo(
+    () =>
+      simDefs.map(d => ({
+        ...d,
+        tag: formatEquipmentTag(d.tag, d.unitType, tagStandard),
+      })),
+    [simDefs, tagStandard]
+  );
+
   // 캔버스 표시용 노드 & 엣지 동기화
   const displayNodes = useMemo(() => {
     return rfNodes.map(n => {
@@ -1036,20 +1052,21 @@ export default function ClassicSimulatorPage() {
             : hasFlow
               ? '수렴 완료'
               : '연결 대기';
+      const resolvedType = def?.unitType ?? n.data.unitType;
       return {
         ...n,
         selected: selectedKind === 'block' && selectedId === n.id,
         data: {
-          tag: def?.tag ?? n.data.tag,
-          modelName: getModelName(def?.unitType ?? n.data.unitType),
-          unitType: def?.unitType ?? n.data.unitType,
+          tag: formatEquipmentTag(def?.tag ?? n.data.tag, resolvedType, tagStandard),
+          modelName: getModelName(resolvedType),
+          unitType: resolvedType,
           status,
           statusTitle,
           liveMetric: metric,
         },
       };
     });
-  }, [rfNodes, simDefs, unitResultMap, selectedKind, selectedId]);
+  }, [rfNodes, simDefs, unitResultMap, selectedKind, selectedId, tagStandard]);
 
   const displayEdges: Edge[] = useMemo(() => {
     return flowEdges.map(e => {
@@ -1087,7 +1104,8 @@ export default function ClassicSimulatorPage() {
   const addBlockAt = useCallback(
     (unitType: FlowUnitType, pos?: { x: number; y: number }) => {
       const item = CLASSIC_MODEL_CATALOG.find(m => m.unitType === unitType);
-      const prefix = item?.defaultPrefix ?? 'B';
+      const stdPrefix = getDefaultTagPrefix(unitType, tagStandard);
+      const prefix = stdPrefix !== 'U' ? stdPrefix : (item?.defaultPrefix ?? 'B');
       const count = simDefs.filter(d => d.unitType === unitType).length + 1;
       const id = `blk_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       const tag = `${prefix}-${100 + count}`;
@@ -1115,7 +1133,7 @@ export default function ClassicSimulatorPage() {
       setSelectedKind('block');
       setSelectedId(id);
     },
-    [simDefs]
+    [simDefs, tagStandard]
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -1763,7 +1781,7 @@ export default function ClassicSimulatorPage() {
               activeComponentsCount={activeComponents.length}
               totalComponentsCount={SIM_COMPS.length}
               effectiveMethodLabel={effectiveMethodLabel}
-              simDefs={simDefs}
+              simDefs={displaySimDefs}
               flowEdges={flowEdges}
               selectedKind={selectedKind}
               selectedId={selectedId}
@@ -1818,6 +1836,10 @@ export default function ClassicSimulatorPage() {
               {mdiTabs.map(tab => {
                 const isAct = activeMdiKey === tab.key;
                 const closable = tab.kind === 'block' || tab.kind === 'stream';
+                const tabBlk = tab.kind === 'block' && tab.refId ? simDefs.find(d => d.id === tab.refId) : undefined;
+                const displayTabTitle = tabBlk
+                  ? formatEquipmentTag(tabBlk.tag, tabBlk.unitType, tagStandard)
+                  : tab.title;
                 return (
                   <div
                     key={tab.key}
@@ -1852,7 +1874,7 @@ export default function ClassicSimulatorPage() {
                         <StreamFlowIcon size={12} />
                       )}
                     </span>
-                    <span>{tab.title}</span>
+                    <span>{displayTabTitle}</span>
                     {closable && (
                       <button
                         type="button"
@@ -1919,7 +1941,12 @@ export default function ClassicSimulatorPage() {
                     } else if (def?.unitType === 'reactor') {
                       setReactorModalNodeId(def.id);
                     } else if (def) {
-                      handleOpenMdiTab({ key: `block:${def.id}`, kind: 'block', title: def.tag, refId: def.id });
+                      handleOpenMdiTab({
+                        key: `block:${def.id}`,
+                        kind: 'block',
+                        title: formatEquipmentTag(def.tag, def.unitType, tagStandard),
+                        refId: def.id,
+                      });
                       if (isMobile) setMobilePane('form');
                     }
                   }}
@@ -2087,8 +2114,10 @@ export default function ClassicSimulatorPage() {
                 <tbody>
                   {solved.streams.map(st => {
                     const edge = flowEdges.find(e => e.id === st.edgeId);
-                    const srcTag = simDefs.find(d => d.id === edge?.source)?.tag ?? '—';
-                    const dstTag = simDefs.find(d => d.id === edge?.target)?.tag ?? '—';
+                    const srcDef = simDefs.find(d => d.id === edge?.source);
+                    const dstDef = simDefs.find(d => d.id === edge?.target);
+                    const srcTag = srcDef ? formatEquipmentTag(srcDef.tag, srcDef.unitType, tagStandard) : '—';
+                    const dstTag = dstDef ? formatEquipmentTag(dstDef.tag, dstDef.unitType, tagStandard) : '—';
                     const comps = (Object.entries(st.flowsKgH) as [string, number][])
                       .filter(([, v]) => v > 0.05)
                       .sort((a, b) => b[1] - a[1])
@@ -2163,7 +2192,7 @@ export default function ClassicSimulatorPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottom: '1px solid #E2E8F0', paddingBottom: 8 }}>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 900, color: '#003399' }}>
-                      {blk.tag} — {getModelName(blk.unitType)} Datasheet
+                      {formatEquipmentTag(blk.tag, blk.unitType, tagStandard)} — {getModelName(blk.unitType)} Datasheet
                     </div>
                     <div style={{ fontSize: 11, color: '#64748B' }}>{blk.name}</div>
                   </div>
@@ -2678,7 +2707,7 @@ export default function ClassicSimulatorPage() {
                   </select>
                   {selectedEdgeSourceNode && (
                     <div style={{ fontSize: 9.8, color: '#64748B' }}>
-                      연결 블록: <b>{selectedEdgeSourceNode.tag}</b> ({getModelName(selectedEdgeSourceNode.unitType)})
+                      연결 블록: <b>{formatEquipmentTag(selectedEdgeSourceNode.tag, selectedEdgeSourceNode.unitType, tagStandard)}</b> ({getModelName(selectedEdgeSourceNode.unitType)})
                     </div>
                   )}
                 </div>
@@ -2696,7 +2725,7 @@ export default function ClassicSimulatorPage() {
                     }}
                   >
                     <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-                      원료 공급 조건 ({selectedEdgeSourceFeed.tag} 연동 입력)
+                      원료 공급 조건 ({formatEquipmentTag(selectedEdgeSourceFeed.tag, selectedEdgeSourceFeed.unitType, tagStandard)} 연동 입력)
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div style={{ fontSize: 10, color: '#475569' }}>
@@ -2822,7 +2851,7 @@ export default function ClassicSimulatorPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 900, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {selectedBlock.tag}
+                      {formatEquipmentTag(selectedBlock.tag, selectedBlock.unitType, tagStandard)}
                     </div>
                     <div style={{ fontSize: 10.5, color: '#475569' }}>
                       Model: {getModelName(selectedBlock.unitType)}

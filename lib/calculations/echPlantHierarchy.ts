@@ -52,7 +52,7 @@ export const MASTER_ECH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'ech_m_mix1',
-      tag: 'MIX-101',
+      tag: 'A-101',
       name: '염소화 원료 혼합기',
       unitType: 'mixer',
       position: { x: 240, y: 190 },
@@ -88,7 +88,7 @@ export const MASTER_ECH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'ech_m_mix2',
-      tag: 'MIX-201',
+      tag: 'A-201',
       name: '비누화 반응물 혼합기',
       unitType: 'mixer',
       position: { x: 640, y: 250 },
@@ -112,7 +112,7 @@ export const MASTER_ECH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'ech_m_sep2',
-      tag: 'V-202',
+      tag: 'D-202',
       name: '유기층/폐염수 유수분리기',
       unitType: 'separator',
       position: { x: 1030, y: 250 },
@@ -132,7 +132,7 @@ export const MASTER_ECH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'ech_m_c101',
-      tag: 'C-101',
+      tag: 'T-101',
       name: '경질분(DCP)·탈수 증류탑',
       unitType: 'distillation',
       subSheetId: 'sub_ech_300_purif',
@@ -174,7 +174,7 @@ export const MASTER_ECH_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'ech_m_c102',
-      tag: 'C-102',
+      tag: 'T-102',
       name: '고순도 ECH 진공 제품탑 (99.9%)',
       unitType: 'distillation',
       subSheetId: 'sub_ech_300_purif',
@@ -259,7 +259,7 @@ export const SUB_ECH_100_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'es1_mix',
-      tag: 'MIX-101',
+      tag: 'A-101',
       name: '예열·혼합기',
       unitType: 'mixer',
       position: { x: 260, y: 195 },
@@ -310,7 +310,7 @@ export const SUB_ECH_200_TEMPLATE: SubSheetTemplate = {
   sectionCode: '200 Sec',
   shortTabLabel: '200 비누화·염수',
   title: '200 Sec · NaOH 비누화 고리화 & 부생 폐염수 분리',
-  subtitle: 'DCH + NaOH → ECH + NaCl + H₂O (R-201) · 유수분리기 V-202',
+  subtitle: 'DCH + NaOH → ECH + NaCl + H₂O (R-201) · 유수분리기 D-202',
   parentMasterNodeIds: ['ech_m_r201'],
   nodes: [
     {
@@ -331,7 +331,7 @@ export const SUB_ECH_200_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'es2_mix',
-      tag: 'MIX-201',
+      tag: 'A-201',
       name: '비누화 혼합기',
       unitType: 'mixer',
       position: { x: 270, y: 195 },
@@ -353,7 +353,7 @@ export const SUB_ECH_200_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'es2_v202',
-      tag: 'V-202',
+      tag: 'D-202',
       name: 'ECH/염수 유수분리기',
       unitType: 'separator',
       position: { x: 700, y: 195 },
@@ -390,8 +390,8 @@ export const SUB_ECH_300_TEMPLATE: SubSheetTemplate = {
   id: 'sub_ech_300_purif',
   sectionCode: '300 Sec',
   shortTabLabel: '300 ECH 진공정제',
-  title: '300 Sec · NRTL 진공 다단 정밀증류 2탑 (C-101 · C-102)',
-  subtitle: '경질 DCP·수분 디캔터 제거(C-101) + 85 Torr 에폭시급 99.9% ECH 정제(C-102)',
+  title: '300 Sec · NRTL 진공 다단 정밀증류 2탑 (T-101 · T-102)',
+  subtitle: '경질 DCP·수분 디캔터 제거(T-101) + 85 Torr 에폭시급 99.9% ECH 정제(T-102)',
   parentMasterNodeIds: ['ech_m_c101', 'ech_m_c102'],
   nodes: [
     {
@@ -408,7 +408,7 @@ export const SUB_ECH_300_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'es3_c101',
-      tag: 'C-101',
+      tag: 'T-101',
       name: '경질분(DCP)·탈수 증류탑',
       unitType: 'distillation',
       position: { x: 300, y: 200 },
@@ -448,7 +448,7 @@ export const SUB_ECH_300_TEMPLATE: SubSheetTemplate = {
     },
     {
       id: 'es3_c102',
-      tag: 'C-102',
+      tag: 'T-102',
       name: '고순도 ECH 진공 제품탑',
       unitType: 'distillation',
       position: { x: 560, y: 260 },
