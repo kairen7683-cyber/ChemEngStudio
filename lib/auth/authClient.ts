@@ -7,6 +7,7 @@ export interface UserProfile {
   username: string;
   email?: string;
   display_name: string;
+  plant_product?: string;
   role: 'admin' | 'user';
   status: 'active' | 'pending' | 'disabled';
   allowed_plants?: string[] | null;
@@ -400,6 +401,7 @@ export async function registerUserAccount(payload: {
   email?: string;
   password: string;
   display_name?: string;
+  plant_product?: string;
   invite_code?: string;
   remember_me?: boolean;
 }): Promise<{

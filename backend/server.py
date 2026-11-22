@@ -303,6 +303,7 @@ def init_db() -> str:
 
     _ensure_column(conn, "users", "allowed_plants TEXT DEFAULT NULL")
     _ensure_column(conn, "users", "email TEXT DEFAULT ''")
+    _ensure_column(conn, "users", "plant_product TEXT DEFAULT ''")
     _ensure_column(conn, "sessions", "device_type TEXT DEFAULT 'desktop'")
     _ensure_column(conn, "sessions", "device_label TEXT DEFAULT ''")
     _ensure_column(conn, "sessions", "last_seen_at TEXT DEFAULT ''")
@@ -459,11 +460,13 @@ def serialize_user(row: sqlite3.Row) -> dict[str, Any]:
     keys = row.keys()
     raw_allowed = row["allowed_plants"] if "allowed_plants" in keys else None
     raw_email = row["email"] if "email" in keys else ""
+    raw_plant_product = row["plant_product"] if "plant_product" in keys else ""
     return {
         "id": row["id"],
         "username": row["username"],
         "email": raw_email or "",
         "display_name": row["display_name"],
+        "plant_product": raw_plant_product or "",
         "role": row["role"],
         "status": row["status"],
         "allowed_plants": parse_allowed_plants(raw_allowed),
@@ -626,6 +629,7 @@ class RegisterPayload(BaseModel):
     email: Optional[str] = None
     password: str
     display_name: str = ""
+    plant_product: str = ""
     invite_code: Optional[str] = None
     remember_me: bool = True
 
@@ -862,15 +866,17 @@ def api_auth_register(payload: RegisterPayload, request: Request, response: Resp
             msg = "회원가입이 완료되었습니다."
 
         default_beta_acl = json.dumps(["simulator_only"], ensure_ascii=False)
+        plant_prod_val = (payload.plant_product or "").strip()[:120]
         cur = conn.execute(
             """
-            INSERT INTO users(username, email, display_name, password_hash, role, status, allowed_plants, created_at)
-            VALUES (?, ?, ?, ?, 'user', ?, ?, ?)
+            INSERT INTO users(username, email, display_name, plant_product, password_hash, role, status, allowed_plants, created_at)
+            VALUES (?, ?, ?, ?, ?, 'user', ?, ?, ?)
             """,
             (
                 uname,
                 email_val,
                 dname,
+                plant_prod_val,
                 hash_password(payload.password),
                 new_status,
                 default_beta_acl,

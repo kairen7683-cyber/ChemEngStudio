@@ -1622,7 +1622,7 @@ export default function AdminConsoleModal() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead style={{ background: '#F8FAFC', color: '#475569' }}>
                       <tr>
-                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>아이디 (이름 · 이메일)</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>아이디 (이름 · 이메일 · 생산제품)</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>권한</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>공장 권한</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>활성 기기</th>
@@ -1648,6 +1648,11 @@ export default function AdminConsoleModal() {
                             {showEmail && (
                               <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>
                                 {u.email}
+                              </div>
+                            )}
+                            {u.plant_product && (
+                              <div style={{ fontSize: 10, color: '#1E3A8A', fontWeight: 700, marginTop: 2 }}>
+                                생산·분야: {u.plant_product}
                               </div>
                             )}
                           </td>

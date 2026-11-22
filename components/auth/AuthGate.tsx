@@ -65,6 +65,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [plantProduct, setPlantProduct] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -200,6 +201,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       setFormError('비밀번호는 8자 이상으로 설정하세요.');
       return;
     }
+    if (!plantProduct.trim()) {
+      setFormError('근무 중인 공장 또는 주요 생산 제품을 입력해 주세요.');
+      return;
+    }
     if (registrationMode === 'invite_only' && !inviteCode.trim()) {
       setFormError('폐쇄형 테스트 기간입니다. 발급받은 초대코드를 입력하세요.');
       return;
@@ -211,6 +216,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         username: normalizedEmail,
         password,
         display_name: displayName.trim() || normalizedEmail.split('@')[0] || normalizedEmail,
+        plant_product: plantProduct.trim(),
         invite_code: inviteCode.trim() || undefined,
         remember_me: rememberMe,
       });
@@ -619,6 +625,49 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                     color: '#0F172A',
                   }}
                 />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
+                  근무 공장 · 주요 생산 제품 <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={120}
+                  value={plantProduct}
+                  onChange={e => setPlantProduct(e.target.value)}
+                  placeholder="예: 석유화학(에틸렌/PO), 염산·가성소다, 2차전지 소재, EPC 설계 등"
+                  style={{
+                    width: '100%',
+                    padding: '8px 11px',
+                    borderRadius: 8,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 12.5,
+                    color: '#0F172A',
+                  }}
+                />
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+                  {['석유화학·정유', '정밀화학', '전해·무기화학', '반도체·특수가스', '2차전지 소재', 'EPC·설비설계', '연구소·학계'].map(tag => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setPlantProduct(tag)}
+                      style={{
+                        padding: '2px 7px',
+                        borderRadius: 4,
+                        border: plantProduct === tag ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                        background: plantProduct === tag ? '#EFF6FF' : '#F8FAFC',
+                        color: plantProduct === tag ? '#1E3A8A' : '#475569',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {tag}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
