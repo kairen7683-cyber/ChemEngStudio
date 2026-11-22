@@ -235,4 +235,135 @@ approxEqual(
 approxEqual(engByTag['SP-1'].params.splitRatioTop ?? 0, 0.35, 0.001, 'FSPLIT ratio');
 
 console.log('Test 3 PASSED!');
+
+// ----------------------------------------------------------------------------
+// Test 4: Native .bkp backup format (? SECTION ? / \ STMT \ + recycle loop + trailer)
+// ----------------------------------------------------------------------------
+console.log('--- [Test 4] Native .bkp format import with recycle loop ---');
+const NATIVE_BKP = `MM "23.0" FLAVOR "NO" VERSION "23.0" DATETIME "2026-01-01"
+HIDE_BUFFER
+? FLOWSHEET DECOY ?
+\\ BLOCK BLKID = GHOST-999 BLKTYPE = MIXER IN = ( G1 M0-1 ) OUT = ( G2 M0-1 ) \\
+END_HIDEBUF
+? SETUP MAIN ?
+\\ TITLE = "Chlorohydrin Electrolyte Process" \\
+? COMPONENTS MAIN ?
+\\ COMPONENTS CID = WATER ANAME = H2O OUTNAME = WATER DBNAME1 = "WATER" ANAME1 = "H2O" /
+  CID = HCL ANAME = HCL OUTNAME = HCL DBNAME1 = "HYDROGEN-CHLORIDE" ANAME1 = "HCL" /
+  CID = 13DCH ANAME = C3H6CL2O-D1 OUTNAME = 13DCH DBNAME1 = "1,3-DICHLORO-2-PROPANOL" ANAME1 = "C3H6CL2O-D1" /
+  CID = 23DCH ANAME = C3H6CL2O-D2 OUTNAME = 23DCH DBNAME1 = "2,3-DICHLORO-1-PROPANOL" ANAME1 = "C3H6CL2O-D2" /
+  CID = HCLO ANAME = HCLO OUTNAME = HCLO DBNAME1 = "HYPOCHLOROUS-ACID" ANAME1 = "HCLO" /
+  CID = H+ ANAME = H+ OUTNAME = H+ DBNAME1 = "H+" ANAME1 = "H+" /
+  CID = OH- ANAME = OH- OUTNAME = OH- DBNAME1 = "OH-" ANAME1 = "OH-" /
+  CID = CL- ANAME = CL- OUTNAME = CL- DBNAME1 = "CL-" ANAME1 = "CL-" /
+  CID = CLO- ANAME = CLO- OUTNAME = CLO- DBNAME1 = "CLO-" ANAME1 = "CLO-" /
+  CID = NA+ ANAME = NA+ OUTNAME = NA+ DBNAME1 = "NA+" ANAME1 = "NA+" /
+  CID = AC ANAME = C3H5CL OUTNAME = AC DBNAME1 = "ALLYL-CHLORIDE" ANAME1 = "C3H5CL" \\
+? PROPERTIES MAIN ?
+\\ GBASEOPSET = ELECNRTL \\
+? FLOWSHEET GLOBAL ?
+\\ BLOCK BLKID = M-101 BLKTYPE = MIXER MDLTYPE = "MIXER"
+  IN = ( F-WATER M0-1 F-ACID M0-1 R-LIQ M0-1 )
+  OUT = ( S-MIX M0-1 ) \\
+\\ BLOCK BLKID = R-101 BLKTYPE = RSTOIC MDLTYPE = "RSTOIC"
+  IN = ( S-MIX M0-1 Q-RXN H0-1 )
+  OUT = ( S-RXN M0-1 ) \\
+\\ BLOCK BLKID = V-101 BLKTYPE = FLASH2 MDLTYPE = "FLASH2"
+  IN = ( S-RXN M0-1 )
+  OUT = ( S-LIQ M1-2 S-VAP M0-1 ) \\
+\\ BLOCK BLKID = SP-101 BLKTYPE = FSPLIT MDLTYPE = "FSPLIT"
+  IN = ( S-LIQ M0-1 )
+  OUT = ( S-FEED-T M0-1 R-LIQ M1-2 ) \\
+\\ BLOCK BLKID = T-101 BLKTYPE = RADFRAC MDLTYPE = "RADFRAC"
+  IN = ( S-FEED-T M0-1 )
+  OUT = ( S-DIST M0-1 S-BOT M1-2 ) \\
+? STREAM MATERIAL F-WATER ?
+\\ SUBSTREAM SSID = MIXED TEMP = 30.0 <22> PRES = 2.0 <4> BASIS = "MASS-FRAC" FLOWBASE = MASS TOTFLOW = 2000.0 <1> \\
+\\ MOLE-FLOW CID = WATER FLOW = 0.9 / CID = 13DCH FLOW = 0.1 / CID = H+ FLOW = 0.001 \\
+? STREAM MATERIAL F-ACID ?
+\\ SUBSTREAM SSID = MIXED TEMP = 25.0 <22> PRES = 1.5 <4> BASIS = "MOLE-FLOW" \\
+\\ MOLE-FLOW CID = HCL FLOW = 20.0 <22> / CID = HCLO FLOW = 5.0 <22> \\
+? BLOCK RSTOIC R-101 ?
+\\ PARAM TEMP = 55.0 <22> PRES = 2.5 <4> \\
+? BLOCK FLASH2 V-101 ?
+\\ PARAM TEMP = 60.0 <22> PRES = 1.2 <4> \\
+? BLOCK FSPLIT SP-101 ?
+\\ PARAM SID = S-FEED-T BASIS-FLOW = 750.0 <1> / SID = R-LIQ BASIS-FLOW = 250.0 <1> \\
+? BLOCK RADFRAC T-101 ?
+\\ PARAM NSTAGE = 18 PRES1 = 1.1 <4> BASIS-RR = 3.0 D:F = 0.4 \\
+\\ FEEDS SID = S-FEED-T STAGE = 9 \\
+\\ PRODUCTS PROD-STREAM = S-DIST STAGE = 1 PROD-PHASE = L / PROD-STREAM = S-BOT STAGE = 18 PROD-PHASE = L \\
+Section GLOBAL
+PFDFLAG 1
+GUI_COORDS 100 200 300 400
+`;
+
+const bkpParsed = parseProcessTextFile(NATIVE_BKP, 'chlorohydrin.bkp');
+assert.equal(bkpParsed.title, 'Chlorohydrin Electrolyte Process');
+assert.equal(bkpParsed.propertyMethod, 'ENRTL');
+assert.deepEqual(bkpParsed.activeComponents, ['H2O', 'HCl', 'DCH', 'NaOCl']);
+assert.equal(bkpParsed.summary.mappedCompCount, 4);
+// Ionic species (H+, OH-, CL-, CLO-, NA+) must be silently skipped; only AC is unmapped
+assert.deepEqual(bkpParsed.summary.unmappedComps, ['AC']);
+
+// 2 feeds (F-WATER, F-ACID) + 5 blocks (M-101, R-101, V-101, SP-101, T-101) + 3 products (S-VAP, S-DIST, S-BOT) = 10 units
+// (GHOST-999 from HIDE_BUFFER and Q-RXN heat stream must NOT exist)
+assert.equal(bkpParsed.summary.unitCount, 10);
+assert.equal(bkpParsed.summary.edgeCount, 10);
+
+const bkpByTag = Object.fromEntries(Object.values(bkpParsed.defs).map((d) => [d.tag, d]));
+assert.equal(bkpByTag['GHOST-999'], undefined);
+assert.equal(bkpByTag['Q-RXN'], undefined);
+assert.equal(bkpByTag['F-WATER'].unitType, 'feed');
+assert.equal(bkpByTag['F-ACID'].unitType, 'feed');
+assert.equal(bkpByTag['M-101'].unitType, 'mixer');
+assert.equal(bkpByTag['R-101'].unitType, 'reactor');
+assert.equal(bkpByTag['V-101'].unitType, 'separator');
+assert.equal(bkpByTag['SP-101'].unitType, 'splitter');
+assert.equal(bkpByTag['T-101'].unitType, 'distillation');
+assert.equal(bkpByTag['S-VAP'].unitType, 'product');
+assert.equal(bkpByTag['S-DIST'].unitType, 'product');
+assert.equal(bkpByTag['S-BOT'].unitType, 'product');
+
+// Verify feed F-WATER (MASS-FRAC * TOTFLOW)
+approxEqual(bkpByTag['F-WATER'].params.feedTempC ?? 0, 30.0, 0.01, 'F-WATER tempC');
+approxEqual(bkpByTag['F-WATER'].params.feedFlowsKgH?.H2O ?? 0, 1800.0, 0.05, 'F-WATER H2O kg/h');
+approxEqual(bkpByTag['F-WATER'].params.feedFlowsKgH?.DCH ?? 0, 200.0, 0.05, 'F-WATER DCH kg/h');
+
+// Verify feed F-ACID (MOLE-FLOW * MW)
+approxEqual(bkpByTag['F-ACID'].params.feedTempC ?? 0, 25.0, 0.01, 'F-ACID tempC');
+approxEqual(bkpByTag['F-ACID'].params.feedFlowsKgH?.HCl ?? 0, 20.0 * MW.HCl, 0.05, 'F-ACID HCl kg/h');
+approxEqual(bkpByTag['F-ACID'].params.feedFlowsKgH?.NaOCl ?? 0, 5.0 * MW.NaOCl, 0.05, 'F-ACID NaOCl kg/h');
+
+// Verify block parameters
+approxEqual(bkpByTag['R-101'].params.operTempC ?? 0, 55.0, 0.01, 'R-101 tempC');
+approxEqual(bkpByTag['V-101'].params.operTempC ?? 0, 60.0, 0.01, 'V-101 tempC');
+approxEqual(bkpByTag['SP-101'].params.splitRatioTop ?? 0, 0.75, 0.001, 'SP-101 BASIS-FLOW ratio');
+assert.equal(bkpByTag['T-101'].params.distillConfig?.totalStages, 18);
+assert.equal(bkpByTag['T-101'].params.distillConfig?.feedStage, 9);
+approxEqual(bkpByTag['T-101'].params.distillConfig?.topSpecValue ?? 0, 3.0, 0.001, 'T-101 RR');
+approxEqual(bkpByTag['T-101'].params.distillConfig?.splitSpecValue ?? 0, 0.4, 0.001, 'T-101 D:F');
+
+// Verify Flash2 port order (M0-1 -> vapor, M1-2 -> liquid) and recycle edge SP-101 -> M-101
+const bkpEdgeByStream = Object.fromEntries(bkpParsed.edges.map((e) => [e.streamNo, e]));
+assert.equal(bkpEdgeByStream['S-VAP'].sourcePort, 'vapor');
+assert.equal(bkpEdgeByStream['S-LIQ'].sourcePort, 'liquid');
+assert.equal(bkpEdgeByStream['S-DIST'].sourcePort, 'vapor');
+assert.equal(bkpEdgeByStream['S-BOT'].sourcePort, 'liquid');
+assert.equal(bkpEdgeByStream['R-LIQ'].source, bkpByTag['SP-101'].id);
+assert.equal(bkpEdgeByStream['R-LIQ'].target, bkpByTag['M-101'].id);
+
+// Verify cycle-safe auto-layout (recycle loop must NOT stack nodes at x=0 or maxLayer)
+const bkpPos = Object.fromEntries(bkpParsed.rfNodes.map((n) => [n.id, n.position]));
+assert.ok(
+  bkpPos[bkpByTag['F-WATER'].id].x < bkpPos[bkpByTag['M-101'].id].x &&
+    bkpPos[bkpByTag['M-101'].id].x < bkpPos[bkpByTag['R-101'].id].x &&
+    bkpPos[bkpByTag['R-101'].id].x < bkpPos[bkpByTag['V-101'].id].x &&
+    bkpPos[bkpByTag['V-101'].id].x < bkpPos[bkpByTag['SP-101'].id].x &&
+    bkpPos[bkpByTag['SP-101'].id].x < bkpPos[bkpByTag['T-101'].id].x &&
+    bkpPos[bkpByTag['T-101'].id].x < bkpPos[bkpByTag['S-DIST'].id].x,
+  'Expected strictly increasing x coordinates even with recycle loop R-LIQ'
+);
+
+console.log('Test 4 PASSED!');
 console.log('\nALL PROCESS TEXT INTEROP TESTS PASSED!');

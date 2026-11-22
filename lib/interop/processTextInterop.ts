@@ -281,7 +281,7 @@ const COMP_ALIASES: Record<SimCompKey, string[]> = {
   HCl: ['HCL', 'HYDROGEN-CHLORIDE', 'HYDROCHLORIC-ACID'],
   H2SO4: ['H2SO4', 'SULFURIC-ACID'],
   O2: ['O2', 'OXYGEN'],
-  NaOCl: ['NAOCL', 'NACLO', 'SODIUM-HYPOCHLORITE'],
+  NaOCl: ['NAOCL', 'NACLO', 'SODIUM-HYPOCHLORITE', 'HCLO', 'HYPOCHLOROUS-ACID'],
   N2: ['N2', 'NITROGEN'],
   NaClO3: ['NACLO3', 'SODIUM-CHLORATE'],
   FeCl2: ['FECL2', 'FERROUS-CHLORIDE', 'IRON-II-CHLORIDE'],
@@ -289,7 +289,17 @@ const COMP_ALIASES: Record<SimCompKey, string[]> = {
   PAC: ['PAC', 'POLY-ALUMINUM-CHLORIDE', 'AL2OH5CL'],
   Glycerol: ['GLYCEROL', 'GLYCERIN', 'C3H8O3', '1,2,3-PROPANETRIOL'],
   MCH: ['MCH', 'MONOCHLOROHYDRIN', '3-CHLORO-1,2-PROPANEDIOL', 'C3H7CLO2'],
-  DCH: ['DCH', 'DICHLOROHYDRIN', '1,3-DICHLORO-2-PROPANOL', 'C3H6CL2O'],
+  DCH: [
+    'DCH',
+    'DICHLOROHYDRIN',
+    '1,3-DICHLORO-2-PROPANOL',
+    'C3H6CL2O',
+    '13DCH',
+    'C3H6CL2O-D1',
+    '23DCH',
+    'C3H6CL2O-D2',
+    '2,3-DICHLORO-1-PROPANOL',
+  ],
   ECH: ['ECH', 'EPICHLOROHYDRIN', 'C3H5CLO', '1-CHLORO-2,3-EPOXYPROPANE'],
   DCP: ['DCP', '1,2-DICHLOROPROPANE', 'PROPYLENE-DICHLORIDE', 'C3H6CL2'],
   CH4: ['CH4', 'METHANE'],
@@ -804,6 +814,1252 @@ function sanitizeId(raw: string): string {
 }
 
 // ============================================================================
+// 5-B. 공통 토폴로지 엣지 생성 & 사이클 안전 자동 레이아웃
+// ============================================================================
+
+interface FlowsheetBlockEntry {
+  id: string;
+  inStreams: string[];
+  outStreams: string[];
+}
+
+function buildFlowEdgesFromTopology(
+  defs: Record<string, FlowNodeDef>,
+  blockMap: Map<string, FlowsheetBlockEntry>,
+  allStreamOrder: string[],
+  streamProducer: Map<string, { blockId: string; nodeId: string; outIndex: number }>,
+  streamConsumers: Map<string, Array<{ blockId: string; nodeId: string; inIndex: number }>>,
+  feedNodeIdByStream: Map<string, string>,
+  prodNodeIdByStream: Map<string, string>
+): FlowEdgeDef[] {
+  const edges: FlowEdgeDef[] = [];
+
+  const pickSourcePort = (
+    srcNode: FlowNodeDef,
+    outIndex: number,
+    totalOuts: number
+  ): SourcePortId => {
+    if (srcNode.unitType === 'separator') {
+      if (outIndex === 0) return 'vapor';
+      if (outIndex === 1) return 'liquid';
+      return 'out';
+    }
+    if (srcNode.unitType === 'distillation') {
+      if (outIndex === 0) return 'vapor';
+      if (outIndex === 1) return 'liquid';
+      if (outIndex === 2) return 'side_cut';
+      return 'out';
+    }
+    if (srcNode.unitType === 'splitter') {
+      if (outIndex === 0) return 'out1';
+      if (outIndex === 1) return 'out2';
+      return 'out';
+    }
+    if (srcNode.unitType === 'hex' && totalOuts >= 2) {
+      return outIndex === 0 ? 'out' : 'util_out';
+    }
+    return 'out';
+  };
+
+  const pickTargetPort = (
+    tgtNode: FlowNodeDef,
+    inIndex: number,
+    totalIns: number
+  ): TargetPortId => {
+    if (tgtNode.unitType === 'hex' && totalIns >= 2) {
+      return inIndex === 0 ? 'in' : 'util_in';
+    }
+    if (tgtNode.unitType === 'absorber' && totalIns >= 2) {
+      return inIndex === 0 ? 'in' : 'solvent';
+    }
+    return 'in';
+  };
+
+  for (const s of allStreamOrder) {
+    const prod = streamProducer.get(s);
+    const consList = streamConsumers.get(s) ?? [];
+    const sourceNodeId = prod ? prod.nodeId : feedNodeIdByStream.get(s);
+    if (!sourceNodeId || !defs[sourceNodeId]) continue;
+
+    const srcDef = defs[sourceNodeId];
+    const srcBlock = prod ? blockMap.get(prod.blockId) : undefined;
+    const sourcePort: SourcePortId = prod
+      ? pickSourcePort(srcDef, prod.outIndex, srcBlock?.outStreams.length ?? 1)
+      : 'out';
+
+    if (consList.length > 0) {
+      consList.forEach((cons, idx) => {
+        const tgtDef = defs[cons.nodeId];
+        if (!tgtDef) return;
+        const tgtBlock = blockMap.get(cons.blockId);
+        const targetPort = pickTargetPort(
+          tgtDef,
+          cons.inIndex,
+          tgtBlock?.inStreams.length ?? 1
+        );
+        edges.push({
+          id: consList.length === 1 ? `edge_${sanitizeId(s)}` : `edge_${sanitizeId(s)}_${idx + 1}`,
+          streamNo: s,
+          name: s,
+          source: sourceNodeId,
+          target: cons.nodeId,
+          sourcePort,
+          targetPort,
+        });
+      });
+    } else {
+      const prodNodeId = prodNodeIdByStream.get(s);
+      if (prodNodeId && defs[prodNodeId]) {
+        edges.push({
+          id: `edge_${sanitizeId(s)}`,
+          streamNo: s,
+          name: s,
+          source: sourceNodeId,
+          target: prodNodeId,
+          sourcePort,
+          targetPort: 'in',
+        });
+      }
+    }
+  }
+
+  return edges;
+}
+
+function computeAutoLayout(
+  defs: Record<string, FlowNodeDef>,
+  edges: FlowEdgeDef[]
+): ProcessTextImportResult['rfNodes'] {
+  const nodeIds = Object.keys(defs);
+  const rawOutAdj = new Map<string, string[]>();
+  const rawInDeg = new Map<string, number>();
+  for (const id of nodeIds) {
+    rawOutAdj.set(id, []);
+    rawInDeg.set(id, 0);
+  }
+  for (const e of edges) {
+    if (e.source === e.target) continue;
+    rawOutAdj.get(e.source)?.push(e.target);
+    rawInDeg.set(e.target, (rawInDeg.get(e.target) ?? 0) + 1);
+  }
+
+  // 1) DFS 3-color 탐색으로 리사이클 백엣지(사이클) 분리 → DAG 구성
+  const color = new Map<string, 0 | 1 | 2>();
+  for (const id of nodeIds) color.set(id, 0);
+  const dagOutAdj = new Map<string, string[]>();
+  const dagInDeg = new Map<string, number>();
+  for (const id of nodeIds) {
+    dagOutAdj.set(id, []);
+    dagInDeg.set(id, 0);
+  }
+
+  const dfs = (u: string) => {
+    color.set(u, 1);
+    for (const v of rawOutAdj.get(u) ?? []) {
+      const c = color.get(v) ?? 0;
+      if (c === 1) {
+        // 백엣지(리사이클 루프)는 레이어 계산용 DAG에서 제외
+        continue;
+      }
+      dagOutAdj.get(u)!.push(v);
+      dagInDeg.set(v, (dagInDeg.get(v) ?? 0) + 1);
+      if (c === 0) {
+        dfs(v);
+      }
+    }
+    color.set(u, 2);
+  };
+
+  // Feed 노드 및 진입차수 0 노드부터 우선 DFS 시작
+  const startOrder = [
+    ...nodeIds.filter((id) => defs[id].unitType === 'feed'),
+    ...nodeIds.filter((id) => defs[id].unitType !== 'feed' && (rawInDeg.get(id) ?? 0) === 0),
+    ...nodeIds,
+  ];
+  for (const id of startOrder) {
+    if (color.get(id) === 0) {
+      dfs(id);
+    }
+  }
+
+  // 2) DAG 기반 위상 정렬(Kahn) 최장 경로 레이어 배정
+  const layerOf = new Map<string, number>();
+  const queue: string[] = [];
+  const remInDeg = new Map<string, number>(dagInDeg);
+
+  for (const id of nodeIds) {
+    if ((remInDeg.get(id) ?? 0) === 0) {
+      layerOf.set(id, 0);
+      queue.push(id);
+    }
+  }
+
+  let headIdx = 0;
+  while (headIdx < queue.length) {
+    const cur = queue[headIdx++];
+    const curLayer = layerOf.get(cur) ?? 0;
+    for (const nxt of dagOutAdj.get(cur) ?? []) {
+      const prev = layerOf.get(nxt) ?? 0;
+      if (curLayer + 1 > prev) {
+        layerOf.set(nxt, curLayer + 1);
+      }
+      const nextDeg = (remInDeg.get(nxt) ?? 1) - 1;
+      remInDeg.set(nxt, nextDeg);
+      if (nextDeg === 0) {
+        queue.push(nxt);
+      }
+    }
+  }
+
+  for (const id of nodeIds) {
+    if (!layerOf.has(id)) layerOf.set(id, 0);
+  }
+
+  // 3) Product 노드는 항상 우측 끝 열로 정렬
+  const maxNonProdLayer = nodeIds.reduce((acc, id) => {
+    if (defs[id].unitType === 'product') return acc;
+    return Math.max(acc, layerOf.get(id) ?? 0);
+  }, 0);
+  for (const id of nodeIds) {
+    if (defs[id].unitType === 'product') {
+      const curL = layerOf.get(id) ?? 0;
+      layerOf.set(id, Math.max(curL, maxNonProdLayer + 1));
+    }
+  }
+
+  const rowsByLayer = new Map<number, string[]>();
+  for (const id of nodeIds) {
+    const l = layerOf.get(id) ?? 0;
+    const list = rowsByLayer.get(l) ?? [];
+    list.push(id);
+    rowsByLayer.set(l, list);
+  }
+
+  const rfNodes: ProcessTextImportResult['rfNodes'] = [];
+  const sortedLayers = Array.from(rowsByLayer.keys()).sort((a, b) => a - b);
+  for (const layer of sortedLayers) {
+    const idsInLayer = rowsByLayer.get(layer) ?? [];
+    idsInLayer.forEach((unitId, row) => {
+      rfNodes.push({
+        id: unitId,
+        type: 'unitNode',
+        position: {
+          x: 80 + layer * 260,
+          y: 100 + row * 170,
+        },
+        data: { unitId },
+      });
+    });
+  }
+
+  return rfNodes;
+}
+
+// ============================================================================
+// 5-C. 네이티브 백업 형식(.bkp) 파서 (? SECTION ? / \ STMT \ 레코드 구조)
+// ============================================================================
+
+const KNOWN_MULTIVALENT_ANIONS = new Set([
+  'SO4-2',
+  'CO3-2',
+  'PO4-3',
+  'SO3-2',
+  'S-2',
+  'HPO4-2',
+  'S2O3-2',
+  'C2O4-2',
+  'CR2O7-2',
+]);
+
+const ELECTROLYTE_PARENT_COMPS = new Set<SimCompKey>([
+  'H2O',
+  'HCl',
+  'NaOH',
+  'NaCl',
+  'NaOCl',
+  'H2SO4',
+  'KOH',
+  'HNO3',
+  'CaOH2',
+  'Na2CO3',
+  'NaClO3',
+  'FeCl2',
+  'FeCl3',
+  'NH4OH',
+  'H3PO4',
+  'HF',
+  'NaHSO3',
+]);
+
+function isIonicSpecies(...tokens: Array<string | undefined>): boolean {
+  for (const raw of tokens) {
+    if (!raw) continue;
+    const t = raw.trim().replace(/^['"]|['"]$/g, '').toUpperCase();
+    if (!t) continue;
+    if (KNOWN_MULTIVALENT_ANIONS.has(t)) return true;
+    if (/^[A-Z][A-Z0-9()]*(\+{1,3}|-{1,3}|\+[1-4])$/.test(t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function stripBkpHiddenBuffers(rawText: string): string {
+  return rawText.replace(/HIDE_BUFFER[\s\S]*?END_HIDEBUF/gi, '');
+}
+
+function isNativeBkpFormat(rawText: string): boolean {
+  const cleaned = stripBkpHiddenBuffers(rawText || '');
+  if (/\?\s*FLOWSHEET\s+/i.test(cleaned)) return true;
+  if (/\?\s*COMPONENTS\s+/i.test(cleaned) && /BLKID\s*=/i.test(cleaned)) return true;
+  return false;
+}
+
+interface BkpRecord {
+  headerTokens: string[];
+  statements: string[];
+}
+
+function splitBkpRecords(rawText: string): BkpRecord[] {
+  let text = (rawText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\x00/g, '')
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+
+  text = stripBkpHiddenBuffers(text);
+
+  // GUI 그래픽 트레일러(Section GLOBAL / PFDFLAG) 이전까지만 파싱
+  const trailerMatch = text.match(/^[ \t]*(?:Section\s+GLOBAL|PFDFLAG)\b/im);
+  if (trailerMatch && trailerMatch.index !== undefined) {
+    text = text.slice(0, trailerMatch.index);
+  }
+
+  // ? <header tokens> ? 레코드 헤더 위치 스캔 (따옴표 내부 무시)
+  const headers: Array<{ headerStart: number; bodyStart: number; headerTokens: string[] }> = [];
+  let inSingle = false;
+  let inDouble = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      continue;
+    }
+    if (inSingle || inDouble) continue;
+
+    if (ch === '?' && (i === 0 || /[\s\n]/.test(text[i - 1]))) {
+      let j = i + 1;
+      let valid = false;
+      while (j < text.length && j - i <= 160) {
+        const cj = text[j];
+        if (cj === '\\' || cj === ';') break;
+        if (cj === '?') {
+          valid = true;
+          break;
+        }
+        j++;
+      }
+      if (valid) {
+        const inner = text.slice(i + 1, j).trim();
+        const toks = tokenizeLine(inner);
+        if (toks.length > 0 && /^[A-Za-z][A-Za-z0-9_-]*$/.test(toks[0])) {
+          headers.push({
+            headerStart: i,
+            bodyStart: j + 1,
+            headerTokens: toks,
+          });
+          i = j;
+        }
+      }
+    }
+  }
+
+  // 각 레코드 본문에서 \ ... \ 문장 분리 (따옴표 내부 무시)
+  const records: BkpRecord[] = [];
+  for (let k = 0; k < headers.length; k++) {
+    const start = headers[k].bodyStart;
+    const end = k + 1 < headers.length ? headers[k + 1].headerStart : text.length;
+    const body = text.slice(start, end);
+
+    const statements: string[] = [];
+    let cur = '';
+    let sInSingle = false;
+    let sInDouble = false;
+
+    for (let i = 0; i < body.length; i++) {
+      const ch = body[i];
+      if (ch === "'" && !sInDouble) {
+        sInSingle = !sInSingle;
+        cur += ch;
+      } else if (ch === '"' && !sInSingle) {
+        sInDouble = !sInDouble;
+        cur += ch;
+      } else if (ch === '\\' && !sInSingle && !sInDouble) {
+        const trimmed = cur.trim();
+        if (trimmed.length > 0) statements.push(trimmed);
+        cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    const tail = cur.trim();
+    if (tail.length > 0) statements.push(tail);
+
+    records.push({
+      headerTokens: headers[k].headerTokens,
+      statements,
+    });
+  }
+
+  return records;
+}
+
+function splitBkpRows(stmt: string): string[] {
+  const rows: string[] = [];
+  let cur = '';
+  let inSingle = false;
+  let inDouble = false;
+  let inAngle = false;
+
+  for (let i = 0; i < stmt.length; i++) {
+    const ch = stmt[i];
+    if (ch === "'" && !inDouble) {
+      inSingle = !inSingle;
+      cur += ch;
+    } else if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      cur += ch;
+    } else if (!inSingle && !inDouble && ch === '<') {
+      inAngle = true;
+      cur += ch;
+    } else if (!inSingle && !inDouble && ch === '>') {
+      inAngle = false;
+      cur += ch;
+    } else if (!inSingle && !inDouble && !inAngle && ch === '/') {
+      const prev = i > 0 ? stmt[i - 1] : '';
+      const next = i + 1 < stmt.length ? stmt[i + 1] : '';
+      // 단위 표기(KG/HR 등) 내부 슬래시는 보존하고, 테이블 행 구분자 '/'만 분리
+      if (/[A-Za-z]/.test(prev) && /[A-Za-z]/.test(next)) {
+        cur += ch;
+      } else {
+        const trimmed = cur.trim();
+        if (trimmed.length > 0) rows.push(trimmed);
+        cur = '';
+      }
+    } else {
+      cur += ch;
+    }
+  }
+  const tail = cur.trim();
+  if (tail.length > 0) rows.push(tail);
+  return rows;
+}
+
+function tokenizeBkp(text: string): string[] {
+  const tokens: string[] = [];
+  let cur = '';
+  let quote: '"' | "'" | null = null;
+  let parenDepth = 0;
+
+  const flush = () => {
+    if (cur.length > 0) {
+      // 숫자 단위 코드 토큰(<22>, <4>, <-80>, <0> 등) 무시
+      if (!/^<-?\d+>$/.test(cur)) {
+        tokens.push(cur);
+      }
+      cur = '';
+    }
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) {
+        // 빈 따옴표 문자열도 값으로 보존할 수 있도록 처리
+        tokens.push(cur);
+        cur = '';
+        quote = null;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"' || ch === "'") {
+      flush();
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      flush();
+    } else if (ch === '=') {
+      flush();
+      tokens.push('=');
+    } else if (ch === '(' && cur === '') {
+      parenDepth++;
+      tokens.push('(');
+    } else if (ch === ')' && parenDepth > 0) {
+      flush();
+      parenDepth--;
+      tokens.push(')');
+    } else {
+      cur += ch;
+    }
+  }
+  flush();
+  return tokens;
+}
+
+interface BkpKvEntry {
+  key: string;
+  value?: string;
+  list?: string[];
+  inlineUnit?: string;
+}
+
+function parseBkpKv(tokens: string[]): BkpKvEntry[] {
+  const out: BkpKvEntry[] = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (i + 1 < tokens.length && tokens[i + 1] === '=') {
+      const key = tokens[i].toUpperCase();
+      if (i + 2 < tokens.length && tokens[i + 2] === '(') {
+        const list: string[] = [];
+        let j = i + 3;
+        while (j < tokens.length && tokens[j] !== ')') {
+          list.push(tokens[j]);
+          j++;
+        }
+        out.push({ key, list });
+        i = j;
+      } else if (i + 2 < tokens.length) {
+        const value = tokens[i + 2];
+        let inlineUnit: string | undefined;
+        let nextIdx = i + 2;
+        if (nextIdx + 1 < tokens.length && /^<[^>]+>$/.test(tokens[nextIdx + 1])) {
+          inlineUnit = tokens[++nextIdx].slice(1, -1);
+        }
+        out.push({ key, value, inlineUnit });
+        i = nextIdx;
+      } else {
+        i += 1;
+      }
+    }
+  }
+  return out;
+}
+
+function getBkpKvValue(kvs: BkpKvEntry[], ...keys: string[]): string | undefined {
+  for (const k of keys) {
+    const found = kvs.find((e) => e.key === k && e.value !== undefined);
+    if (found && found.value !== undefined) return found.value;
+  }
+  return undefined;
+}
+
+function extractBkpMaterialStreams(list: string[] | undefined): string[] {
+  if (!list || list.length === 0) return [];
+  const PORT_TAG_RE = /^[MHW]\d+-\d+$/i;
+  const parsed: Array<{ stream: string; portOrder: number }> = [];
+
+  for (let i = 0; i < list.length; i++) {
+    const tok = list[i];
+    if (!tok || PORT_TAG_RE.test(tok)) continue;
+    const next = list[i + 1];
+    if (next && PORT_TAG_RE.test(next)) {
+      i++; // 포트 태그 소비
+      const kind = next[0].toUpperCase();
+      if (kind === 'H' || kind === 'W') {
+        // 열(H)/일(W) 스트림은 제외
+        continue;
+      }
+      const m = /^M(\d+)-(\d+)$/i.exec(next);
+      const portOrder = m ? Number(m[1]) * 1000 + Number(m[2]) : parsed.length;
+      parsed.push({ stream: tok, portOrder });
+    } else {
+      parsed.push({ stream: tok, portOrder: parsed.length });
+    }
+  }
+
+  parsed.sort((a, b) => a.portOrder - b.portOrder);
+  return parsed.map((p) => p.stream);
+}
+
+function parseNativeBkp(
+  rawText: string,
+  fileName?: string
+): ProcessTextImportResult {
+  const warnings: string[] = [];
+  const records = splitBkpRecords(rawText);
+
+  const fallbackTitle = fileName
+    ? fileName.replace(/\.(inp|bkp|txt)$/i, '')
+    : '가져온 공정 모델';
+  let title = fallbackTitle;
+
+  const units: UnitContext = { ...DEFAULT_UNITS_BY_SET.MET };
+  let propertyMethod: SimPropertyMethod = 'AUTO';
+
+  const localCompMap = new Map<string, SimCompKey>();
+  const activeComponents: SimCompKey[] = [];
+  const unmappedComps: string[] = [];
+  const skippedIonTokens = new Set<string>();
+  const skippedIonNames: string[] = [];
+
+  // 1차 패스: SETUP, PROPERTIES, COMPONENTS
+  for (const rec of records) {
+    const sec0 = rec.headerTokens[0]?.toUpperCase();
+    const sec1 = rec.headerTokens[1]?.toUpperCase();
+
+    if (sec0 === 'SETUP' && sec1 === 'MAIN') {
+      for (const stmt of rec.statements) {
+        const kvs = parseBkpKv(tokenizeBkp(stmt));
+        const t = getBkpKvValue(kvs, 'TITLE');
+        if (t && t.trim()) title = t.trim();
+        const uSet = getBkpKvValue(kvs, 'IN-UNITS', 'UNITS');
+        if (uSet) {
+          const uUp = uSet.toUpperCase();
+          if (uUp === 'ENG') Object.assign(units, DEFAULT_UNITS_BY_SET.ENG);
+          else if (uUp === 'SI') Object.assign(units, DEFAULT_UNITS_BY_SET.SI);
+          else if (uUp.startsWith('MET')) Object.assign(units, DEFAULT_UNITS_BY_SET.MET);
+        }
+      }
+    } else if (sec0 === 'PROPERTIES' && sec1 === 'MAIN') {
+      for (const stmt of rec.statements) {
+        const kvs = parseBkpKv(tokenizeBkp(stmt));
+        const method = getBkpKvValue(kvs, 'GBASEOPSET', 'GOPSETNAME', 'OPSETNAME');
+        if (method && method.trim()) {
+          propertyMethod = mapPropertyMethod(method.trim(), warnings);
+        }
+      }
+    } else if (sec0 === 'COMPONENTS' && sec1 === 'MAIN') {
+      for (const stmt of rec.statements) {
+        for (const row of splitBkpRows(stmt)) {
+          const kvs = parseBkpKv(tokenizeBkp(row));
+          const cid = getBkpKvValue(kvs, 'CID');
+          const aname = getBkpKvValue(kvs, 'ANAME');
+          const aname1 = getBkpKvValue(kvs, 'ANAME1');
+          const dbname1 = getBkpKvValue(kvs, 'DBNAME1', 'DBNAME');
+          const outname = getBkpKvValue(kvs, 'OUTNAME');
+
+          const candidates = [dbname1, aname, aname1, cid, outname].filter(
+            (v): v is string => Boolean(v && v.trim())
+          );
+          if (candidates.length === 0) continue;
+
+          let matched: SimCompKey | null = null;
+          for (const cand of candidates) {
+            matched = resolveSimComp(cand);
+            if (matched) break;
+          }
+
+          if (matched) {
+            for (const alias of [cid, aname, aname1, outname]) {
+              if (alias && alias.trim()) {
+                localCompMap.set(normalizeCompToken(alias), matched);
+              }
+            }
+            if (!activeComponents.includes(matched)) {
+              activeComponents.push(matched);
+            }
+          } else if (isIonicSpecies(cid, aname, aname1, dbname1)) {
+            const label = cid || aname || dbname1 || '';
+            if (label) {
+              skippedIonTokens.add(normalizeCompToken(label));
+              if (aname) skippedIonTokens.add(normalizeCompToken(aname));
+              if (!skippedIonNames.includes(label)) skippedIonNames.push(label);
+            }
+          } else {
+            const label = cid || aname || dbname1 || 'UNKNOWN';
+            if (!unmappedComps.includes(label)) {
+              unmappedComps.push(label);
+              warnings.push(
+                `성분 '${label}'(${dbname1 || aname || '미지정'})은(는) 내장 88종 물성 DB에 없어 매핑에서 제외되었습니다.`
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (skippedIonNames.length > 0) {
+    const hasParentElectrolyte = activeComponents.some((c) => ELECTROLYTE_PARENT_COMPS.has(c));
+    if (!hasParentElectrolyte) {
+      warnings.push(
+        `전해질 해리 이온 종 ${skippedIonNames.length}건(${skippedIonNames.slice(0, 5).join(', ')})은 모체 성분 기준으로 생략되었습니다.`
+      );
+    }
+  }
+
+  const mappedCompCount = activeComponents.length;
+  if (activeComponents.length === 0) {
+    activeComponents.push('MeOH', 'H2O');
+    warnings.push(
+      '매핑된 유효 성분이 없어 기본 2성분계(MeOH, H2O)로 자동 초기화되었습니다.'
+    );
+  } else if (activeComponents.length === 1) {
+    const pad: SimCompKey = activeComponents[0] === 'H2O' ? 'MeOH' : 'H2O';
+    activeComponents.push(pad);
+    warnings.push(
+      `단일 성분(${activeComponents[0]})만 감지되어 시뮬레이터 최소 성분 수(2종) 충족을 위해 ${pad}을(를) 보조 성분으로 추가했습니다.`
+    );
+  }
+
+  // 2차 패스: FLOWSHEET 토폴로지 파싱
+  const flowsheetBlocks: FlowsheetBlockEntry[] = [];
+  const blockMap = new Map<string, FlowsheetBlockEntry>();
+  const defs: Record<string, FlowNodeDef> = {};
+  const blockRawTypeMap = new Map<string, string>();
+  const pendingPratioMap = new Map<string, number>();
+
+  for (const rec of records) {
+    if (rec.headerTokens[0]?.toUpperCase() !== 'FLOWSHEET') continue;
+    for (const stmt of rec.statements) {
+      const kvs = parseBkpKv(tokenizeBkp(stmt));
+      const blkId = getBkpKvValue(kvs, 'BLKID');
+      if (!blkId) continue;
+
+      const rawType = getBkpKvValue(kvs, 'BLKTYPE') || getBkpKvValue(kvs, 'MDLTYPE') || 'MIXER';
+      const inEntry = kvs.find((e) => e.key === 'IN');
+      const outEntry = kvs.find((e) => e.key === 'OUT');
+      const inStreams = extractBkpMaterialStreams(
+        inEntry?.list ?? (inEntry?.value ? [inEntry.value] : undefined)
+      );
+      const outStreams = extractBkpMaterialStreams(
+        outEntry?.list ?? (outEntry?.value ? [outEntry.value] : undefined)
+      );
+
+      let entry = blockMap.get(blkId);
+      if (!entry) {
+        entry = { id: blkId, inStreams: [], outStreams: [] };
+        flowsheetBlocks.push(entry);
+        blockMap.set(blkId, entry);
+      }
+      entry.inStreams.push(...inStreams);
+      entry.outStreams.push(...outStreams);
+
+      const nodeId = `blk_${sanitizeId(blkId)}`;
+      if (!defs[nodeId]) {
+        const unitType = mapBlockType(rawType, blkId, warnings);
+        blockRawTypeMap.set(blkId, rawType.toUpperCase());
+        const params: FlowUnitParams = { calcMode: 'rigorous' };
+        if (unitType === 'reactor') {
+          const rt = rawType.toUpperCase();
+          if (rt === 'RCSTR') params.reactorModel = 'cstr';
+          else if (rt === 'RPLUG') params.reactorModel = 'pfr';
+          else params.reactorModel = 'conversion';
+        }
+        defs[nodeId] = {
+          id: nodeId,
+          tag: blkId,
+          name: defaultUnitLabel(unitType, blkId, rawType),
+          unitType,
+          params,
+        };
+      }
+    }
+  }
+
+  // 3차 패스: ? BLOCK <BLKTYPE> <BLKID> ? 파라미터 파싱
+  for (const rec of records) {
+    if (rec.headerTokens[0]?.toUpperCase() !== 'BLOCK') continue;
+    if (rec.headerTokens.length < 3) continue;
+
+    const rawType = rec.headerTokens[1];
+    const bId = rec.headerTokens[2];
+    const nodeId = `blk_${sanitizeId(bId)}`;
+
+    if (!defs[nodeId]) {
+      const unitType = mapBlockType(rawType, bId, warnings);
+      blockRawTypeMap.set(bId, rawType.toUpperCase());
+      defs[nodeId] = {
+        id: nodeId,
+        tag: bId,
+        name: defaultUnitLabel(unitType, bId, rawType),
+        unitType,
+        params: { calcMode: 'rigorous' },
+      };
+    }
+
+    const def = defs[nodeId];
+    const unitType = def.unitType;
+    const params = def.params;
+    const fsBlock = blockMap.get(bId);
+    const distillCfg: DistillColumnParams = { ...(params.distillConfig ?? {}) };
+    let hasDistillCfg = Boolean(params.distillConfig);
+
+    // FSPLIT 행 누적용
+    const splitFracRows: Array<{ sid: string; frac: number }> = [];
+    const splitFlowRows: Array<{ sid: string; flow: number }> = [];
+
+    for (const stmt of rec.statements) {
+      const rows = splitBkpRows(stmt);
+      if (rows.length === 0) continue;
+      const firstRowToks = tokenizeBkp(rows[0]);
+      const stmtHead = firstRowToks[0]?.toUpperCase() ?? '';
+
+      for (const row of rows) {
+        const kvs = parseBkpKv(tokenizeBkp(row));
+        if (kvs.length === 0) continue;
+
+        // FSPLIT 행 처리 (SID + FRAC 또는 BASIS-FLOW)
+        if (unitType === 'splitter') {
+          const sid = getBkpKvValue(kvs, 'SID', 'STREAM');
+          const fracStr = getBkpKvValue(kvs, 'FRAC', 'SPLIT-FRAC');
+          const flowStr = getBkpKvValue(kvs, 'BASIS-FLOW', 'FLOW', 'MASS-FLOW', 'MOLE-FLOW');
+          if (sid && fracStr !== undefined) {
+            const v = parseNumber(fracStr);
+            if (v !== null) splitFracRows.push({ sid, frac: v });
+          } else if (sid && flowStr !== undefined) {
+            const v = parseNumber(flowStr);
+            if (v !== null && v >= 0) splitFlowRows.push({ sid, flow: v });
+          }
+        }
+
+        // RADFRAC / DSTWU FEEDS, PRODUCTS, P-SPEC 처리
+        if (unitType === 'distillation') {
+          if (stmtHead === 'FEEDS') {
+            const stgStr = getBkpKvValue(kvs, 'STAGE', 'FEED-STAGE');
+            const stg = stgStr !== undefined ? parseNumber(stgStr) : null;
+            if (stg !== null) {
+              distillCfg.feedStage = Math.max(1, Math.round(stg));
+              hasDistillCfg = true;
+            }
+          } else if (stmtHead === 'PRODUCTS') {
+            const prodPhase = getBkpKvValue(kvs, 'PROD-PHASE')?.toUpperCase();
+            const stgStr = getBkpKvValue(kvs, 'STAGE');
+            const stg = stgStr !== undefined ? parseNumber(stgStr) : null;
+            if (stg === 1 && prodPhase === 'V') {
+              distillCfg.condenserType = 'partial';
+              hasDistillCfg = true;
+            }
+          }
+        }
+
+        // 일반 Key=Value 파라미터 매핑
+        for (const kv of kvs) {
+          if (kv.value === undefined) continue;
+          const val = parseNumber(kv.value);
+          if (val === null) continue;
+
+          if (kv.key === 'TEMP' || kv.key === 'T') {
+            const tu = kv.inlineUnit ? parseTempUnit(kv.inlineUnit) ?? units.temp : units.temp;
+            params.operTempC = Number(toTempC(val, tu).toFixed(2));
+            if (unitType === 'reactor') params.reactorThermalMode = 'isothermal';
+          } else if (kv.key === 'PRES' || kv.key === 'P' || kv.key === 'PRES1') {
+            const pu = kv.inlineUnit ? parsePresUnit(kv.inlineUnit) ?? units.pres : units.pres;
+            if (val > 0) {
+              const pKgcm2g = barAToKgcm2g(toBarA(val, pu));
+              if (unitType === 'pump' || unitType === 'compressor') {
+                params.outletPressKgcm2g = pKgcm2g;
+              } else if (unitType === 'distillation') {
+                distillCfg.topPressKgcm2g = pKgcm2g;
+                hasDistillCfg = true;
+              } else {
+                params.operPressKgcm2g = pKgcm2g;
+              }
+            } else if (val < 0 && kv.key !== 'PRES1') {
+              const dpBar = toDeltaBar(Math.abs(val), pu);
+              params.pressureDropKgcm2 = Number((dpBar * 1.0197162).toFixed(4));
+            }
+          } else if (kv.key === 'DELP' || kv.key === 'DP') {
+            const pu = kv.inlineUnit ? parsePresUnit(kv.inlineUnit) ?? units.pres : units.pres;
+            const dpBar = toDeltaBar(Math.abs(val), pu);
+            if (unitType === 'pump' || unitType === 'compressor') {
+              params.outletPressKgcm2g = barAToKgcm2g(1.01325 + dpBar);
+            } else {
+              params.pressureDropKgcm2 = Number((dpBar * 1.0197162).toFixed(4));
+            }
+          } else if (kv.key === 'PRATIO') {
+            pendingPratioMap.set(nodeId, val);
+          } else if (kv.key === 'EFF' || kv.key === 'SEFF' || kv.key === 'PEFF') {
+            params.efficiency = val > 1 ? val / 100 : val;
+          } else if (kv.key === 'DUTY' || kv.key === 'Q') {
+            const du = kv.inlineUnit ? parseDutyUnit(kv.inlineUnit) ?? units.duty : units.duty;
+            const dutyMcalH = Number(toDutyMcalH(val, du).toFixed(3));
+            if (unitType === 'hex') {
+              params.hexSpecMode = 'heat_duty';
+              params.specifiedDutyMcalH = dutyMcalH;
+            } else if (unitType === 'separator' && Math.abs(val) < 1e-9) {
+              params.flashMode = 'adiabatic';
+            } else if (unitType === 'reactor' && Math.abs(val) < 1e-9) {
+              params.reactorThermalMode = 'adiabatic';
+            }
+          } else if (kv.key === 'VFRAC') {
+            if (unitType === 'separator' && params.operTempC === undefined) {
+              params.flashMode = 'isothermal';
+            }
+          } else if (kv.key === 'NSTAGE' || kv.key === 'NSTAGES') {
+            distillCfg.totalStages = Math.max(3, Math.round(val));
+            hasDistillCfg = true;
+          } else if (kv.key === 'RR' || kv.key === 'MOLE-RR' || kv.key === 'BASIS-RR') {
+            distillCfg.topSpecType = 'reflux_ratio';
+            distillCfg.topSpecValue = val;
+            hasDistillCfg = true;
+          } else if (
+            kv.key === 'D:F' ||
+            kv.key === 'DF' ||
+            kv.key === 'MOLE-D:F' ||
+            kv.key === 'DISTIL-RATE'
+          ) {
+            distillCfg.splitSpecType = 'd_over_f_mole';
+            distillCfg.splitSpecValue = val;
+            hasDistillCfg = true;
+          } else if (kv.key === 'MASS-D:F') {
+            distillCfg.splitSpecType = 'd_over_f_mass';
+            distillCfg.splitSpecValue = val;
+            hasDistillCfg = true;
+          } else if (kv.key === 'FEED-STAGE') {
+            distillCfg.feedStage = Math.max(1, Math.round(val));
+            hasDistillCfg = true;
+          } else if (kv.key === 'DP-STAGE' || kv.key === 'COL-DP') {
+            const pu = kv.inlineUnit ? parsePresUnit(kv.inlineUnit) ?? units.pres : units.pres;
+            const dpKgcm2 = toDeltaBar(Math.abs(val), pu) * 1.0197162;
+            distillCfg.stageDeltaPKgcm2 =
+              kv.key === 'COL-DP' && distillCfg.totalStages
+                ? Number((dpKgcm2 / Math.max(1, distillCfg.totalStages)).toFixed(5))
+                : Number(dpKgcm2.toFixed(5));
+            hasDistillCfg = true;
+          } else if (kv.key === 'CONV' || kv.key === 'EXTENT') {
+            params.conversion = val > 1 ? val / 100 : val;
+          } else if (kv.key === 'VOL' || kv.key === 'VOLUME') {
+            params.reactorVolumeM3 = val;
+          }
+        }
+      }
+    }
+
+    // FSPLIT 분배비 확정
+    if (unitType === 'splitter') {
+      if (splitFracRows.length > 0) {
+        const firstOut = fsBlock?.outStreams[0];
+        const secondOut = fsBlock?.outStreams[1];
+        const firstMatch = firstOut ? splitFracRows.find((r) => r.sid === firstOut) : undefined;
+        const secondMatch = secondOut ? splitFracRows.find((r) => r.sid === secondOut) : undefined;
+        if (firstMatch) {
+          params.splitRatioTop = Number(Math.max(0, Math.min(1, firstMatch.frac)).toFixed(4));
+        } else if (secondMatch) {
+          params.splitRatioTop = Number(
+            Math.max(0, Math.min(1, 1 - secondMatch.frac)).toFixed(4)
+          );
+        } else {
+          params.splitRatioTop = Number(
+            Math.max(0, Math.min(1, splitFracRows[0].frac)).toFixed(4)
+          );
+        }
+      } else if (splitFlowRows.length > 0) {
+        const totalFlow = splitFlowRows.reduce((acc, r) => acc + r.flow, 0);
+        if (totalFlow > 0) {
+          const firstOut = fsBlock?.outStreams[0];
+          const firstMatch = firstOut ? splitFlowRows.find((r) => r.sid === firstOut) : undefined;
+          const targetFlow = firstMatch ? firstMatch.flow : splitFlowRows[0].flow;
+          params.splitRatioTop = Number(
+            Math.max(0, Math.min(1, targetFlow / totalFlow)).toFixed(4)
+          );
+        }
+      }
+    }
+
+    if (unitType === 'reactor') {
+      const rt = (blockRawTypeMap.get(bId) ?? rawType).toUpperCase();
+      if (rt === 'RCSTR') params.reactorModel = 'cstr';
+      else if (rt === 'RPLUG') params.reactorModel = 'pfr';
+      else params.reactorModel = 'conversion';
+    }
+
+    if (unitType === 'distillation' && hasDistillCfg) {
+      params.distillConfig = distillCfg;
+    }
+  }
+
+  // 증류탑 기본 설정 보완 (BLOCK 섹션이 일부 누락된 경우 포함)
+  for (const def of Object.values(defs)) {
+    if (def.unitType === 'distillation') {
+      const dc = def.params.distillConfig ?? {};
+      const totalStages = dc.totalStages ?? 20;
+      const feedStage = Math.min(
+        totalStages - 1,
+        Math.max(2, dc.feedStage ?? Math.round(totalStages / 2))
+      );
+      def.params.distillConfig = {
+        columnCalcMode: 'rigorous_mesh',
+        thermoModel: propertyMethod,
+        totalStages,
+        feedStage,
+        condenserType: dc.condenserType ?? 'total',
+        reboilerType: dc.reboilerType ?? 'kettle',
+        topPressKgcm2g: dc.topPressKgcm2g ?? 0.0,
+        stageDeltaPKgcm2: dc.stageDeltaPKgcm2 ?? 0.004,
+        topSpecType: dc.topSpecType ?? 'reflux_ratio',
+        topSpecValue: dc.topSpecValue ?? 2.0,
+        splitSpecType: dc.splitSpecType ?? 'd_over_f_mole',
+        splitSpecValue: dc.splitSpecValue ?? 0.5,
+      };
+    }
+  }
+
+  // 4차 패스: 스트림 입출력 분석 → Feed / Product 자동 생성
+  const streamProducer = new Map<string, { blockId: string; nodeId: string; outIndex: number }>();
+  const streamConsumers = new Map<
+    string,
+    Array<{ blockId: string; nodeId: string; inIndex: number }>
+  >();
+  const allStreamOrder: string[] = [];
+  const trackStream = (s: string) => {
+    if (!allStreamOrder.includes(s)) allStreamOrder.push(s);
+  };
+
+  for (const fb of flowsheetBlocks) {
+    const nodeId = `blk_${sanitizeId(fb.id)}`;
+    fb.inStreams.forEach((s, idx) => {
+      trackStream(s);
+      const list = streamConsumers.get(s) ?? [];
+      list.push({ blockId: fb.id, nodeId, inIndex: idx });
+      streamConsumers.set(s, list);
+    });
+    fb.outStreams.forEach((s, idx) => {
+      trackStream(s);
+      streamProducer.set(s, { blockId: fb.id, nodeId, outIndex: idx });
+    });
+  }
+
+  const feedNodeIdByStream = new Map<string, string>();
+  const prodNodeIdByStream = new Map<string, string>();
+
+  for (const s of allStreamOrder) {
+    const hasProd = streamProducer.has(s);
+    const hasCons = (streamConsumers.get(s)?.length ?? 0) > 0;
+    if (!hasProd && hasCons) {
+      const fId = `feed_${sanitizeId(s)}`;
+      feedNodeIdByStream.set(s, fId);
+      defs[fId] = {
+        id: fId,
+        tag: s,
+        name: `${s} 공급`,
+        unitType: 'feed',
+        params: {
+          feedTempC: 25,
+          feedPressKgcm2g: 0,
+          feedFlowsKgH: emptySimFlows(),
+        },
+      };
+    } else if (hasProd && !hasCons) {
+      const pId = `prod_${sanitizeId(s)}`;
+      prodNodeIdByStream.set(s, pId);
+      defs[pId] = {
+        id: pId,
+        tag: s,
+        name: `${s} 제품`,
+        unitType: 'product',
+        params: {},
+      };
+    }
+  }
+
+  // 5차 패스: ? STREAM MATERIAL <streamId> ? 파싱
+  for (const rec of records) {
+    if (rec.headerTokens[0]?.toUpperCase() !== 'STREAM') continue;
+    const secondTok = rec.headerTokens[1]?.toUpperCase() ?? '';
+    if (secondTok === 'HEAT' || secondTok === 'WORK') continue;
+    const streamId =
+      secondTok === 'MATERIAL' ? rec.headerTokens[2] : rec.headerTokens[1];
+    if (!streamId) continue;
+
+    const feedNodeId = feedNodeIdByStream.get(streamId);
+    if (!feedNodeId || !defs[feedNodeId]) continue;
+
+    let tempC = 25;
+    let pressBarA = 1.01325;
+    let basis: 'MASS-FRAC' | 'MOLE-FRAC' | 'MASS-FLOW' | 'MOLE-FLOW' | null = null;
+    let flowBase: 'MASS' | 'MOLE' | null = null;
+    let totFlow: number | null = null;
+    let totalMassKgH: number | null = null;
+    let totalMoleKmolH: number | null = null;
+
+    const compValues: Array<{
+      comp: SimCompKey;
+      val: number;
+      stmtKind: 'MASS-FLOW' | 'MOLE-FLOW' | 'MASS-FRAC' | 'MOLE-FRAC';
+    }> = [];
+
+    for (const stmt of rec.statements) {
+      const rows = splitBkpRows(stmt);
+      if (rows.length === 0) continue;
+      const head = tokenizeBkp(rows[0])[0]?.toUpperCase() ?? '';
+
+      if (head === 'SUBSTREAM') {
+        const kvs = parseBkpKv(tokenizeBkp(stmt));
+        for (const kv of kvs) {
+          if (kv.value === undefined) continue;
+          if (kv.key === 'BASIS') {
+            const b = kv.value.toUpperCase();
+            if (
+              b === 'MASS-FRAC' ||
+              b === 'MOLE-FRAC' ||
+              b === 'MASS-FLOW' ||
+              b === 'MOLE-FLOW'
+            ) {
+              basis = b;
+            }
+          } else if (kv.key === 'FLOWBASE') {
+            const fb = kv.value.toUpperCase();
+            if (fb === 'MASS' || fb === 'MOLE') flowBase = fb;
+          } else {
+            const num = parseNumber(kv.value);
+            if (num === null) continue;
+            if (kv.key === 'TEMP' || kv.key === 'T') {
+              const tu = kv.inlineUnit ? parseTempUnit(kv.inlineUnit) ?? units.temp : units.temp;
+              tempC = Number(toTempC(num, tu).toFixed(2));
+            } else if (kv.key === 'PRES' || kv.key === 'P') {
+              const pu = kv.inlineUnit ? parsePresUnit(kv.inlineUnit) ?? units.pres : units.pres;
+              pressBarA = toBarA(num, pu);
+            } else if (kv.key === 'TOTFLOW') {
+              totFlow = num;
+            } else if (kv.key === 'MASS-FLOW') {
+              const mu = kv.inlineUnit
+                ? parseMassFlowUnit(kv.inlineUnit) ?? units.massFlow
+                : units.massFlow;
+              totalMassKgH = toMassFlowKgH(num, mu);
+            } else if (kv.key === 'MOLE-FLOW') {
+              const mu = kv.inlineUnit
+                ? parseMoleFlowUnit(kv.inlineUnit) ?? units.moleFlow
+                : units.moleFlow;
+              totalMoleKmolH = toMoleFlowKmolH(num, mu);
+            }
+          }
+        }
+      } else if (
+        head === 'MOLE-FLOW' ||
+        head === 'MASS-FLOW' ||
+        head === 'MOLE-FRAC' ||
+        head === 'MASS-FRAC'
+      ) {
+        const stmtKind = head;
+        for (const row of rows) {
+          const kvs = parseBkpKv(tokenizeBkp(row));
+          const cid = getBkpKvValue(kvs, 'CID');
+          const flowStr = getBkpKvValue(kvs, 'FLOW', 'FRAC', 'VAL');
+          if (!cid || flowStr === undefined) continue;
+          const num = parseNumber(flowStr);
+          if (num === null) continue;
+
+          const normCid = normalizeCompToken(cid);
+          const simKey = localCompMap.get(normCid) ?? resolveSimComp(cid);
+          if (!simKey) {
+            if (!skippedIonTokens.has(normCid) && !isIonicSpecies(cid)) {
+              warnings.push(
+                `스트림 '${streamId}'의 성분 '${cid}'은(는) 매핑되지 않아 유량에서 제외되었습니다.`
+              );
+            }
+            continue;
+          }
+          compValues.push({ comp: simKey, val: num, stmtKind });
+        }
+      }
+    }
+
+    const resolvedFlows = emptySimFlows();
+    if (compValues.length > 0) {
+      const effectiveBasis = basis ?? compValues[0].stmtKind;
+      const agg = new Map<SimCompKey, number>();
+      for (const item of compValues) {
+        agg.set(item.comp, (agg.get(item.comp) ?? 0) + item.val);
+      }
+
+      if (effectiveBasis === 'MASS-FLOW') {
+        for (const [k, v] of agg.entries()) {
+          resolvedFlows[k] = Number(toMassFlowKgH(v, units.massFlow).toFixed(4));
+        }
+      } else if (effectiveBasis === 'MOLE-FLOW') {
+        for (const [k, v] of agg.entries()) {
+          const kmolH = toMoleFlowKmolH(v, units.moleFlow);
+          resolvedFlows[k] = Number((kmolH * mwOfComp(k)).toFixed(4));
+        }
+      } else if (effectiveBasis === 'MASS-FRAC') {
+        let totMass = totalMassKgH;
+        if (totFlow !== null && totFlow > 0) {
+          if (flowBase === 'MOLE') {
+            const sumW = Array.from(agg.values()).reduce((a, b) => a + b, 0) || 1;
+            let invAvgMw = 0;
+            for (const [k, w] of agg.entries()) {
+              invAvgMw += (w / sumW) / mwOfComp(k);
+            }
+            const avgMw = invAvgMw > 0 ? 1 / invAvgMw : 50;
+            totMass = toMoleFlowKmolH(totFlow, units.moleFlow) * avgMw;
+          } else {
+            totMass = toMassFlowKgH(totFlow, units.massFlow);
+          }
+        }
+        const effMass = totMass ?? 1000;
+        for (const [k, w] of agg.entries()) {
+          resolvedFlows[k] = Number((w * effMass).toFixed(4));
+        }
+      } else if (effectiveBasis === 'MOLE-FRAC') {
+        let effMole = totalMoleKmolH;
+        if (totFlow !== null && totFlow > 0) {
+          if (flowBase === 'MASS') {
+            const sumX = Array.from(agg.values()).reduce((a, b) => a + b, 0) || 1;
+            let avgMw = 0;
+            for (const [k, x] of agg.entries()) {
+              avgMw += (x / sumX) * mwOfComp(k);
+            }
+            effMole = avgMw > 0 ? toMassFlowKgH(totFlow, units.massFlow) / avgMw : 100;
+          } else {
+            effMole = toMoleFlowKmolH(totFlow, units.moleFlow);
+          }
+        }
+        const finalMole = effMole ?? 100;
+        for (const [k, x] of agg.entries()) {
+          resolvedFlows[k] = Number((x * finalMole * mwOfComp(k)).toFixed(4));
+        }
+      }
+    }
+
+    defs[feedNodeId].params = {
+      ...defs[feedNodeId].params,
+      feedTempC: tempC,
+      feedPressKgcm2g: barAToKgcm2g(pressBarA),
+      feedFlowsKgH: resolvedFlows,
+    };
+  }
+
+  // PRATIO 지정된 압축기/펌프 토출압 보정
+  for (const [nodeId, pratio] of pendingPratioMap.entries()) {
+    const def = defs[nodeId];
+    if (def && def.params.outletPressKgcm2g === undefined && pratio > 0) {
+      def.params.outletPressKgcm2g = barAToKgcm2g(1.01325 * pratio);
+    }
+  }
+
+  const edges = buildFlowEdgesFromTopology(
+    defs,
+    blockMap,
+    allStreamOrder,
+    streamProducer,
+    streamConsumers,
+    feedNodeIdByStream,
+    prodNodeIdByStream
+  );
+  const rfNodes = computeAutoLayout(defs, edges);
+
+  return {
+    title,
+    defs,
+    rfNodes,
+    edges,
+    activeComponents,
+    propertyMethod,
+    summary: {
+      unitCount: Object.keys(defs).length,
+      edgeCount: edges.length,
+      mappedCompCount,
+      unmappedComps,
+    },
+    warnings,
+  };
+}
+
+// ============================================================================
 // 6. 메인 파서: parseProcessTextFile
 // ============================================================================
 
@@ -811,6 +2067,10 @@ export function parseProcessTextFile(
   rawText: string,
   fileName?: string
 ): ProcessTextImportResult {
+  if (isNativeBkpFormat(rawText || '')) {
+    return parseNativeBkp(rawText || '', fileName);
+  }
+
   const warnings: string[] = [];
   const sections = splitIntoSections(rawText || '');
 
@@ -927,11 +2187,6 @@ export function parseProcessTextFile(
   }
 
   // 2차 패스: FLOWSHEET 토폴로지 파싱
-  interface FlowsheetBlockEntry {
-    id: string;
-    inStreams: string[];
-    outStreams: string[];
-  }
   const flowsheetBlocks: FlowsheetBlockEntry[] = [];
   const blockMap = new Map<string, FlowsheetBlockEntry>();
 
@@ -1462,180 +2717,18 @@ export function parseProcessTextFile(
     }
   }
 
-  // 6차 패스: FlowEdgeDef[] 생성 (포트 자동 매핑)
-  const edges: FlowEdgeDef[] = [];
-
-  const pickSourcePort = (
-    srcNode: FlowNodeDef,
-    outIndex: number,
-    totalOuts: number
-  ): SourcePortId => {
-    if (srcNode.unitType === 'separator') {
-      if (outIndex === 0) return 'vapor';
-      if (outIndex === 1) return 'liquid';
-      return 'out';
-    }
-    if (srcNode.unitType === 'distillation') {
-      if (outIndex === 0) return 'vapor';
-      if (outIndex === 1) return 'liquid';
-      if (outIndex === 2) return 'side_cut';
-      return 'out';
-    }
-    if (srcNode.unitType === 'splitter') {
-      if (outIndex === 0) return 'out1';
-      if (outIndex === 1) return 'out2';
-      return 'out';
-    }
-    if (srcNode.unitType === 'hex' && totalOuts >= 2) {
-      return outIndex === 0 ? 'out' : 'util_out';
-    }
-    return 'out';
-  };
-
-  const pickTargetPort = (
-    tgtNode: FlowNodeDef,
-    inIndex: number,
-    totalIns: number
-  ): TargetPortId => {
-    if (tgtNode.unitType === 'hex' && totalIns >= 2) {
-      return inIndex === 0 ? 'in' : 'util_in';
-    }
-    if (tgtNode.unitType === 'absorber' && totalIns >= 2) {
-      return inIndex === 0 ? 'in' : 'solvent';
-    }
-    return 'in';
-  };
-
-  for (const s of allStreamOrder) {
-    const prod = streamProducer.get(s);
-    const consList = streamConsumers.get(s) ?? [];
-    const sourceNodeId = prod ? prod.nodeId : feedNodeIdByStream.get(s);
-    if (!sourceNodeId || !defs[sourceNodeId]) continue;
-
-    const srcDef = defs[sourceNodeId];
-    const srcBlock = prod ? blockMap.get(prod.blockId) : undefined;
-    const sourcePort: SourcePortId = prod
-      ? pickSourcePort(srcDef, prod.outIndex, srcBlock?.outStreams.length ?? 1)
-      : 'out';
-
-    if (consList.length > 0) {
-      consList.forEach((cons, idx) => {
-        const tgtDef = defs[cons.nodeId];
-        if (!tgtDef) return;
-        const tgtBlock = blockMap.get(cons.blockId);
-        const targetPort = pickTargetPort(
-          tgtDef,
-          cons.inIndex,
-          tgtBlock?.inStreams.length ?? 1
-        );
-        edges.push({
-          id: consList.length === 1 ? `edge_${sanitizeId(s)}` : `edge_${sanitizeId(s)}_${idx + 1}`,
-          streamNo: s,
-          name: s,
-          source: sourceNodeId,
-          target: cons.nodeId,
-          sourcePort,
-          targetPort,
-        });
-      });
-    } else {
-      const prodNodeId = prodNodeIdByStream.get(s);
-      if (prodNodeId && defs[prodNodeId]) {
-        edges.push({
-          id: `edge_${sanitizeId(s)}`,
-          streamNo: s,
-          name: s,
-          source: sourceNodeId,
-          target: prodNodeId,
-          sourcePort,
-          targetPort: 'in',
-        });
-      }
-    }
-  }
-
-  // 7차 패스: 좌→우 토폴로지 BFS 자동 레이아웃 (x = 80 + layer * 260, y = 100 + row * 170)
+  // 6차 패스: FlowEdgeDef[] 생성 (포트 자동 매핑) 및 7차 패스: 사이클 안전 자동 레이아웃
+  const edges = buildFlowEdgesFromTopology(
+    defs,
+    blockMap,
+    allStreamOrder,
+    streamProducer,
+    streamConsumers,
+    feedNodeIdByStream,
+    prodNodeIdByStream
+  );
+  const rfNodes = computeAutoLayout(defs, edges);
   const nodeIds = Object.keys(defs);
-  const outAdj = new Map<string, string[]>();
-  const inDeg = new Map<string, number>();
-  for (const id of nodeIds) {
-    outAdj.set(id, []);
-    inDeg.set(id, 0);
-  }
-  for (const e of edges) {
-    outAdj.get(e.source)?.push(e.target);
-    inDeg.set(e.target, (inDeg.get(e.target) ?? 0) + 1);
-  }
-
-  const layerOf = new Map<string, number>();
-  const queue: string[] = [];
-
-  for (const id of nodeIds) {
-    if (defs[id].unitType === 'feed' || (inDeg.get(id) ?? 0) === 0) {
-      layerOf.set(id, 0);
-      queue.push(id);
-    }
-  }
-  if (queue.length === 0 && nodeIds.length > 0) {
-    layerOf.set(nodeIds[0], 0);
-    queue.push(nodeIds[0]);
-  }
-
-  const maxLayerCap = Math.max(1, nodeIds.length);
-  let headIdx = 0;
-  while (headIdx < queue.length) {
-    const cur = queue[headIdx++];
-    const curLayer = layerOf.get(cur) ?? 0;
-    for (const nxt of outAdj.get(cur) ?? []) {
-      const candidate = Math.min(curLayer + 1, maxLayerCap);
-      const prev = layerOf.get(nxt);
-      if (prev === undefined || (candidate > prev && candidate <= maxLayerCap)) {
-        layerOf.set(nxt, candidate);
-        queue.push(nxt);
-      }
-    }
-  }
-
-  for (const id of nodeIds) {
-    if (!layerOf.has(id)) layerOf.set(id, 0);
-  }
-
-  // Product 노드는 항상 우측 끝 열로 정렬
-  const maxNonProdLayer = nodeIds.reduce((acc, id) => {
-    if (defs[id].unitType === 'product') return acc;
-    return Math.max(acc, layerOf.get(id) ?? 0);
-  }, 0);
-  for (const id of nodeIds) {
-    if (defs[id].unitType === 'product') {
-      const curL = layerOf.get(id) ?? 0;
-      layerOf.set(id, Math.max(curL, maxNonProdLayer + 1));
-    }
-  }
-
-  const rowsByLayer = new Map<number, string[]>();
-  for (const id of nodeIds) {
-    const l = layerOf.get(id) ?? 0;
-    const list = rowsByLayer.get(l) ?? [];
-    list.push(id);
-    rowsByLayer.set(l, list);
-  }
-
-  const rfNodes: ProcessTextImportResult['rfNodes'] = [];
-  const sortedLayers = Array.from(rowsByLayer.keys()).sort((a, b) => a - b);
-  for (const layer of sortedLayers) {
-    const idsInLayer = rowsByLayer.get(layer) ?? [];
-    idsInLayer.forEach((unitId, row) => {
-      rfNodes.push({
-        id: unitId,
-        type: 'unitNode',
-        position: {
-          x: 80 + layer * 260,
-          y: 100 + row * 170,
-        },
-        data: { unitId },
-      });
-    });
-  }
 
   return {
     title,
