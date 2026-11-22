@@ -191,13 +191,12 @@ export function isPlantAllowed(
   plantId: string,
   user?: { role?: string; allowed_plants?: string[] | null } | null
 ): boolean {
+  if (plantId === 'new_builder' || plantId === 'classic_sim') return true;
   if (!user) return true;
   if (user.role === 'admin') return true;
   if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return true;
   if (user.allowed_plants.includes('*')) return true;
-  if (user.allowed_plants.includes('simulator_only')) {
-    return plantId === 'new_builder' || plantId === 'classic_sim';
-  }
+  if (user.allowed_plants.includes('simulator_only')) return false;
   return user.allowed_plants.includes(plantId);
 }
 
