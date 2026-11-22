@@ -1922,28 +1922,6 @@ export default function ClassicSimulatorPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <button
                 type="button"
-                onClick={() => processTextInputRef.current?.click()}
-                title="공정 시뮬레이션 텍스트 파일(.bkp / .inp) 가져오기"
-                style={{
-                  height: 26,
-                  padding: '0 9px',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  border: '1px solid #93C5FD',
-                  background: '#EFF6FF',
-                  color: '#1D4ED8',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <FolderOpenIcon size={12} /> .bkp/.inp 가져오기
-              </button>
-              <button
-                type="button"
                 onClick={handleExportProcessText}
                 title="현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기"
                 style={{

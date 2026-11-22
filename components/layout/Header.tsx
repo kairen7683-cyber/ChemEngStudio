@@ -31,6 +31,7 @@ import {
   OPEN_SHORTCUT_CALC_EVENT,
   type UnifiedSavedCaseEntry,
 } from '@/lib/caseManagerBridge';
+import { parseProcessTextFile } from '@/lib/interop/processTextInterop';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -78,6 +79,7 @@ export default function Header() {
   const outputsDropdownRef = useRef<HTMLDivElement | null>(null);
   const outputsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
+  const processTextImportRef = useRef<HTMLInputElement | null>(null);
 
   const {
     activePlantId,
@@ -380,6 +382,79 @@ export default function Header() {
         router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
       } catch {
         alert(t(lang, 'header_json_parse_error'));
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleImportProcessTextCase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rawText = String(reader.result ?? '');
+        const res = parseProcessTextFile(rawText, file.name);
+        const importedDefs = Array.isArray(res.defs) ? res.defs : Object.values(res.defs ?? {});
+        if (importedDefs.length === 0) {
+          alert(
+            lang === 'en'
+              ? `No valid process blocks found in "${file.name}".`
+              : `"${file.name}" 파일에서 불러올 수 있는 공정 장치 블록을 찾지 못했습니다.`
+          );
+          return;
+        }
+        const positions: Record<string, { x: number; y: number }> = {};
+        (res.rfNodes ?? []).forEach((n, idx) => {
+          if (n?.id && n.position) {
+            positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+          } else if (importedDefs[idx]) {
+            positions[importedDefs[idx].id] = { x: 80 + idx * 180, y: 120 };
+          }
+        });
+        const baseName =
+          (res.title || file.name.replace(/\.(bkp|inp|txt)$/i, '') || 'imported_process').trim();
+        const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
+        const actualState = {
+          simDefs: importedDefs,
+          flowEdges: res.edges,
+          positions,
+          activeComponents: res.activeComponents,
+          propertyMethod: res.propertyMethod,
+          thermoMethod: res.propertyMethod,
+          presetId: 'custom',
+        };
+        setCaseMenuOpen(false);
+        setActiveCaseTitle(baseName, targetPlantId);
+        stagePendingCaseLoad({
+          action: 'load_project',
+          targetPlantId,
+          uiMode: simUiMode,
+          caseName: baseName,
+          rawProject: {
+            id: `import_inp_${Date.now()}`,
+            name: baseName,
+            savedAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'ko-KR', { hour12: false }),
+            state: actualState,
+          },
+        });
+        setActivePlantId(targetPlantId);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+        }
+        router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
+        if (res.warnings.length > 0) {
+          alert(
+            `${baseName}: 장치 ${res.summary.unitCount}개 · 스트림 ${res.summary.edgeCount}개 불러오기 완료\n\n참고:\n- ${res.warnings.slice(0, 4).join('\n- ')}`
+          );
+        }
+      } catch {
+        alert(
+          lang === 'en'
+            ? 'Failed to parse the .bkp/.inp process file.'
+            : '.bkp / .inp 공정 파일을 해석하는 중 오류가 발생했습니다.'
+        );
       }
     };
     reader.readAsText(file);
@@ -710,6 +785,43 @@ export default function Header() {
                   type="file"
                   accept=".json,application/json"
                   onChange={handleImportJsonCase}
+                  style={{ display: 'none' }}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => processTextImportRef.current?.click()}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 7,
+                    border: '1px dashed #93C5FD',
+                    background: '#F8FAFF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                    color: '#1D4ED8',
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <FolderOpenIcon size={13} />
+                    <span>
+                      {lang === 'en'
+                        ? 'Import .bkp / .inp Process File...'
+                        : '.bkp / .inp 공정 파일 불러오기...'}
+                    </span>
+                  </span>
+                </button>
+                <input
+                  ref={processTextImportRef}
+                  type="file"
+                  accept=".bkp,.inp,.txt"
+                  onChange={handleImportProcessTextCase}
                   style={{ display: 'none' }}
                 />
 
