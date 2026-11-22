@@ -11,9 +11,35 @@ import {
   type UnitQuantity,
 } from '@/lib/units/unitSystem';
 import { DEFAULT_TAG_STANDARD, type TagStandardId } from '@/lib/units/tagNaming';
+import type { AppLang } from '@/lib/i18n/uiText';
 
 const STORAGE_KEY = 'chemeng_unit_prefs_v1';
 const TAG_STD_STORAGE_KEY = 'chemeng_tag_standard_v1';
+const LANG_STORAGE_KEY = 'chemeng_lang_v1';
+
+function loadInitialLang(): AppLang {
+  if (typeof window === 'undefined') return 'ko';
+  try {
+    const raw = window.localStorage.getItem(LANG_STORAGE_KEY);
+    if (raw === 'ko' || raw === 'en') return raw;
+    const browserLang = (window.navigator?.language || '').toLowerCase();
+    return browserLang.startsWith('ko') ? 'ko' : 'en';
+  } catch {
+    return 'ko';
+  }
+}
+
+function saveLang(lang: AppLang): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LANG_STORAGE_KEY, lang);
+  } catch {
+    // ignore
+  }
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.lang = lang;
+  }
+}
 
 function loadInitialTagStandard(): TagStandardId {
   if (typeof window === 'undefined') return DEFAULT_TAG_STANDARD;
@@ -68,12 +94,14 @@ interface UnitStoreState {
   units: UnitPreferences;
   presetId: UnitPresetId;
   tagStandard: TagStandardId;
+  lang: AppLang;
   hydrated: boolean;
   revision: number;
   hydrate: () => void;
   setUnit: (quantity: UnitQuantity, unitId: string) => void;
   applyPreset: (presetId: Exclude<UnitPresetId, 'CUSTOM'>) => void;
   setTagStandard: (std: TagStandardId) => void;
+  setLang: (lang: AppLang) => void;
   resetDefaults: () => void;
 }
 
@@ -81,6 +109,7 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
   units: { ...DEFAULT_UNIT_PREFS },
   presetId: 'METRIC_ENG',
   tagStandard: DEFAULT_TAG_STANDARD,
+  lang: 'ko',
   hydrated: false,
   revision: 0,
 
@@ -88,10 +117,15 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
     if (get().hydrated) return;
     const loaded = loadInitialUnits();
     const loadedTagStd = loadInitialTagStandard();
+    const loadedLang = loadInitialLang();
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.lang = loadedLang;
+    }
     set({
       units: loaded,
       presetId: detectPresetId(loaded),
       tagStandard: loadedTagStd,
+      lang: loadedLang,
       hydrated: true,
     });
   },
@@ -99,6 +133,11 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
   setTagStandard: std => {
     saveTagStandard(std);
     set({ tagStandard: std });
+  },
+
+  setLang: lang => {
+    saveLang(lang);
+    set({ lang });
   },
 
   setUnit: (quantity, unitId) => {

@@ -40,7 +40,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 공정도·수지', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=evap', equipTab: 'evap' },
       { key: 'equip', label: '③ 장치목록 (60+)', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성·기준', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성·기준', href: '/process-economics' },
     ],
   },
   {
@@ -57,7 +57,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이션', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=evap', equipTab: 'evap' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/process-economics' },
     ],
   },
   {
@@ -74,7 +74,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이션', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=packing', equipTab: 'packing' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/process-economics' },
     ],
   },
   {
@@ -91,7 +91,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이션', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=distill', equipTab: 'distill' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/process-economics' },
     ],
   },
   {
@@ -108,7 +108,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이션', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=cms_hub', equipTab: 'cms_hub' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/process-economics' },
     ],
   },
   {
@@ -125,7 +125,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이션', href: '/material-balance' },
       { key: 'design', label: '② 핵심장치 상세설계', shortLabel: '② 장치설계', href: '/equipment-design?tab=mdi_hub', equipTab: 'mdi_hub' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 경제성', href: '/process-economics' },
     ],
   },
   {
@@ -142,7 +142,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
     tabs: [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 시뮬레이터', href: '/flowsheet-simulator' },
       { key: 'equip', label: '③ 장치목록', shortLabel: '③ 장치목록', href: '/equipment-design?tab=equip', equipTab: 'equip' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 벤치마크', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 벤치마크', href: '/process-economics' },
     ],
   },
   {
@@ -158,7 +158,7 @@ export const PLANT_REGISTRY: PlantRegistryItem[] = [
     defaultHref: '/classic-simulator',
     tabs: [
       { key: 'pfd', label: '① 시뮬레이터 도면', shortLabel: '① 클래식 UI', href: '/classic-simulator' },
-      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 벤치마크', href: '/pep-yearbook' },
+      { key: 'econ', label: '④ 원단위·경제성', shortLabel: '④ 벤치마크', href: '/process-economics' },
     ],
   },
 ];
@@ -175,6 +175,18 @@ export const PLANT_GROUP_TO_ID: Record<'electrolysis' | 'hcl1A' | 'ech' | 'cms' 
   mdi: 'mdi_plant',
 };
 
+export function isSimulatorOnlyUser(
+  user?: { role?: string; allowed_plants?: string[] | null } | null
+): boolean {
+  if (!user || user.role === 'admin') return false;
+  return (
+    Array.isArray(user.allowed_plants) &&
+    user.allowed_plants.length > 0 &&
+    user.allowed_plants.includes('simulator_only') &&
+    !user.allowed_plants.includes('*')
+  );
+}
+
 export function isPlantAllowed(
   plantId: string,
   user?: { role?: string; allowed_plants?: string[] | null } | null
@@ -183,6 +195,9 @@ export function isPlantAllowed(
   if (user.role === 'admin') return true;
   if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return true;
   if (user.allowed_plants.includes('*')) return true;
+  if (user.allowed_plants.includes('simulator_only')) {
+    return plantId === 'new_builder' || plantId === 'classic_sim';
+  }
   return user.allowed_plants.includes(plantId);
 }
 

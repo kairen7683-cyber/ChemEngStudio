@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import {
   CalcShortcutIcon,
   ColumnInternalIcon,
@@ -675,18 +676,15 @@ export default function LandingPage({
   registrationMode,
   authError,
 }: LandingPageProps) {
-  const [lang, setLang] = useState<Lang>('ko');
+  const lang = useUnitStore(s => s.lang);
+  const setLang = useUnitStore(s => s.setLang);
+  const hydrateUnits = useUnitStore(s => s.hydrate);
   const [activeLegalDoc, setActiveLegalDoc] = useState<LegalDocKey | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    try {
-      const browserLang = (navigator.language || '').toLowerCase();
-      setLang(browserLang.startsWith('ko') ? 'ko' : 'en');
-    } catch {
-      setLang('en');
-    }
-  }, []);
+    hydrateUnits();
+  }, [hydrateUnits]);
 
   useEffect(() => {
     if (!activeLegalDoc) return;

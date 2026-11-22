@@ -48,6 +48,8 @@ PBKDF2_ITERS = 260_000
 MAX_WORKSPACE_BYTES = 5 * 1024 * 1024
 MAX_WORKSPACE_KEYS_PER_USER = 50
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+MOBILE_UA_RE = re.compile(r"Android|iPhone|iPad|iPod|Mobile|Windows Phone", re.IGNORECASE)
 WS_KEY_RE = re.compile(r"^[a-zA-Z0-9_.:-]{1,120}$")
 
 # Simple in-memory sliding IP rate limit for auth attempts
@@ -168,6 +170,61 @@ def get_db():
         conn.close()
 
 
+def parse_user_agent(ua: str) -> tuple[str, str]:
+    """Return (device_type, device_label) from a User-Agent string."""
+    raw = (ua or "").strip()
+    is_mobile = bool(MOBILE_UA_RE.search(raw))
+    device_type = "mobile" if is_mobile else "desktop"
+
+    if not raw:
+        return device_type, "Unknown · Mobile" if is_mobile else "Unknown · Browser"
+
+    low = raw.lower()
+    if "iphone" in low or "ipad" in low or "ipod" in low:
+        os_name = "iOS"
+    elif "android" in low:
+        os_name = "Android"
+    elif "windows phone" in low:
+        os_name = "Windows Phone"
+    elif "windows" in low:
+        os_name = "Windows"
+    elif "mac os x" in low or "macintosh" in low:
+        os_name = "macOS"
+    elif "cros" in low:
+        os_name = "ChromeOS"
+    elif "linux" in low:
+        os_name = "Linux"
+    else:
+        os_name = "Unknown OS"
+
+    if "edg/" in low or "edge/" in low or "edga/" in low or "edgios/" in low:
+        browser = "Edge"
+    elif "samsungbrowser/" in low:
+        browser = "Samsung Internet"
+    elif "opr/" in low or "opera" in low:
+        browser = "Opera"
+    elif "whale/" in low:
+        browser = "Whale"
+    elif "firefox/" in low or "fxios/" in low:
+        browser = "Firefox"
+    elif "chrome/" in low or "crios/" in low:
+        browser = "Chrome"
+    elif "safari/" in low:
+        browser = "Safari"
+    else:
+        browser = "Mobile" if is_mobile else "Browser"
+
+    return device_type, f"{os_name} · {browser}"
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, col_def: str) -> None:
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_def}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column name" not in str(exc).lower():
+            raise
+
+
 def init_db() -> str:
     """Initialize SQLite schema and seed admin user + initial invite code if missing.
     Returns the active ADMIN_MASTER_KEY.
@@ -228,11 +285,18 @@ def init_db() -> str:
         """
     )
 
-    try:
-        conn.execute("ALTER TABLE users ADD COLUMN allowed_plants TEXT DEFAULT NULL")
-    except sqlite3.OperationalError as exc:
-        if "duplicate column name" not in str(exc).lower():
-            raise
+    _ensure_column(conn, "users", "allowed_plants TEXT DEFAULT NULL")
+    _ensure_column(conn, "users", "email TEXT DEFAULT ''")
+    _ensure_column(conn, "sessions", "device_type TEXT DEFAULT 'desktop'")
+    _ensure_column(conn, "sessions", "device_label TEXT DEFAULT ''")
+    _ensure_column(conn, "sessions", "last_seen_at TEXT DEFAULT ''")
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_users_lower_email ON users(lower(email)) WHERE email != ''"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sessions_user_device_exp ON sessions(user_id, device_type, expires_at)"
+    )
 
     defaults = {
         "registration_mode": "invite_only",
@@ -373,10 +437,13 @@ def normalize_allowed_plants_for_db(plants: Optional[list[str]]) -> Optional[str
 
 
 def serialize_user(row: sqlite3.Row) -> dict[str, Any]:
-    raw_allowed = row["allowed_plants"] if "allowed_plants" in row.keys() else None
+    keys = row.keys()
+    raw_allowed = row["allowed_plants"] if "allowed_plants" in keys else None
+    raw_email = row["email"] if "email" in keys else ""
     return {
         "id": row["id"],
         "username": row["username"],
+        "email": raw_email or "",
         "display_name": row["display_name"],
         "role": row["role"],
         "status": row["status"],
@@ -387,15 +454,30 @@ def serialize_user(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def resolve_session_user(request: Request, conn: sqlite3.Connection) -> Optional[sqlite3.Row]:
+def _should_touch_last_seen(last_seen_iso: Optional[str], now_dt: datetime) -> bool:
+    if not last_seen_iso:
+        return True
+    try:
+        prev = datetime.fromisoformat(last_seen_iso)
+        if prev.tzinfo is None:
+            prev = prev.replace(tzinfo=timezone.utc)
+        return (now_dt - prev).total_seconds() >= 60.0
+    except Exception:
+        return True
+
+
+def resolve_session_user(
+    request: Request, conn: sqlite3.Connection, force_touch: bool = False
+) -> Optional[sqlite3.Row]:
     raw_token = request.cookies.get(SESSION_COOKIE_NAME)
     if not raw_token:
         return None
     t_hash = hash_token(raw_token)
-    now_iso = iso_now()
+    now_dt = utcnow()
+    now_iso = now_dt.isoformat()
     row = conn.execute(
         """
-        SELECT u.*
+        SELECT u.*, s.last_seen_at AS _session_last_seen_at
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ?
@@ -404,6 +486,11 @@ def resolve_session_user(request: Request, conn: sqlite3.Connection) -> Optional
     ).fetchone()
     if not row or row["status"] != "active":
         return None
+    if force_touch or _should_touch_last_seen(row["_session_last_seen_at"], now_dt):
+        conn.execute(
+            "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+            (now_iso, t_hash),
+        )
     return row
 
 
@@ -431,8 +518,51 @@ def require_admin_or_master(
 
 
 def create_session_for_user(
-    conn: sqlite3.Connection, user_id: int, request: Request, remember_me: bool = True
-) -> str:
+    conn: sqlite3.Connection,
+    user_id: int,
+    request: Request,
+    remember_me: bool = True,
+    user_role: str = "user",
+) -> tuple[str, str, bool]:
+    """Create a new session and enforce per-device-type limits.
+    Returns (raw_token, device_type, evicted_previous_device).
+    """
+    now_iso = iso_now()
+    ua_raw = request.headers.get("user-agent", "")[:240]
+    device_type, device_label = parse_user_agent(ua_raw)
+
+    # Clean up expired sessions for this user first
+    conn.execute(
+        "DELETE FROM sessions WHERE user_id = ? AND expires_at <= ?",
+        (user_id, now_iso),
+    )
+
+    # Enforce per-device-type active session limit:
+    # - non-admin: max 1 desktop + max 1 mobile
+    # - admin: max 5 per device_type (sliding oldest out above 5)
+    max_per_type = 5 if user_role == "admin" else 1
+    existing_same_type = conn.execute(
+        """
+        SELECT token_hash
+        FROM sessions
+        WHERE user_id = ?
+          AND COALESCE(NULLIF(device_type, ''), 'desktop') = ?
+          AND expires_at > ?
+        ORDER BY created_at DESC, token_hash DESC
+        """,
+        (user_id, device_type, now_iso),
+    ).fetchall()
+
+    keep_count = max(0, max_per_type - 1)
+    to_evict = [r["token_hash"] for r in existing_same_type[keep_count:]]
+    evicted_previous_device = len(to_evict) > 0
+    if to_evict:
+        placeholders = ",".join("?" for _ in to_evict)
+        conn.execute(
+            f"DELETE FROM sessions WHERE token_hash IN ({placeholders})",
+            to_evict,
+        )
+
     raw_token = secrets.token_urlsafe(32)
     t_hash = hash_token(raw_token)
     ttl = (
@@ -443,20 +573,26 @@ def create_session_for_user(
     exp = (utcnow() + ttl).isoformat()
     conn.execute(
         """
-        INSERT INTO sessions(token_hash, user_id, expires_at, ip_addr, user_agent, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions(
+            token_hash, user_id, expires_at, ip_addr, user_agent,
+            device_type, device_label, last_seen_at, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             t_hash,
             user_id,
             exp,
             client_ip(request),
-            request.headers.get("user-agent", "")[:240],
-            iso_now(),
+            ua_raw,
+            device_type,
+            device_label,
+            now_iso,
+            now_iso,
         ),
     )
-    conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (iso_now(), user_id))
-    return raw_token
+    conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now_iso, user_id))
+    return raw_token, device_type, evicted_previous_device
 
 
 # ── Pydantic Models ─────────────────────────────────────────────────────
@@ -467,7 +603,8 @@ class LoginPayload(BaseModel):
 
 
 class RegisterPayload(BaseModel):
-    username: str
+    username: str = ""
+    email: Optional[str] = None
     password: str
     display_name: str = ""
     invite_code: Optional[str] = None
@@ -499,7 +636,8 @@ class AdminSettingsPayload(BaseModel):
 
 
 class AdminCreateUserPayload(BaseModel):
-    username: str
+    username: str = ""
+    email: Optional[str] = None
     display_name: str = ""
     password: str
     role: Literal["admin", "user"] = "user"
@@ -553,49 +691,113 @@ def api_auth_status(request: Request):
 
 
 @app.get("/api/auth/me")
-def api_auth_me(user: sqlite3.Row = Depends(require_active_user)):
-    return {"user": serialize_user(user)}
+def api_auth_me(request: Request):
+    with get_db() as conn:
+        user = resolve_session_user(request, conn, force_touch=True)
+        if not user:
+            raise HTTPException(status_code=401, detail="로그인이 필요합니다.")
+        return {"user": serialize_user(user)}
 
 
 @app.post("/api/auth/login")
 def api_auth_login(payload: LoginPayload, request: Request, response: Response):
     ip = client_ip(request)
     check_auth_rate_limit(ip)
-    uname = payload.username.strip()
+    ident = payload.username.strip()
+    if not ident:
+        raise HTTPException(status_code=400, detail="이메일 또는 아이디를 입력하세요.")
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username = ?", (uname,)).fetchone()
+        row = conn.execute(
+            """
+            SELECT * FROM users
+            WHERE lower(username) = lower(?) OR (email != '' AND lower(email) = lower(?))
+            LIMIT 1
+            """,
+            (ident, ident),
+        ).fetchone()
         if not row or not verify_password(payload.password, row["password_hash"]):
             record_auth_failure(ip)
-            raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+            raise HTTPException(status_code=401, detail="아이디(이메일) 또는 비밀번호가 올바르지 않습니다.")
         if row["status"] == "pending":
             raise HTTPException(status_code=403, detail="관리자 승인 대기 중인 계정입니다.")
         if row["status"] != "active":
             raise HTTPException(status_code=403, detail="비활성화(정지)된 계정입니다. 관리자에게 문의하세요.")
         clear_auth_failures(ip)
-        raw_token = create_session_for_user(conn, row["id"], request, remember_me=payload.remember_me)
+        raw_token, device_type, evicted_previous_device = create_session_for_user(
+            conn,
+            row["id"],
+            request,
+            remember_me=payload.remember_me,
+            user_role=row["role"],
+        )
         set_session_cookie(response, request, raw_token, remember_me=payload.remember_me)
         refreshed = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
-        return {"user": serialize_user(refreshed)}
+        return {
+            "user": serialize_user(refreshed),
+            "device_type": device_type,
+            "evicted_previous_device": evicted_previous_device,
+        }
+
+
+def _normalize_username_and_email(
+    raw_username: Optional[str], raw_email: Optional[str]
+) -> tuple[str, str]:
+    email_val = (raw_email or "").strip().lower()
+    uname = (raw_username or "").strip()
+
+    if email_val:
+        if len(email_val) > 120 or not EMAIL_RE.match(email_val):
+            raise HTTPException(status_code=400, detail="올바른 이메일 주소 형식이 아닙니다.")
+        if not uname:
+            uname = email_val
+
+    if not uname:
+        raise HTTPException(status_code=400, detail="이메일 또는 아이디를 입력하세요.")
+
+    if uname != email_val:
+        if "@" in uname:
+            uname_low = uname.lower()
+            if len(uname_low) > 120 or not EMAIL_RE.match(uname_low):
+                raise HTTPException(status_code=400, detail="올바른 이메일 주소 형식이 아닙니다.")
+            uname = uname_low
+            if not email_val:
+                email_val = uname_low
+        elif not USERNAME_RE.match(uname):
+            raise HTTPException(
+                status_code=400,
+                detail="아이디는 3~32자의 영문·숫자·밑줄(_), 하이픈(-), 점(.)만 가능합니다.",
+            )
+
+    return uname, email_val
 
 
 @app.post("/api/auth/register")
 def api_auth_register(payload: RegisterPayload, request: Request, response: Response):
     ip = client_ip(request)
     check_auth_rate_limit(ip)
-    uname = payload.username.strip()
-    dname = payload.display_name.strip() or uname
-    if not USERNAME_RE.match(uname):
-        raise HTTPException(
-            status_code=400,
-            detail="아이디는 3~32자의 영문·숫자·밑줄(_), 하이픈(-), 점(.)만 가능합니다.",
-        )
+    uname, email_val = _normalize_username_and_email(payload.username, payload.email)
+    dname = payload.display_name.strip() or (uname.split("@")[0] if "@" in uname else uname)
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="비밀번호는 최소 6자 이상이어야 합니다.")
 
     with get_db() as conn:
-        existing = conn.execute("SELECT id FROM users WHERE username = ?", (uname,)).fetchone()
-        if existing:
+        existing_u = conn.execute(
+            "SELECT id FROM users WHERE lower(username) = lower(?)",
+            (uname,),
+        ).fetchone()
+        if existing_u:
             raise HTTPException(status_code=409, detail="이미 사용 중인 아이디입니다.")
+
+        if email_val:
+            existing_e = conn.execute(
+                """
+                SELECT id FROM users
+                WHERE (email != '' AND lower(email) = lower(?)) OR lower(username) = lower(?)
+                """,
+                (email_val, email_val),
+            ).fetchone()
+            if existing_e:
+                raise HTTPException(status_code=409, detail="이미 등록된 이메일 주소입니다.")
 
         reg_mode = get_setting(conn, "registration_mode", "invite_only")
         if reg_mode == "invite_only":
@@ -627,20 +829,43 @@ def api_auth_register(payload: RegisterPayload, request: Request, response: Resp
             new_status = "active"
             msg = "회원가입이 완료되었습니다."
 
+        default_beta_acl = json.dumps(["simulator_only"], ensure_ascii=False)
         cur = conn.execute(
             """
-            INSERT INTO users(username, display_name, password_hash, role, status, created_at)
-            VALUES (?, ?, ?, 'user', ?, ?)
+            INSERT INTO users(username, email, display_name, password_hash, role, status, allowed_plants, created_at)
+            VALUES (?, ?, ?, ?, 'user', ?, ?, ?)
             """,
-            (uname, dname, hash_password(payload.password), new_status, iso_now()),
+            (
+                uname,
+                email_val,
+                dname,
+                hash_password(payload.password),
+                new_status,
+                default_beta_acl,
+                iso_now(),
+            ),
         )
         new_id = cur.lastrowid
         new_user = conn.execute("SELECT * FROM users WHERE id = ?", (new_id,)).fetchone()
+        device_type: Optional[str] = None
+        evicted_previous_device = False
         if new_status == "active":
-            raw_token = create_session_for_user(conn, new_id, request, remember_me=payload.remember_me)
+            raw_token, device_type, evicted_previous_device = create_session_for_user(
+                conn,
+                new_id,
+                request,
+                remember_me=payload.remember_me,
+                user_role="user",
+            )
             set_session_cookie(response, request, raw_token, remember_me=payload.remember_me)
         clear_auth_failures(ip)
-        return {"status": new_status, "message": msg, "user": serialize_user(new_user)}
+        return {
+            "status": new_status,
+            "message": msg,
+            "user": serialize_user(new_user),
+            "device_type": device_type,
+            "evicted_previous_device": evicted_previous_device,
+        }
 
 
 @app.post("/api/auth/logout")
@@ -651,6 +876,61 @@ def api_auth_logout(request: Request, response: Response):
         with get_db() as conn:
             conn.execute("DELETE FROM sessions WHERE token_hash = ?", (t_hash,))
     clear_session_cookie(response, request)
+    return {"ok": True}
+
+
+@app.get("/api/auth/sessions")
+def api_auth_list_sessions(
+    request: Request,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    raw_token = request.cookies.get(SESSION_COOKIE_NAME) or ""
+    current_hash = hash_token(raw_token) if raw_token else ""
+    now_iso = iso_now()
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT token_hash, device_type, device_label, created_at, last_seen_at, expires_at
+            FROM sessions
+            WHERE user_id = ? AND expires_at > ?
+            ORDER BY created_at DESC
+            """,
+            (user["id"], now_iso),
+        ).fetchall()
+    return {
+        "sessions": [
+            {
+                "id": r["token_hash"],
+                "device_type": (r["device_type"] or "desktop"),
+                "device_label": r["device_label"] or "",
+                "created_at": r["created_at"],
+                "last_seen_at": r["last_seen_at"] or r["created_at"],
+                "expires_at": r["expires_at"],
+                "is_current": r["token_hash"] == current_hash,
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.delete("/api/auth/sessions/{session_id}")
+def api_auth_revoke_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    raw_token = request.cookies.get(SESSION_COOKIE_NAME) or ""
+    current_hash = hash_token(raw_token) if raw_token else ""
+    with get_db() as conn:
+        cur = conn.execute(
+            "DELETE FROM sessions WHERE token_hash = ? AND user_id = ?",
+            (session_id, user["id"]),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    if session_id == current_hash:
+        clear_session_cookie(response, request)
     return {"ok": True}
 
 
@@ -828,12 +1108,35 @@ async def api_ai_advise(
 
 
 # ── Admin Console Endpoints (Session OR Master Key) ─────────────────────
+def _active_session_counts_by_user(conn: sqlite3.Connection) -> dict[int, dict[str, int]]:
+    now_iso = iso_now()
+    rows = conn.execute(
+        """
+        SELECT user_id,
+               COALESCE(NULLIF(device_type, ''), 'desktop') AS dtype,
+               COUNT(*) AS cnt
+        FROM sessions
+        WHERE expires_at > ?
+        GROUP BY user_id, dtype
+        """,
+        (now_iso,),
+    ).fetchall()
+    counts: dict[int, dict[str, int]] = {}
+    for r in rows:
+        uid = int(r["user_id"])
+        bucket = counts.setdefault(uid, {"desktop": 0, "mobile": 0})
+        dtype = "mobile" if r["dtype"] == "mobile" else "desktop"
+        bucket[dtype] = int(r["cnt"])
+    return counts
+
+
 @app.get("/api/admin/overview")
 def api_admin_overview(_admin: Optional[sqlite3.Row] = Depends(require_admin_or_master)):
     with get_db() as conn:
         reg_mode = get_setting(conn, "registration_mode", "invite_only")
         ai_limit = int(get_setting(conn, "daily_ai_limit", "30") or "30")
         has_gemini = bool(get_setting(conn, "gemini_api_key", "").strip())
+        sess_counts = _active_session_counts_by_user(conn)
 
         user_rows = conn.execute(
             """
@@ -863,6 +1166,8 @@ def api_admin_overview(_admin: Optional[sqlite3.Row] = Depends(require_admin_or_
                     **serialize_user(r),
                     "workspace_count": r["ws_count"],
                     "workspace_bytes": r["ws_bytes"],
+                    "active_desktop_sessions": sess_counts.get(int(r["id"]), {}).get("desktop", 0),
+                    "active_mobile_sessions": sess_counts.get(int(r["id"]), {}).get("mobile", 0),
                 }
                 for r in user_rows
             ],
@@ -900,6 +1205,7 @@ def api_admin_settings(
 @app.get("/api/admin/users")
 def api_admin_list_users(_admin: Optional[sqlite3.Row] = Depends(require_admin_or_master)):
     with get_db() as conn:
+        sess_counts = _active_session_counts_by_user(conn)
         user_rows = conn.execute(
             """
             SELECT u.*,
@@ -917,6 +1223,8 @@ def api_admin_list_users(_admin: Optional[sqlite3.Row] = Depends(require_admin_o
                     **serialize_user(r),
                     "workspace_count": r["ws_count"],
                     "workspace_bytes": r["ws_bytes"],
+                    "active_desktop_sessions": sess_counts.get(int(r["id"]), {}).get("desktop", 0),
+                    "active_mobile_sessions": sess_counts.get(int(r["id"]), {}).get("mobile", 0),
                 }
                 for r in user_rows
             ]
@@ -928,27 +1236,46 @@ def api_admin_create_user(
     payload: AdminCreateUserPayload,
     _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
 ):
-    uname = payload.username.strip()
-    if not USERNAME_RE.match(uname):
-        raise HTTPException(status_code=400, detail="유효하지 않은 아이디 형식입니다.")
+    uname, email_val = _normalize_username_and_email(payload.username, payload.email)
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="비밀번호는 최소 6자 이상이어야 합니다.")
-    dname = payload.display_name.strip() or uname
+    dname = payload.display_name.strip() or (uname.split("@")[0] if "@" in uname else uname)
     allowed_db = (
         None
         if payload.role == "admin"
         else normalize_allowed_plants_for_db(payload.allowed_plants)
     )
     with get_db() as conn:
-        exists = conn.execute("SELECT id FROM users WHERE username = ?", (uname,)).fetchone()
-        if exists:
+        exists_u = conn.execute(
+            "SELECT id FROM users WHERE lower(username) = lower(?)",
+            (uname,),
+        ).fetchone()
+        if exists_u:
             raise HTTPException(status_code=409, detail="이미 존재하는 아이디입니다.")
+        if email_val:
+            exists_e = conn.execute(
+                """
+                SELECT id FROM users
+                WHERE (email != '' AND lower(email) = lower(?)) OR lower(username) = lower(?)
+                """,
+                (email_val, email_val),
+            ).fetchone()
+            if exists_e:
+                raise HTTPException(status_code=409, detail="이미 등록된 이메일 주소입니다.")
         cur = conn.execute(
             """
-            INSERT INTO users(username, display_name, password_hash, role, status, allowed_plants, created_at)
-            VALUES (?, ?, ?, ?, 'active', ?, ?)
+            INSERT INTO users(username, email, display_name, password_hash, role, status, allowed_plants, created_at)
+            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
             """,
-            (uname, dname, hash_password(payload.password), payload.role, allowed_db, iso_now()),
+            (
+                uname,
+                email_val,
+                dname,
+                hash_password(payload.password),
+                payload.role,
+                allowed_db,
+                iso_now(),
+            ),
         )
         created = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
         return {
@@ -956,6 +1283,19 @@ def api_admin_create_user(
             "user_id": cur.lastrowid,
             "user": serialize_user(created) if created else None,
         }
+
+
+@app.post("/api/admin/users/{user_id}/revoke-sessions")
+def api_admin_revoke_user_sessions(
+    user_id: int,
+    _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
+):
+    with get_db() as conn:
+        target = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        cur = conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    return {"ok": True, "revoked_count": cur.rowcount}
 
 
 @app.patch("/api/admin/users/{user_id}")

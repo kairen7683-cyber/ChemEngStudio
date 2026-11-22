@@ -5,6 +5,7 @@ export type RegistrationMode = 'invite_only' | 'approval' | 'open';
 export interface UserProfile {
   id: number;
   username: string;
+  email?: string;
   display_name: string;
   role: 'admin' | 'user';
   status: 'active' | 'pending' | 'disabled';
@@ -12,6 +13,18 @@ export interface UserProfile {
   daily_ai_count?: number;
   last_login_at?: string | null;
   created_at?: string;
+}
+
+export type AuthUser = UserProfile;
+
+export interface ActiveDeviceSession {
+  id: string;
+  device_type: 'desktop' | 'mobile';
+  device_label: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  is_current: boolean;
 }
 
 export interface AuthStatusResponse {
@@ -24,8 +37,11 @@ export interface AuthStatusResponse {
 }
 
 export interface AdminUserSummary extends UserProfile {
+  email?: string;
   workspace_count: number;
   workspace_bytes: number;
+  active_desktop_sessions?: number;
+  active_mobile_sessions?: number;
 }
 
 export interface InviteCodeItem {
@@ -341,7 +357,11 @@ export async function loginWithPassword(
   username: string,
   password: string,
   rememberMe = true
-): Promise<{ user: UserProfile }> {
+): Promise<{
+  user: UserProfile;
+  device_type?: 'desktop' | 'mobile';
+  evicted_previous_device?: boolean;
+}> {
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     credentials: 'include',
@@ -357,12 +377,19 @@ export async function loginWithPassword(
 }
 
 export async function registerUserAccount(payload: {
-  username: string;
+  username?: string;
+  email?: string;
   password: string;
-  display_name: string;
+  display_name?: string;
   invite_code?: string;
   remember_me?: boolean;
-}): Promise<{ status: 'active' | 'pending'; message: string; user?: UserProfile }> {
+}): Promise<{
+  status: 'active' | 'pending';
+  message: string;
+  user?: UserProfile;
+  device_type?: 'desktop' | 'mobile';
+  evicted_previous_device?: boolean;
+}> {
   const res = await fetch('/api/auth/register', {
     method: 'POST',
     credentials: 'include',
@@ -377,6 +404,29 @@ export async function registerUserAccount(payload: {
     markClientSessionMode(payload.remember_me ?? true);
   }
   return data;
+}
+
+export async function fetchMySessions(): Promise<ActiveDeviceSession[]> {
+  const res = await fetch('/api/auth/sessions', {
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || '활성 기기 목록 조회 실패');
+  }
+  return Array.isArray(data.sessions) ? (data.sessions as ActiveDeviceSession[]) : [];
+}
+
+export async function revokeMySession(sessionId: string): Promise<void> {
+  const res = await fetch(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || '세션 해제 실패');
+  }
 }
 
 export async function logoutAccount(): Promise<void> {
@@ -442,7 +492,8 @@ export async function adminUpdateSettings(patch: {
 }
 
 export async function adminCreateUser(payload: {
-  username: string;
+  username?: string;
+  email?: string;
   display_name: string;
   password: string;
   role: 'admin' | 'user';
@@ -456,6 +507,18 @@ export async function adminCreateUser(payload: {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || '사용자 생성 실패');
+  return data;
+}
+
+export async function adminRevokeUserSessions(
+  userId: number
+): Promise<{ ok: boolean; revoked_count: number }> {
+  const res = await fetch(`/api/admin/users/${userId}/revoke-sessions`, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '사용자 세션 강제 로그아웃 실패');
   return data;
 }
 

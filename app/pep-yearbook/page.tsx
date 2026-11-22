@@ -25,7 +25,7 @@ interface ProcessBlock {
   desc: string;
 }
 
-interface PepProcess {
+interface ProcessEconomicsItem {
   key: string;
   code: string;
   name: string;
@@ -40,10 +40,10 @@ interface PepProcess {
   unitConsumptions: UnitItem[];
 }
 
-const PEP_PROCESS_DB: Record<string, PepProcess> = {
+const PROCESS_ECONOMICS_DB: Record<string, ProcessEconomicsItem> = {
   chlor_alkali: {
     key: 'chlor_alkali',
-    code: 'PEP-CA-01',
+    code: 'ECON-CA-01',
     name: '클로르-알칼리 이온교환막 전해 플랜트 (Chlor-Alkali Electrolysis)',
     product: 'Cl₂ 1.0 ton + NaOH 1.128 ton (100% Dry) + H₂ 0.028 ton (1 ECU 기준)',
     licensor: 'Asahi Kasei (BiTAC) / Thyssenkrupp Uhde / INEOS',
@@ -70,7 +70,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   naoh_evap: {
     key: 'naoh_evap',
-    code: 'PEP-CA-02',
+    code: 'ECON-CA-02',
     name: '가성소다 3중 효용 강하막 증발·농축 공정 (32 wt% → 50 wt% NaOH MEE)',
     product: '50 wt% 가성소다 제품 (100% Dry NaOH 1톤 기준)',
     licensor: 'Bertrams / Sulzer / GEA Falling-Film Evaporator',
@@ -95,7 +95,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   hcl_1a: {
     key: 'hcl_1a',
-    code: 'PEP-HCL-1A',
+    code: 'ECON-HCL-1A',
     name: '1A 초고순도·무수염산(5N AHCl) & 폐염산 압력변동 공비증류(PSD) 회수 플랜트',
     product: '반도체 5N 무수염산(AHCl) + 전자급 35% 염산 패키지',
     licensor: 'SGL Carbon (Graphite Synthesis) / Mersen / 자체 PSD 공정',
@@ -119,7 +119,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   green_h2: {
     key: 'green_h2',
-    code: 'PEP-H2-01',
+    code: 'ECON-H2-01',
     name: '알칼라인 / PEM 수전해 그린수소 생산 플랜트 (Green Hydrogen Electrolysis)',
     product: '고순도 수소 (H₂ 99.999%, 30 barG) + 부생 산소 (O₂ 7.94 ton/t-H₂)',
     licensor: 'Thyssenkrupp Nucera / Nel Hydrogen / Siemens Energy',
@@ -143,7 +143,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   ech_gte: {
     key: 'ech_gte',
-    code: 'PEP-ECH-02',
+    code: 'ECON-ECH-02',
     name: '글리세린 염소화 기반 에피클로로히드린(GTE-ECH) 제조 · 다단 진공증류 플랜트',
     product: '고순도 에피클로로히드린 (ECH ≥ 99.9 wt%)',
     licensor: 'Solvay Epicerol / Spolchemie GTE Process',
@@ -167,7 +167,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   cms_plant: {
     key: 'cms_plant',
-    code: 'PEP-CMS-04',
+    code: 'ECON-CMS-04',
     name: '메틸클로라이드 AIBN 액상 염소화 클로로메탄 공정 (MCL 120 + CFM 80 T/D)',
     product: '고순도 메틸렌클로라이드(MCL 99.99%) 120 T/D + 클로로포름(CFM 99.99%) 80 T/D (합계 200 T/D) + 부생 무수 HCl 0.566 t/t-CMS',
     licensor: 'Solvay / Shin-Etsu / Tokuyama Liquid-Phase AIBN Chlorination',
@@ -194,7 +194,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   mdi_plant: {
     key: 'mdi_plant',
-    code: 'PEP-MDI-05',
+    code: 'ECON-MDI-05',
     name: 'MDI 10만톤 통합 플랜트 (MDA · 포스겐화 · Pure/PMDI)',
     product: 'Pure 4,4\'-MDI (4,500 kg/h · 36%) + Polymeric MDI (8,000 kg/h · 64%) · 합계 12,500 kg/h (100,000 MT/yr) + 부생 무수 HCl 0.659 t/t-MDI',
     licensor: '2-Stage Liquid-Phase Phosgenation Process',
@@ -223,7 +223,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   amine_ccus: {
     key: 'amine_ccus',
-    code: 'PEP-CC-01',
+    code: 'ECON-CC-01',
     name: '아민계(MEA 30 wt%) 연소후 CO₂ 포집·액화 공정 (Post-Combustion CCUS)',
     product: '액화 고순도 이산화탄소 (L-CO₂ 99.9%, 18 barG, -25°C)',
     licensor: 'Shell CANSOLV / MHI KM-CDR / Fluor Econamine',
@@ -247,7 +247,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
   methanol_purif: {
     key: 'methanol_purif',
-    code: 'PEP-ME-01',
+    code: 'ECON-ME-01',
     name: '고순도 전자급 메탄올/용제 2탑 증류 회수 공정 (Solvent Recovery)',
     product: '고순도 정제 메탄올 (99.95 wt% Grade AA)',
     licensor: 'Sulzer Chemtech / Koch-Glitsch Distillation',
@@ -270,7 +270,7 @@ const PEP_PROCESS_DB: Record<string, PepProcess> = {
   },
 };
 
-function getPlantPepKeys(plantId: PlantId): string[] {
+function getPlantEconomicsKeys(plantId: PlantId): string[] {
   switch (plantId) {
     case 'clorsim':
     case 'clorsim_sim':
@@ -289,15 +289,15 @@ function getPlantPepKeys(plantId: PlantId): string[] {
   }
 }
 
-export default function PepYearbookPage() {
+export default function ProcessEconomicsPage() {
   const activePlantId = useBalanceStore(s => s.activePlantId);
   const plantMeta = getPlantRegistryItem(activePlantId);
-  const allowedKeys = useMemo(() => getPlantPepKeys(activePlantId), [activePlantId]);
+  const allowedKeys = useMemo(() => getPlantEconomicsKeys(activePlantId), [activePlantId]);
 
   const { user } = useAuth();
   const [subMode, setSubMode]         = useState<'econ' | 'standards'>('econ');
   const [procKey, setProcKey]         = useState<string>(() => allowedKeys[0]);
-  const [capTpy, setCapTpy]           = useState<number>(() => PEP_PROCESS_DB[allowedKeys[0]]?.baseCap_tpy ?? 165000);
+  const [capTpy, setCapTpy]           = useState<number>(() => PROCESS_ECONOMICS_DB[allowedKeys[0]]?.baseCap_tpy ?? 165000);
   const [opHours, setOpHours]         = useState<number>(8000);
   const [fxKrw, setFxKrw]             = useState<number>(1380);
   const [powerCost, setPowerCost]     = useState<number>(135);
@@ -310,16 +310,16 @@ export default function PepYearbookPage() {
     if (!allowedKeys.includes(procKey)) {
       const nextKey = allowedKeys[0];
       setProcKey(nextKey);
-      const p = PEP_PROCESS_DB[nextKey];
+      const p = PROCESS_ECONOMICS_DB[nextKey];
       if (p) setCapTpy(p.baseCap_tpy);
     }
   }, [activePlantId, allowedKeys, procKey, subMode]);
 
-  const proc = PEP_PROCESS_DB[procKey] ?? PEP_PROCESS_DB[allowedKeys[0]] ?? PEP_PROCESS_DB.chlor_alkali;
+  const proc = PROCESS_ECONOMICS_DB[procKey] ?? PROCESS_ECONOMICS_DB[allowedKeys[0]] ?? PROCESS_ECONOMICS_DB.chlor_alkali;
 
   const handleProcChange = (newKey: string) => {
     setProcKey(newKey);
-    const p = PEP_PROCESS_DB[newKey];
+    const p = PROCESS_ECONOMICS_DB[newKey];
     if (p) setCapTpy(p.baseCap_tpy);
   };
 
@@ -354,7 +354,7 @@ export default function PepYearbookPage() {
   const annualEbitda_bkrw = ((marginPerTon + deprPerTon) * capTpy) / 1e8;
   const paybackYrs = annualEbitda_bkrw > 0 ? totalCapex_bkrw / annualEbitda_bkrw : 99.9;
 
-  const exportPepExcel = () => {
+  const exportEconomicsExcel = () => {
     const wb = XLSX.utils.book_new();
     const rows = [
       ['CHEMPLANT STUDIO — 공정 원단위 및 경제성 평가 보고서'],
@@ -485,7 +485,7 @@ export default function PepYearbookPage() {
         }}>
           <div>
             <div style={{ fontSize: 15.5, fontWeight: 900, color: '#0F172A' }}>
-              {showPlantNumbersForUser(user) ? `[${plantMeta.code}] ` : ''}{plantMeta.title} — 원단위 · 유틸리티 · 경제성 분석
+              {showPlantNumbersForUser(user) ? `[${plantMeta.code}] ` : ''}{plantMeta.title} — 공정 경제성 · 원단위 분석 (Process Economics)
             </div>
             <div style={{ fontSize: 11.5, color: '#52525B', marginTop: 3 }}>
               선택된 공장의 원료·유틸리티 원단위(Unit Consumption), 설비 투자비(Six-Tenths Rule), 제조원가 및 수익성을 평가합니다.
@@ -493,7 +493,7 @@ export default function PepYearbookPage() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
-              onClick={exportPepExcel}
+              onClick={exportEconomicsExcel}
               style={{
                 padding: '8px 16px', borderRadius: 6, fontSize: 12, fontWeight: 800,
                 background: '#1A2F44', border: '1px solid #1A2F44', color: '#FFFFFF', cursor: 'pointer',
@@ -533,7 +533,7 @@ export default function PepYearbookPage() {
                 style={{ width: '100%', height: 34, background: '#FFFFFF', color: '#18181B', border: '1px solid #DFDCD4', borderRadius: 6, padding: '0 10px', fontSize: 12, fontWeight: 700 }}
               >
                 {allowedKeys.map(k => {
-                  const p = PEP_PROCESS_DB[k];
+                  const p = PROCESS_ECONOMICS_DB[k];
                   if (!p) return null;
                   return (
                     <option key={p.key} value={p.key}>[{p.code}] {p.name}</option>

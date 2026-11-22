@@ -4,6 +4,8 @@ import React, { useRef, useState } from 'react';
 import { SIM_COMPS, COMP_META, SolvedStream, type SimCompKey } from '@/lib/calculations/flowsheetSolver';
 import { UnitSelect, useLocalUnit } from '@/components/units/UnitControls';
 import { formatCanonicalValue, fromCanonical, getUnitLabel } from '@/lib/units/unitSystem';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import { t } from '@/lib/i18n/uiText';
 
 interface HorizontalFlowsheetStreamTableProps {
   streams: SolvedStream[];
@@ -28,6 +30,7 @@ export default function HorizontalFlowsheetStreamTable({
   const [dragging, setDragging] = useState(false);
   const [compViewMode, setCompViewMode] = useState<'active' | 'configured' | 'all'>('active');
   const dragStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
+  const lang = useUnitStore(s => s.lang);
 
   const [tempUnit, setTempUnit] = useLocalUnit('temp');
   const [pressUnit, setPressUnit] = useLocalUnit('pressG');
@@ -75,7 +78,7 @@ export default function HorizontalFlowsheetStreamTable({
   if (streams.length === 0) {
     return (
       <div style={{ padding: '24px 16px', fontSize: 12, color: '#64748B', textAlign: 'center' }}>
-        캔버스에서 장치 간 배관을 연결하면 전해 PFD와 동일한 가로 확장형 H&amp;MB 스트림 시트가 자동 생성됩니다.
+        {t(lang, 'st_empty')}
       </div>
     );
   }
@@ -226,8 +229,8 @@ export default function HorizontalFlowsheetStreamTable({
         <thead>
           {/* 1단 헤더: 스트림 번호 (우측 가로 확장!) */}
           <tr>
-            <th style={stickyCornerLabel}>항목 (Property Item)</th>
-            <th style={stickyCornerUnit}>단위</th>
+            <th style={stickyCornerLabel}>{t(lang, 'st_col_item')}</th>
+            <th style={stickyCornerUnit}>{t(lang, 'st_col_unit')}</th>
             {streams.map(s => {
               const sel = s.edgeId === selectedEdgeId;
               return (
@@ -260,7 +263,7 @@ export default function HorizontalFlowsheetStreamTable({
                       [{s.streamNo}]{s.isTearStream ? '♻' : ''}
                     </span>
                     <button
-                      title={`배관 [${s.streamNo}] 삭제`}
+                      title={lang === 'en' ? `Delete stream [${s.streamNo}]` : `배관 [${s.streamNo}] 삭제`}
                       onClick={ev => {
                         ev.stopPropagation();
                         onDeleteStream(s.edgeId);
@@ -301,7 +304,7 @@ export default function HorizontalFlowsheetStreamTable({
         <tbody>
           {/* 01. 유체 식별 / 핵심 농도 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5', true)}>유체 식별 (Fluid / Conc.)</td>
+            <td style={stickyRowLabel('#FAF9F5', true)}>{t(lang, 'st_row_fluid')}</td>
             <td style={stickyRowUnit('#FAF9F5')}>—</td>
             {streams.map(s => (
               <td
@@ -323,7 +326,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 02. 상 (Phase) */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF')}>Phase (상 상태)</td>
+            <td style={stickyRowLabel('#FFFFFF')}>{t(lang, 'st_row_phase')}</td>
             <td style={stickyRowUnit('#FFFFFF')}>—</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={cellValStyle(s, '#FFFFFF', 'center')}>
@@ -334,7 +337,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 03. 기상 분율 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5')}>Vapor Fraction (기상분율 β)</td>
+            <td style={stickyRowLabel('#FAF9F5')}>{t(lang, 'st_row_vf')}</td>
             <td style={stickyRowUnit('#FAF9F5')}>wt frac</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), color: '#52525B' }}>
@@ -345,7 +348,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 04. 온도 */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF', true)}>Temperature (온도)</td>
+            <td style={stickyRowLabel('#FFFFFF', true)}>{t(lang, 'st_row_temp')}</td>
             <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
               <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} style={{ width: '100%' }} />
             </td>
@@ -358,7 +361,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 05. 압력 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5', true)}>Pressure (압력)</td>
+            <td style={stickyRowLabel('#FAF9F5', true)}>{t(lang, 'st_row_press')}</td>
             <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
               <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} style={{ width: '100%' }} />
             </td>
@@ -371,7 +374,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 06. 몰 유량 */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF')}>Molar Flow (몰유량)</td>
+            <td style={stickyRowLabel('#FFFFFF')}>{t(lang, 'st_row_molar')}</td>
             <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
               <UnitSelect quantity="molarFlow" value={molarUnit} onChange={setMolarUnit} style={{ width: '100%' }} />
             </td>
@@ -384,7 +387,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 07. 부피 유량 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5')}>Volume Flow (부피유량)</td>
+            <td style={stickyRowLabel('#FAF9F5')}>{t(lang, 'st_row_vol')}</td>
             <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
               <UnitSelect quantity="volFlow" value={volUnit} onChange={setVolUnit} style={{ width: '100%' }} />
             </td>
@@ -397,7 +400,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 08. 평균 분자량 */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF')}>Average MW (평균분자량)</td>
+            <td style={stickyRowLabel('#FFFFFF')}>{t(lang, 'st_row_mw')}</td>
             <td style={stickyRowUnit('#FFFFFF')}>g/mol</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FFFFFF'), color: '#52525B' }}>
@@ -408,7 +411,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 09. 밀도 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5')}>Density (밀도 ρ)</td>
+            <td style={stickyRowLabel('#FAF9F5')}>{t(lang, 'st_row_density')}</td>
             <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
               <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} style={{ width: '100%' }} />
             </td>
@@ -421,7 +424,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 10. 압축인자 Z / 비열 Cp */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF')}>Heat Capacity Cp (기상 Z)</td>
+            <td style={stickyRowLabel('#FFFFFF')}>{t(lang, 'st_row_cp')}</td>
             <td style={{ ...stickyRowUnit('#FFFFFF'), padding: '2px 4px' }}>
               <UnitSelect quantity="cp" value={cpUnit} onChange={setCpUnit} style={{ width: '100%' }} />
             </td>
@@ -435,7 +438,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 11. 엔탈피 유량 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5')}>Enthalpy Flow (엔탈피 유량)</td>
+            <td style={stickyRowLabel('#FAF9F5')}>{t(lang, 'st_row_enthalpy')}</td>
             <td style={{ ...stickyRowUnit('#FAF9F5'), padding: '2px 4px' }}>
               <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} style={{ width: '100%' }} />
             </td>
@@ -448,7 +451,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 12. 수분 농도 (가스/액화염소 스트림용) */}
           <tr>
-            <td style={stickyRowLabel('#FFFFFF')}>Moisture (가스 수분농도)</td>
+            <td style={stickyRowLabel('#FFFFFF')}>{t(lang, 'st_row_moisture')}</td>
             <td style={stickyRowUnit('#FFFFFF')}>wt ppm</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FFFFFF'), color: '#0369A1' }}>
@@ -475,7 +478,7 @@ export default function HorizontalFlowsheetStreamTable({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
-                <span>━ 성분별 질량 유량</span>
+                <span>{t(lang, 'st_banner_comp_flows')}</span>
                 <button
                   type="button"
                   onClick={() =>
@@ -499,13 +502,19 @@ export default function HorizontalFlowsheetStreamTable({
                     fontWeight: 800,
                     cursor: 'pointer',
                   }}
-                  title="활성 성분(유량>0) / 프로젝트 설정 성분 / 등록 전체 성분을 순환 표시합니다"
+                  title={t(lang, 'st_comp_toggle_title')}
                 >
                   {compViewMode === 'all'
-                    ? `전체 ${SIM_COMPS.length}종`
+                    ? lang === 'en'
+                      ? `All ${SIM_COMPS.length}`
+                      : `전체 ${SIM_COMPS.length}종`
                     : compViewMode === 'configured'
-                      ? `설정 ${mergedConfiguredComps.length}종`
-                      : `활성 ${visibleComps.length}종`}
+                      ? lang === 'en'
+                        ? `Configured ${mergedConfiguredComps.length}`
+                        : `설정 ${mergedConfiguredComps.length}종`
+                      : lang === 'en'
+                        ? `Active ${visibleComps.length}`
+                        : `활성 ${visibleComps.length}종`}
                 </button>
               </div>
             </td>
@@ -542,7 +551,7 @@ export default function HorizontalFlowsheetStreamTable({
 
           {/* 13. 총 질량유량 */}
           <tr>
-            <td style={stickyRowLabel('#FAF9F5', true)}>Total Mass Flow (총 질량유량)</td>
+            <td style={stickyRowLabel('#FAF9F5', true)}>{t(lang, 'st_row_total_mass')}</td>
             <td style={stickyRowUnit('#FAF9F5')}>{getUnitLabel('massFlow', massUnit)}</td>
             {streams.map(s => (
               <td key={s.edgeId} onClick={() => onSelectStream(s.edgeId)} style={{ ...cellValStyle(s, '#FAF9F5'), fontWeight: 900, color: '#18181B' }}>

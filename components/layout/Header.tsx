@@ -8,10 +8,13 @@ import {
   PLANT_REGISTRY,
   getPlantRegistryItem,
   isPlantAllowed,
+  isSimulatorOnlyUser,
   showPlantNumbersForUser,
   formatPlantCodeAndName,
   type PlantWorkspaceTab,
 } from '@/lib/plantRegistry';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import { t, type AppLang } from '@/lib/i18n/uiText';
 import {
   getPreferredSimUiMode,
   setPreferredSimUiMode,
@@ -83,6 +86,10 @@ export default function Header() {
   } = useBalanceStore();
   const equipSubTab = usePFDStore(s => s.equipSubTab || 'evap');
   const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
+  const lang = useUnitStore(s => s.lang);
+  const setLang = useUnitStore(s => s.setLang);
+  const hydrateUnits = useUnitStore(s => s.hydrate);
+  const simOnly = isSimulatorOnlyUser(user);
 
   const refreshCaseState = useCallback(() => {
     setSavedCases(listAllSavedUserCases(pid => isPlantAllowed(pid, user)));
@@ -131,11 +138,12 @@ export default function Header() {
     return () => window.removeEventListener('resize', syncMob);
   }, []);
 
-  // 클라이언트 마운트 시 저장된 활성 공장 및 선호 시뮬레이터 UI 복원
+  // 클라이언트 마운트 시 저장된 활성 공장, 단위/언어 및 선호 시뮬레이터 UI 복원
   useEffect(() => {
     hydrateActivePlant();
+    hydrateUnits();
     setSimUiMode(getPreferredSimUiMode());
-  }, [hydrateActivePlant]);
+  }, [hydrateActivePlant, hydrateUnits]);
 
   // URL로 직접 /flowsheet-simulator 또는 /classic-simulator 진입 시 컨텍스트 동기화
   useEffect(() => {
@@ -150,9 +158,11 @@ export default function Header() {
     }
   }, [pathname, activePlantId, setActivePlantId]);
 
-  const allowedCommercialPlants = PLANT_REGISTRY.filter(
-    p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
-  );
+  const allowedCommercialPlants = simOnly
+    ? []
+    : PLANT_REGISTRY.filter(
+        p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
+      );
 
   // 계정에 할당된 공장 목록 기준으로 허용되지 않은 예제 공장에 머무르지 않도록 자동 전환
   useEffect(() => {
@@ -197,12 +207,13 @@ export default function Header() {
       ? activeCaseInfo.title
       : null;
 
-  const caseTriggerLabel = isSimulatorMode
-    ? `내 케이스 · ${displayCaseTitle || '기본 작업공간'}`
-    : `[예제] ${formatPlantCodeAndName(plantMeta, user)}`;
+  const caseTriggerLabel =
+    isSimulatorMode || simOnly
+      ? `${t(lang, 'header_my_cases')} · ${displayCaseTitle || t(lang, 'header_default_workspace')}`
+      : `${t(lang, 'header_example_prefix')} ${formatPlantCodeAndName(plantMeta, user)}`;
 
   const getActiveWorkspaceTabKey = (): PlantWorkspaceTab['key'] => {
-    if (pathname.startsWith('/pep-yearbook')) return 'econ';
+    if (pathname.startsWith('/process-economics') || pathname.startsWith('/pep-yearbook')) return 'econ';
     if (pathname.startsWith('/special-process')) return 'design';
     if (pathname.startsWith('/equipment-design')) {
       return equipSubTab === 'equip' ? 'equip' : 'design';
@@ -210,6 +221,21 @@ export default function Header() {
     return 'pfd';
   };
   const currentTabKey = getActiveWorkspaceTabKey();
+
+  const getLocalizedTabLabel = (tab: PlantWorkspaceTab): string => {
+    switch (tab.key) {
+      case 'pfd':
+        return t(lang, 'header_tab_pfd');
+      case 'design':
+        return t(lang, 'header_tab_design');
+      case 'equip':
+        return t(lang, 'header_tab_equip');
+      case 'econ':
+        return t(lang, 'header_tab_econ');
+      default:
+        return tab.label;
+    }
+  };
 
   const handleSelectPlant = (nextId: PlantId) => {
     const nextMeta = getPlantRegistryItem(nextId);
@@ -326,10 +352,10 @@ export default function Header() {
           !Array.isArray(actualState.simDefs) ||
           !Array.isArray(actualState.flowEdges)
         ) {
-          alert('유효한 시뮬레이션 JSON 파일이 아닙니다.');
+          alert(t(lang, 'header_json_invalid'));
           return;
         }
-        const baseName = file.name.replace(/\.json$/i, '') || '불러온 케이스';
+        const baseName = file.name.replace(/\.json$/i, '') || t(lang, 'header_json_default_name');
         const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
         setCaseMenuOpen(false);
         setActiveCaseTitle(baseName, targetPlantId);
@@ -341,7 +367,7 @@ export default function Header() {
           rawProject: {
             id: `import_${Date.now()}`,
             name: baseName,
-            savedAt: new Date().toLocaleString('ko-KR', { hour12: false }),
+            savedAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'ko-KR', { hour12: false }),
             state: actualState,
           },
         });
@@ -351,7 +377,7 @@ export default function Header() {
         }
         router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
       } catch {
-        alert('JSON 파일을 해석하지 못했습니다.');
+        alert(t(lang, 'header_json_parse_error'));
       }
     };
     reader.readAsText(file);
@@ -403,16 +429,18 @@ export default function Header() {
   };
 
   const auxPageTitle = isUnitCalcTool
-    ? '단품 숏컷 설계 도구'
+    ? t(lang, 'header_aux_shortcut')
     : isPropDbTool
-      ? '물성 · 열역학 DB'
-      : pathname.startsWith('/pep-yearbook')
-        ? '원단위 · 경제성 · 벤치마크'
+      ? t(lang, 'header_aux_prop_db')
+      : pathname.startsWith('/process-economics') || pathname.startsWith('/pep-yearbook')
+        ? t(lang, 'header_aux_econ')
         : pathname.startsWith('/equipment-design')
           ? equipSubTab === 'equip'
-            ? '공장 장치목록'
-            : '핵심장치 상세설계'
-          : '보조 엔지니어링 도구';
+            ? t(lang, 'header_aux_equip')
+            : equipSubTab === 'psv_flare'
+              ? t(lang, 'header_aux_psv_flare')
+              : t(lang, 'header_aux_design')
+          : t(lang, 'header_aux_default');
 
   return (
     <header
@@ -454,7 +482,7 @@ export default function Header() {
           <button
             type="button"
             onClick={() => router.push(plantMeta.defaultHref)}
-            title="시뮬레이터 메인 화면으로 이동"
+            title={t(lang, 'header_brand_title')}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -507,7 +535,7 @@ export default function Header() {
                   flexShrink: 0,
                 }}
               >
-                케이스:
+                {t(lang, 'header_case_label')}
               </span>
             </>
           )}
@@ -531,7 +559,11 @@ export default function Header() {
                 setOutputsMenuOpen(false);
                 setCaseMenuOpen(v => !v);
               }}
-              title="작업 케이스 또는 내장 예제 공장 열기"
+              title={
+                simOnly
+                  ? t(lang, 'header_case_trigger_title_sim_only')
+                  : t(lang, 'header_case_trigger_title')
+              }
               style={{
                 padding: '4px 10px',
                 borderRadius: 6,
@@ -585,7 +617,7 @@ export default function Header() {
                     letterSpacing: '0.2px',
                   }}
                 >
-                  내 작업 케이스
+                  {t(lang, 'header_case_section_my')}
                 </div>
 
                 <button
@@ -613,7 +645,7 @@ export default function Header() {
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <PfdSchematicIcon size={13} />
-                    <span>기본 시뮬레이터 작업공간 (이어하기)</span>
+                    <span>{t(lang, 'header_case_resume_default')}</span>
                   </span>
                   {isSimulatorMode && !displayCaseTitle && (
                     <span style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A' }}>✓</span>
@@ -642,7 +674,7 @@ export default function Header() {
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <PlusSquareIcon size={13} />
-                    <span>새 빈 케이스로 시작</span>
+                    <span>{t(lang, 'header_case_new_blank')}</span>
                   </span>
                 </button>
 
@@ -668,7 +700,7 @@ export default function Header() {
                 >
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <FolderOpenIcon size={13} />
-                    <span>JSON 케이스 파일 불러오기...</span>
+                    <span>{t(lang, 'header_case_import_json')}</span>
                   </span>
                 </button>
                 <input
@@ -752,7 +784,9 @@ export default function Header() {
                                 >
                                   {item.scopeLabel}
                                 </span>
-                                <span>장치 {item.nodeCount}개</span>
+                                <span>
+                                  {lang === 'en' ? `${item.nodeCount} units` : `장치 ${item.nodeCount}개`}
+                                </span>
                                 {dateStr ? <span>· {dateStr}</span> : null}
                               </div>
                             </div>
@@ -764,7 +798,7 @@ export default function Header() {
                           </button>
                           <button
                             type="button"
-                            title="저장 케이스 삭제"
+                            title={t(lang, 'header_case_delete_title')}
                             onClick={e => {
                               e.stopPropagation();
                               deleteSavedUserCase(item);
@@ -790,11 +824,11 @@ export default function Header() {
                   </div>
                 ) : (
                   <div style={{ padding: '6px 8px', fontSize: 10.5, color: '#94A3B8' }}>
-                    저장된 사용자 케이스가 없습니다.
+                    {t(lang, 'header_case_empty')}
                   </div>
                 )}
 
-                {allowedCommercialPlants.length > 0 && (
+                {!simOnly && allowedCommercialPlants.length > 0 && (
                   <>
                     <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
                     <div
@@ -806,7 +840,7 @@ export default function Header() {
                         letterSpacing: '0.2px',
                       }}
                     >
-                      내장 예제 공장 (참고 케이스) ({allowedCommercialPlants.length})
+                      {t(lang, 'header_case_section_examples')} ({allowedCommercialPlants.length})
                     </div>
                     {allowedCommercialPlants.map(p => {
                       const selected = !isSimulatorMode && p.id === activePlantId;
@@ -890,7 +924,7 @@ export default function Header() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                보기:
+                {t(lang, 'header_view_label')}
               </span>
             )}
             <div
@@ -903,7 +937,7 @@ export default function Header() {
                 padding: 2,
                 gap: 2,
               }}
-              title="시뮬레이터 인터페이스 스타일 선택 (모던 UI / 클래식 UI)"
+              title={t(lang, 'header_view_title')}
             >
               <button
                 type="button"
@@ -920,7 +954,7 @@ export default function Header() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                모던 UI
+                {t(lang, 'header_modern_ui')}
               </button>
               <button
                 type="button"
@@ -937,7 +971,7 @@ export default function Header() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                클래식 UI
+                {t(lang, 'header_classic_ui')}
               </button>
             </div>
           </div>
@@ -958,7 +992,7 @@ export default function Header() {
                 setCaseMenuOpen(false);
                 setOutputsMenuOpen(v => !v);
               }}
-              title="현재 컨텍스트의 참고 자료 및 산출물 화면 이동"
+              title={t(lang, 'header_outputs_title')}
               style={{
                 padding: '4px 9px',
                 borderRadius: 6,
@@ -976,7 +1010,7 @@ export default function Header() {
             >
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 <DocSheetIcon size={13} />
-                <span>참고 · 산출물</span>
+                <span>{t(lang, 'header_outputs_btn')}</span>
               </span>
               <span style={{ fontSize: 9, opacity: 0.75 }}>{outputsMenuOpen ? '▲' : '▼'}</span>
             </button>
@@ -987,7 +1021,7 @@ export default function Header() {
                   position: 'fixed',
                   top: outputsMenuPos.top,
                   left: outputsMenuPos.left,
-                  width: 244,
+                  width: 256,
                   background: '#FFFFFF',
                   border: '1px solid #CBD5E1',
                   borderRadius: 9,
@@ -1007,10 +1041,13 @@ export default function Header() {
                     padding: '3px 8px 4px',
                   }}
                 >
-                  참고 · 산출물 이동
+                  {t(lang, 'header_outputs_heading')}
                 </div>
                 {plantMeta.tabs.map(tab => {
-                  const active = !isGlobalToolMode && currentTabKey === tab.key;
+                  const active =
+                    !isGlobalToolMode &&
+                    currentTabKey === tab.key &&
+                    !(pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare');
                   return (
                     <button
                       key={tab.key}
@@ -1032,11 +1069,51 @@ export default function Header() {
                         textAlign: 'left',
                       }}
                     >
-                      <span>{tab.label}</span>
+                      <span>{getLocalizedTabLabel(tab)}</span>
                       {active && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutputsMenuOpen(false);
+                    setEquipSubTab('psv_flare');
+                    router.push('/equipment-design?tab=psv_flare');
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 6,
+                    border:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
+                        ? '1px solid #1E3A8A'
+                        : '1px solid transparent',
+                    background:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
+                        ? '#F8FAFC'
+                        : '#FFFFFF',
+                    color:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
+                        ? '#1E3A8A'
+                        : '#1E293B',
+                    fontSize: 11.5,
+                    fontWeight:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
+                        ? 800
+                        : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    textAlign: 'left',
+                  }}
+                >
+                  <span>{t(lang, 'header_psv_flare')}</span>
+                  {pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare' && (
+                    <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>
+                  )}
+                </button>
                 <div
                   style={{
                     height: 1,
@@ -1067,7 +1144,7 @@ export default function Header() {
                   }}
                 >
                   <DocSheetIcon size={13} />
-                  <span>검증 리포트 (Golden Cases)</span>
+                  <span>{t(lang, 'header_validation_report')}</span>
                 </button>
               </div>
             )}
@@ -1087,7 +1164,7 @@ export default function Header() {
           <button
             type="button"
             onClick={handleOpenShortcutCalc}
-            title="단품 장치 숏컷 설계 도구 (열교환기·펌프·컬럼·용기·배관·PSV)"
+            title={t(lang, 'header_shortcut_calc_title')}
             style={{
               padding: '4px 9px',
               borderRadius: 6,
@@ -1104,12 +1181,12 @@ export default function Header() {
             }}
           >
             <CalcShortcutIcon size={13} />
-            <span>단품 숏컷 계산기</span>
+            <span>{t(lang, 'header_shortcut_calc')}</span>
           </button>
           <button
             type="button"
             onClick={() => handleOpenToolbox('/property-db')}
-            title="열역학 모델 · 순수·혼합물 물성 계산 DB"
+            title={t(lang, 'header_prop_db_title')}
             style={{
               padding: '4px 9px',
               borderRadius: 6,
@@ -1126,10 +1203,52 @@ export default function Header() {
             }}
           >
             <FlaskCompIcon size={13} />
-            <span>물성 · 열역학 DB</span>
+            <span>{t(lang, 'header_prop_db')}</span>
           </button>
 
           <HeaderUnitSettingsButton isMobile={isMobile} />
+
+          {/* Compact KO | EN Language Toggle Pill */}
+          <div
+            role="group"
+            aria-label="Language Selector"
+            title={t(lang, 'header_lang_toggle_title')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: '#0F172A',
+              border: '1px solid #334155',
+              borderRadius: 6,
+              padding: 2,
+              gap: 1,
+              flexShrink: 0,
+            }}
+          >
+            {(['ko', 'en'] as AppLang[]).map(code => {
+              const active = lang === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLang(code)}
+                  style={{
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background: active ? '#1E3A8A' : 'transparent',
+                    color: active ? '#FFFFFF' : '#94A3B8',
+                    fontSize: 10,
+                    fontWeight: active ? 800 : 600,
+                    letterSpacing: '0.03em',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {code.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
 
           <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />
           <HeaderUserControls />
@@ -1180,7 +1299,7 @@ export default function Header() {
               flexShrink: 0,
             }}
           >
-            ← 시뮬레이터로 복귀
+            {t(lang, 'header_return_to_sim')}
           </button>
         </div>
       )}

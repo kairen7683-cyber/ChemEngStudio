@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { useAuth } from '@/components/auth/AuthContext';
-import { formatPlantLabelForUser } from '@/lib/plantRegistry';
+import { formatPlantLabelForUser, isSimulatorOnlyUser } from '@/lib/plantRegistry';
 
 const ElectrolyzerPlantSimulator = dynamic(
   () => import('@/app/flowsheet-simulator/page').then(m => m.FlowsheetWorkspace),
@@ -36,18 +36,53 @@ export default function MaterialBalancePage() {
   const { user } = useAuth();
   const { activePlantId: plantId, setActivePlantId: setPlantId } = useBalanceStore();
 
+  const simulatorOnly = isSimulatorOnlyUser(user);
+
+  // 시뮬레이터 전용(베타) 계정은 예제 공정(PLANT 01~05) 대신 독립 공정 시뮬레이터로 자동 이동
   // 숨김(clorsim 기준참고용) 또는 삭제(green_h2)된 플랜트 ID 정규화 및 classic_sim 라우트 이동
   useEffect(() => {
+    if (simulatorOnly) {
+      if (plantId !== 'new_builder') {
+        setPlantId('new_builder');
+      }
+      router.replace('/flowsheet-simulator');
+      return;
+    }
     if (plantId === 'clorsim' || plantId === 'green_h2') {
       setPlantId('clorsim_sim');
     } else if (plantId === 'classic_sim') {
       router.replace('/classic-simulator');
     }
-  }, [plantId, router, setPlantId]);
+  }, [plantId, router, setPlantId, simulatorOnly]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100%', overflow: 'hidden', background: '#F8FAFC' }}>
-      {plantId === 'classic_sim' ? (
+      {simulatorOnly ? (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            gap: 14,
+            color: '#475569',
+          }}
+        >
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: '50%',
+              border: '3px solid #E2E8F0',
+              borderTopColor: '#1E293B',
+              animation: 'spin 0.8s linear infinite',
+            }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 600 }}>공정 시뮬레이터로 이동 중...</span>
+        </div>
+      ) : plantId === 'classic_sim' ? (
         <div
           style={{
             display: 'flex',

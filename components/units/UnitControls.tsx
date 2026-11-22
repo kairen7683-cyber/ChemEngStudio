@@ -13,6 +13,13 @@ import {
   type UnitQuantity,
 } from '@/lib/units/unitSystem';
 import { TAG_STANDARDS } from '@/lib/units/tagNaming';
+import {
+  QUANTITY_LABELS_EN,
+  TAG_STANDARD_TEXT_EN,
+  UNIT_PRESET_NAMES_EN,
+  t,
+  type AppLang,
+} from '@/lib/i18n/uiText';
 
 function roundClean(v: number, digits = 5): number {
   if (!Number.isFinite(v)) return 0;
@@ -67,11 +74,16 @@ export function UnitSelect({
   disabled,
 }: UnitSelectProps) {
   const meta = UNIT_QUANTITIES[quantity];
+  const lang = useUnitStore(s => s.lang);
+  const defaultTitle =
+    lang === 'en'
+      ? `Change ${QUANTITY_LABELS_EN[quantity]} unit`
+      : `${meta.labelKo} 단위 변경`;
   return (
     <select
       value={value}
       disabled={disabled}
-      title={title ?? `${meta.labelKo} 단위 변경`}
+      title={title ?? defaultTitle}
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
       onChange={e => {
@@ -304,10 +316,12 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
   const units = useUnitStore(s => s.units);
   const presetId = useUnitStore(s => s.presetId);
   const tagStandard = useUnitStore(s => s.tagStandard);
+  const lang = useUnitStore(s => s.lang);
   const hydrate = useUnitStore(s => s.hydrate);
   const setUnit = useUnitStore(s => s.setUnit);
   const applyPreset = useUnitStore(s => s.applyPreset);
   const setTagStandard = useUnitStore(s => s.setTagStandard);
+  const setLang = useUnitStore(s => s.setLang);
   const resetDefaults = useUnitStore(s => s.resetDefaults);
 
   const [open, setOpen] = useState(false);
@@ -327,7 +341,12 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
   }, [open]);
 
   const activePresetMeta = UNIT_PRESETS.find(p => p.id === presetId);
-  const shortBadge = activePresetMeta ? activePresetMeta.shortName : '사용자';
+  const shortBadge = activePresetMeta ? activePresetMeta.shortName : t(lang, 'unit_btn_custom');
+  const activePresetName = activePresetMeta
+    ? lang === 'en'
+      ? UNIT_PRESET_NAMES_EN[activePresetMeta.id]
+      : activePresetMeta.name
+    : '';
 
   return (
     <>
@@ -335,7 +354,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
         ref={btnRef}
         type="button"
         onClick={() => setOpen(v => !v)}
-        title="기본 보기 단위 설정 (스트림 테이블 · 블록 입력 · 장치설계 전역 적용)"
+        title={t(lang, 'unit_btn_title')}
         style={{
           padding: isMobile ? '4px 7px' : '4px 9px',
           borderRadius: 6,
@@ -352,7 +371,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
         }}
       >
         <SlidersParamIcon size={12} />
-        <span>{isMobile ? shortBadge : `단위 · ${shortBadge}`}</span>
+        <span>{isMobile ? shortBadge : `${t(lang, 'unit_btn_prefix')} · ${shortBadge}`}</span>
         <span style={{ fontSize: 9, opacity: 0.75 }}>▾</span>
       </button>
 
@@ -401,9 +420,9 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <SlidersParamIcon size={15} />
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800 }}>기본 보기 단위 · 장치 태그 표준 설정</div>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>{t(lang, 'unit_modal_title')}</div>
                   <div style={{ fontSize: 10.5, color: '#94A3B8' }}>
-                    스트림 테이블 · 블록 입력 · 장치설계 단위계 및 장치 태그 명명 규칙(KR/JP · Global)
+                    {t(lang, 'unit_modal_subtitle')}
                   </div>
                 </div>
               </div>
@@ -421,16 +440,62 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                   cursor: 'pointer',
                 }}
               >
-                닫기 ✕
+                {t(lang, 'unit_modal_close')}
               </button>
             </div>
 
             {/* Body */}
             <div style={{ padding: 14, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Language Switcher */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
+                  {t(lang, 'unit_modal_lang_heading')}
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 6,
+                  }}
+                >
+                  {(
+                    [
+                      { id: 'ko' as AppLang, label: '한국어 (KO)', desc: t(lang, 'unit_modal_lang_ko_desc') },
+                      { id: 'en' as AppLang, label: 'English (EN)', desc: t(lang, 'unit_modal_lang_en_desc') },
+                    ]
+                  ).map(opt => {
+                    const active = lang === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setLang(opt.id)}
+                        style={{
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          borderRadius: 7,
+                          border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: active ? '#EFF6FF' : '#F8FAFC',
+                          color: '#0F172A',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 11.5, fontWeight: 800, color: active ? '#1E3A8A' : '#0F172A' }}>
+                          {opt.label}
+                        </div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, lineHeight: 1.35 }}>
+                          {opt.desc}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Equipment Tag Naming Standard */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
-                  장치 태그 명명 표준 (Equipment Tagging Standard)
+                  {t(lang, 'unit_modal_tag_heading')}
                 </div>
                 <div
                   style={{
@@ -441,6 +506,8 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                 >
                   {TAG_STANDARDS.map(std => {
                     const active = tagStandard === std.id;
+                    const stdName = lang === 'en' ? TAG_STANDARD_TEXT_EN[std.id].name : std.name;
+                    const stdDesc = lang === 'en' ? TAG_STANDARD_TEXT_EN[std.id].desc : std.desc;
                     return (
                       <button
                         key={std.id}
@@ -457,10 +524,10 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                         }}
                       >
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: active ? '#1E3A8A' : '#0F172A' }}>
-                          {std.name}
+                          {stdName}
                         </div>
                         <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, lineHeight: 1.35 }}>
-                          {std.desc}
+                          {stdDesc}
                         </div>
                       </button>
                     );
@@ -471,7 +538,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
               {/* Presets */}
               <div>
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
-                  단위계 프리셋 선택
+                  {t(lang, 'unit_modal_preset_heading')}
                 </div>
                 <div
                   style={{
@@ -482,6 +549,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                 >
                   {UNIT_PRESETS.map(p => {
                     const active = presetId === p.id;
+                    const presetName = lang === 'en' ? UNIT_PRESET_NAMES_EN[p.id] : p.name;
                     return (
                       <button
                         key={p.id}
@@ -498,7 +566,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                         }}
                       >
                         <div style={{ fontSize: 11.5, fontWeight: 800, color: active ? '#1E3A8A' : '#0F172A' }}>
-                          {p.name}
+                          {presetName}
                         </div>
                         <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, lineHeight: 1.3 }}>
                           {p.desc}
@@ -520,10 +588,12 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                   }}
                 >
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>
-                    물리량별 기본 단위 개별 지정
+                    {t(lang, 'unit_modal_override_heading')}
                   </span>
                   <span style={{ fontSize: 10, color: '#64748B' }}>
-                    {presetId === 'CUSTOM' ? '사용자 지정 단위계' : `프리셋: ${activePresetMeta?.name}`}
+                    {presetId === 'CUSTOM'
+                      ? t(lang, 'unit_modal_custom_badge')
+                      : `${t(lang, 'unit_modal_preset_badge_prefix')} ${activePresetName}`}
                   </span>
                 </div>
                 <div
@@ -550,7 +620,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                         }}
                       >
                         <span style={{ fontSize: 11, fontWeight: 700, color: '#1E293B' }}>
-                          {meta.labelKo}
+                          {lang === 'en' ? QUANTITY_LABELS_EN[q] : meta.labelKo}
                         </span>
                         <UnitSelect
                           quantity={q}
@@ -580,7 +650,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
               }}
             >
               <span style={{ fontSize: 10.5, color: '#64748B' }}>
-                설정은 브라우저에 자동 저장되며, 각 테이블·입력칸에서 개별 단위를 임시 변경해 볼 수 있습니다.
+                {t(lang, 'unit_modal_footer_hint')}
               </span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button
@@ -597,7 +667,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                     cursor: 'pointer',
                   }}
                 >
-                  기본값(MKS) 복원
+                  {t(lang, 'unit_modal_reset')}
                 </button>
                 <button
                   type="button"
@@ -613,7 +683,7 @@ export function HeaderUnitSettingsButton({ isMobile = false }: { isMobile?: bool
                     cursor: 'pointer',
                   }}
                 >
-                  적용 완료
+                  {t(lang, 'unit_modal_done')}
                 </button>
               </div>
             </div>

@@ -62,6 +62,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -167,7 +168,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setFormError(null);
     setFormSuccess(null);
     if (!username.trim() || !password) {
-      setFormError('아이디와 비밀번호를 입력하세요.');
+      setFormError('이메일(또는 아이디)과 비밀번호를 입력하세요.');
       return;
     }
     setSubmitting(true);
@@ -185,8 +186,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     setFormError(null);
     setFormSuccess(null);
-    if (!username.trim() || !password) {
-      setFormError('사용할 아이디와 비밀번호를 입력하세요.');
+    const trimmedEmail = email.trim();
+    const normalizedEmail = trimmedEmail.toLowerCase();
+    if (!trimmedEmail || !password) {
+      setFormError('이메일 주소와 비밀번호를 입력하세요.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      setFormError('올바른 이메일 주소를 입력하세요.');
+      return;
+    }
+    if (password.length < 8) {
+      setFormError('비밀번호는 8자 이상으로 설정하세요.');
       return;
     }
     if (registrationMode === 'invite_only' && !inviteCode.trim()) {
@@ -196,20 +207,22 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setSubmitting(true);
     try {
       const res = await registerUserAccount({
-        username: username.trim(),
+        email: trimmedEmail,
+        username: normalizedEmail,
         password,
-        display_name: displayName.trim() || username.trim(),
+        display_name: displayName.trim() || normalizedEmail.split('@')[0] || normalizedEmail,
         invite_code: inviteCode.trim() || undefined,
         remember_me: rememberMe,
       });
       if (res.status === 'active') {
         setFormSuccess(res.message || '가입이 완료되었습니다. 자동 로그인 중...');
-        await loginWithPassword(username.trim(), password, rememberMe);
+        await loginWithPassword(normalizedEmail, password, rememberMe);
         await handleLoginSuccess();
       } else {
         setFormSuccess(
           res.message || '가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.'
         );
+        setUsername(normalizedEmail);
         setTab('login');
         setPassword('');
       }
@@ -461,14 +474,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             <form onSubmit={handleSubmitLogin} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 5 }}>
-                  사용자 아이디
+                  이메일 또는 아이디
                 </label>
                 <input
                   type="text"
                   autoComplete="username"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  placeholder="아이디 입력"
+                  placeholder="name@company.com 또는 아이디"
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -568,14 +581,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  아이디 (영문·숫자·밑줄)
+                  이메일 주소 (Email)
                 </label>
                 <input
-                  type="text"
-                  autoComplete="username"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
-                  placeholder="예: engineer01"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="name@company.com"
                   style={{
                     width: '100%',
                     padding: '8px 11px',
@@ -589,7 +603,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  이름 / 소속
+                  이름 / 표시명
                 </label>
                 <input
                   type="text"
@@ -609,14 +623,15 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  비밀번호 (6자 이상)
+                  비밀번호 (8자 이상)
                 </label>
                 <input
                   type="password"
+                  minLength={8}
                   autoComplete="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="비밀번호 설정"
+                  placeholder="8자 이상 비밀번호 설정"
                   style={{
                     width: '100%',
                     padding: '8px 11px',
@@ -656,7 +671,20 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             </form>
           )}
 
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div
+              style={{
+                padding: '7px 10px',
+                borderRadius: 7,
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                fontSize: 10.8,
+                color: '#64748B',
+                lineHeight: 1.45,
+              }}
+            >
+              계정당 PC 1대 + 모바일 1대 동시 로그인 지원 (초과 시 기존 동일 기기 자동 로그아웃)
+            </div>
             <PwaInstallButton variant="login" />
             <div
               style={{

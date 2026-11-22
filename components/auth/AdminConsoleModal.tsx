@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  type ActiveDeviceSession,
   type AdminUserSummary,
   type InviteCodeItem,
   type RegistrationMode,
@@ -9,22 +10,44 @@ import {
   adminCreateUser,
   adminDeleteUser,
   adminFetchOverview,
+  adminRevokeUserSessions,
   adminToggleInviteCode,
   adminUpdateSettings,
   adminUpdateUser,
   changeMyPassword,
+  fetchMySessions,
+  revokeMySession,
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
-import { PLANT_REGISTRY } from '@/lib/plantRegistry';
+import { PLANT_REGISTRY, isSimulatorOnlyUser } from '@/lib/plantRegistry';
 import { UserOutlineIcon } from '@/components/ui/EngIcons';
 import { useAuth } from './AuthContext';
 
 const SELECTABLE_PLANTS = PLANT_REGISTRY.filter(p => !p.hiddenFromSelector && !p.isSandbox);
 
+type PlantPermissionScope = 'simulator_only' | 'all' | 'custom';
+
+function formatSessionTime(iso?: string | null): string {
+  if (!iso) return '-';
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('ko-KR', {
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
+
 function formatAllowedPlantCodes(user: { role?: string; allowed_plants?: string[] | null }): string[] {
   if (user.role === 'admin') return ['전체'];
   if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return ['전체'];
   if (user.allowed_plants.includes('*')) return ['전체'];
+  if (user.allowed_plants.includes('simulator_only')) return ['시뮬레이터 전용'];
   return user.allowed_plants.map(pid => PLANT_REGISTRY.find(p => p.id === pid)?.code ?? pid);
 }
 
@@ -36,9 +59,9 @@ function PlantPermissionPicker({
   disabled,
   disabledReason,
 }: {
-  scope: 'all' | 'custom';
+  scope: PlantPermissionScope;
   selectedPlants: string[];
-  onChangeScope: (next: 'all' | 'custom') => void;
+  onChangeScope: (next: PlantPermissionScope) => void;
   onTogglePlant: (plantId: string) => void;
   disabled?: boolean;
   disabledReason?: string;
@@ -62,6 +85,15 @@ function PlantPermissionPicker({
           <span style={{ color: '#0F766E', fontWeight: 700 }}>{disabledReason || '전체 공장 허용'}</span>
         ) : (
           <>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: scope === 'simulator_only' ? 800 : 600, color: scope === 'simulator_only' ? '#B45309' : '#334155' }}>
+              <input
+                type="radio"
+                checked={scope === 'simulator_only'}
+                onChange={() => onChangeScope('simulator_only')}
+                style={{ margin: 0, cursor: 'pointer' }}
+              />
+              <span>시뮬레이터 전용 · 예제 비공개 (베타 기본)</span>
+            </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: scope === 'all' ? 800 : 600, color: scope === 'all' ? '#1D4ED8' : '#334155' }}>
               <input
                 type="radio"
@@ -69,7 +101,7 @@ function PlantPermissionPicker({
                 onChange={() => onChangeScope('all')}
                 style={{ margin: 0, cursor: 'pointer' }}
               />
-              <span>전체 공장 허용 (제한 없음)</span>
+              <span>전체 공장</span>
             </label>
             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontWeight: scope === 'custom' ? 800 : 600, color: scope === 'custom' ? '#1D4ED8' : '#334155' }}>
               <input
@@ -78,7 +110,7 @@ function PlantPermissionPicker({
                 onChange={() => onChangeScope('custom')}
                 style={{ margin: 0, cursor: 'pointer' }}
               />
-              <span>개별 공장 선택</span>
+              <span>특정 공장 선택</span>
             </label>
           </>
         )}
@@ -306,11 +338,14 @@ export default function AdminConsoleModal() {
     refreshAuthAndHydrate,
   } = useAuth();
 
-  // 내 비밀번호 변경 상태
+  // 내 비밀번호 변경 상태 & 활성 기기 목록
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [showNewPw, setShowNewPw] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [mySessions, setMySessions] = useState<ActiveDeviceSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
 
   // 관리자 콘솔 상태
   const [adminLoading, setAdminLoading] = useState(false);
@@ -332,10 +367,10 @@ export default function AdminConsoleModal() {
   const [newDispName, setNewDispName] = useState('');
   const [newUserPw, setNewUserPw] = useState('');
   const [newUserRole, setNewUserRole] = useState<'user' | 'admin'>('user');
-  const [newUserPlantScope, setNewUserPlantScope] = useState<'all' | 'custom'>('all');
+  const [newUserPlantScope, setNewUserPlantScope] = useState<PlantPermissionScope>('simulator_only');
   const [newUserAllowedPlants, setNewUserAllowedPlants] = useState<string[]>([]);
   const [editingPlantsUser, setEditingPlantsUser] = useState<AdminUserSummary | null>(null);
-  const [editPlantScope, setEditPlantScope] = useState<'all' | 'custom'>('all');
+  const [editPlantScope, setEditPlantScope] = useState<PlantPermissionScope>('simulator_only');
   const [editAllowedPlants, setEditAllowedPlants] = useState<string[]>([]);
   const [showCreateUserPw, setShowCreateUserPw] = useState(true);
   const [lastIssuedCreds, setLastIssuedCreds] = useState<{
@@ -343,6 +378,19 @@ export default function AdminConsoleModal() {
     password: string;
     mode: '생성' | '재설정';
   } | null>(null);
+
+  const loadMySessions = useCallback(async () => {
+    if (!user) return;
+    setSessionsLoading(true);
+    try {
+      const list = await fetchMySessions();
+      setMySessions(Array.isArray(list) ? list : []);
+    } catch {
+      setMySessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [user]);
 
   const loadAdminOverview = useCallback(async () => {
     if (!user || user.role !== 'admin') return;
@@ -369,6 +417,12 @@ export default function AdminConsoleModal() {
       void loadAdminOverview();
     }
   }, [accountModalOpen, accountModalTab, user, loadAdminOverview]);
+
+  useEffect(() => {
+    if (accountModalOpen && accountModalTab === 'profile' && user) {
+      void loadMySessions();
+    }
+  }, [accountModalOpen, accountModalTab, user, loadMySessions]);
 
   if (!accountModalOpen || !user) return null;
 
@@ -471,14 +525,18 @@ export default function AdminConsoleModal() {
         password: pw,
         role: newUserRole,
         allowed_plants:
-          newUserRole === 'admin' || newUserPlantScope === 'all' ? null : newUserAllowedPlants,
+          newUserRole === 'admin' || newUserPlantScope === 'all'
+            ? null
+            : newUserPlantScope === 'simulator_only'
+              ? ['simulator_only']
+              : newUserAllowedPlants,
       });
       setLastIssuedCreds({ username: uname, password: pw, mode: '생성' });
       const copied = await copyToClipboard(pw);
       setNewUsername('');
       setNewDispName('');
       setNewUserPw('');
-      setNewUserPlantScope('all');
+      setNewUserPlantScope('simulator_only');
       setNewUserAllowedPlants([]);
       setAdminMsg({
         type: 'ok',
@@ -493,13 +551,15 @@ export default function AdminConsoleModal() {
   };
 
   const openEditUserPlants = (u: AdminUserSummary) => {
+    const isSimOnly = isSimulatorOnlyUser(u);
     const hasRestricted =
+      !isSimOnly &&
       u.role !== 'admin' &&
       Array.isArray(u.allowed_plants) &&
       u.allowed_plants.length > 0 &&
       !u.allowed_plants.includes('*');
     setEditingPlantsUser(u);
-    setEditPlantScope(hasRestricted ? 'custom' : 'all');
+    setEditPlantScope(isSimOnly ? 'simulator_only' : hasRestricted ? 'custom' : 'all');
     setEditAllowedPlants(hasRestricted ? [...(u.allowed_plants ?? [])] : []);
   };
 
@@ -507,12 +567,17 @@ export default function AdminConsoleModal() {
     if (!editingPlantsUser) return;
     setAdminMsg(null);
     if (editPlantScope === 'custom' && editAllowedPlants.length === 0) {
-      setAdminMsg({ type: 'err', text: '개별 공장 선택 모드에서는 최소 1개 이상의 공장을 선택하세요.' });
+      setAdminMsg({ type: 'err', text: '특정 공장 선택 모드에서는 최소 1개 이상의 공장을 선택하세요.' });
       return;
     }
     try {
       await adminUpdateUser(editingPlantsUser.id, {
-        allowed_plants: editPlantScope === 'all' ? null : editAllowedPlants,
+        allowed_plants:
+          editPlantScope === 'all'
+            ? null
+            : editPlantScope === 'simulator_only'
+              ? ['simulator_only']
+              : editAllowedPlants,
       });
       setAdminMsg({
         type: 'ok',
@@ -526,6 +591,44 @@ export default function AdminConsoleModal() {
       }
     } catch (err) {
       setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '공장 권한 변경 실패' });
+    }
+  };
+
+  const handleRevokeMySession = async (sess: ActiveDeviceSession) => {
+    setProfileMsg(null);
+    setRevokingSessionId(sess.id);
+    try {
+      await revokeMySession(sess.id);
+      if (sess.is_current) {
+        await refreshAuthAndHydrate();
+        return;
+      }
+      setProfileMsg({ type: 'ok', text: '선택한 기기의 로그인 세션이 종료되었습니다.' });
+      await loadMySessions();
+    } catch (err) {
+      setProfileMsg({
+        type: 'err',
+        text: err instanceof Error ? err.message : '기기 로그아웃 처리에 실패했습니다.',
+      });
+    } finally {
+      setRevokingSessionId(null);
+    }
+  };
+
+  const handleAdminRevokeUserSessions = async (u: AdminUserSummary) => {
+    if (!window.confirm(`[${u.username}] 사용자의 모든 활성 로그인 기기(PC/모바일)를 강제 로그아웃할까요?`)) {
+      return;
+    }
+    setAdminMsg(null);
+    try {
+      await adminRevokeUserSessions(u.id);
+      setAdminMsg({ type: 'ok', text: `[${u.username}] 모든 활성 기기 세션이 강제 종료되었습니다.` });
+      await loadAdminOverview();
+      if (u.id === user.id) {
+        await refreshAuthAndHydrate();
+      }
+    } catch (err) {
+      setAdminMsg({ type: 'err', text: err instanceof Error ? err.message : '기기 강제 로그아웃 실패' });
     }
   };
 
@@ -711,6 +814,11 @@ export default function AdminConsoleModal() {
                   <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
                     {user.display_name} ({user.username})
                   </div>
+                  {user.email && (
+                    <div style={{ fontSize: 11.5, color: '#334155', marginTop: 2 }}>
+                      이메일: <b>{user.email}</b>
+                    </div>
+                  )}
                   <div style={{ fontSize: 11.5, color: '#475569', marginTop: 2 }}>
                     권한: <b>{user.role === 'admin' ? '시스템 관리자' : '엔지니어 사용자'}</b> · 상태: <b>{user.status}</b> · 접근 공장:{' '}
                     <b>{formatAllowedPlantCodes(user).join(', ')}</b>
@@ -827,6 +935,131 @@ export default function AdminConsoleModal() {
                   비밀번호 저장
                 </button>
               </form>
+
+              {/* 활성 로그인 기기 목록 */}
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 10,
+                  border: '1px solid #E2E8F0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0F172A' }}>
+                      활성 로그인 기기 목록
+                    </div>
+                    <div style={{ fontSize: 10.8, color: '#64748B', marginTop: 2 }}>
+                      계정당 PC 1대 + 모바일 1대 동시 로그인 지원
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadMySessions()}
+                    disabled={sessionsLoading}
+                    style={{
+                      padding: '4px 9px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      color: '#334155',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {sessionsLoading ? '조회 중...' : '새로고침'}
+                  </button>
+                </div>
+
+                {sessionsLoading && mySessions.length === 0 ? (
+                  <div style={{ fontSize: 11.5, color: '#64748B', padding: '6px 2px' }}>
+                    활성 기기 정보를 불러오는 중...
+                  </div>
+                ) : mySessions.length === 0 ? (
+                  <div style={{ fontSize: 11.5, color: '#64748B', padding: '6px 2px' }}>
+                    표시할 활성 로그인 기기가 없습니다.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {mySessions.map(sess => {
+                      const isMobile = sess.device_type === 'mobile';
+                      const label = sess.device_label || (isMobile ? '모바일 브라우저' : 'PC 브라우저');
+                      return (
+                        <div
+                          key={sess.id}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            background: sess.is_current ? '#EFF6FF' : '#F8FAFC',
+                            border: sess.is_current ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              <span
+                                style={{
+                                  padding: '1.5px 6px',
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 800,
+                                  background: isMobile ? '#FEF3C7' : '#DBEAFE',
+                                  color: isMobile ? '#92400E' : '#1E40AF',
+                                }}
+                              >
+                                {isMobile ? '모바일' : 'PC'}
+                              </span>
+                              <span style={{ fontSize: 11.8, fontWeight: 700, color: '#0F172A' }}>
+                                {label}
+                              </span>
+                              {sess.is_current && (
+                                <span
+                                  style={{
+                                    fontSize: 10.5,
+                                    fontWeight: 800,
+                                    color: '#1D4ED8',
+                                  }}
+                                >
+                                  (현재 기기)
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
+                              최근 활동: {formatSessionTime(sess.last_seen_at || sess.created_at)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={revokingSessionId === sess.id}
+                            onClick={() => void handleRevokeMySession(sess)}
+                            style={{
+                              padding: '4px 9px',
+                              borderRadius: 6,
+                              border: '1px solid #FCA5A5',
+                              background: '#FEF2F2',
+                              color: '#B91C1C',
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: revokingSessionId === sess.id ? 'wait' : 'pointer',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {revokingSessionId === sess.id ? '처리 중...' : '로그아웃'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1346,9 +1579,10 @@ export default function AdminConsoleModal() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead style={{ background: '#F8FAFC', color: '#475569' }}>
                       <tr>
-                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>아이디 (이름)</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>아이디 (이름 · 이메일)</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>권한</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>공장 권한</th>
+                        <th style={{ padding: '6px 8px', textAlign: 'center' }}>활성 기기</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>상태</th>
                         <th style={{ padding: '6px 8px', textAlign: 'center' }}>저장 데이터</th>
                         <th style={{ padding: '6px 8px', textAlign: 'right' }}>관리</th>
@@ -1358,10 +1592,21 @@ export default function AdminConsoleModal() {
                       {users.map(u => {
                         const plantBadges = formatAllowedPlantCodes(u);
                         const isAllPlants = plantBadges.length === 1 && plantBadges[0] === '전체';
+                        const isSimOnly = isSimulatorOnlyUser(u);
+                        const showEmail = Boolean(u.email && u.email.toLowerCase() !== u.username.toLowerCase());
+                        const desktopCount = u.active_desktop_sessions ?? 0;
+                        const mobileCount = u.active_mobile_sessions ?? 0;
                         return (
                         <tr key={u.id} style={{ borderTop: '1px solid #F1F5F9' }}>
                           <td style={{ padding: '6px 8px' }}>
-                            <b>{u.username}</b> <span style={{ color: '#64748B' }}>({u.display_name})</span>
+                            <div>
+                              <b>{u.username}</b> <span style={{ color: '#64748B' }}>({u.display_name})</span>
+                            </div>
+                            {showEmail && (
+                              <div style={{ fontSize: 10, color: '#64748B', marginTop: 1 }}>
+                                {u.email}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -1378,9 +1623,9 @@ export default function AdminConsoleModal() {
                                     borderRadius: 4,
                                     fontSize: 10,
                                     fontWeight: 800,
-                                    background: isAllPlants ? '#ECFDF5' : '#EFF6FF',
-                                    border: `1px solid ${isAllPlants ? '#6EE7B7' : '#93C5FD'}`,
-                                    color: isAllPlants ? '#065F46' : '#1E40AF',
+                                    background: isSimOnly ? '#FEF3C7' : isAllPlants ? '#ECFDF5' : '#EFF6FF',
+                                    border: `1px solid ${isSimOnly ? '#F59E0B' : isAllPlants ? '#6EE7B7' : '#93C5FD'}`,
+                                    color: isSimOnly ? '#92400E' : isAllPlants ? '#065F46' : '#1E40AF',
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
@@ -1388,6 +1633,24 @@ export default function AdminConsoleModal() {
                                 </span>
                               ))}
                             </div>
+                          </td>
+                          <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                padding: '2px 6px',
+                                borderRadius: 4,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                fontFamily: 'JetBrains Mono, monospace',
+                                background: desktopCount + mobileCount > 0 ? '#F0F9FF' : '#F8FAFC',
+                                border: `1px solid ${desktopCount + mobileCount > 0 ? '#BAE6FD' : '#E2E8F0'}`,
+                                color: desktopCount + mobileCount > 0 ? '#0369A1' : '#64748B',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              PC {desktopCount}/1 · 모바일 {mobileCount}/1
+                            </span>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
                             <span
@@ -1425,6 +1688,13 @@ export default function AdminConsoleModal() {
                                 공장권한
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminRevokeUserSessions(u)}
+                              style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#334155', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              기기 강제 로그아웃
+                            </button>
                             {u.status === 'pending' && (
                               <button
                                 type="button"
