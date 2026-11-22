@@ -96,6 +96,13 @@ export const PSAT_DIPPR101: Partial<Record<SimCompKey, Dippr101Entry>> = {
   PMDI: { A: 122.4000, B: -18250.00, C: -13.20000, D: 2.8000e-6, E: 2, TminK: 320.0, TmaxK: 945.0, source: LK_ANCHORED },
   CUSTOM_1: { A: 130.3499, B: -10136.14, C: -15.8164, D: 9.85969e-6, E: 2, TminK: 183.85, TmaxK: 563.05, source: LK_ANCHORED },
   CUSTOM_2: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
+  // 3차 확장: 국내 중견/중소 전자소재 · 이차전지 · 수처리 휘발성 6종
+  H2O2: { A: 81.5218, B: -8897.99, C: -8.1815, D: 2.8105e-6, E: 2, TminK: 272.72, TmaxK: 730.15, source: LK_ANCHORED },
+  H3PO4: { A: 58.7621, B: -7925.90, C: -5.0, D: 0, E: 2, TminK: 315.5, TmaxK: 1030.0, source: 'regressed-estimate: Clausius-Kirchhoff DIPPR-101 anchored to Tb (213.0°C, 101.325 kPa) and (Tc 1030 K, Pc 130 bar)' },
+  HF: { A: 127.6897, B: -7599.66, C: -16.1221, D: 1.5803e-5, E: 2, TminK: 189.79, TmaxK: 461.15, source: LK_ANCHORED },
+  NH4OH: { A: 64.7643, B: -7628.77, C: -5.0, D: 0, E: 2, TminK: 200.0, TmaxK: 415.0, source: 'regressed-estimate: Clausius-Kirchhoff DIPPR-101 anchored to Tb (37.7°C, 101.325 kPa) and (Tc 415 K, Pc 113 bar)' },
+  NMP: { A: 74.5794, B: -8702.27, C: -7.33433, D: 2.06194e-6, E: 2, TminK: 249.15, TmaxK: 721.6, source: LK_ANCHORED },
+  BCS: { A: 90.4912, B: -9631.87, C: -9.45411, D: 1.73669e-6, E: 2, TminK: 198.36, TmaxK: 633.9, source: LK_ANCHORED },
 };
 
 /** Evaluate DIPPR-101 vapor pressure in Pa (returns NaN if component missing). Clamped to [TminK, TmaxK]. */

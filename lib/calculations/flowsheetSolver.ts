@@ -132,7 +132,18 @@ export type SimCompKey =
   | 'MDI'
   | 'PMDI'
   | 'CUSTOM_1'
-  | 'CUSTOM_2';
+  | 'CUSTOM_2'
+  | 'H2O2'
+  | 'H3PO4'
+  | 'HF'
+  | 'KOH'
+  | 'NH4OH'
+  | 'TMAH'
+  | 'NMP'
+  | 'BCS'
+  | 'Na2CO3'
+  | 'NaHSO3'
+  | 'CaOH2';
 
 export const SIM_COMPS: SimCompKey[] = [
   'H2O',
@@ -212,6 +223,17 @@ export const SIM_COMPS: SimCompKey[] = [
   'PMDI',
   'CUSTOM_1',
   'CUSTOM_2',
+  'H2O2',
+  'H3PO4',
+  'HF',
+  'KOH',
+  'NH4OH',
+  'TMAH',
+  'NMP',
+  'BCS',
+  'Na2CO3',
+  'NaHSO3',
+  'CaOH2',
 ];
 
 const GENERAL_21_KEYS: SimCompKey[] = [
@@ -273,6 +295,17 @@ const GENERAL_21_KEYS: SimCompKey[] = [
   'PMDI',
   'CUSTOM_1',
   'CUSTOM_2',
+  'H2O2',
+  'H3PO4',
+  'HF',
+  'KOH',
+  'NH4OH',
+  'TMAH',
+  'NMP',
+  'BCS',
+  'Na2CO3',
+  'NaHSO3',
+  'CaOH2',
 ];
 
 const mwOf = (k: string, fallback: number): number =>
@@ -367,6 +400,17 @@ export const COMP_META: Record<
   PMDI: { formula: 'PMDI', label: 'PMDI (폴리머릭 MDI)', mw: mwOf('PMDI', 381.400), isGasAtStd: false, cpLiq: 0.44, cpGas: 0.30, group: 'aromatic' },
   CUSTOM_1: { formula: 'CUSTOM-1', label: 'CUSTOM_1 (사용자정의/UNIFAC 물질 1)', mw: mwOf('CUSTOM_1', 74.122), isGasAtStd: false, cpLiq: 0.56, cpGas: 0.355, group: 'polar_solvent' },
   CUSTOM_2: { formula: 'CUSTOM-2', label: 'CUSTOM_2 (사용자정의/UNIFAC 물질 2)', mw: mwOf('CUSTOM_2', 93.128), isGasAtStd: false, cpLiq: 0.495, cpGas: 0.285, group: 'aromatic' },
+  H2O2:     { formula: 'H₂O₂',     label: 'H₂O₂ (과산화수소)',                 mw: mwOf('H2O2', 34.0147),    isGasAtStd: false, cpLiq: 0.626, cpGas: 0.298, group: '1B_inorg' },
+  H3PO4:    { formula: 'H₃PO₄',    label: 'H₃PO₄ (인산)',                      mw: mwOf('H3PO4', 97.9952),   isGasAtStd: false, cpLiq: 0.36,  cpGas: 0.20,  group: '1B_inorg' },
+  HF:       { formula: 'HF',       label: 'HF (불산/불화수소)',                 mw: mwOf('HF', 20.0063),      isGasAtStd: true,  cpLiq: 0.62,  cpGas: 0.348, group: '1B_inorg' },
+  KOH:      { formula: 'KOH',      label: 'KOH (수산화칼륨)',                  mw: mwOf('KOH', 56.1056),     isGasAtStd: false, cpLiq: 0.42,  cpGas: 0.21,  group: '1B_inorg' },
+  NH4OH:    { formula: 'NH₄OH',    label: 'NH₄OH (암모니아수)',                mw: mwOf('NH4OH', 35.0458),   isGasAtStd: false, cpLiq: 0.96,  cpGas: 0.47,  group: '1B_inorg' },
+  TMAH:     { formula: 'TMAH',     label: 'TMAH (테트라메틸암모늄하이드록사이드)', mw: mwOf('TMAH', 91.152),   isGasAtStd: false, cpLiq: 0.65,  cpGas: 0.31,  group: '1B_inorg' },
+  NMP:      { formula: 'NMP',      label: 'NMP (N-메틸-2-피롤리돈)',           mw: mwOf('NMP', 99.131),      isGasAtStd: false, cpLiq: 0.40,  cpGas: 0.26,  group: 'polar_solvent' },
+  BCS:      { formula: 'BCS',      label: 'BCS (부틸셀로솔브/2-부톡시에탄올)',   mw: mwOf('BCS', 118.174),     isGasAtStd: false, cpLiq: 0.547, cpGas: 0.33,  group: 'polar_solvent' },
+  Na2CO3:   { formula: 'Na₂CO₃',   label: 'Na₂CO₃ (탄산나트륨/소다회)',        mw: mwOf('Na2CO3', 105.9888), isGasAtStd: false, cpLiq: 0.27,  cpGas: 0.25,  group: '1B_inorg' },
+  NaHSO3:   { formula: 'NaHSO₃',   label: 'NaHSO₃ (중아황산소다)',             mw: mwOf('NaHSO3', 104.061),  isGasAtStd: false, cpLiq: 0.30,  cpGas: 0.22,  group: '1B_inorg' },
+  CaOH2:    { formula: 'Ca(OH)₂',  label: 'Ca(OH)₂ (소석회/수산화칼슘)',        mw: mwOf('CaOH2', 74.093),    isGasAtStd: false, cpLiq: 0.29,  cpGas: 0.28,  group: '1B_inorg' },
 };
 
 export type RefrigerantPresetKey =
@@ -876,6 +920,17 @@ export function emptySimFlows(
     PMDI: 0,
     CUSTOM_1: 0,
     CUSTOM_2: 0,
+    H2O2: 0,
+    H3PO4: 0,
+    HF: 0,
+    KOH: 0,
+    NH4OH: 0,
+    TMAH: 0,
+    NMP: 0,
+    BCS: 0,
+    Na2CO3: 0,
+    NaHSO3: 0,
+    CaOH2: 0,
     ...(overrides ?? {}),
   };
 }

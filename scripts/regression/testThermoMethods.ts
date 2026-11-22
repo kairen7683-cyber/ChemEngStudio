@@ -37,7 +37,7 @@ function assert(cond: boolean, msg: string): void {
 }
 
 console.log('=== [1] 전 성분 카탈로그 & 물성 DB 완전성 검증 ===');
-assert(SIM_COMPS.length === 77, `SIM_COMPS length === 77 (got ${SIM_COMPS.length})`);
+assert(SIM_COMPS.length === 88, `SIM_COMPS length === 88 (got ${SIM_COMPS.length})`);
 for (const k of SIM_COMPS) {
   if (!COMP_META[k] || !(MW[k] > 0) || !THERMO_DATA[k] || !COMP_CATALOG_META[k]) {
     assert(false, `Missing metadata for component ${k}`);

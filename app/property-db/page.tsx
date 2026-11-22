@@ -125,6 +125,8 @@ interface SubstanceCompatSpec {
   defaultMethod: ThermoMethodCode;
   fixedOrDefaultWt?: number;
   allowsConcEdit: boolean;
+  /** 권장 배관/장치 내식 재질 */
+  recommendedMaterial?: string;
 }
 
 const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
@@ -152,7 +154,8 @@ const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
   steam_lp:      { categoryLabel: '유틸리티 · 저압 스팀 (LP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
   steam_mp:      { categoryLabel: '유틸리티 · 중압 스팀 (MP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
   steam_hp:      { categoryLabel: '유틸리티 · 고압 스팀 (HP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  dowtherm_a:    { categoryLabel: '유틸리티 · 고온 열매유 (Dowtherm A)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  dowtherm_a:    { categoryLabel: '유틸리티 · 고온 열매유 (Dowtherm A)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (무수 고온 운전)' },
+  therminol_66:  { categoryLabel: '유틸리티 · 고온 무가압 열매유 (Therminol 66)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (0~345°C 무가압 열매체)' },
   brine_coolant: { categoryLabel: '유틸리티 · 심냉 브라인 (-20°C)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
 
   // 4) 표준 농도 무기/전해질 수용액
@@ -201,6 +204,25 @@ const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
   dcp_12:        { categoryLabel: '1,2-디클로로프로판 (1,2-DCP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
   acetic_cat:    { categoryLabel: '빙초산 (Glacial Acetic Acid)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
   aibn_initiator:{ categoryLabel: 'AIBN 라디칼 개시제 (Azobisisobutyronitrile)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+
+  // 7) 국내 중소·중견 화학·반도체·이차전지 핵심 공정 약품 (11종 순수성분 + 6종 공업용 표준 수용액)
+  H2O2:          { categoryLabel: '산화성 무기액체 · 과산화수소 (H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE' },
+  H3PO4:         { categoryLabel: '고점도 무기산 · 인산 (H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE' },
+  HF:            { categoryLabel: '강부식성 할로겐산 · 불화수소 (HF)', compatibleMethods: ['ELECNRTL', 'NRTL', 'PENG-ROB'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276 (유리·SS 엄금)' },
+  KOH:           { categoryLabel: '강알칼리 전해질 · 수산화칼륨 (KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200 (Al·Zn 엄금)' },
+  NH4OH:         { categoryLabel: '휘발성 알칼리 수용액 · 암모니아수 (NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)' },
+  TMAH:          { categoryLabel: '반도체·디스플레이 유기 강알칼리 현상액 (TMAH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA' },
+  NMP:           { categoryLabel: '이차전지 양극재 슬러리 극성 비양성자 용매 (NMP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE (EPDM·Viton 주의)' },
+  BCS:           { categoryLabel: '글리콜에테르 도료·세정 용제 (부틸셀로솔브 · BCS)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE' },
+  Na2CO3:        { categoryLabel: '무기 알칼리 염 · 탄산나트륨 (소다회)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / FRP' },
+  NaHSO3:        { categoryLabel: '수처리 잔류염소 환원제 · 중아황산나트륨 (NaHSO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PE' },
+  CaOH2:         { categoryLabel: '폐수 중화·탈황 알칼리 · 수산화칼슘 (소석회)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / 고무라이닝 (슬러리 침강 주의)' },
+  h2o2_35:       { categoryLabel: '과산화수소수 공업용 표준액 (35 wt% H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE' },
+  h3po4_85:      { categoryLabel: '인산 공업용·식각용 표준액 (85 wt% H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 85.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE' },
+  hf_49:         { categoryLabel: '불산 반도체·산세 표준액 (49 wt% HF)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 49.0, allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276' },
+  koh_45:        { categoryLabel: '액상 수산화칼륨 표준액 (45 wt% KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 45.0, allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200' },
+  nh4oh_28:      { categoryLabel: '암모니아수 공업용 표준액 (28 wt% NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 28.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)' },
+  tmah_25:       { categoryLabel: 'TMAH 반도체·디스플레이 현상액 (25 wt%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA' },
 };
 
 const CATEGORY_FILTERS: Array<{ id: CategoryFilterId; label: string }> = [
@@ -219,12 +241,13 @@ const GAS_SIM_COMPS = new Set<SimCompKey>([
 ]);
 const ELEC_SIM_COMPS = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC', 'HNO3',
+  'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ]);
 const ALCOHOL_SIM_COMPS = new Set<SimCompKey>([
-  'Glycerol', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'MEK', 'EG', 'FormicAcid', 'HCHO', 'CUSTOM_1',
+  'Glycerol', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'MEK', 'EG', 'BCS', 'FormicAcid', 'HCHO', 'CUSTOM_1',
 ]);
 const CHLOR_SOLVENT_SIM_COMPS = new Set<SimCompKey>([
-  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'MTBE', 'DMC', 'MEA', 'MDEA',
+  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'NMP', 'MTBE', 'DMC', 'MEA', 'MDEA',
 ]);
 
 function classifyFluidCategory(f: FluidProps): Exclude<CategoryFilterId, 'all'> {
@@ -369,6 +392,7 @@ function estimateSatTempC(fl: FluidProps, pBar: number): number | undefined {
 
 const NON_VOLATILE_SIM_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
+  'H3PO4', 'KOH', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ]);
 
 export default function PropertyDbPage() {
@@ -432,7 +456,7 @@ export default function PropertyDbPage() {
           setTempC(235.0);
           setPressBar(30.6);
           setConcWt(100);
-        } else if (newKey === 'dowtherm_a') {
+        } else if (newKey === 'dowtherm_a' || newKey === 'therminol_66') {
           setTempC(250.0);
           setPressBar(2.0);
           setConcWt(100);
@@ -847,6 +871,7 @@ export default function PropertyDbPage() {
       sysKey === 'Glycerol' ||
       sysKey === 'glycerol' ||
       sysKey === 'dowtherm_a' ||
+      sysKey === 'therminol_66' ||
       (fl?.Tb_C !== undefined && fl.Tb_C > 200)
     ) {
       return [40, 70, 100, 130, 160, 190, 220, 250, 280, 310];
@@ -1066,7 +1091,7 @@ export default function PropertyDbPage() {
           {/* Quick search sample chips */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginBottom: 10 }}>
             <span style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B' }}>빠른 검색 예시:</span>
-            {['CFM', 'MCL', 'MCB', 'MDI', 'PMDI', '108-90-7', 'CH3Cl', 'ECH', 'steam_lp', 'dowtherm_a'].map(tag => (
+            {['CFM', 'MCL', 'MCB', 'MDI', 'PMDI', '108-90-7', 'CH3Cl', 'ECH', 'NMP', 'H2O2', 'steam_lp', 'dowtherm_a', 'therminol_66'].map(tag => (
               <button
                 key={tag}
                 type="button"
@@ -1553,6 +1578,12 @@ export default function PropertyDbPage() {
                 ✓ 계산 가능 모델: {compat.compatibleMethods.join(' / ')}
               </div>
             </div>
+
+            {compat.recommendedMaterial && (
+              <div style={{ fontSize: 11, color: '#1E3A8A' }}>
+                <b>권장 내식 재질:</b> {compat.recommendedMaterial}
+              </div>
+            )}
 
             {currentFluidObj?.noteKo && (
               <div style={{ fontSize: 11, color: '#334155' }}>

@@ -173,12 +173,38 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   PMDI:       { mw: MW.PMDI, kind: 'molecular', dHfIg: -240.0, cpIg: [-52.0, 1.65, -1.1e-3, 3.0e-7], Tc: 945.0, TvapRef: 708.15, dHvapRef: 78.0, cpLiq298: 580.0, watsonN: 0.38 },
   CUSTOM_1: { mw: MW.CUSTOM_1, kind: 'molecular', dHfIg: -274.6, cpIg: [3.266, 0.418, -0.0002242, 4.685e-08], Tc: 563.05, TvapRef: 390.9, dHvapRef: 43.29, watsonN: 0.38 },
   CUSTOM_2: { mw: MW.CUSTOM_2, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-07], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
+  // ── 3차 확장: 국내 중견/중소 전자소재 · 이차전지 · 수처리 핵심 11종 ──
+  // H2O2: NIST ΔHf°(g) −136.11, ΔHf°(l) −187.78 → ΔHvap(298) = 51.67 kJ/mol, Cp_l(298) = 89.1 J/mol·K
+  H2O2:     { mw: MW.H2O2, kind: 'molecular', dHfIg: -136.11, cpIg: [34.26, 3.04e-2, -2.53e-5, 7.65e-9], Tc: 730.15, TvapRef: 298.15, dHvapRef: 51.67, cpLiq298: 89.1, watsonN: 0.38 },
+  // H3PO4: NIST ΔHf°(aq) −1288.34, ΔHf°(s) −1279.0; 85% 수용액 Cp ≈ 0.44 kcal/kg·K
+  H3PO4:    { mw: MW.H3PO4, kind: 'electrolyte', dHfIg: -1125.0, cpIg: [42.0, 0.165, -1.15e-4, 3.1e-8], Tc: 1030.0, TvapRef: 486.15, dHvapRef: 68.0, dHfAq: -1288.34, dHfSolid: -1279.0, cpAqKcalKgK: 0.36 },
+  // HF: NIST ΔHf°(g) −273.30, ΔHf°(aq) −320.08 (용해열 −46.8 kJ/mol), Tb 19.5 °C
+  HF:       { mw: MW.HF, kind: 'electrolyte', dHfIg: -273.30, cpIg: [29.09, 6.61e-4, 2.03e-6, -2.50e-9], Tc: 461.15, TvapRef: 292.65, dHvapRef: 25.2, dHfAq: -320.08, cpAqKcalKgK: 0.62 },
+  // KOH: NIST ΔHf°(s) −424.72, ΔHf°(aq,∞) −482.37 (용해열 −57.65 kJ/mol)
+  KOH:      { mw: MW.KOH, kind: 'electrolyte', dHfIg: -232.6, cpIg: [49.2, 0, 0, 0], dHfAq: -482.37, dHfSolid: -424.72, cpAqKcalKgK: 0.42 },
+  // NH4OH: NIST ΔHf°(aq) −366.12 (NH3+H2O 수용액), Tb 37.7 °C (28~30% 암모니아수 기준)
+  NH4OH:    { mw: MW.NH4OH, kind: 'electrolyte', dHfIg: -287.77, cpIg: [59.55, 2.575e-2, 2.762e-5, -1.545e-8], Tc: 415.0, TvapRef: 310.85, dHvapRef: 34.5, dHfAq: -366.12, cpAqKcalKgK: 0.96 },
+  // TMAH (Tetramethylammonium hydroxide): 전자급 현상액 유기강염기 전해질 [추산]
+  TMAH:     { mw: MW.TMAH, kind: 'electrolyte', dHfIg: -290.0, cpIg: [28.0, 0.345, -1.95e-4, 4.1e-8], dHfAq: -445.0, dHfSolid: -410.0, cpAqKcalKgK: 0.65 },
+  // NMP (N-Methyl-2-pyrrolidone): customComponentEngine.ts 일치 — ΔHf°(g) −196.0, Tc 721.6 K, ΔHvap(Tb) 43.9 kJ/mol
+  NMP:      { mw: MW.NMP, kind: 'molecular', dHfIg: -196.0, cpIg: [-26.5, 0.535, -3.12e-4, 6.85e-8], Tc: 721.6, TvapRef: 475.15, dHvapRef: 43.9, cpLiq298: 166.1, watsonN: 0.38 },
+  // BCS (2-Butoxyethanol): NIST ΔHf°(g) −460.0, Tc 633.9 K, ΔHvap(Tb) 43.4 kJ/mol, Cp_l(298) 270.6 J/mol·K
+  BCS:      { mw: MW.BCS, kind: 'molecular', dHfIg: -460.0, cpIg: [12.5, 0.585, -3.10e-4, 6.35e-8], Tc: 633.9, TvapRef: 444.35, dHvapRef: 43.4, cpLiq298: 270.6, watsonN: 0.38 },
+  // Na2CO3: NIST ΔHf°(s) −1130.7, ΔHf°(aq,∞) −1157.38
+  Na2CO3:   { mw: MW.Na2CO3, kind: 'electrolyte', dHfIg: -740.0, cpIg: [112.3, 0, 0, 0], dHfAq: -1157.38, dHfSolid: -1130.7, cpAqKcalKgK: 0.27 },
+  // NaHSO3: NIST ΔHf°(aq,∞) −866.34 (Na⁺ + HSO₃⁻), ΔHf°(s) −853.0
+  NaHSO3:   { mw: MW.NaHSO3, kind: 'electrolyte', dHfIg: -680.0, cpIg: [95.0, 0, 0, 0], dHfAq: -866.34, dHfSolid: -853.0, cpAqKcalKgK: 0.30 },
+  // Ca(OH)2: NIST ΔHf°(s) −986.09, ΔHf°(aq,∞) −1002.81
+  CaOH2:    { mw: MW.CaOH2, kind: 'electrolyte', dHfIg: -610.0, cpIg: [87.5, 0, 0, 0], dHfAq: -1002.81, dHfSolid: -986.09, cpAqKcalKgK: 0.29 },
 };
 
 const COMP_KEYS = Object.keys(THERMO_DATA) as SimCompKey[];
 
 /** 비휘발성(수용액·고체로만 존재) 성분 — 기상에 실려 있어도(미스트) 액상 엔탈피로 계산 */
-const NONVOLATILE: ReadonlySet<SimCompKey> = new Set<SimCompKey>(['NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC']);
+const NONVOLATILE: ReadonlySet<SimCompKey> = new Set<SimCompKey>([
+  'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
+]);
 
 // ── 적분 용해열 표 ΔHs(n) (kJ/mol 용질, 25 °C) ── [n, ΔHs]
 // 기준 순수상: HCl(g), NaOH(s), H2SO4(l). n=0 은 순수상(ΔHs=0).

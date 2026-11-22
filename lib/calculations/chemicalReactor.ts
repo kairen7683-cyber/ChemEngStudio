@@ -129,9 +129,14 @@ const NONVOLATILE_ELECTROLYTES = new Set<SimCompKey>([
   'FeCl2',
   'FeCl3',
   'PAC',
+  'KOH',
+  'TMAH',
+  'Na2CO3',
+  'NaHSO3',
+  'CaOH2',
 ]);
 
-export type ElementSymbol = 'C' | 'H' | 'O' | 'N' | 'Cl' | 'S' | 'Na' | 'Fe' | 'Al' | 'Ar';
+export type ElementSymbol = 'C' | 'H' | 'O' | 'N' | 'Cl' | 'S' | 'Na' | 'Fe' | 'Al' | 'Ar' | 'P' | 'F' | 'K' | 'Ca';
 
 export const ELEMENT_SYMBOLS: readonly ElementSymbol[] = [
   'C',
@@ -144,6 +149,10 @@ export const ELEMENT_SYMBOLS: readonly ElementSymbol[] = [
   'Fe',
   'Al',
   'Ar',
+  'P',
+  'F',
+  'K',
+  'Ca',
 ];
 
 /**
@@ -227,6 +236,17 @@ export const ELEMENT_COMPOSITION: Record<SimCompKey, Partial<Record<ElementSymbo
   PMDI: { C: 23, H: 16, N: 3, O: 3 },
   CUSTOM_1: { C: 4, H: 10, O: 1 },
   CUSTOM_2: { C: 6, H: 7, N: 1 },
+  H2O2: { H: 2, O: 2 },
+  H3PO4: { H: 3, P: 1, O: 4 },
+  HF: { H: 1, F: 1 },
+  KOH: { K: 1, O: 1, H: 1 },
+  NH4OH: { N: 1, H: 5, O: 1 },
+  TMAH: { C: 4, H: 13, N: 1, O: 1 },
+  NMP: { C: 5, H: 9, N: 1, O: 1 },
+  BCS: { C: 6, H: 14, O: 2 },
+  Na2CO3: { Na: 2, C: 1, O: 3 },
+  NaHSO3: { Na: 1, H: 1, S: 1, O: 3 },
+  CaOH2: { Ca: 1, O: 2, H: 2 },
 };
 
 /**
@@ -312,6 +332,17 @@ export const GIBBS_FORMATION_298: Record<SimCompKey, { dGfIg: number; dGfLiq?: n
   PMDI: { dGfIg: 35.0, dGfLiq: 8.0 },
   CUSTOM_1: { dGfIg: -150.8, dGfLiq: -162.5 },
   CUSTOM_2: { dGfIg: 166.7, dGfLiq: 149.1 },
+  H2O2: { dGfIg: -105.6, dGfLiq: -120.4 },
+  H3PO4: { dGfIg: -1020.0, dGfLiq: -1119.1 },
+  HF: { dGfIg: -275.4, dGfLiq: -296.8 },
+  KOH: { dGfIg: -233.7, dGfLiq: -440.5 },
+  NH4OH: { dGfIg: -245.0, dGfLiq: -263.65 },
+  TMAH: { dGfIg: -85.0, dGfLiq: -105.0 },
+  NMP: { dGfIg: -78.5, dGfLiq: -95.0 },
+  BCS: { dGfIg: -195.0, dGfLiq: -210.0 },
+  Na2CO3: { dGfIg: -1044.4, dGfLiq: -1051.6 },
+  NaHSO3: { dGfIg: -765.0, dGfLiq: -789.6 },
+  CaOH2: { dGfIg: -898.5, dGfLiq: -868.1 },
 };
 
 // ── 유틸리티 함수 ───────────────────────────────────────────────────────────
@@ -1520,6 +1551,10 @@ function solveGibbsAtTemp(
     Fe: 0,
     Al: 0,
     Ar: 0,
+    P: 0,
+    F: 0,
+    K: 0,
+    Ca: 0,
   };
   for (let i = 0; i < ALL_REACTOR_COMPS.length; i++) {
     const k = ALL_REACTOR_COMPS[i];

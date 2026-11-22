@@ -389,6 +389,7 @@ const ALL_KEYS: SimCompKey[] = [
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
+  'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ];
 
 const NEW_DISTILL_KEYS: SimCompKey[] = [
@@ -400,6 +401,7 @@ const NEW_DISTILL_KEYS: SimCompKey[] = [
   'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol',
   'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA',
   'FormicAcid', 'HNO3', 'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
+  'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ];
 
 const COMP_MW: Record<SimCompKey, number> = {
@@ -480,10 +482,22 @@ const COMP_MW: Record<SimCompKey, number> = {
   PMDI: mwOf('PMDI', 381.400),
   CUSTOM_1: mwOf('CUSTOM_1', 74.122),
   CUSTOM_2: mwOf('CUSTOM_2', 93.128),
+  H2O2: mwOf('H2O2', 34.0147),
+  H3PO4: mwOf('H3PO4', 97.9952),
+  HF: mwOf('HF', 20.0063),
+  KOH: mwOf('KOH', 56.1056),
+  NH4OH: mwOf('NH4OH', 35.0458),
+  TMAH: mwOf('TMAH', 91.152),
+  NMP: mwOf('NMP', 99.131),
+  BCS: mwOf('BCS', 118.174),
+  Na2CO3: mwOf('Na2CO3', 105.9888),
+  NaHSO3: mwOf('NaHSO3', 104.061),
+  CaOH2: mwOf('CaOH2', 74.093),
 };
 
 const NON_VOLATILE_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ]);
 
 const PERMANENT_GAS_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
@@ -500,6 +514,7 @@ function zeroCompRecord(): Record<SimCompKey, number> {
     Cyclohexane: 0, Ethylbenzene: 0, Styrene: 0, Cumene: 0, Phenol: 0, THF: 0, DMF: 0, DMSO: 0, MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
     CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
     COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+    H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
   };
 }
 

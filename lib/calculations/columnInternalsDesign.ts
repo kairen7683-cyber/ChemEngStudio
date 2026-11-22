@@ -659,6 +659,17 @@ const PURE_LIQ_DB: Record<SimCompKey, PureLiqProps> = {
   PMDI: { rho20: 1235, dRhoDT: 0.75, sigma20: 43.0, visc20Cp: 195.0, viscActK: 3900 },
   CUSTOM_1: { rho20: 810, dRhoDT: 0.8, sigma20: 24.6, visc20Cp: 2.95, viscActK: 2250 },
   CUSTOM_2: { rho20: 1022, dRhoDT: 0.85, sigma20: 42.9, visc20Cp: 4.4, viscActK: 2400 },
+  H2O2:     { rho20: 1450, dRhoDT: 1.07, sigma20: 80.4, visc20Cp: 1.25, viscActK: 1680 },
+  H3PO4:    { rho20: 1880, dRhoDT: 0.80, sigma20: 77.0, visc20Cp: 45.0, viscActK: 3100 },
+  HF:       { rho20: 967,  dRhoDT: 2.10, sigma20: 8.6,  visc20Cp: 0.26, viscActK: 820 },
+  KOH:      { rho20: 2044, dRhoDT: 0.45, sigma20: 88.0, visc20Cp: 4.80, viscActK: 1950 },
+  NH4OH:    { rho20: 900,  dRhoDT: 0.65, sigma20: 58.0, visc20Cp: 1.15, viscActK: 1550 },
+  TMAH:     { rho20: 1016, dRhoDT: 0.55, sigma20: 68.0, visc20Cp: 2.60, viscActK: 1850 },
+  NMP:      { rho20: 1033, dRhoDT: 0.90, sigma20: 40.7, visc20Cp: 1.65, viscActK: 1550 },
+  BCS:      { rho20: 901,  dRhoDT: 0.85, sigma20: 27.4, visc20Cp: 3.15, viscActK: 2100 },
+  Na2CO3:   { rho20: 2540, dRhoDT: 0.12, sigma20: 84.0, visc20Cp: 2.80, viscActK: 1600 },
+  NaHSO3:   { rho20: 1480, dRhoDT: 0.25, sigma20: 76.0, visc20Cp: 2.40, viscActK: 1600 },
+  CaOH2:    { rho20: 2211, dRhoDT: 0.15, sigma20: 80.0, visc20Cp: 3.50, viscActK: 1700 },
 };
 
 function clamp(v: number, lo: number, hi: number): number {

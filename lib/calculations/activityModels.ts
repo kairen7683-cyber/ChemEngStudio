@@ -87,6 +87,17 @@ const COMP_MW: Record<SimCompKey, number> = {
   PMDI: 381.400,
   CUSTOM_1: 74.122,
   CUSTOM_2: 93.128,
+  H2O2: 34.0147,
+  H3PO4: 97.9952,
+  HF: 20.0063,
+  KOH: 56.1056,
+  NH4OH: 35.0458,
+  TMAH: 91.152,
+  NMP: 99.131,
+  BCS: 118.174,
+  Na2CO3: 105.9888,
+  NaHSO3: 104.061,
+  CaOH2: 74.093,
 };
 
 const ALL_KEYS: SimCompKey[] = [
@@ -100,6 +111,7 @@ const ALL_KEYS: SimCompKey[] = [
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4',
   'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI',
   'CUSTOM_1', 'CUSTOM_2',
+  'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ];
 const N_ALL = ALL_KEYS.length;
 const COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -107,6 +119,7 @@ ALL_KEYS.forEach((k, idx) => { COMP_IDX[k] = idx; });
 
 const NON_VOLATILE_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ]);
 const PERMANENT_GAS_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const HYDROPHOBIC_ORGS = new Set<SimCompKey>([
@@ -600,6 +613,9 @@ const COMP_UNIFAC_GROUPS: Partial<Record<SimCompKey, Partial<Record<UnifacSubGro
   // 기본 CUSTOM_1 = 1-Butanol, CUSTOM_2 = Aniline (런타임 동적 교체 가능)
   CUSTOM_1: { CH3: 1, CH2: 3, OH: 1 },
   CUSTOM_2: { ACH: 5, ACNH2: 1 },
+  // 전자소재/반도체 습식 케미컬 유기 용매
+  NMP: { CH3: 1, CH2: 1, 'CON(CH2)2': 1 },
+  BCS: { CH3: 1, CH2: 4, CH2O: 1, OH: 1 },
 };
 
 // 성분별 사전 계산된 r_i, q_i 및 ν_k^(i)
@@ -983,6 +999,7 @@ const ZERO_ACT_TEMPLATE: Record<SimCompKey, number> = {
   MTBE: 0, MEK: 0, DMC: 0, EG: 0, MEA: 0, MDEA: 0, FormicAcid: 0, HNO3: 0,
   CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
   COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
+  H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
 };
 
 const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
@@ -997,6 +1014,7 @@ const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
   MTBE: 1, MEK: 1, DMC: 1, EG: 1, MEA: 1, MDEA: 1, FormicAcid: 1, HNO3: 1,
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
+  H2O2: 1, H3PO4: 1, HF: 1, KOH: 1, NH4OH: 1, TMAH: 1, NMP: 1, BCS: 1, Na2CO3: 1, NaHSO3: 1, CaOH2: 1,
 };
 
 function _evalExtendedNrtlDenseCore(
