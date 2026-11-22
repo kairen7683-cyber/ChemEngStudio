@@ -1123,7 +1123,7 @@ async def api_ai_advise(
                 ]
             }
         ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 260},
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 320, "thinkingConfig": {"thinkingBudget": 0}},
     }
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
