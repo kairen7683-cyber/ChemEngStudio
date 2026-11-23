@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
   UnitNumberInput,
@@ -142,6 +142,26 @@ export default function ColumnInternalsDesignPanel({
     typeof window !== 'undefined' ? window.innerWidth <= 768 : false
   );
   const [mobilePane, setMobilePane] = useState<'inputs' | 'results'>('results');
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setExportMenuOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [exportMenuOpen]);
 
   useEffect(() => {
     const syncMob = () => {
@@ -203,20 +223,28 @@ export default function ColumnInternalsDesignPanel({
   const elMap = designRes.elevations;
 
   const handleDownloadSvg = () => {
-    const svgEl = document.getElementById('col-epc-cad-svg');
-    if (!svgEl) return;
-    const xml = new XMLSerializer().serializeToString(svgEl);
-    const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `CAD_${unitTag}_${isTray ? 'TRAY' : 'PACKED'}.svg`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 350);
+    const triggerExport = () => {
+      const svgEl = document.getElementById('col-epc-cad-svg');
+      if (!svgEl) return;
+      const xml = new XMLSerializer().serializeToString(svgEl);
+      const blob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CAD_${unitTag}_${isTray ? 'TRAY' : 'PACKED'}.svg`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 350);
+    };
+    if (!document.getElementById('col-epc-cad-svg')) {
+      setVisualTab('drawing');
+      setTimeout(triggerExport, 120);
+      return;
+    }
+    triggerExport();
   };
 
   const handlePrintDatasheet = () => {
@@ -1540,106 +1568,107 @@ export default function ColumnInternalsDesignPanel({
           flexDirection: isMobile ? 'column' : 'row',
           alignItems: isMobile ? 'stretch' : 'center',
           justifyContent: 'space-between',
-          gap: isMobile ? 8 : 10,
-          padding: isMobile ? '8px 10px' : '9px 14px',
+          gap: isMobile ? 6 : 8,
+          padding: isMobile ? '6px 9px' : '6px 9px',
           background: '#FFFFFF',
           borderBottom: '1px solid #CBD5E1',
-          flexWrap: isMobile ? 'nowrap' : 'wrap',
+          flexWrap: 'nowrap',
           flexShrink: 0,
         }}
       >
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(120px, 1fr))',
-            gap: isMobile ? 6 : 8,
+            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(6, minmax(0, 1fr))',
+            gap: isMobile ? 5 : 6,
             flex: isMobile ? 'none' : 1,
             width: isMobile ? '100%' : undefined,
             minWidth: 0,
           }}
         >
-          <div style={{ padding: '5px 8px', borderRadius: 6, background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#EEF2FF', border: '1px solid #C7D2FE', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#4338CA' }}>선정 공칭 내경 (ØD)</span>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#4338CA', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>공칭 내경 (ØD)</span>
               <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E1B4B', fontFamily: MONO, marginTop: 1 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#1E1B4B', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isSwaged
                 ? `Ø${formatCanonicalValue('length', designRes.rectifying.selectedNominalDiamM, lenUnit, 2)} / Ø${formatCanonicalValue('length', designRes.stripping.selectedNominalDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`
                 : `Ø${formatCanonicalValue('length', designRes.governingDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`}
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>
-              최소필요 Ø{formatCanonicalValue('length', Math.max(designRes.rectifying.requiredMinDiamM, designRes.stripping.requiredMinDiamM), lenUnit, 2)} {getUnitLabel('length', lenUnit)}
+            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              최소 Ø{formatCanonicalValue('length', Math.max(designRes.rectifying.requiredMinDiamM, designRes.stripping.requiredMinDiamM), lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
           </div>
 
           <div
             style={{
-              padding: '5px 8px',
+              padding: '4px 7px',
               borderRadius: 6,
               background: designRes.maxFloodPct > 85 ? '#FEE2E2' : '#ECFDF5',
               border: `1px solid ${designRes.maxFloodPct > 85 ? '#FCA5A5' : '#6EE7B7'}`,
+              minWidth: 0,
             }}
           >
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: designRes.maxFloodPct > 85 ? '#991B1B' : '#065F46' }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: designRes.maxFloodPct > 85 ? '#991B1B' : '#065F46', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               최대 범람율 (% Flood)
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {designRes.maxFloodPct.toFixed(1)}% (#{designRes.maxFloodStage}단)
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>
+            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
-                ? `Jet ${designRes.maxJetFloodPct}% · DC초크 ${designRes.maxDcChokeFloodPct}%`
-                : `GPDC 교차 ${Math.max(designRes.rectifying.gpdcFloodMaxPct, designRes.stripping.gpdcFloodMaxPct)}%`}
+                ? `Jet ${designRes.maxJetFloodPct}% · DC ${designRes.maxDcChokeFloodPct}%`
+                : `GPDC ${Math.max(designRes.rectifying.gpdcFloodMaxPct, designRes.stripping.gpdcFloodMaxPct)}%`}
             </div>
           </div>
 
-          <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>탑 총 높이 (T-T / O.A.L.)</span>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>탑 높이 (T-T/OAL)</span>
               <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {formatCanonicalValue('length', designRes.tangentToTangentHeightM, lenUnit, 2)} / {formatCanonicalValue('length', designRes.totalElevationM, lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>
-              {isTray ? `실제 ${designRes.actualTotalTrays}단 · DC체류 ≥${designRes.minDcResidenceTimeSec}s` : `충진고 ${formatCanonicalValue('length', designRes.totalPackedHeightM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} (h_L ${designRes.avgPackedHoldupPct}%)`}
+            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {isTray ? `실제 ${designRes.actualTotalTrays}단 · DC ≥${designRes.minDcResidenceTimeSec}s` : `충진고 ${formatCanonicalValue('length', designRes.totalPackedHeightM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} (hL ${designRes.avgPackedHoldupPct}%)`}
             </div>
           </div>
 
-          <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>인터널 총 압력손실</span>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>총 압력손실 (ΔP)</span>
               <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {formatCanonicalValue('deltaP', designRes.totalInternalsDpKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>{designRes.totalInternalsDpMbar} mbar</div>
+            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{designRes.totalInternalsDpMbar} mbar</div>
           </div>
 
-          <div style={{ padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#334155' }}>
-              {isTray ? 'Chan–Fair 단효율 / 턴다운' : 'B–S HETP / H_OG'}
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {isTray ? 'Chan–Fair / 턴다운' : 'B–S HETP / H_OG'}
             </div>
-            <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1 }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
                 ? `${designRes.avgChanFairEffPct}% · ${designRes.minTurndownRatio}:1`
                 : `${designRes.stripping.hetpAvgM}m / ${designRes.avgPackedHogM}m`}
             </div>
-            <div style={{ fontSize: 9, color: '#475569' }}>
+            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
                 ? `O'Connell ${designRes.avgOconnellEffPct}% · ${designRes.stripping.flowPasses}-Pass`
                 : `턴다운 ${designRes.minTurndownRatio}:1`}
             </div>
           </div>
 
-          <div style={{ padding: '5px 8px', borderRadius: 6, background: '#FFFBEB', border: '1px solid #FDE68A' }}>
-            <div style={{ fontSize: 9.5, fontWeight: 800, color: '#92400E' }}>ASME 기계 / 설치원가(C_BM)</div>
-            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#78350F', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#FFFBEB', border: '1px solid #FDE68A', minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#92400E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>ASME / 설치원가(C_BM)</div>
+            <div style={{ fontSize: 11.6, fontWeight: 900, color: '#78350F', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {mech.selectedShellMm}t · {formatKrwReadable(cost.bareModuleKrw)}
             </div>
-            <div style={{ fontSize: 9, color: '#92400E' }}>
+            <div style={{ fontSize: 8.6, color: '#92400E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {designRes.recommendedMaterialCode} · {designRes.estimatedDryWeightTon}t
             </div>
           </div>
@@ -1652,20 +1681,21 @@ export default function ColumnInternalsDesignPanel({
             title="산출된 단당 압손(ΔP)과 Chan–Fair 예측 단효율을 다단 MESH 시뮬레이션 파라미터에 반영합니다"
             style={{
               width: isMobile ? '100%' : undefined,
-              padding: isMobile ? '8px 10px' : '8px 11px',
-              borderRadius: 7,
+              flexShrink: 0,
+              padding: isMobile ? '6px 10px' : '7px 10px',
+              borderRadius: 6,
               border: '1px solid #059669',
               background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
               color: '#FFFFFF',
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: 900,
               cursor: 'pointer',
-              whiteSpace: isMobile ? 'normal' : 'nowrap',
+              whiteSpace: 'nowrap',
               textAlign: 'center',
-              boxShadow: '0 2px 6px rgba(5,150,105,0.28)',
+              boxShadow: '0 1px 4px rgba(5,150,105,0.25)',
             }}
           >
-            🔄 산출 ΔP·단효율을 MESH 모사에 역반영
+            🔄 ΔP·효율 MESH 역반영
           </button>
         )}
       </div>
@@ -2248,44 +2278,36 @@ export default function ColumnInternalsDesignPanel({
             gap: 11,
           }}
         >
-          {/* 우측 상단 5탭 전환 바 + EPC 내보내기 툴바 */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* 우측 상단 5탭 전환 바 + 통합 내보내기 드롭다운 툴바 */}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: isMobile ? 'wrap' : 'nowrap',
+            }}
+          >
             <div
               style={{
-                display: isMobile ? 'grid' : 'flex',
+                display: isMobile ? 'grid' : 'inline-flex',
                 gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : undefined,
                 width: isMobile ? '100%' : undefined,
-                gap: isMobile ? 5 : 6,
-                flexWrap: isMobile ? undefined : 'wrap',
+                gap: isMobile ? 4 : 2,
+                padding: isMobile ? 0 : 2,
+                borderRadius: isMobile ? 0 : 7,
+                background: isMobile ? 'transparent' : '#E2E8F0',
+                border: isMobile ? 'none' : '1px solid #CBD5E1',
+                minWidth: 0,
               }}
             >
               {(
                 [
-                  {
-                    id: 'datasheet' as RightVisualTab,
-                    label: '📋 실무 데이터시트',
-                    shortLabel: '📋 데이터시트',
-                  },
-                  {
-                    id: 'drawing' as RightVisualTab,
-                    label: '📐 정밀 CAD 도면',
-                    shortLabel: '📐 CAD 도면',
-                  },
-                  {
-                    id: 'profile' as RightVisualTab,
-                    label: '📊 범람율·차압',
-                    shortLabel: '📊 범람·차압',
-                  },
-                  {
-                    id: 'nozzles' as RightVisualTab,
-                    label: '🔩 노즐·EL·부속설비',
-                    shortLabel: '🔩 노즐·EL',
-                  },
-                  {
-                    id: 'mechanical_cost' as RightVisualTab,
-                    label: '🛡️ ASME · 풍/지진 · 원가',
-                    shortLabel: '🛡️ ASME·원가',
-                  },
+                  { id: 'datasheet' as RightVisualTab, label: '📋 데이터시트' },
+                  { id: 'drawing' as RightVisualTab, label: '📐 CAD 도면' },
+                  { id: 'profile' as RightVisualTab, label: '📊 범람율·차압' },
+                  { id: 'nozzles' as RightVisualTab, label: '🔩 노즐·부속' },
+                  { id: 'mechanical_cost' as RightVisualTab, label: '🛡️ ASME·원가' },
                 ] as const
               ).map((t) => {
                 const active = visualTab === t.id;
@@ -2295,108 +2317,190 @@ export default function ColumnInternalsDesignPanel({
                     type="button"
                     onClick={() => setVisualTab(t.id)}
                     style={{
-                      padding: isMobile ? '6px 6px' : '6px 10px',
-                      borderRadius: 6,
-                      border: active ? '1.5px solid #4338CA' : '1px solid #CBD5E1',
-                      background: active ? '#4338CA' : '#FFFFFF',
+                      padding: isMobile ? '6px 6px' : '5px 9px',
+                      borderRadius: 5,
+                      border: active
+                        ? '1px solid #4338CA'
+                        : isMobile
+                        ? '1px solid #CBD5E1'
+                        : '1px solid transparent',
+                      background: active ? '#4338CA' : isMobile ? '#FFFFFF' : 'transparent',
                       color: active ? '#FFFFFF' : '#334155',
-                      fontSize: isMobile ? 10.2 : 10.8,
+                      fontSize: 10.5,
                       fontWeight: 900,
                       cursor: 'pointer',
                       textAlign: 'center',
+                      whiteSpace: 'nowrap',
                       minWidth: 0,
                     }}
                   >
-                    {isMobile ? t.shortLabel : t.label}
+                    {t.label}
                   </button>
                 );
               })}
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            <div
+              ref={exportMenuRef}
+              style={{
+                position: 'relative',
+                flexShrink: 0,
+                width: isMobile ? '100%' : undefined,
+              }}
+            >
               <button
                 type="button"
-                onClick={() =>
-                  void downloadColumnEpcDatasheet({
-                    unitTag,
-                    unitLabel,
-                    colConfig: config,
-                    feeds,
-                    simResult,
-                    design: designRes,
-                  })
-                }
+                onClick={() => setExportMenuOpen((prev) => !prev)}
+                aria-expanded={exportMenuOpen}
+                aria-haspopup="menu"
                 style={{
-                  padding: '5px 9px',
+                  width: isMobile ? '100%' : undefined,
+                  padding: '5px 10px',
                   borderRadius: 6,
-                  border: '1px solid #047857',
-                  background: '#ECFDF5',
-                  color: '#065F46',
-                  fontSize: 10.3,
+                  border: exportMenuOpen ? '1px solid #1D4ED8' : '1px solid #94A3B8',
+                  background: exportMenuOpen ? '#EFF6FF' : '#FFFFFF',
+                  color: exportMenuOpen ? '#1E3A8A' : '#1E293B',
+                  fontSize: 10.5,
                   fontWeight: 900,
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  boxShadow: '0 1px 2px rgba(15,23,42,0.06)',
                 }}
               >
-                📊 엑셀 데이터시트 (.xlsx)
+                ⬇ 내보내기 ▾
               </button>
-              <button
-                type="button"
-                onClick={() =>
-                  downloadColumnCadDxf({
-                    unitTag,
-                    unitLabel,
-                    colConfig: config,
-                    simResult,
-                    design: designRes,
-                  })
-                }
-                style={{
-                  padding: '5px 9px',
-                  borderRadius: 6,
-                  border: '1px solid #1D4ED8',
-                  background: '#EFF6FF',
-                  color: '#1E3A8A',
-                  fontSize: 10.3,
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                }}
-              >
-                📐 AutoCAD (.dxf)
-              </button>
-              {visualTab === 'drawing' && (
-                <button
-                  type="button"
-                  onClick={handleDownloadSvg}
+
+              {exportMenuOpen && (
+                <div
+                  role="menu"
                   style={{
-                    padding: '5px 8px',
-                    borderRadius: 6,
-                    border: '1px solid #64748B',
-                    background: '#F8FAFC',
-                    color: '#334155',
-                    fontSize: 10.2,
-                    fontWeight: 800,
-                    cursor: 'pointer',
+                    position: 'absolute',
+                    right: 0,
+                    top: 'calc(100% + 4px)',
+                    minWidth: 196,
+                    background: '#FFFFFF',
+                    border: '1px solid #CBD5E1',
+                    borderRadius: 8,
+                    boxShadow: '0 10px 28px rgba(15, 23, 42, 0.16)',
+                    padding: 4,
+                    zIndex: 40,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
                   }}
                 >
-                  🖼 SVG
-                </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      void downloadColumnEpcDatasheet({
+                        unitTag,
+                        unitLabel,
+                        colConfig: config,
+                        feeds,
+                        simResult,
+                        design: designRes,
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#065F46',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    📊 엑셀 데이터시트 (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      downloadColumnCadDxf({
+                        unitTag,
+                        unitLabel,
+                        colConfig: config,
+                        simResult,
+                        design: designRes,
+                      });
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#1E3A8A',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    📐 AutoCAD (.dxf)
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handleDownloadSvg();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#334155',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    🖼 SVG 도면
+                  </button>
+                  <div style={{ height: 1, background: '#E2E8F0', margin: '2px 4px' }} />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      handlePrintDatasheet();
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#334155',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    🖨 인쇄
+                  </button>
+                </div>
               )}
-              <button
-                type="button"
-                onClick={handlePrintDatasheet}
-                style={{
-                  padding: '5px 8px',
-                  borderRadius: 6,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#334155',
-                  fontSize: 10.2,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                }}
-              >
-                🖨 인쇄
-              </button>
             </div>
           </div>
 

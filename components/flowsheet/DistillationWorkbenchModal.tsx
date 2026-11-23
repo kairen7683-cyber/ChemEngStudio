@@ -1884,61 +1884,81 @@ export default function DistillationWorkbenchModal({
           style={{
             background: '#1A2F44',
             color: '#FFFFFF',
-            padding: isMobile ? '10px 12px' : '12px 18px',
+            padding: isMobile ? '9px 12px' : '8px 14px',
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',
             alignItems: isMobile ? 'stretch' : 'center',
             justifyContent: 'space-between',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
+            flexWrap: 'nowrap',
             gap: isMobile ? 8 : 10,
             flexShrink: 0,
+            borderBottom: '1px solid #0F172A',
           }}
         >
-          <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: isMobile ? 9.8 : 10.5, fontWeight: 700, color: '#93C5FD', letterSpacing: 0.2 }}>
-                  다단 정밀증류 통합 시뮬레이션 &amp; 단수·유량 자동역산 워크벤치
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-                  <span style={{ fontSize: isMobile ? 14.5 : 16, fontWeight: 900, color: '#FFFFFF', wordBreak: 'keep-all' }}>
+                {isMobile && (
+                  <div style={{ fontSize: 9.8, fontWeight: 700, color: '#93C5FD', letterSpacing: 0.2, marginBottom: 2 }}>
+                    다단 정밀증류 통합 시뮬레이션 &amp; 단수·유량 자동역산 워크벤치
+                  </div>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+                  <span
+                    style={{
+                      fontSize: 14.5,
+                      fontWeight: 900,
+                      color: '#FFFFFF',
+                      whiteSpace: isMobile ? 'normal' : 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      wordBreak: 'keep-all',
+                    }}
+                    title={`[${unitTag}] ${unitLabel}`}
+                  >
                     [{unitTag}] {unitLabel}
                   </span>
                   {isRunningFeedback ? (
                     <span
                       style={{
-                        fontSize: 10.5,
+                        flexShrink: 0,
+                        fontSize: 10,
                         fontWeight: 900,
-                        padding: '2px 10px',
+                        padding: '2px 8px',
                         borderRadius: 999,
                         background: '#2563EB',
                         color: '#FFFFFF',
                         fontFamily: MONO,
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      ⏳ 다단 MESH 행렬 수렴 계산 실행 중...
+                      ⏳ 수렴 계산 중...
                     </span>
                   ) : isSimDirty ? (
                     <span
                       style={{
-                        fontSize: 10.5,
+                        flexShrink: 0,
+                        fontSize: 10,
                         fontWeight: 900,
-                        padding: '2px 10px',
+                        padding: '2px 8px',
                         borderRadius: 999,
                         background: '#F59E0B',
                         color: '#1E293B',
                         fontFamily: MONO,
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      ⏸ 입력 변경됨 — [▶ RUN 실행] 필요
+                      ⏸ 입력 변경됨 · RUN 필요
                     </span>
                   ) : (
                     result && (
                       <span
+                        title={`${result.thermoModelUsed} · ${result.innerIterations}회 반복`}
                         style={{
-                          fontSize: 10.5,
+                          flexShrink: 0,
+                          fontSize: 10,
                           fontWeight: 800,
-                          padding: '2px 10px',
+                          padding: '2px 8px',
                           borderRadius: 999,
                           background:
                             result.diagnostics?.level === 'error'
@@ -1948,13 +1968,14 @@ export default function DistillationWorkbenchModal({
                               : '#059669',
                           color: '#FFFFFF',
                           fontFamily: MONO,
+                          whiteSpace: 'nowrap',
                         }}
                       >
                         {result.diagnostics?.level === 'error'
                           ? `✕ ${result.diagnostics.badgeText}`
                           : result.diagnostics?.level === 'warning'
                           ? `⚠ ${result.diagnostics.badgeText}`
-                          : `✓ ${result.diagnostics?.badgeText ?? '정상 수렴 완료'} (${result.thermoModelUsed} · ${result.innerIterations}회)`}
+                          : `✓ ${result.diagnostics?.badgeText ?? '정상 수렴'}`}
                       </span>
                     )
                   )}
@@ -1968,10 +1989,10 @@ export default function DistillationWorkbenchModal({
                   aria-label="워크벤치 닫기"
                   style={{
                     flexShrink: 0,
-                    padding: '6px 11px',
-                    borderRadius: 7,
-                    border: '1.5px solid rgba(255,255,255,0.45)',
-                    background: 'rgba(255,255,255,0.16)',
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #475569',
+                    background: 'rgba(255,255,255,0.12)',
                     color: '#FFFFFF',
                     fontSize: 12,
                     fontWeight: 900,
@@ -1979,19 +2000,29 @@ export default function DistillationWorkbenchModal({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  ✕ 닫기
+                  ✕
                 </button>
               )}
             </div>
 
-            <div style={{ fontSize: isMobile ? 10.3 : 11, color: '#CBD5E1', marginTop: 3, lineHeight: 1.35 }}>
-              {calcMode === 'design_stages' ? '자동산출 이론단 ' : '지정 이론단 '}
-              <b>{N}단</b> (실제 약 {actualTrays}단) · 주 피드 {primaryFeedStage}단 · 권장 최적 공급단{' '}
-              {recFeedStage}단 · 추정 탑경 Ø{(result?.estimatedDiameterM ?? 1.2).toFixed(2)} m
+            <div
+              style={{
+                fontSize: isMobile ? 10.2 : 10.5,
+                color: '#CBD5E1',
+                marginTop: 2,
+                lineHeight: 1.3,
+                whiteSpace: isMobile ? 'normal' : 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {calcMode === 'design_stages' ? '자동 ' : ''}
+              <b>{N}단</b> (실제 {actualTrays}단) · 피드 {primaryFeedStage}단 (권장 {recFeedStage}단) · Ø
+              {(result?.estimatedDiameterM ?? 1.2).toFixed(2)}m
               {result?.sideCutStageUsed && (result?.sideCutMassKgH ?? 0) > 1e-4
                 ? ` · 측류 S ${result.sideCutStageUsed}단 (${result.sideCutMassKgH!.toFixed(1)} kg/h)`
                 : ''}
-              {lastRunStamp ? ` · 최근 실행 ${lastRunStamp}` : ''}
+              {lastRunStamp ? ` · ${lastRunStamp}` : ''}
             </div>
           </div>
 
@@ -2000,13 +2031,13 @@ export default function DistillationWorkbenchModal({
               display: 'flex',
               flexDirection: isMobile ? 'column' : 'row',
               alignItems: isMobile ? 'stretch' : 'center',
-              gap: isMobile ? 6 : 8,
+              gap: 6,
               flexShrink: 0,
-              flexWrap: isMobile ? 'nowrap' : 'wrap',
+              flexWrap: 'nowrap',
               width: isMobile ? '100%' : undefined,
             }}
           >
-            {/* 내장 2-모드 전환 탭 (공정 시뮬레이션 ↔ 컬럼 사이징 & 인터널 개념설계) */}
+            {/* 내장 2-모드 전환 탭 (공정 시뮬레이션 ↔ 컬럼 사이징·인터널) */}
             <div
               style={{
                 display: isMobile ? 'grid' : 'inline-flex',
@@ -2014,47 +2045,47 @@ export default function DistillationWorkbenchModal({
                 width: isMobile ? '100%' : undefined,
                 boxSizing: 'border-box',
                 background: 'rgba(15,23,42,0.55)',
-                padding: 3,
-                borderRadius: 8,
+                padding: 2,
+                borderRadius: 7,
                 border: '1px solid rgba(148,163,184,0.35)',
-                gap: 4,
+                gap: 2,
               }}
             >
               <button
                 type="button"
                 onClick={() => setWorkspaceView('simulation')}
                 style={{
-                  padding: isMobile ? '7px 6px' : '6px 12px',
-                  borderRadius: 6,
+                  padding: isMobile ? '6px 6px' : '5px 9px',
+                  borderRadius: 5,
                   border: workspaceView === 'simulation' ? '1px solid #93C5FD' : '1px solid transparent',
                   background: workspaceView === 'simulation' ? '#2563EB' : 'transparent',
                   color: workspaceView === 'simulation' ? '#FFFFFF' : '#CBD5E1',
-                  fontSize: isMobile ? 11 : 11.5,
+                  fontSize: 11,
                   fontWeight: 900,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   textAlign: 'center',
                 }}
               >
-                {isMobile ? '🔬 ① 시뮬레이션·프로필' : '🔬 ① 공정 시뮬레이션 & 프로파일'}
+                ① 공정 시뮬레이션
               </button>
               <button
                 type="button"
                 onClick={() => setWorkspaceView('internals')}
                 style={{
-                  padding: isMobile ? '7px 6px' : '6px 12px',
-                  borderRadius: 6,
+                  padding: isMobile ? '6px 6px' : '5px 9px',
+                  borderRadius: 5,
                   border: workspaceView === 'internals' ? '1px solid #93C5FD' : '1px solid transparent',
                   background: workspaceView === 'internals' ? '#2563EB' : 'transparent',
                   color: workspaceView === 'internals' ? '#FFFFFF' : '#CBD5E1',
-                  fontSize: isMobile ? 11 : 11.5,
+                  fontSize: 11,
                   fontWeight: 900,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   textAlign: 'center',
                 }}
               >
-                {isMobile ? '🏗️ ② 컬럼 사이징·인터널' : '🏗️ ② 컬럼 사이징 & 인터널 개념설계'}
+                ② 컬럼 사이징·인터널
               </button>
             </div>
 
@@ -2066,8 +2097,8 @@ export default function DistillationWorkbenchModal({
                   disabled={isAiBusy}
                   style={{
                     flex: 1,
-                    padding: '7px 10px',
-                    borderRadius: 7,
+                    padding: '6px 10px',
+                    borderRadius: 6,
                     border:
                       !result?.converged || result?.diagnostics?.level !== 'ok'
                         ? '1.5px solid #C084FC'
@@ -2075,7 +2106,7 @@ export default function DistillationWorkbenchModal({
                     background:
                       !result?.converged || result?.diagnostics?.level !== 'ok' ? '#7C3AED' : '#334155',
                     color: '#FFFFFF',
-                    fontSize: 11.2,
+                    fontSize: 11,
                     fontWeight: 900,
                     cursor: isAiBusy ? 'wait' : 'pointer',
                     whiteSpace: 'nowrap',
@@ -2091,8 +2122,8 @@ export default function DistillationWorkbenchModal({
                     title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행'}
                     style={{
                       flex: 1,
-                      padding: '7px 10px',
-                      borderRadius: 7,
+                      padding: '6px 10px',
+                      borderRadius: 6,
                       border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #60A5FA',
                       background: !dofEvaluation.canRun
                         ? '#475569'
@@ -2100,7 +2131,7 @@ export default function DistillationWorkbenchModal({
                         ? '#D97706'
                         : '#2563EB',
                       color: '#FFFFFF',
-                      fontSize: 11.2,
+                      fontSize: 11,
                       fontWeight: 900,
                       cursor: isRunningFeedback
                         ? 'wait'
@@ -2116,95 +2147,98 @@ export default function DistillationWorkbenchModal({
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={runAiAutoFixDistill}
-                disabled={isAiBusy}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 7,
-                  border:
-                    !result?.converged || result?.diagnostics?.level !== 'ok'
-                      ? '1.5px solid #C084FC'
-                      : '1px solid #64748B',
-                  background:
-                    !result?.converged || result?.diagnostics?.level !== 'ok' ? '#7C3AED' : '#334155',
-                  color: '#FFFFFF',
-                  fontSize: 11.3,
-                  fontWeight: 900,
-                  cursor: isAiBusy ? 'wait' : 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {isAiBusy ? (aiStepLabel ? `⏳ ${aiStepLabel}` : '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
-              </button>
-            )}
-            {onRunSimulation && !isMobile && (
-              <button
-                type="button"
-                onClick={triggerRunSimulation}
-                disabled={isRunningFeedback || !dofEvaluation.canRun}
-                title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행 (F5)'}
-                style={{
-                  padding: '8px 15px',
-                  borderRadius: 7,
-                  border: !dofEvaluation.canRun
-                    ? '1px solid #64748B'
-                    : isRunningFeedback
-                    ? '1.5px solid #93C5FD'
-                    : isSimDirty
-                    ? '1.5px solid #FDE047'
-                    : '1px solid #60A5FA',
-                  background: !dofEvaluation.canRun
-                    ? '#475569'
-                    : isRunningFeedback
-                    ? '#1D4ED8'
-                    : isSimDirty
-                    ? '#D97706'
-                    : '#2563EB',
-                  color: '#FFFFFF',
-                  fontSize: 11.8,
-                  fontWeight: 900,
-                  cursor: isRunningFeedback
-                    ? 'wait'
-                    : !dofEvaluation.canRun
-                    ? 'not-allowed'
-                    : 'pointer',
-                  opacity: !dofEvaluation.canRun ? 0.65 : 1,
-                  whiteSpace: 'nowrap',
-                  boxShadow:
-                    dofEvaluation.canRun && isSimDirty
-                      ? '0 0 0 3px rgba(245,158,11,0.30)'
-                      : '0 2px 6px rgba(15,23,42,0.25)',
-                }}
-              >
-                {isRunningFeedback
-                  ? '⏳ 수렴 계산 중...'
-                  : !dofEvaluation.canRun
-                  ? '▶ RUN (자유도 확인)'
-                  : isSimDirty
-                  ? '▶ RUN 시뮬레이션 실행'
-                  : '▶ RUN 재실행 (F5)'}
-              </button>
-            )}
-            {!isMobile && (
-              <button
-                type="button"
-                onClick={handleCloseModal}
-                style={{
-                  padding: '7px 12px',
-                  borderRadius: 7,
-                  border: '1px solid rgba(255,255,255,0.28)',
-                  background: 'rgba(255,255,255,0.10)',
-                  color: '#FFFFFF',
-                  fontSize: 11.5,
-                  fontWeight: 800,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                닫기 ✕
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={runAiAutoFixDistill}
+                  disabled={isAiBusy}
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    border:
+                      !result?.converged || result?.diagnostics?.level !== 'ok'
+                        ? '1.5px solid #C084FC'
+                        : '1px solid #64748B',
+                    background:
+                      !result?.converged || result?.diagnostics?.level !== 'ok' ? '#7C3AED' : '#334155',
+                    color: '#FFFFFF',
+                    fontSize: 11,
+                    fontWeight: 900,
+                    cursor: isAiBusy ? 'wait' : 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {isAiBusy ? (aiStepLabel ? `⏳ ${aiStepLabel}` : '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+                </button>
+                {onRunSimulation && (
+                  <button
+                    type="button"
+                    onClick={triggerRunSimulation}
+                    disabled={isRunningFeedback || !dofEvaluation.canRun}
+                    title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행 (F5)'}
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: 6,
+                      border: !dofEvaluation.canRun
+                        ? '1px solid #64748B'
+                        : isRunningFeedback
+                        ? '1.5px solid #93C5FD'
+                        : isSimDirty
+                        ? '1.5px solid #FDE047'
+                        : '1px solid #60A5FA',
+                      background: !dofEvaluation.canRun
+                        ? '#475569'
+                        : isRunningFeedback
+                        ? '#1D4ED8'
+                        : isSimDirty
+                        ? '#D97706'
+                        : '#2563EB',
+                      color: '#FFFFFF',
+                      fontSize: 11,
+                      fontWeight: 900,
+                      cursor: isRunningFeedback
+                        ? 'wait'
+                        : !dofEvaluation.canRun
+                        ? 'not-allowed'
+                        : 'pointer',
+                      opacity: !dofEvaluation.canRun ? 0.65 : 1,
+                      whiteSpace: 'nowrap',
+                      boxShadow:
+                        dofEvaluation.canRun && isSimDirty
+                          ? '0 0 0 2px rgba(245,158,11,0.30)'
+                          : '0 1px 4px rgba(15,23,42,0.25)',
+                    }}
+                  >
+                    {isRunningFeedback
+                      ? '⏳ 계산 중...'
+                      : !dofEvaluation.canRun
+                      ? '▶ RUN (자유도 확인)'
+                      : isSimDirty
+                      ? '▶ RUN 실행'
+                      : '▶ RUN (F5)'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  aria-label="워크벤치 닫기"
+                  title="닫기 (Esc)"
+                  style={{
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #475569',
+                    background: 'rgba(255,255,255,0.08)',
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  ✕
+                </button>
+              </>
             )}
           </div>
         </div>
