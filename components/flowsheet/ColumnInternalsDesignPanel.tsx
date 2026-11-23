@@ -689,7 +689,8 @@ export default function ColumnInternalsDesignPanel({
         viewBox="0 0 920 620"
         style={{
           width: '100%',
-          height: isMobile ? 'auto' : 475,
+          height: 'auto',
+          maxHeight: isMobile ? 'none' : '78vh',
           aspectRatio: '920 / 620',
           background: '#FFFFFF',
           border: '1.5px solid #CBD5E1',
@@ -2515,7 +2516,8 @@ export default function ColumnInternalsDesignPanel({
             </div>
           )}
 
-          {/* 하단 고정: 단별(Stage 2 ~ N-1) 수력학·물질전달 정밀 검증 테이블 */}
+          {/* 하단 고정: 단별(Stage 2 ~ N-1) 수력학·물질전달 정밀 검증 테이블 (CAD 도면 탭에서는 도면 단독 확대 표시) */}
+          {visualTab !== 'drawing' && (
           <div style={{ ...cardBox, padding: 0, overflow: 'hidden' }}>
             <div
               style={{
@@ -2628,6 +2630,7 @@ export default function ColumnInternalsDesignPanel({
               </table>
             </div>
           </div>
+          )}
         </div>
         )}
       </div>
