@@ -11,6 +11,7 @@ import ReactFlow, {
   MarkerType,
   Connection,
   ConnectionMode,
+  SelectionMode,
   Edge,
   Node,
   NodeProps,
@@ -2487,6 +2488,300 @@ export function FlowsheetWorkspace({
     return pos;
   }, []);
 
+  // ── Undo / Redo 히스토리 스택 (최대 40 스냅샷) ──────────────────────────
+  type FlowsheetHistorySnapshot = {
+    simDefs: FlowNodeDef[];
+    positions: Record<string, { x: number; y: number }>;
+    flowEdges: FlowEdgeDef[];
+  };
+  const MAX_UNDO_HISTORY = 40;
+  const undoPastRef = useRef<FlowsheetHistorySnapshot[]>([]);
+  const undoFutureRef = useRef<FlowsheetHistorySnapshot[]>([]);
+  const [undoDepth, setUndoDepth] = useState<number>(0);
+  const [redoDepth, setRedoDepth] = useState<number>(0);
+  const canUndo = undoDepth > 0;
+  const canRedo = redoDepth > 0;
+
+  const liveSimDefsRef = useRef(simDefs);
+  liveSimDefsRef.current = simDefs;
+  const liveRfNodesRef = useRef(rfNodes);
+  liveRfNodesRef.current = rfNodes;
+  const liveFlowEdgesRef = useRef(flowEdges);
+  liveFlowEdgesRef.current = flowEdges;
+  const liveActiveSheetIdRef = useRef(activeSheetId);
+  liveActiveSheetIdRef.current = activeSheetId;
+
+  const dragStartSnapshotRef = useRef<FlowsheetHistorySnapshot | null>(null);
+  const paramEditCooldownRef = useRef<number>(0);
+  const lastDeleteUndoTsRef = useRef<number>(0);
+
+  const cloneHistorySnapshot = useCallback(
+    (
+      defs: FlowNodeDef[],
+      positions: Record<string, { x: number; y: number }>,
+      edges: FlowEdgeDef[]
+    ): FlowsheetHistorySnapshot => ({
+      simDefs: defs.map(d => ({
+        ...d,
+        params: d.params
+          ? {
+              ...d.params,
+              ...(d.params.feedFlowsKgH ? { feedFlowsKgH: { ...d.params.feedFlowsKgH } } : {}),
+              ...(d.params.distillConfig ? { distillConfig: structuredClone(d.params.distillConfig) } : {}),
+            }
+          : {},
+      })),
+      positions: Object.fromEntries(
+        Object.entries(positions).map(([k, v]) => [k, { x: Math.round(v.x), y: Math.round(v.y) }])
+      ),
+      flowEdges: edges.map(e => ({ ...e })),
+    }),
+    []
+  );
+
+  const pushUndoSnapshot = useCallback(
+    (explicitSnap?: FlowsheetHistorySnapshot) => {
+      const snap =
+        explicitSnap ??
+        cloneHistorySnapshot(
+          liveSimDefsRef.current,
+          extractCurrentPositions(liveRfNodesRef.current),
+          liveFlowEdgesRef.current
+        );
+      undoPastRef.current.push(snap);
+      if (undoPastRef.current.length > MAX_UNDO_HISTORY) {
+        undoPastRef.current.shift();
+      }
+      undoFutureRef.current = [];
+      setUndoDepth(undoPastRef.current.length);
+      setRedoDepth(0);
+    },
+    [cloneHistorySnapshot, extractCurrentPositions]
+  );
+
+  // 파라미터 연속 입력 시 매 키입력마다 스택이 쌓이지 않도록 500ms 단위 그룹핑
+  const recordParamEditSnapshot = useCallback(() => {
+    const now = Date.now();
+    if (now - paramEditCooldownRef.current > 500) {
+      pushUndoSnapshot();
+    }
+    paramEditCooldownRef.current = now;
+  }, [pushUndoSnapshot]);
+
+  const clearUndoHistory = useCallback(() => {
+    undoPastRef.current = [];
+    undoFutureRef.current = [];
+    setUndoDepth(0);
+    setRedoDepth(0);
+  }, []);
+
+  const restoreHistorySnapshot = useCallback(
+    (snap: FlowsheetHistorySnapshot) => {
+      const cloned = cloneHistorySnapshot(snap.simDefs, snap.positions, snap.flowEdges);
+      setSimDefs(cloned.simDefs);
+      setRfNodes(
+        cloned.simDefs.map((d, idx) => ({
+          id: d.id,
+          type: 'flowUnit',
+          position: cloned.positions[d.id] ?? { x: 80 + idx * 175, y: 140 },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+        }))
+      );
+      setFlowEdges(cloned.flowEdges);
+
+      const curSheetId = liveActiveSheetIdRef.current;
+      setHierarchySheets(prev => {
+        const existing = prev[curSheetId];
+        if (!existing) return prev;
+        return {
+          ...prev,
+          [curSheetId]: {
+            ...existing,
+            simDefs: cloned.simDefs.map(d => ({ ...d, params: { ...d.params } })),
+            positions: cloned.positions,
+            flowEdges: cloned.flowEdges.map(e => ({ ...e })),
+          },
+        };
+      });
+      setIsSimDirty(true);
+      setSelectedNodeId(prevId => (prevId && cloned.simDefs.some(d => d.id === prevId) ? prevId : null));
+      setSelectedEdgeId(prevId => (prevId && cloned.flowEdges.some(e => e.id === prevId) ? prevId : null));
+    },
+    [cloneHistorySnapshot]
+  );
+
+  const handleUndo = useCallback(() => {
+    if (undoPastRef.current.length === 0) return;
+    const prevSnap = undoPastRef.current.pop()!;
+    const curSnap = cloneHistorySnapshot(
+      liveSimDefsRef.current,
+      extractCurrentPositions(liveRfNodesRef.current),
+      liveFlowEdgesRef.current
+    );
+    undoFutureRef.current.push(curSnap);
+    if (undoFutureRef.current.length > MAX_UNDO_HISTORY) {
+      undoFutureRef.current.shift();
+    }
+    setUndoDepth(undoPastRef.current.length);
+    setRedoDepth(undoFutureRef.current.length);
+    restoreHistorySnapshot(prevSnap);
+  }, [cloneHistorySnapshot, extractCurrentPositions, restoreHistorySnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (undoFutureRef.current.length === 0) return;
+    const nextSnap = undoFutureRef.current.pop()!;
+    const curSnap = cloneHistorySnapshot(
+      liveSimDefsRef.current,
+      extractCurrentPositions(liveRfNodesRef.current),
+      liveFlowEdgesRef.current
+    );
+    undoPastRef.current.push(curSnap);
+    if (undoPastRef.current.length > MAX_UNDO_HISTORY) {
+      undoPastRef.current.shift();
+    }
+    setUndoDepth(undoPastRef.current.length);
+    setRedoDepth(undoFutureRef.current.length);
+    restoreHistorySnapshot(nextSnap);
+  }, [cloneHistorySnapshot, extractCurrentPositions, restoreHistorySnapshot]);
+
+  const onNodeDragStart = useCallback(() => {
+    dragStartSnapshotRef.current = cloneHistorySnapshot(
+      liveSimDefsRef.current,
+      extractCurrentPositions(liveRfNodesRef.current),
+      liveFlowEdgesRef.current
+    );
+  }, [cloneHistorySnapshot, extractCurrentPositions]);
+
+  const onNodeDragStop = useCallback(() => {
+    const before = dragStartSnapshotRef.current;
+    dragStartSnapshotRef.current = null;
+    if (!before) return;
+    const afterPos = extractCurrentPositions(liveRfNodesRef.current);
+    const moved = Object.keys(afterPos).some(id => {
+      const b = before.positions[id];
+      const a = afterPos[id];
+      return !b || Math.abs(a.x - b.x) > 1 || Math.abs(a.y - b.y) > 1;
+    });
+    if (moved) {
+      pushUndoSnapshot(before);
+    }
+  }, [extractCurrentPositions, pushUndoSnapshot]);
+
+  useEffect(() => {
+    const onUndoRedoKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', onUndoRedoKeyDown);
+    return () => window.removeEventListener('keydown', onUndoRedoKeyDown);
+  }, [handleUndo, handleRedo]);
+
+  // ── 우클릭 드래그 마키(Box) 다중선택 상태 및 핸들러 ────────────────────────
+  const [rmbSelectBox, setRmbSelectBox] = useState<{
+    startX: number;
+    startY: number;
+    curX: number;
+    curY: number;
+  } | null>(null);
+  const suppressContextMenuRef = useRef<boolean>(false);
+
+  const handleCanvasMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 2) return;
+      const wrapper = rfWrapperRef.current;
+      if (!wrapper) return;
+      const rect = wrapper.getBoundingClientRect();
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startRelX = startClientX - rect.left;
+      const startRelY = startClientY - rect.top;
+      let dragging = false;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const dx = Math.abs(ev.clientX - startClientX);
+        const dy = Math.abs(ev.clientY - startClientY);
+        if (!dragging && (dx > 6 || dy > 6)) {
+          dragging = true;
+          suppressContextMenuRef.current = true;
+        }
+        if (dragging) {
+          setRmbSelectBox({
+            startX: startRelX,
+            startY: startRelY,
+            curX: ev.clientX - rect.left,
+            curY: ev.clientY - rect.top,
+          });
+        }
+      };
+
+      const onMouseUp = (ev: MouseEvent) => {
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+        if (dragging && rfInstance) {
+          const minClientX = Math.min(startClientX, ev.clientX);
+          const maxClientX = Math.max(startClientX, ev.clientX);
+          const minClientY = Math.min(startClientY, ev.clientY);
+          const maxClientY = Math.max(startClientY, ev.clientY);
+          const topLeft = rfInstance.screenToFlowPosition({ x: minClientX, y: minClientY });
+          const bottomRight = rfInstance.screenToFlowPosition({ x: maxClientX, y: maxClientY });
+          const boxMinX = Math.min(topLeft.x, bottomRight.x);
+          const boxMaxX = Math.max(topLeft.x, bottomRight.x);
+          const boxMinY = Math.min(topLeft.y, bottomRight.y);
+          const boxMaxY = Math.max(topLeft.y, bottomRight.y);
+
+          const hitIds = new Set<string>();
+          for (const n of liveRfNodesRef.current) {
+            const nx1 = n.position.x;
+            const ny1 = n.position.y;
+            const nx2 = nx1 + (n.width ?? 150);
+            const ny2 = ny1 + (n.height ?? 75);
+            if (nx2 >= boxMinX && nx1 <= boxMaxX && ny2 >= boxMinY && ny1 <= boxMaxY) {
+              hitIds.add(n.id);
+            }
+          }
+          setRfNodes(prev => prev.map(n => ({ ...n, selected: hitIds.has(n.id) })));
+          const firstHit = hitIds.values().next().value as string | undefined;
+          setSelectedNodeId(firstHit ?? null);
+          setSelectedEdgeId(null);
+          setTimeout(() => {
+            suppressContextMenuRef.current = false;
+          }, 150);
+        }
+        setRmbSelectBox(null);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    },
+    [rfInstance]
+  );
+
+  const handleCanvasContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressContextMenuRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      suppressContextMenuRef.current = false;
+    }
+  }, []);
+
   // ── 계층형 시트 전환 (자동 수렴 실행 없이 마지막 저장/캐시 상태로 0ms 즉시 이동) ──
   const navigateToHierarchySheet = useCallback(
     (targetSheetId: string) => {
@@ -2577,6 +2872,7 @@ export function FlowsheetWorkspace({
       }
 
       const nextEdges = targetSheet.flowEdges.map(e => ({ ...e }));
+      clearUndoHistory();
       skipNextDirtyRef.current = true;
       setHierarchySheets(nextSheets);
       setActiveSheetId(targetSheetId);
@@ -4499,6 +4795,9 @@ export function FlowsheetWorkspace({
       });
       setActiveSheetId('master');
     }
+    if (simDefs.length > 0 || flowEdges.length > 0) {
+      pushUndoSnapshot();
+    }
     setSimDefs([]);
     setRfNodes([]);
     setFlowEdges([]);
@@ -4608,7 +4907,7 @@ export function FlowsheetWorkspace({
       const resolvedType = def?.unitType ?? n.data.unitType;
       return {
         ...n,
-        selected: n.id === selectedNodeId,
+        selected: n.selected !== undefined ? n.selected : n.id === selectedNodeId,
         data: {
           tag: formatEquipmentTag(def?.tag ?? n.data.tag, resolvedType, tagStandard),
           name: def?.name ?? n.data.name,
@@ -4727,6 +5026,7 @@ export function FlowsheetWorkspace({
       didConnectRef.current = true;
       const norm = normalizeConnection(conn);
       if (!norm) return;
+      pushUndoSnapshot();
       const nextIdx = flowEdges.length + 1;
       const streamNo = `S-${String(nextIdx).padStart(2, '0')}`;
       const newEdgeId = `e_${Date.now()}`;
@@ -4744,7 +5044,7 @@ export function FlowsheetWorkspace({
       setSelectedEdgeId(newEdgeId);
       setSelectedNodeId(null);
     },
-    [flowEdges.length, normalizeConnection]
+    [flowEdges.length, normalizeConnection, pushUndoSnapshot]
   );
 
   const onConnectStart = useCallback(
@@ -4783,6 +5083,7 @@ export function FlowsheetWorkspace({
       const newNodeId = `u_${Date.now()}_${Math.floor(Math.random() * 999)}`;
 
       if (isFromInlet) {
+        pushUndoSnapshot();
         const feedCount = simDefs.filter(d => d.unitType === 'feed').length + 1;
         const feedTag = `S-IN-${String(feedCount).padStart(2, '0')}`;
         const defaultParams =
@@ -4833,6 +5134,7 @@ export function FlowsheetWorkspace({
         setSelectedNodeId(newNodeId);
         setSelectedEdgeId(null);
       } else {
+        pushUndoSnapshot();
         const outCount = simDefs.filter(d => d.unitType === 'product').length + 1;
         const outTag = `S-OUT-${String(outCount).padStart(2, '0')}`;
         const outName =
@@ -5027,6 +5329,7 @@ export function FlowsheetWorkspace({
 
       if (addedDefs.length === 0 && addedEdges.length === 0) return;
 
+      pushUndoSnapshot();
       const nextDefs = [...simDefs, ...addedDefs];
       const nextEdges = [...flowEdges, ...addedEdges];
       skipNextDirtyRef.current = true;
@@ -5043,6 +5346,7 @@ export function FlowsheetWorkspace({
     (oldEdge: Edge, newConn: Connection) => {
       const norm = normalizeConnection(newConn);
       if (!norm) return;
+      pushUndoSnapshot();
       setFlowEdges(eds =>
         eds.map(e =>
           e.id === oldEdge.id
@@ -5057,12 +5361,13 @@ export function FlowsheetWorkspace({
         )
       );
     },
-    [normalizeConnection]
+    [normalizeConnection, pushUndoSnapshot]
   );
 
   // 장치 신규 추가 (드래그 앤 드롭 또는 클릭)
   const spawnUnitAtPosition = useCallback(
     (type: FlowUnitType, pos?: { x: number; y: number }) => {
+      pushUndoSnapshot();
       const meta = UNIT_CATALOG.find(u => u.type === type)!;
       const countOfType = simDefs.filter(d => d.unitType === type).length + 1;
       const id = `u_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
@@ -5090,18 +5395,19 @@ export function FlowsheetWorkspace({
 
       setSimDefs(prev => [...prev, newDef]);
       setRfNodes(prev => [
-        ...prev,
+        ...prev.map(n => (n.selected ? { ...n, selected: false } : n)),
         {
           id,
           type: 'flowUnit',
           position,
+          selected: true,
           data: { tag, name: newDef.name, unitType: type, liveSummary: '' },
         },
       ]);
       setSelectedNodeId(id);
       setSelectedEdgeId(null);
     },
-    [simDefs, tagStandard, useGenericDefault]
+    [pushUndoSnapshot, simDefs, tagStandard, useGenericDefault]
   );
 
   const handleDragStart = (e: React.DragEvent, unitType: FlowUnitType) => {
@@ -5131,6 +5437,7 @@ export function FlowsheetWorkspace({
 
   const deleteSelectedNode = () => {
     if (!selectedNodeId) return;
+    pushUndoSnapshot();
     setSimDefs(prev => prev.filter(d => d.id !== selectedNodeId));
     setRfNodes(prev => prev.filter(n => n.id !== selectedNodeId));
     setFlowEdges(prev => prev.filter(e => e.source !== selectedNodeId && e.target !== selectedNodeId));
@@ -5138,6 +5445,7 @@ export function FlowsheetWorkspace({
   };
 
   const deleteEdgeById = (edgeId: string) => {
+    pushUndoSnapshot();
     setFlowEdges(prev => prev.filter(e => e.id !== edgeId));
     if (selectedEdgeId === edgeId) setSelectedEdgeId(null);
   };
@@ -5293,6 +5601,7 @@ export function FlowsheetWorkspace({
             },
           });
         }
+        clearUndoHistory();
         setSimDefs([]);
         setRfNodes([]);
         setFlowEdges([]);
@@ -5433,11 +5742,13 @@ export function FlowsheetWorkspace({
 
   const updateSelectedDef = (patch: Partial<FlowNodeDef>) => {
     if (!selectedNodeId) return;
+    recordParamEditSnapshot();
     setSimDefs(prev => prev.map(d => (d.id === selectedNodeId ? { ...d, ...patch } : d)));
   };
 
   const updateParam = (key: keyof FlowNodeDef['params'], val: unknown) => {
     if (!selectedNodeId) return;
+    recordParamEditSnapshot();
     setSimDefs(prev =>
       prev.map(d => (d.id === selectedNodeId ? { ...d, params: { ...d.params, [key]: val } } : d))
     );
@@ -5445,6 +5756,7 @@ export function FlowsheetWorkspace({
 
   const updateFeedComp = (comp: SimCompKey, kgH: number) => {
     if (!selectedNodeId) return;
+    recordParamEditSnapshot();
     setSimDefs(prev =>
       prev.map(d => {
         if (d.id !== selectedNodeId) return d;
@@ -5457,6 +5769,7 @@ export function FlowsheetWorkspace({
   // 냉매 프리셋 선택 시 운전 온도 및 총괄열전달계수도 함께 추천 세팅
   const applyRefrigerantPreset = (presetKey: RefrigerantPresetKey) => {
     if (!selectedDef) return;
+    pushUndoSnapshot();
     const presetMeta = REFRIGERANT_PRESETS[presetKey];
     const suggestedOperTemp =
       presetKey === 'freon_m35'
@@ -6168,6 +6481,52 @@ export function FlowsheetWorkspace({
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', flexShrink: 0 }}>
+          {/* 실행취소(↶) / 다시실행(↷) 버튼 */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <button
+              type="button"
+              disabled={!canUndo}
+              onClick={handleUndo}
+              title="실행취소 (Ctrl+Z)"
+              aria-label="실행취소 (Ctrl+Z)"
+              style={{
+                padding: '3px 7px',
+                fontSize: 13,
+                lineHeight: 1.1,
+                fontWeight: 700,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: canUndo ? '#FFFFFF' : '#F8FAFC',
+                color: canUndo ? '#1E293B' : '#94A3B8',
+                opacity: canUndo ? 1 : 0.45,
+                cursor: canUndo ? 'pointer' : 'not-allowed',
+              }}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo}
+              onClick={handleRedo}
+              title="다시실행 (Ctrl+Y)"
+              aria-label="다시실행 (Ctrl+Y)"
+              style={{
+                padding: '3px 7px',
+                fontSize: 13,
+                lineHeight: 1.1,
+                fontWeight: 700,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: canRedo ? '#FFFFFF' : '#F8FAFC',
+                color: canRedo ? '#1E293B' : '#94A3B8',
+                opacity: canRedo ? 1 : 0.45,
+                cursor: canRedo ? 'pointer' : 'not-allowed',
+              }}
+            >
+              ↷
+            </button>
+          </div>
+
           {lastSavedTime && (
             <span
               title={`로컬 자동저장 완료 (${lastSavedTime})`}
@@ -6656,6 +7015,8 @@ export function FlowsheetWorkspace({
               ref={rfWrapperRef}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
+              onMouseDown={handleCanvasMouseDown}
+              onContextMenu={handleCanvasContextMenu}
               style={{ flex: '1 1 0%', minHeight: 0, position: 'relative', overflow: 'hidden' }}
             >
               <ReactFlow
@@ -6663,6 +7024,9 @@ export function FlowsheetWorkspace({
                 edges={displayEdges}
                 nodeTypes={NODE_TYPES}
                 connectionMode={ConnectionMode.Loose}
+                selectionKeyCode={['Control', 'Meta', 'Shift']}
+                multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
+                selectionMode={SelectionMode.Partial}
                 edgesUpdatable
                 onInit={inst => {
                   setRfInstance(inst);
@@ -6671,6 +7035,8 @@ export function FlowsheetWorkspace({
                   }
                 }}
                 onNodesChange={onNodesChange}
+                onNodeDragStart={onNodeDragStart}
+                onNodeDragStop={onNodeDragStop}
                 onConnect={onConnect}
                 onConnectStart={onConnectStart}
                 onConnectEnd={onConnectEnd}
@@ -6706,12 +7072,36 @@ export function FlowsheetWorkspace({
                 onPaneClick={() => {
                   setSelectedEdgeId(null);
                 }}
+                onNodesDelete={deleted => {
+                  if (deleted.length === 0) return;
+                  const beforePos = extractCurrentPositions(liveRfNodesRef.current);
+                  deleted.forEach(n => {
+                    if (!beforePos[n.id]) {
+                      beforePos[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+                    }
+                  });
+                  const beforeSnap = cloneHistorySnapshot(
+                    liveSimDefsRef.current,
+                    beforePos,
+                    liveFlowEdgesRef.current
+                  );
+                  pushUndoSnapshot(beforeSnap);
+                  lastDeleteUndoTsRef.current = Date.now();
+                  const delSet = new Set(deleted.map(n => n.id));
+                  setSimDefs(prev => prev.filter(d => !delSet.has(d.id)));
+                  setFlowEdges(prev => prev.filter(e => !delSet.has(e.source) && !delSet.has(e.target)));
+                  setSelectedNodeId(prev => (prev && delSet.has(prev) ? null : prev));
+                }}
                 onEdgesDelete={deleted => {
+                  if (deleted.length === 0) return;
+                  if (Date.now() - lastDeleteUndoTsRef.current >= 80) {
+                    pushUndoSnapshot();
+                  }
                   const delSet = new Set(deleted.map(d => d.id));
                   setFlowEdges(prev => prev.filter(e => !delSet.has(e.id)));
                   setSelectedEdgeId(null);
                 }}
-                deleteKeyCode={['Backspace', 'Delete']}
+                deleteKeyCode={['Delete', 'Backspace']}
                 fitView
                 fitViewOptions={{ padding: 0.14 }}
               >
@@ -6725,6 +7115,24 @@ export function FlowsheetWorkspace({
                   }
                 />
               </ReactFlow>
+
+              {/* 우클릭 드래그 마키(Box) 다중선택 사각형 */}
+              {rmbSelectBox && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: Math.min(rmbSelectBox.startX, rmbSelectBox.curX),
+                    top: Math.min(rmbSelectBox.startY, rmbSelectBox.curY),
+                    width: Math.abs(rmbSelectBox.curX - rmbSelectBox.startX),
+                    height: Math.abs(rmbSelectBox.curY - rmbSelectBox.startY),
+                    background: 'rgba(37, 99, 235, 0.12)',
+                    border: '1.5px solid #2563EB',
+                    borderRadius: 2,
+                    pointerEvents: 'none',
+                    zIndex: 40,
+                  }}
+                />
+              )}
 
               {/* 모바일 전용: 미선택 시 하단 터치 안내 배지 */}
               {isMobile && !inspectorOpen && !selectedDef && !selectedEdgeDef && !paletteOpen && (

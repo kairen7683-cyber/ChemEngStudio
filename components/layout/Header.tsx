@@ -1397,7 +1397,7 @@ export default function Header() {
           </div>
         )}
 
-        {/* ── 우측: 새로고침(↻) + 피드백 + 언어(KO|EN) + 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
+        {/* ── 우측: 새로고침 + 피드백 + 언어(KO|EN) + 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
         <div
           style={{
             display: 'flex',
@@ -1406,7 +1406,7 @@ export default function Header() {
             flexShrink: 0,
           }}
         >
-          {/* 새로고침 (↻) — 우측 유틸리티 영역 */}
+          {/* 새로고침 — 우측 유틸리티 영역 */}
           <button
             type="button"
             onClick={() => {
@@ -1416,12 +1416,12 @@ export default function Header() {
             aria-label={lang === 'en' ? 'Refresh' : '새로고침'}
             style={{
               ...navBtnStyle,
-              padding: '4px 7px',
-              fontSize: 13,
-              lineHeight: 1,
+              padding: '4px 8px',
+              fontSize: 10.5,
+              lineHeight: 1.1,
             }}
           >
-            ↻
+            {lang === 'en' ? 'Refresh' : '새로고침'}
           </button>
 
           {/* 피드백 (상단 바 상시 노출) */}

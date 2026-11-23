@@ -13,6 +13,7 @@ import ReactFlow, {
   applyNodeChanges,
   NodeChange,
   ReactFlowInstance,
+  SelectionMode,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -364,6 +365,14 @@ interface SavedClassicProject {
   activeComponents?: SimCompKey[];
 }
 
+interface ClassicUndoSnapshot {
+  simDefs: FlowNodeDef[];
+  positions: Record<string, { x: number; y: number }>;
+  flowEdges: FlowEdgeDef[];
+}
+
+const MAX_UNDO_HISTORY = 40;
+
 function normalizePropertyMethod(raw: unknown): SimPropertyMethod {
   if (raw === 'AUTO' || raw === 'ENRTL' || raw === 'NRTL' || raw === 'PR' || raw === 'SRK') return raw;
   if (raw === 'PR-EOS') return 'PR';
@@ -533,6 +542,29 @@ export default function ClassicSimulatorPage() {
 
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance | null>(null);
   const rfWrapperRef = useRef<HTMLDivElement>(null);
+
+  // Undo / Redo 히스토리 스택 (최대 40스냅샷) 및 우클릭 드래그 다중선택 상태
+  const undoPastRef = useRef<ClassicUndoSnapshot[]>([]);
+  const undoFutureRef = useRef<ClassicUndoSnapshot[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const simDefsRef = useRef(simDefs);
+  const rfNodesRef = useRef(rfNodes);
+  const flowEdgesRef = useRef(flowEdges);
+  simDefsRef.current = simDefs;
+  rfNodesRef.current = rfNodes;
+  flowEdgesRef.current = flowEdges;
+  const dragStartSnapRef = useRef<ClassicUndoSnapshot | null>(null);
+  const lastParamPushRef = useRef<{ nodeId: string; ts: number }>({ nodeId: '', ts: 0 });
+  const lastDeleteBatchTsRef = useRef<number>(0);
+
+  const [rmbBox, setRmbBox] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const suppressContextMenuRef = useRef(false);
 
   const feedSummary = useMemo(() => {
     const flows: Partial<Record<SimCompKey, number>> = {};
@@ -870,6 +902,264 @@ export default function ClassicSimulatorPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [runSimulation]);
 
+  // ── Undo / Redo 스냅샷 캡처 · 복원 및 단축키 (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z) ──
+  const captureSnapshot = useCallback((): ClassicUndoSnapshot => {
+    const positions: Record<string, { x: number; y: number }> = {};
+    rfNodesRef.current.forEach(n => {
+      positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+    });
+    const clone = <T,>(v: T): T =>
+      typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+    return {
+      simDefs: clone(simDefsRef.current),
+      positions,
+      flowEdges: clone(flowEdgesRef.current),
+    };
+  }, []);
+
+  const pushUndoSnapshot = useCallback(
+    (snap?: ClassicUndoSnapshot) => {
+      const entry = snap ?? captureSnapshot();
+      const nextPast = [...undoPastRef.current, entry];
+      if (nextPast.length > MAX_UNDO_HISTORY) {
+        nextPast.splice(0, nextPast.length - MAX_UNDO_HISTORY);
+      }
+      undoPastRef.current = nextPast;
+      undoFutureRef.current = [];
+      setCanUndo(undoPastRef.current.length > 0);
+      setCanRedo(false);
+    },
+    [captureSnapshot]
+  );
+
+  const pushParamEditSnapshot = useCallback(
+    (nodeId: string) => {
+      const now = Date.now();
+      const prev = lastParamPushRef.current;
+      if (prev.nodeId !== nodeId || now - prev.ts > 600) {
+        pushUndoSnapshot();
+      }
+      lastParamPushRef.current = { nodeId, ts: now };
+    },
+    [pushUndoSnapshot]
+  );
+
+  const restoreSnapshot = useCallback((snap: ClassicUndoSnapshot) => {
+    const clone = <T,>(v: T): T =>
+      typeof structuredClone === 'function' ? structuredClone(v) : JSON.parse(JSON.stringify(v));
+    const nextDefs = clone(snap.simDefs);
+    const nextEdges = clone(snap.flowEdges);
+    const nextNodes: Node<ClassicBlockNodeData>[] = nextDefs.map((d, i) => ({
+      id: d.id,
+      type: 'classicBlock',
+      position: snap.positions[d.id] ? { ...snap.positions[d.id] } : { x: 80 + i * 170, y: 140 },
+      data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+    }));
+    lastParamPushRef.current = { nodeId: '', ts: 0 };
+    setSimDefs(nextDefs);
+    setRfNodes(nextNodes);
+    setFlowEdges(nextEdges);
+    setIsDirty(true);
+    setSelectedId(prev => {
+      if (!prev) return null;
+      const existsInDefs = nextDefs.some(d => d.id === prev);
+      const existsInEdges = nextEdges.some(e => e.id === prev);
+      return existsInDefs || existsInEdges ? prev : null;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (undoPastRef.current.length === 0) return;
+    const prevSnap = undoPastRef.current[undoPastRef.current.length - 1];
+    const currentSnap = captureSnapshot();
+    undoPastRef.current = undoPastRef.current.slice(0, -1);
+    const nextFuture = [...undoFutureRef.current, currentSnap];
+    if (nextFuture.length > MAX_UNDO_HISTORY) {
+      nextFuture.splice(0, nextFuture.length - MAX_UNDO_HISTORY);
+    }
+    undoFutureRef.current = nextFuture;
+    setCanUndo(undoPastRef.current.length > 0);
+    setCanRedo(undoFutureRef.current.length > 0);
+    restoreSnapshot(prevSnap);
+  }, [captureSnapshot, restoreSnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (undoFutureRef.current.length === 0) return;
+    const nextSnap = undoFutureRef.current[undoFutureRef.current.length - 1];
+    const currentSnap = captureSnapshot();
+    undoFutureRef.current = undoFutureRef.current.slice(0, -1);
+    const nextPast = [...undoPastRef.current, currentSnap];
+    if (nextPast.length > MAX_UNDO_HISTORY) {
+      nextPast.splice(0, nextPast.length - MAX_UNDO_HISTORY);
+    }
+    undoPastRef.current = nextPast;
+    setCanUndo(undoPastRef.current.length > 0);
+    setCanRedo(undoFutureRef.current.length > 0);
+    restoreSnapshot(nextSnap);
+  }, [captureSnapshot, restoreSnapshot]);
+
+  useEffect(() => {
+    const onUndoRedoKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return;
+        }
+      }
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        if (undoPastRef.current.length > 0) {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
+        if (undoFutureRef.current.length > 0) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+    window.addEventListener('keydown', onUndoRedoKey);
+    return () => window.removeEventListener('keydown', onUndoRedoKey);
+  }, [handleUndo, handleRedo]);
+
+  const onNodeDragStart = useCallback(() => {
+    dragStartSnapRef.current = captureSnapshot();
+  }, [captureSnapshot]);
+
+  const onNodeDragStop = useCallback(() => {
+    const startSnap = dragStartSnapRef.current;
+    dragStartSnapRef.current = null;
+    if (!startSnap) return;
+    const moved = rfNodesRef.current.some(n => {
+      const prevPos = startSnap.positions[n.id];
+      if (!prevPos) return false;
+      return Math.abs(Math.round(n.position.x) - prevPos.x) > 1 || Math.abs(Math.round(n.position.y) - prevPos.y) > 1;
+    });
+    if (moved) {
+      pushUndoSnapshot(startSnap);
+    }
+  }, [pushUndoSnapshot]);
+
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      const delIds = new Set(deleted.map(d => d.id));
+      if (delIds.size === 0) return;
+      pushUndoSnapshot();
+      lastDeleteBatchTsRef.current = Date.now();
+      setSimDefs(prev => prev.filter(d => !delIds.has(d.id)));
+      setRfNodes(prev => prev.filter(n => !delIds.has(n.id)));
+      setFlowEdges(prev => prev.filter(e => !delIds.has(e.source) && !delIds.has(e.target)));
+      setSelectedId(prev => (prev && delIds.has(prev) ? null : prev));
+    },
+    [pushUndoSnapshot]
+  );
+
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      const setDel = new Set(deleted.map(d => d.id));
+      if (setDel.size === 0) return;
+      if (Date.now() - lastDeleteBatchTsRef.current >= 80) {
+        pushUndoSnapshot();
+      }
+      setFlowEdges(prev => prev.filter(e => !setDel.has(e.id)));
+      setSelectedId(prev => (prev && setDel.has(prev) ? null : prev));
+    },
+    [pushUndoSnapshot]
+  );
+
+  const onSelectionChange = useCallback(
+    ({ nodes: selNodes }: { nodes: Node[]; edges: Edge[] }) => {
+      if (selNodes.length > 0) {
+        setSelectedKind('block');
+        setSelectedId(prev => (prev && selNodes.some(n => n.id === prev) ? prev : selNodes[0].id));
+      }
+    },
+    []
+  );
+
+  const handleCanvasMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.button !== 2) return;
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      let didDrag = false;
+
+      const onMove = (ev: MouseEvent) => {
+        const dx = ev.clientX - startClientX;
+        const dy = ev.clientY - startClientY;
+        if (!didDrag && Math.hypot(dx, dy) > 6) {
+          didDrag = true;
+          suppressContextMenuRef.current = true;
+        }
+        if (didDrag && rfWrapperRef.current) {
+          const rect = rfWrapperRef.current.getBoundingClientRect();
+          setRmbBox({
+            left: Math.min(startClientX, ev.clientX) - rect.left,
+            top: Math.min(startClientY, ev.clientY) - rect.top,
+            width: Math.abs(ev.clientX - startClientX),
+            height: Math.abs(ev.clientY - startClientY),
+          });
+        }
+      };
+
+      const onUp = (ev: MouseEvent) => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        setRmbBox(null);
+
+        if (didDrag && rfInstance) {
+          const p1 = rfInstance.screenToFlowPosition({
+            x: Math.min(startClientX, ev.clientX),
+            y: Math.min(startClientY, ev.clientY),
+          });
+          const p2 = rfInstance.screenToFlowPosition({
+            x: Math.max(startClientX, ev.clientX),
+            y: Math.max(startClientY, ev.clientY),
+          });
+          const boxMinX = Math.min(p1.x, p2.x);
+          const boxMaxX = Math.max(p1.x, p2.x);
+          const boxMinY = Math.min(p1.y, p2.y);
+          const boxMaxY = Math.max(p1.y, p2.y);
+          const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+
+          const hitIds: string[] = [];
+          setRfNodes(prev =>
+            prev.map(n => {
+              const nw = typeof n.width === 'number' && n.width > 0 ? n.width : 120;
+              const nh = typeof n.height === 'number' && n.height > 0 ? n.height : 72;
+              const hit =
+                n.position.x <= boxMaxX &&
+                n.position.x + nw >= boxMinX &&
+                n.position.y <= boxMaxY &&
+                n.position.y + nh >= boxMinY;
+              const nextSelected = additive ? Boolean(n.selected) || hit : hit;
+              if (nextSelected) hitIds.push(n.id);
+              return n.selected === nextSelected ? n : { ...n, selected: nextSelected };
+            })
+          );
+          if (hitIds.length > 0) {
+            setSelectedKind('block');
+            setSelectedId(hitIds[0]);
+          } else if (!additive) {
+            setSelectedId(null);
+          }
+
+          window.setTimeout(() => {
+            suppressContextMenuRef.current = false;
+          }, 120);
+        }
+      };
+
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    },
+    [rfInstance]
+  );
+
   // 모던 UI -> 클래식 UI 전환 시 실시간 플로우시트 인계 수신
   useEffect(() => {
     if (loadedPendingOnMountRef.current) {
@@ -1129,7 +1419,7 @@ export default function ClassicSimulatorPage() {
       const resolvedType = def?.unitType ?? n.data.unitType;
       return {
         ...n,
-        selected: selectedKind === 'block' && selectedId === n.id,
+        selected: Boolean(n.selected) || (selectedKind === 'block' && selectedId === n.id),
         data: {
           tag: formatEquipmentTag(def?.tag ?? n.data.tag, resolvedType, tagStandard),
           modelName: getModelName(resolvedType),
@@ -1177,6 +1467,7 @@ export default function ClassicSimulatorPage() {
   // 블록 추가 (팔레트 클릭 또는 드래그 드롭)
   const addBlockAt = useCallback(
     (unitType: FlowUnitType, pos?: { x: number; y: number }) => {
+      pushUndoSnapshot();
       const item = CLASSIC_MODEL_CATALOG.find(m => m.unitType === unitType);
       const stdPrefix = getDefaultTagPrefix(unitType, tagStandard);
       const prefix = stdPrefix !== 'U' ? stdPrefix : (item?.defaultPrefix ?? 'B');
@@ -1196,18 +1487,19 @@ export default function ClassicSimulatorPage() {
       };
       setSimDefs(prev => [...prev, newDef]);
       setRfNodes(prev => [
-        ...prev,
+        ...prev.map(n => (n.selected ? { ...n, selected: false } : n)),
         {
           id,
           type: 'classicBlock',
           position: finalPos,
+          selected: true,
           data: { tag, modelName: getModelName(unitType), unitType },
         },
       ]);
       setSelectedKind('block');
       setSelectedId(id);
     },
-    [simDefs, tagStandard]
+    [pushUndoSnapshot, simDefs, tagStandard]
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -1217,6 +1509,7 @@ export default function ClassicSimulatorPage() {
   const onConnect = useCallback(
     (conn: Connection) => {
       if (!conn.source || !conn.target) return;
+      pushUndoSnapshot();
       const nextNo = `S${flowEdges.length + 1}`;
       const newEdge: FlowEdgeDef = {
         id: `ce_${Date.now()}`,
@@ -1230,7 +1523,7 @@ export default function ClassicSimulatorPage() {
       setSelectedKind('stream');
       setSelectedId(newEdge.id);
     },
-    [flowEdges.length]
+    [flowEdges.length, pushUndoSnapshot]
   );
 
   const handleDrop = useCallback(
@@ -1244,21 +1537,33 @@ export default function ClassicSimulatorPage() {
     [rfInstance, addBlockAt]
   );
 
-  const updateBlockDef = useCallback((nodeId: string, updater: (d: FlowNodeDef) => FlowNodeDef) => {
-    setSimDefs(prev => prev.map(d => (d.id === nodeId ? updater(d) : d)));
-  }, []);
+  const updateBlockDef = useCallback(
+    (nodeId: string, updater: (d: FlowNodeDef) => FlowNodeDef) => {
+      pushParamEditSnapshot(nodeId);
+      setSimDefs(prev => prev.map(d => (d.id === nodeId ? updater(d) : d)));
+    },
+    [pushParamEditSnapshot]
+  );
 
-  const deleteBlock = useCallback((nodeId: string) => {
-    setSimDefs(prev => prev.filter(d => d.id !== nodeId));
-    setRfNodes(prev => prev.filter(n => n.id !== nodeId));
-    setFlowEdges(prev => prev.filter(e => e.source !== nodeId && e.target !== nodeId));
-    setSelectedId(null);
-  }, []);
+  const deleteBlock = useCallback(
+    (nodeId: string) => {
+      pushUndoSnapshot();
+      setSimDefs(prev => prev.filter(d => d.id !== nodeId));
+      setRfNodes(prev => prev.filter(n => n.id !== nodeId));
+      setFlowEdges(prev => prev.filter(e => e.source !== nodeId && e.target !== nodeId));
+      setSelectedId(null);
+    },
+    [pushUndoSnapshot]
+  );
 
-  const deleteEdge = useCallback((edgeId: string) => {
-    setFlowEdges(prev => prev.filter(e => e.id !== edgeId));
-    setSelectedId(null);
-  }, []);
+  const deleteEdge = useCallback(
+    (edgeId: string) => {
+      pushUndoSnapshot();
+      setFlowEdges(prev => prev.filter(e => e.id !== edgeId));
+      setSelectedId(null);
+    },
+    [pushUndoSnapshot]
+  );
 
   const loadExample = (ex: ClassicExampleCase) => {
     const nextDefs = ex.nodes.map(({ position: _p, ...d }) => ({ ...d, params: { ...d.params } }));
@@ -1292,6 +1597,9 @@ export default function ClassicSimulatorPage() {
   };
 
   const clearBlank = () => {
+    if (simDefs.length > 0 || flowEdges.length > 0) {
+      pushUndoSnapshot();
+    }
     skipDirtyRef.current = true;
     const defaultComps = getPlantDefaultComponents('classic_sim');
     setSimDefs([]);
@@ -1846,6 +2154,58 @@ export default function ClassicSimulatorPage() {
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title="실행취소 (Ctrl+Z)"
+              aria-label="실행취소 (Ctrl+Z)"
+              style={{
+                height: 24,
+                minWidth: 26,
+                padding: '0 6px',
+                borderRadius: 4,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
+                fontSize: 13,
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: canUndo ? 'pointer' : 'not-allowed',
+                opacity: canUndo ? 1 : 0.4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title="다시실행 (Ctrl+Y)"
+              aria-label="다시실행 (Ctrl+Y)"
+              style={{
+                height: 24,
+                minWidth: 26,
+                padding: '0 6px',
+                borderRadius: 4,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
+                fontSize: 13,
+                fontWeight: 800,
+                lineHeight: 1,
+                cursor: canRedo ? 'pointer' : 'not-allowed',
+                opacity: canRedo ? 1 : 0.4,
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              ↷
+            </button>
             <CaseOutputsMenu compact unitCount={simDefs.length} />
           </div>
         </div>
@@ -2069,11 +2429,18 @@ export default function ClassicSimulatorPage() {
               onSelectStream={edgeId => {
                 setSelectedKind('stream');
                 setSelectedId(edgeId);
+                setRfNodes(prev => prev.map(n => (n.selected ? { ...n, selected: false } : n)));
                 if (isMobile) setMobilePane('form');
               }}
               onSelectBlock={nodeId => {
                 setSelectedKind('block');
                 setSelectedId(nodeId);
+                setRfNodes(prev =>
+                  prev.map(n => {
+                    const nextSel = n.id === nodeId;
+                    return Boolean(n.selected) === nextSel ? n : { ...n, selected: nextSel };
+                  })
+                );
                 if (isMobile) setMobilePane('form');
               }}
             />
@@ -2171,7 +2538,59 @@ export default function ClassicSimulatorPage() {
                   );
                 })}
               </div>
-              <div style={{ flexShrink: 0, paddingBottom: 3 }}>
+              <div style={{ flexShrink: 0, paddingBottom: 3, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={!canUndo}
+                  title="실행취소 (Ctrl+Z)"
+                  aria-label="실행취소 (Ctrl+Z)"
+                  style={{
+                    height: 24,
+                    minWidth: 28,
+                    padding: '0 7px',
+                    borderRadius: 4,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#1E293B',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    cursor: canUndo ? 'pointer' : 'not-allowed',
+                    opacity: canUndo ? 1 : 0.4,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  ↶
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={!canRedo}
+                  title="다시실행 (Ctrl+Y)"
+                  aria-label="다시실행 (Ctrl+Y)"
+                  style={{
+                    height: 24,
+                    minWidth: 28,
+                    padding: '0 7px',
+                    borderRadius: 4,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#1E293B',
+                    fontSize: 13,
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    cursor: canRedo ? 'pointer' : 'not-allowed',
+                    opacity: canRedo ? 1 : 0.4,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  ↷
+                </button>
                 <CaseOutputsMenu compact unitCount={simDefs.length} />
               </div>
             </div>
@@ -2181,6 +2600,13 @@ export default function ClassicSimulatorPage() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
               <div
                 ref={rfWrapperRef}
+                onMouseDown={handleCanvasMouseDown}
+                onContextMenu={e => {
+                  if (suppressContextMenuRef.current) {
+                    e.preventDefault();
+                    suppressContextMenuRef.current = false;
+                  }
+                }}
                 onDrop={handleDrop}
                 onDragOver={e => {
                   e.preventDefault();
@@ -2194,11 +2620,22 @@ export default function ClassicSimulatorPage() {
                   nodeTypes={NODE_TYPES}
                   edgeTypes={EDGE_TYPES}
                   connectionMode={ConnectionMode.Loose}
+                  selectionKeyCode={['Control', 'Meta', 'Shift']}
+                  multiSelectionKeyCode={['Control', 'Meta', 'Shift']}
+                  selectionMode={SelectionMode.Partial}
                   onInit={inst => {
                     setRfInstance(inst);
                     setTimeout(() => inst.fitView({ padding: 0.14, duration: 200 }), 100);
                   }}
                   onNodesChange={onNodesChange}
+                  onNodeDragStart={onNodeDragStart}
+                  onNodeDragStop={onNodeDragStop}
+                  onSelectionChange={onSelectionChange}
+                  onPaneClick={() => {
+                    if (selectedKind === 'block' || selectedKind === 'stream') {
+                      setSelectedId(null);
+                    }
+                  }}
                   onConnect={onConnect}
                   onNodeClick={(_, node) => {
                     setSelectedKind('block');
@@ -2231,16 +2668,31 @@ export default function ClassicSimulatorPage() {
                     setSelectedKind('stream');
                     setSelectedId(edge.id);
                   }}
-                  onEdgesDelete={deleted => {
-                    const setDel = new Set(deleted.map(d => d.id));
-                    setFlowEdges(prev => prev.filter(e => !setDel.has(e.id)));
-                  }}
+                  onNodesDelete={onNodesDelete}
+                  onEdgesDelete={onEdgesDelete}
                   deleteKeyCode={['Backspace', 'Delete']}
                   fitView
                 >
                   <Background color="#E2E8F0" gap={20} />
                   <Controls position="bottom-right" />
                 </ReactFlow>
+
+                {rmbBox && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: rmbBox.left,
+                      top: rmbBox.top,
+                      width: rmbBox.width,
+                      height: rmbBox.height,
+                      background: 'rgba(37, 99, 235, 0.12)',
+                      border: '1.5px solid #2563EB',
+                      borderRadius: 2,
+                      pointerEvents: 'none',
+                      zIndex: 50,
+                    }}
+                  />
+                )}
 
                 {simDefs.length === 0 && (
                   <div
@@ -2918,6 +3370,7 @@ export default function ClassicSimulatorPage() {
                   <select
                     value={curPort}
                     onChange={e => {
+                      pushUndoSnapshot();
                       const newPort = e.target.value as SourcePortId;
                       const nextEdges = flowEdges.map(ed =>
                         ed.id === selectedEdge.id ? { ...ed, sourcePort: newPort } : ed
@@ -3861,6 +4314,7 @@ export default function ClassicSimulatorPage() {
             isSimDirty={isDirty}
             onRunSimulation={() => runSimulation()}
             onChangeConfig={patch => {
+              pushParamEditSnapshot(modalDef.id);
               const nextDefs = simDefs.map(d =>
                 d.id === modalDef.id
                   ? {
@@ -3918,6 +4372,7 @@ export default function ClassicSimulatorPage() {
             unitResult={uRes}
             isSimDirty={isDirty}
             onChangeParams={patch => {
+              pushParamEditSnapshot(modalDef.id);
               const nextDefs = simDefs.map(d =>
                 d.id === modalDef.id ? { ...d, params: { ...d.params, ...patch } } : d
               );
@@ -3963,6 +4418,7 @@ export default function ClassicSimulatorPage() {
         designSpecs={designSpecs}
         onChangeDesignSpecs={setDesignSpecs}
         onApplyAdjustedNodes={adjustedNodes => {
+          pushUndoSnapshot();
           setSimDefs(adjustedNodes);
           runSimulation(adjustedNodes, flowEdges, thermoMethod, activeComponents, tearMethod);
         }}
@@ -4006,6 +4462,7 @@ export default function ClassicSimulatorPage() {
             propertyMethod={resolvedProp}
             initialConfig={rxDef.params.reactorConfig}
             onApplyConfig={cfg => {
+              pushUndoSnapshot();
               const nextDefs = simDefs.map(d =>
                 d.id === rxDef.id
                   ? {
