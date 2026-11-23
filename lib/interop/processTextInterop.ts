@@ -741,6 +741,12 @@ function mapBlockType(
       return 'hex';
     case 'FLASH2':
     case 'FLASH3':
+    case 'DECANTER':
+    case 'LIQSEP':
+    case 'HYCYC':
+    case 'FILTER':
+    case 'CFUGE':
+    case 'CYCLONE':
     case 'SEP':
     case 'SEP2':
       return 'separator';
@@ -753,6 +759,11 @@ function mapBlockType(
     case 'ABSBR':
       return 'absorber';
     case 'EXTRACT':
+    case 'EXTRACTOR':
+    case 'LIQEXT':
+    case 'SWASH':
+    case 'WASH':
+    case 'SCRUB':
       return 'extractor';
     case 'PUMP':
       return 'pump';
@@ -781,6 +792,10 @@ function defaultUnitLabel(unitType: FlowUnitType, blockId: string, rawType?: str
   if (rawUpper === 'HEATER') return `${blockId} 가열기`;
   if (rawUpper === 'COOLER') return `${blockId} 냉각기`;
   if (rawUpper === 'HEATX' || rawUpper === 'MHEATX') return `${blockId} 열교환기`;
+  if (rawUpper === 'DECANTER' || rawUpper === 'LIQSEP') return `${blockId} 유수분리기(디캔터)`;
+  if (rawUpper === 'EXTRACT' || rawUpper === 'LIQEXT' || rawUpper === 'SWASH' || rawUpper === 'WASH') {
+    return `${blockId} 추출·수세탑`;
+  }
   switch (unitType) {
     case 'mixer':
       return `${blockId} 혼합기`;
@@ -1692,13 +1707,15 @@ function parseNativeBkp(
           } else if (kv.key === 'NSTAGE' || kv.key === 'NSTAGES') {
             distillCfg.totalStages = Math.max(3, Math.round(val));
             hasDistillCfg = true;
-          } else if (kv.key === 'RR' || kv.key === 'MOLE-RR' || kv.key === 'BASIS-RR') {
+          } else if (kv.key === 'RR' || kv.key === 'MOLE-RR' || kv.key === 'BASIS-RR' || kv.key === 'MASS-RR') {
             distillCfg.topSpecType = 'reflux_ratio';
             distillCfg.topSpecValue = val;
             hasDistillCfg = true;
           } else if (
             kv.key === 'D:F' ||
+            kv.key === 'D-F' ||
             kv.key === 'DF' ||
+            kv.key === 'BASIS-D:F' ||
             kv.key === 'MOLE-D:F' ||
             kv.key === 'DISTIL-RATE'
           ) {
