@@ -609,13 +609,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  이름 / 표시명
+                  닉네임 (선택)
                 </label>
                 <input
                   type="text"
                   value={displayName}
                   onChange={e => setDisplayName(e.target.value)}
-                  placeholder="예: 홍길동 (공정기술팀)"
+                  placeholder="예: 화공엔지니어, 공정설계 등 (실명 불필요)"
                   style={{
                     width: '100%',
                     padding: '8px 11px',
