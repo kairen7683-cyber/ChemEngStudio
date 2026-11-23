@@ -202,7 +202,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
     if (!plantProduct.trim()) {
-      setFormError('근무 중인 공장 또는 주요 생산 제품을 입력해 주세요.');
+      setFormError('담당 업무 또는 관심 공정을 입력해 주세요.');
       return;
     }
     if (registrationMode === 'invite_only' && !inviteCode.trim()) {
@@ -609,27 +609,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  닉네임 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={e => setDisplayName(e.target.value)}
-                  placeholder="예: 화공엔지니어, 공정설계 등 (실명 불필요)"
-                  style={{
-                    width: '100%',
-                    padding: '8px 11px',
-                    borderRadius: 8,
-                    border: '1px solid #CBD5E1',
-                    fontSize: 13,
-                    color: '#0F172A',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  근무 공장 · 주요 생산 제품 <span style={{ color: '#DC2626' }}>*</span>
+                  담당 업무 · 관심 공정 <span style={{ color: '#DC2626' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -637,7 +617,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   maxLength={120}
                   value={plantProduct}
                   onChange={e => setPlantProduct(e.target.value)}
-                  placeholder="예: 석유화학(에틸렌/PO), 염산·가성소다, 2차전지 소재, EPC 설계 등"
+                  placeholder="예: EPC 공정설계, 증류탑·열교환기, 정밀화학, 2차전지 소재 등"
                   style={{
                     width: '100%',
                     padding: '8px 11px',
