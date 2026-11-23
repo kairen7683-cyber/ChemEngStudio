@@ -425,13 +425,22 @@ export default function EquipmentDesignPage() {
     );
   }
 
-  // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공)
-  const isMdiMode = !simOnly && isPlantAllowed('mdi_plant', user) && (activePlantId === 'mdi_plant' || activeTab === 'mdi_hub');
-  const isCmsMode = !simOnly && !isMdiMode && isPlantAllowed('cms_plant', user) && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
-  const isEchMode = !simOnly && !isMdiMode && !isCmsMode && isPlantAllowed('ech_gte', user) && (activePlantId === 'ech_gte' || activeTab === 'distill');
-  const isHclMode = !simOnly && !isMdiMode && !isCmsMode && !isEchMode && isPlantAllowed('hcl_synth', user) && (activePlantId === 'hcl_synth' || activeTab === 'hcl_hub');
-  const isCaMode = !simOnly && !isMdiMode && !isCmsMode && !isEchMode && !isHclMode && isPlantAllowed('clorsim_sim', user);
-  const subTabs = simOnly
+  // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공 — 내 케이스/범용 시뮬레이터에서는 범용 장치설계만 표시)
+  const isStandaloneCase = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
+  const isMdiMode = !simOnly && !isStandaloneCase && isPlantAllowed('mdi_plant', user) && (activePlantId === 'mdi_plant' || activeTab === 'mdi_hub');
+  const isCmsMode = !simOnly && !isStandaloneCase && !isMdiMode && isPlantAllowed('cms_plant', user) && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
+  const isEchMode = !simOnly && !isStandaloneCase && !isMdiMode && !isCmsMode && isPlantAllowed('ech_gte', user) && (activePlantId === 'ech_gte' || activeTab === 'distill');
+  const isHclMode = !simOnly && !isStandaloneCase && !isMdiMode && !isCmsMode && !isEchMode && isPlantAllowed('hcl_synth', user) && (activePlantId === 'hcl_synth' || activeTab === 'hcl_hub');
+  const isCaMode =
+    !simOnly &&
+    !isStandaloneCase &&
+    !isMdiMode &&
+    !isCmsMode &&
+    !isEchMode &&
+    !isHclMode &&
+    (activePlantId === 'clorsim' || activePlantId === 'clorsim_sim') &&
+    isPlantAllowed('clorsim_sim', user);
+  const subTabs = simOnly || isStandaloneCase
     ? STANDALONE_BETA_TABS
     : isMdiMode
       ? MDI_DESIGN_TABS
@@ -444,10 +453,10 @@ export default function EquipmentDesignPage() {
             : isCaMode
               ? CA_DESIGN_TABS
               : STANDALONE_BETA_TABS;
-  const effectiveDesignTab = simOnly
+  const effectiveDesignTab = simOnly || isStandaloneCase
     ? (STANDALONE_TAB_KEYS as readonly string[]).includes(activeTab)
       ? activeTab
-      : 'psv_flare'
+      : 'chempro'
     : isMdiMode && !MDI_DESIGN_TABS.some(t => t.key === activeTab)
       ? 'mdi_hub'
       : isCmsMode && !CMS_DESIGN_TABS.some(t => t.key === activeTab)
@@ -459,7 +468,7 @@ export default function EquipmentDesignPage() {
             : isCaMode && !CA_DESIGN_TABS.some(t => t.key === activeTab)
               ? 'evap'
               : !isMdiMode && !isCmsMode && !isEchMode && !isHclMode && !isCaMode && !(STANDALONE_TAB_KEYS as readonly string[]).includes(activeTab)
-                ? 'psv_flare'
+                ? 'chempro'
                 : activeTab;
 
   const switchDesignSubTab = (key: string) => {
