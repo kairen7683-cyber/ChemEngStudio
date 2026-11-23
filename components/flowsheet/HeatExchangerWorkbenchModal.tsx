@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
@@ -155,6 +156,8 @@ export default function HeatExchangerWorkbenchModal({
   }, []);
   const [lastRunStamp, setLastRunStamp] = useState<string | null>(null);
   const temaFileInputRef = useRef<HTMLInputElement | null>(null);
+  const temaMenuRef = useRef<HTMLDivElement | null>(null);
+  const [temaMenuOpen, setTemaMenuOpen] = useState(false);
   const [temaImportNotice, setTemaImportNotice] = useState<{
     count: number;
     summary: string;
@@ -167,8 +170,20 @@ export default function HeatExchangerWorkbenchModal({
       setAiReport(null);
       setAiStepLabel('');
       setTemaImportNotice(null);
+      setTemaMenuOpen(false);
     }
   }, [open, initialView, unitTag]);
+
+  useEffect(() => {
+    if (!temaMenuOpen) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (temaMenuRef.current && !temaMenuRef.current.contains(e.target as Node)) {
+        setTemaMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [temaMenuOpen]);
 
   const triggerRun = () => {
     setIsRunningFeedback(true);
@@ -186,7 +201,14 @@ export default function HeatExchangerWorkbenchModal({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (temaMenuOpen) {
+          e.stopPropagation();
+          setTemaMenuOpen(false);
+          return;
+        }
+        onClose();
+      }
       if (e.key === 'F5') {
         e.preventDefault();
         triggerRun();
@@ -194,7 +216,7 @@ export default function HeatExchangerWorkbenchModal({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose, onRunSimulation]);
+  }, [open, onClose, onRunSimulation, temaMenuOpen]);
 
   const hxCfg: HxDesignParams = params.hxDesignConfig ?? {};
   const patchHxCfg = (patch: Partial<HxDesignParams>) => {
@@ -291,7 +313,7 @@ export default function HeatExchangerWorkbenchModal({
     }
   };
 
-  const exportHxExcelDatasheet = () => {
+  const exportHxExcelDatasheet = async () => {
     const dateStr = new Date().toISOString().slice(0, 10);
     const isPhe = dRes.hxKind === 'plate_phe';
     const isProcTube = dRes.allocation === 'process_tube';
@@ -461,36 +483,163 @@ export default function HeatExchangerWorkbenchModal({
 
     sheet1Rows.push(...ENGINEERING_DISCLAIMER_ROWS);
 
-    const wb = XLSX.utils.book_new();
-    const ws1 = XLSX.utils.aoa_to_sheet(sheet1Rows);
-    ws1['!cols'] = [
-      { wch: 7 },
-      { wch: 36 },
-      { wch: 13 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 22 },
-      { wch: 20 },
-      { wch: 28 },
-    ];
-    const ws2 = XLSX.utils.aoa_to_sheet(sheet2Rows);
-    ws2['!cols'] = [
-      { wch: 12 },
-      { wch: 22 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 14 },
-      { wch: 18 },
-      { wch: 12 },
-      { wch: 12 },
-      { wch: 24 },
-    ];
-    XLSX.utils.book_append_sheet(wb, ws1, 'TEMA_HX_Datasheet');
-    XLSX.utils.book_append_sheet(wb, ws2, 'TQ_Profile_Nozzles');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'ChemPlant Studio';
+    wb.created = new Date();
+
+    const thinBorder: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    };
+
+    const ws1 = wb.addWorksheet('TEMA_HX_Datasheet', {
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      views: [{ state: 'frozen', ySplit: 3 }],
+    });
+    const ws1Widths = [7, 36, 13, 22, 20, 22, 20, 28];
+    ws1Widths.forEach((w, i) => { ws1.getColumn(i + 1).width = w; });
+
+    sheet1Rows.forEach((rawRow, rIdx) => {
+      const padded = Array.from({ length: 8 }, (_, ci) => rawRow[ci] ?? '');
+      const row = ws1.addRow(padded);
+      const firstCell = String(padded[0] ?? '').trim();
+      const secondCell = String(padded[1] ?? '').trim();
+      const upperJoined = `${firstCell} ${secondCell}`.toUpperCase();
+
+      if (rIdx === 0) {
+        row.height = 28;
+        ws1.mergeCells(row.number, 1, row.number, 8);
+        const c = row.getCell(1);
+        c.font = { name: 'Arial', bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        c.alignment = { horizontal: 'center', vertical: 'middle' };
+        c.border = thinBorder;
+      } else if (
+        upperJoined.includes('SPECIFICATION ITEM') ||
+        (firstCell === 'Line' && secondCell.length > 0)
+      ) {
+        row.height = 22;
+        row.eachCell((cell, colNumber) => {
+          cell.font = { name: 'Arial', bold: true, size: 9.5, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+          cell.alignment = { horizontal: colNumber <= 2 ? 'left' : 'center', vertical: 'middle', wrapText: true };
+          cell.border = thinBorder;
+        });
+      } else if (
+        upperJoined.includes('PERFORMANCE OF ONE UNIT') ||
+        upperJoined.includes('CONSTRUCTION DATA FOR ONE SHELL') ||
+        upperJoined.includes('ENGINEERING DISCLAIMER')
+      ) {
+        row.height = 20;
+        const isWarn = upperJoined.includes('DISCLAIMER');
+        ws1.mergeCells(row.number, 1, row.number, 8);
+        const c = row.getCell(1);
+        c.value = secondCell || firstCell;
+        c.font = { name: 'Arial', bold: true, size: 10, color: { argb: isWarn ? 'FF92400E' : 'FF1E3A8A' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isWarn ? 'FFFEF3C7' : 'FFDBEAFE' } };
+        c.alignment = { horizontal: 'left', vertical: 'middle' };
+        c.border = thinBorder;
+      } else if (padded.every((v) => String(v).trim() === '')) {
+        row.height = 8;
+      } else if (rIdx >= sheet1Rows.length - ENGINEERING_DISCLAIMER_ROWS.length) {
+        row.height = 17;
+        ws1.mergeCells(row.number, 1, row.number, 8);
+        const c = row.getCell(1);
+        c.value = padded.filter((v) => String(v).trim() !== '').join(' ');
+        c.font = { name: 'Arial', italic: true, size: 8.5, color: { argb: 'FF78350F' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+        c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        c.border = thinBorder;
+      } else {
+        row.height = 19;
+        const isZebra = rIdx % 2 === 1;
+        row.eachCell((cell, colNumber) => {
+          const isNumeric = typeof cell.value === 'number';
+          cell.font = {
+            name: colNumber >= 4 && colNumber <= 7 ? 'Consolas' : 'Arial',
+            bold: colNumber === 1 || colNumber === 2,
+            size: 9.5,
+            color: { argb: colNumber === 1 ? 'FF475569' : 'FF0F172A' },
+          };
+          cell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: isZebra ? 'FFF8FAFC' : 'FFFFFFFF' },
+          };
+          cell.alignment = {
+            horizontal: colNumber === 1 || colNumber === 3 ? 'center' : isNumeric ? 'right' : 'left',
+            vertical: 'middle',
+            wrapText: true,
+          };
+          cell.border = thinBorder;
+        });
+      }
+    });
+
+    const ws2 = wb.addWorksheet('TQ_Profile_Nozzles', {
+      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    });
+    const ws2Widths = [12, 22, 14, 14, 14, 18, 13, 13, 24];
+    ws2Widths.forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
+
+    sheet2Rows.forEach((rawRow, rIdx) => {
+      if (rawRow.length === 0) {
+        const emptyRow = ws2.addRow([]);
+        emptyRow.height = 10;
+        return;
+      }
+      const padded = Array.from({ length: 9 }, (_, ci) => rawRow[ci] ?? '');
+      const row = ws2.addRow(padded);
+      const firstCell = String(padded[0] ?? '').trim();
+      const isSection = /^[123]\.\s/.test(firstCell);
+      const isColHeader =
+        firstCell === 'Q Fraction' || firstCell === 'Nozzle ID' || firstCell === 'Zone';
+
+      if (isSection) {
+        row.height = 22;
+        ws2.mergeCells(row.number, 1, row.number, 9);
+        const c = row.getCell(1);
+        c.font = { name: 'Arial', bold: true, size: 10.5, color: { argb: 'FFFFFFFF' } };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+        c.alignment = { horizontal: 'left', vertical: 'middle' };
+        c.border = thinBorder;
+      } else if (isColHeader) {
+        row.height = 20;
+        row.eachCell((cell) => {
+          cell.font = { name: 'Arial', bold: true, size: 9.5, color: { argb: 'FFFFFFFF' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A8A' } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          cell.border = thinBorder;
+        });
+      } else {
+        row.height = 18;
+        const isZebra = rIdx % 2 === 1;
+        row.eachCell((cell) => {
+          const isNumeric = typeof cell.value === 'number';
+          cell.font = { name: isNumeric ? 'Consolas' : 'Arial', size: 9.5, color: { argb: 'FF0F172A' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: isZebra ? 'FFF8FAFC' : 'FFFFFFFF' } };
+          cell.alignment = { horizontal: isNumeric ? 'right' : 'center', vertical: 'middle' };
+          cell.border = thinBorder;
+        });
+      }
+    });
 
     const safeTag = (unitTag || 'E-101').replace(/[^A-Za-z0-9_-]/g, '_');
     const stdTag = isPhe ? 'API662_PHE' : `TEMA_${dRes.temaType}`;
-    XLSX.writeFile(wb, `${safeTag}_${stdTag}_Datasheet_${dateStr}.xlsx`);
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeTag}_${stdTag}_Datasheet_${dateStr}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleImportTemaExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1223,83 +1372,130 @@ export default function HeatExchangerWorkbenchModal({
         {/* 상단 헤더 */}
         <div
           style={{
-            padding: '11px 16px',
+            padding: isMobile ? '9px 12px' : '8px 14px',
             background: '#0F172A',
             color: '#F8FAFC',
+            borderBottom: '1px solid #1E293B',
             display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
             justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-            flexWrap: 'wrap',
+            alignItems: isMobile ? 'stretch' : 'center',
+            gap: isMobile ? 8 : 10,
+            flexWrap: 'nowrap',
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span
+          {/* 좌측: 타이틀 + 상태 배지 (1행) & 핵심 운전 요약 (2행) */}
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <div
               style={{
-                padding: '3px 8px',
-                borderRadius: 5,
-                background: '#1E3A8A',
-                color: '#DBEAFE',
-                fontSize: 11,
-                fontWeight: 900,
+                display: 'flex',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  flexWrap: isMobile ? 'wrap' : 'nowrap',
+                  minWidth: 0,
+                  flex: 1,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 900,
+                    color: '#FFFFFF',
+                    whiteSpace: isMobile ? 'normal' : 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    wordBreak: 'keep-all',
+                  }}
+                  title={`[${unitTag}] ${unitLabel}`}
+                >
+                  [{unitTag}] {unitLabel}
+                </span>
+                <span
+                  style={{
+                    flexShrink: 0,
+                    padding: '2px 8px',
+                    borderRadius: 999,
+                    background: statusTone.bg,
+                    color: statusTone.fg,
+                    border: `1px solid ${statusTone.bd}`,
+                    fontSize: 10,
+                    fontWeight: 900,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {statusTone.text}
+                </span>
+              </div>
+
+              {isMobile && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="워크벤치 닫기"
+                  title="닫기 (Esc)"
+                  style={{
+                    flexShrink: 0,
+                    padding: '5px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #475569',
+                    background: 'rgba(255,255,255,0.12)',
+                    color: '#FFFFFF',
+                    fontSize: 12,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    lineHeight: 1.1,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div
+              style={{
+                fontSize: isMobile ? 10.2 : 10.5,
+                color: '#CBD5E1',
                 fontFamily: MONO,
+                fontWeight: 600,
+                marginTop: 2,
+                lineHeight: 1.3,
+                whiteSpace: isMobile ? 'normal' : 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
               }}
+              title={`Q = ${formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} ${getUnitLabel('heatDuty', dutyUnit)} · A = ${formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} · U = ${formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} ${getUnitLabel('htc', htcUnit)}${lastRunStamp ? ` · ${lastRunStamp}` : ''}`}
             >
-              [{unitTag}]
-            </span>
-            <span style={{ fontSize: 14.5, fontWeight: 900 }}>
-              {unitLabel} — 열교환기 설계 워크벤치
-            </span>
-            <span
-              style={{
-                padding: '2.5px 9px',
-                borderRadius: 999,
-                background: statusTone.bg,
-                color: statusTone.fg,
-                border: `1px solid ${statusTone.bd}`,
-                fontSize: 10.5,
-                fontWeight: 900,
-              }}
-            >
-              {statusTone.text}
-            </span>
+              Q = {formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)}{' '}
+              {getUnitLabel('heatDuty', dutyUnit)} · A ={' '}
+              {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)}{' '}
+              {getUnitLabel('area', areaUnit)} · U ={' '}
+              {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)}{' '}
+              {getUnitLabel('htc', htcUnit)}
+              {lastRunStamp ? ` · ${lastRunStamp}` : ''}
+            </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={runAiAutoFixHx}
-              disabled={isAiBusy}
-              style={{
-                padding: '6px 11px',
-                borderRadius: 6,
-                border: dRes.overallStatus !== 'ok' ? '1.5px solid #C084FC' : '1px solid #64748B',
-                background: dRes.overallStatus !== 'ok' ? '#7C3AED' : '#334155',
-                color: '#FFFFFF',
-                fontSize: 11.2,
-                fontWeight: 900,
-                cursor: isAiBusy ? 'wait' : 'pointer',
-              }}
-            >
-              {isAiBusy ? (aiStepLabel || '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
-            </button>
-            <button
-              type="button"
-              onClick={exportHxExcelDatasheet}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 6,
-                border: '1px solid #34D399',
-                background: '#065F46',
-                color: '#ECFDF5',
-                fontSize: 11,
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-              title="공식 TEMA / API 662 엑셀 데이터시트(.xlsx) 다운로드"
-            >
-              📥 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx
-            </button>
+          {/* 우측: TEMA·도구 드롭다운 + AI 자동 해결 + RUN + 닫기(✕) */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              flexShrink: 0,
+              flexWrap: isMobile ? 'wrap' : 'nowrap',
+              width: isMobile ? '100%' : undefined,
+            }}
+          >
             <input
               ref={temaFileInputRef}
               type="file"
@@ -1307,114 +1503,231 @@ export default function HeatExchangerWorkbenchModal({
               style={{ display: 'none' }}
               onChange={handleImportTemaExcel}
             />
-            <button
-              type="button"
-              onClick={() => temaFileInputRef.current?.click()}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 6,
-                border: '1px solid #38BDF8',
-                background: '#0C4A6E',
-                color: '#E0F2FE',
-                fontSize: 11,
-                fontWeight: 900,
-                cursor: 'pointer',
-              }}
-              title="TEMA / API 662 엑셀 데이터시트(.xlsx) 불러오기"
-            >
-              📂 TEMA .xlsx 가져오기
-            </button>
-            {temaImportNotice && (
-              <span
-                title={temaImportNotice.summary}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 6,
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  background: temaImportNotice.isError ? '#7F1D1D' : '#14532D',
-                  color: temaImportNotice.isError ? '#FECACA' : '#BBF7D0',
-                  border: temaImportNotice.isError
-                    ? '1px solid #F87171'
-                    : '1px solid #4ADE80',
-                  maxWidth: 220,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {temaImportNotice.isError
-                  ? `⚠ ${temaImportNotice.summary}`
-                  : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
-              </span>
-            )}
-            {onOpenChemProDesign && (
+
+            {/* 통합 TEMA · 도구 드롭다운 */}
+            <div ref={temaMenuRef} style={{ position: 'relative', flex: isMobile ? '1 1 auto' : undefined }}>
               <button
                 type="button"
-                onClick={onOpenChemProDesign}
+                onClick={() => setTemaMenuOpen((prev) => !prev)}
+                aria-expanded={temaMenuOpen}
+                aria-haspopup="menu"
+                title="TEMA / API 662 엑셀 내보내기·가져오기 및 단품 설계기"
                 style={{
-                  padding: '6px 10px',
+                  width: isMobile ? '100%' : undefined,
+                  padding: '5px 10px',
                   borderRadius: 6,
-                  border: '1px solid #475569',
-                  background: '#1E293B',
+                  border: temaMenuOpen ? '1px solid #38BDF8' : '1px solid #475569',
+                  background: temaMenuOpen ? '#1E3A5F' : '#1E293B',
                   color: '#E2E8F0',
                   fontSize: 11,
                   fontWeight: 800,
                   cursor: 'pointer',
+                  whiteSpace: 'nowrap',
                 }}
               >
-                ↗ 숏컷 설계기
+                📊 TEMA · 도구 ▾
               </button>
-            )}
+
+              {temaMenuOpen && (
+                <div
+                  role="menu"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 5px)',
+                    right: isMobile ? undefined : 0,
+                    left: isMobile ? 0 : undefined,
+                    zIndex: 60,
+                    minWidth: 215,
+                    background: '#1E293B',
+                    border: '1px solid #475569',
+                    borderRadius: 8,
+                    boxShadow: '0 14px 32px rgba(15, 23, 42, 0.48)',
+                    padding: 4,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 2,
+                  }}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setTemaMenuOpen(false);
+                      exportHxExcelDatasheet();
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#ECFDF5',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#065F46';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                    title="공식 TEMA / API 662 엑셀 데이터시트(.xlsx) 다운로드"
+                  >
+                    📊 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx 내보내기
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setTemaMenuOpen(false);
+                      temaFileInputRef.current?.click();
+                    }}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '7px 10px',
+                      borderRadius: 5,
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#E0F2FE',
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = '#0C4A6E';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                    title="TEMA / API 662 엑셀 데이터시트(.xlsx) 불러오기"
+                  >
+                    📂 TEMA .xlsx 가져오기
+                  </button>
+                  {onOpenChemProDesign && (
+                    <>
+                      <div style={{ height: 1, background: '#334155', margin: '2px 4px' }} />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setTemaMenuOpen(false);
+                          onOpenChemProDesign();
+                        }}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '7px 10px',
+                          borderRadius: 5,
+                          border: 'none',
+                          background: 'transparent',
+                          color: '#E2E8F0',
+                          fontSize: 11.5,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = '#334155';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent';
+                        }}
+                      >
+                        ↗ 단품 숏컷 설계기 열기
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={runAiAutoFixHx}
+              disabled={isAiBusy}
+              style={{
+                flex: isMobile ? '1 1 auto' : undefined,
+                padding: '5px 10px',
+                borderRadius: 6,
+                border: dRes.overallStatus !== 'ok' ? '1.5px solid #C084FC' : '1px solid #64748B',
+                background: dRes.overallStatus !== 'ok' ? '#7C3AED' : '#334155',
+                color: '#FFFFFF',
+                fontSize: 11,
+                fontWeight: 900,
+                cursor: isAiBusy ? 'wait' : 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {isAiBusy ? (aiStepLabel || '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+            </button>
+
             <button
               type="button"
               onClick={triggerRun}
               style={{
-                padding: '6px 12px',
+                flex: isMobile ? '1 1 auto' : undefined,
+                padding: '5px 11px',
                 borderRadius: 6,
-                border: '1px solid #60A5FA',
+                border: isSimDirty ? '1.5px solid #FDE047' : '1px solid #60A5FA',
                 background: isSimDirty ? '#D97706' : '#2563EB',
                 color: '#FFFFFF',
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: 900,
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                boxShadow: isSimDirty
+                  ? '0 0 0 2px rgba(245,158,11,0.28)'
+                  : '0 1px 4px rgba(15,23,42,0.25)',
               }}
             >
               {isRunningFeedback ? '⏳ 계산 중...' : '▶ RUN (F5)'}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              style={{
-                padding: '6px 10px',
-                borderRadius: 6,
-                border: '1px solid #475569',
-                background: '#1E293B',
-                color: '#E2E8F0',
-                fontSize: 11.5,
-                fontWeight: 800,
-                cursor: 'pointer',
-              }}
-            >
-              닫기 ✕
-            </button>
+
+            {!isMobile && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="워크벤치 닫기"
+                title="닫기 (Esc)"
+                style={{
+                  padding: '5px 10px',
+                  borderRadius: 6,
+                  border: '1px solid #475569',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  lineHeight: 1.1,
+                }}
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
-        {/* 상단 2-탭 스위처 */}
+        {/* 상단 2-탭 스위처 (컴팩트) */}
         <div
           style={{
-            padding: '7px 16px',
+            padding: isMobile ? '5px 10px' : '5px 14px',
             background: '#FFFFFF',
             borderBottom: '1px solid #CBD5E1',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            gap: 10,
+            gap: 8,
             flexWrap: 'wrap',
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(
               [
                 {
@@ -1424,8 +1737,8 @@ export default function HeatExchangerWorkbenchModal({
                 },
                 {
                   id: 'mechanical',
-                  title: '② 숏컷형 사이징 · 수력학 · 도면',
-                  sub: '핵심 규격 · ΔP/진동 검증 · CAD',
+                  title: '② 숏컷 사이징 · 수력학 · 도면',
+                  sub: '핵심 규격 · ΔP/진동 · CAD',
                 },
               ] as { id: HxWorkbenchView; title: string; sub: string }[]
             ).map((tb) => {
@@ -1436,34 +1749,59 @@ export default function HeatExchangerWorkbenchModal({
                   type="button"
                   onClick={() => setWorkbenchView(tb.id)}
                   style={{
-                    padding: '7px 14px',
-                    borderRadius: 7,
+                    padding: isMobile ? '5px 9px' : '5px 12px',
+                    borderRadius: 6,
                     border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
                     background: active ? '#1E3A8A' : '#F8FAFC',
                     color: active ? '#FFFFFF' : '#334155',
-                    textAlign: 'left',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
                     cursor: 'pointer',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <div style={{ fontSize: 12, fontWeight: 900 }}>{tb.title}</div>
-                  <div
-                    style={{
-                      fontSize: 9.8,
-                      color: active ? '#DBEAFE' : '#64748B',
-                      marginTop: 1,
-                    }}
-                  >
-                    {tb.sub}
-                  </div>
+                  <span style={{ fontSize: 11.5, fontWeight: 900 }}>{tb.title}</span>
+                  {!isMobile && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: active ? '#BFDBFE' : '#64748B',
+                      }}
+                    >
+                      {tb.sub}
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
 
-          <div style={{ fontSize: 11, color: '#475569', fontFamily: MONO, fontWeight: 700 }}>
-            Q = {formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)} · A = {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)} · U = {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
-            {lastRunStamp ? ` · 최근 실행 ${lastRunStamp}` : ''}
-          </div>
+          {temaImportNotice && (
+            <span
+              title={temaImportNotice.summary}
+              style={{
+                padding: '3px 8px',
+                borderRadius: 6,
+                fontSize: 10.5,
+                fontWeight: 800,
+                background: temaImportNotice.isError ? '#FEF2F2' : '#F0FDF4',
+                color: temaImportNotice.isError ? '#991B1B' : '#166534',
+                border: temaImportNotice.isError
+                  ? '1px solid #FCA5A5'
+                  : '1px solid #86EFAC',
+                maxWidth: 280,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {temaImportNotice.isError
+                ? `⚠ ${temaImportNotice.summary}`
+                : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
+            </span>
+          )}
         </div>
 
         {/* 모바일 전용 좌/우 패널 스위치 */}
