@@ -200,22 +200,22 @@ const BENCHMARKS = [
   {
     metric: '0.86%',
     label: { ko: '기포점 압력 %AAD', en: 'Bubble Pressure %AAD' },
-    detail: { ko: '다성분 VLE 벤치마크 검증', en: 'Multi-component VLE benchmark' },
+    detail: { ko: '파라미터 등록 대표 VLE 기준계', en: 'Fitted reference binary VLE set' },
   },
   {
     metric: '0.21 °C',
     label: { ko: '비점 예측 AAD', en: 'Boiling Point AAD' },
-    detail: { ko: '상압·가압 증기압 곡선 검증', en: 'Normal & elevated pressure curves' },
+    detail: { ko: '등록 순수물질 증기압 기준계', en: 'Registered pure-component curves' },
   },
   {
     metric: '0.40 K',
     label: { ko: '전해질 BPE AAD', en: 'Electrolyte BPE AAD' },
-    detail: { ko: 'Pitzer / eNRTL 수용액계', en: 'Pitzer / eNRTL aqueous systems' },
+    detail: { ko: 'NaCl·NaOH 등 대표 수용액계', en: 'Reference aqueous electrolyte set' },
   },
   {
     metric: '6 / 6 PASS',
-    label: { ko: '공식 규격 골든 케이스', en: 'API 520/521 & TEMA Cases' },
-    detail: { ko: '방출·플레어·열교환기 전수 통과', en: 'Relief, flare & HEX golden cases' },
+    label: { ko: '설계 규격 표준 예제', en: 'Design Code Worked Cases' },
+    detail: { ko: 'API 520/521 · TEMA 예제 6건 기준', en: '6 API 520/521 & TEMA examples' },
   },
 ];
 
@@ -1018,15 +1018,16 @@ export default function LandingPage({
                 }
               }}
               style={{
-                padding: '7px 14px',
-                fontSize: 12.5,
+                padding: '7px 12px',
+                fontSize: 12,
                 whiteSpace: 'nowrap',
+                flexShrink: 0,
               }}
             >
               {isLoggedInPreview
                 ? lang === 'ko'
-                  ? '← 워크스페이스로 돌아가기'
-                  : '← Back to Workspace'
+                  ? '← 앱으로'
+                  : '← App'
                 : lang === 'ko'
                   ? '로그인'
                   : 'Sign In'}
@@ -1423,8 +1424,8 @@ export default function LandingPage({
                 }}
               >
                 {lang === 'ko'
-                  ? '실험 데이터와 국제 설계 규격으로 검증된 수치 정확도'
-                  : 'Numerically Verified Against Experimental Data & Industry Codes'}
+                  ? '표준 열역학 모델 및 설계 규격 계산식 적용'
+                  : 'Standard Thermodynamic Models & Engineering Design Codes'}
               </h2>
             </div>
 
@@ -1444,7 +1445,7 @@ export default function LandingPage({
             >
               <ColumnInternalIcon size={14} />
               <span>
-                {lang === 'ko' ? '회귀 테스트 스위트 상시 통과' : 'Automated Regression Verified'}
+                {lang === 'ko' ? '내부 기준계 회귀 테스트 통과' : 'Internal Reference Regression Suite'}
               </span>
             </div>
           </div>
@@ -1481,6 +1482,19 @@ export default function LandingPage({
               </div>
             ))}
           </div>
+
+          <p
+            style={{
+              marginTop: 18,
+              fontSize: 11.5,
+              color: '#94A3B8',
+              lineHeight: 1.6,
+            }}
+          >
+            {lang === 'ko'
+              ? '※ 위 수치는 상호작용 파라미터가 확보된 대표 기준계(Reference Benchmark)에 대한 자체 회귀 테스트 결과이며, 비이상·고압·신규 혼합물은 실험 VLE 확인 및 담당 공정 엔지니어의 교차 검증이 필요합니다.'
+              : 'Note: Metrics reflect internal regression tests on well-characterized reference systems with fitted parameters. Non-ideal, high-pressure, or novel mixtures require experimental VLE verification and independent PE review.'}
+          </p>
         </div>
       </section>
 
