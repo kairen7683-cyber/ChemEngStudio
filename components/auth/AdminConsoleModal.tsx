@@ -235,12 +235,12 @@ export function HeaderUserControls() {
       return { text: '로컬 개발', dot: '#64748B' };
     }
     if (syncStatus === 'saving') {
-      return { text: '저장중', dot: '#60A5FA' };
+      return { text: '동기화중', dot: '#60A5FA' };
     }
     if (syncStatus === 'error') {
       return { text: '동기화 재시도', dot: '#EF4444' };
     }
-    return { text: '저장됨', dot: '#10B981' };
+    return { text: '동기화', dot: '#10B981' };
   })();
 
   return (
@@ -249,7 +249,7 @@ export function HeaderUserControls() {
       <button
         type="button"
         onClick={() => void forceSyncNow()}
-        title={syncError ? `동기화 오류: ${syncError}` : '클릭 시 현재 작업 상태를 서버에 즉시 저장합니다'}
+        title={syncError ? `동기화 오류: ${syncError}` : '클라우드 자동 동기화 상태 (클릭 시 즉시 동기화)'}
         style={{
           padding: '3px 8px',
           borderRadius: 6,

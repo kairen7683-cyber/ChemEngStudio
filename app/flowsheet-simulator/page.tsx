@@ -133,6 +133,7 @@ import {
   LOAD_SAVED_CASE_EVENT,
   PROJECTS_UPDATED_EVENT,
   OPEN_SHORTCUT_CALC_EVENT,
+  OPEN_SAVE_CASE_EVENT,
   consumePendingCaseLoad,
   getActiveCaseTitle,
   setActiveCaseTitle,
@@ -140,6 +141,7 @@ import {
   mapFlowUnitTypeToChemProTab,
   type PendingCaseLoadPayload,
 } from '@/lib/caseManagerBridge';
+import CaseOutputsMenu from '@/components/layout/CaseOutputsMenu';
 import {
   getUnitDesignRouteInfo,
   buildChemProHandoffPayload,
@@ -5397,6 +5399,14 @@ export function FlowsheetWorkspace({
     return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
   }, []);
 
+  useEffect(() => {
+    const onOpenSaveCase = () => {
+      setShowStorageBar(true);
+    };
+    window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
+    return () => window.removeEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
+  }, []);
+
   const updateSelectedDef = (patch: Partial<FlowNodeDef>) => {
     if (!selectedNodeId) return;
     setSimDefs(prev => prev.map(d => (d.id === selectedNodeId ? { ...d, ...patch } : d)));
@@ -5851,6 +5861,8 @@ export function FlowsheetWorkspace({
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={11} /> 저장</span>
           </button>
+
+          <CaseOutputsMenu compact />
         </div>
       ) : (
       <div
@@ -6401,6 +6413,8 @@ export function FlowsheetWorkspace({
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={12} /> 저장 {showStorageBar ? '▲' : '▼'}</span>
           </button>
+
+          <CaseOutputsMenu compact />
 
           <button
             onClick={() => setInspectorOpen(v => !v)}

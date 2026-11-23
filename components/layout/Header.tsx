@@ -11,10 +11,16 @@ import {
   isSimulatorOnlyUser,
   showPlantNumbersForUser,
   formatPlantCodeAndName,
-  type PlantWorkspaceTab,
 } from '@/lib/plantRegistry';
 import { useUnitStore } from '@/lib/stores/unitStore';
-import { t, type AppLang } from '@/lib/i18n/uiText';
+import { UNIT_PRESETS } from '@/lib/units/unitSystem';
+import { TAG_STANDARDS } from '@/lib/units/tagNaming';
+import {
+  TAG_STANDARD_TEXT_EN,
+  UNIT_PRESET_NAMES_EN,
+  t,
+  type AppLang,
+} from '@/lib/i18n/uiText';
 import {
   getPreferredSimUiMode,
   setPreferredSimUiMode,
@@ -29,6 +35,7 @@ import {
   PROJECTS_UPDATED_EVENT,
   LOAD_SAVED_CASE_EVENT,
   OPEN_SHORTCUT_CALC_EVENT,
+  OPEN_SAVE_CASE_EVENT,
   type UnifiedSavedCaseEntry,
 } from '@/lib/caseManagerBridge';
 import { parseProcessTextFile } from '@/lib/interop/processTextInterop';
@@ -37,6 +44,7 @@ import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
+import CaseOutputsMenu from '@/components/layout/CaseOutputsMenu';
 import {
   CalcShortcutIcon,
   DocSheetIcon,
@@ -44,6 +52,9 @@ import {
   FolderOpenIcon,
   PfdSchematicIcon,
   PlusSquareIcon,
+  SaveArchiveIcon,
+  SlidersParamIcon,
+  VesselEquipIcon,
 } from '@/components/ui/EngIcons';
 import ValidationReportModal from '@/components/validation/ValidationReportModal';
 import FeedbackModal from '@/components/feedback/FeedbackModal';
@@ -67,18 +78,24 @@ export default function Header() {
   const [isMobile, setIsMobile] = useState(false);
   const [simUiMode, setSimUiMode] = useState<SimUiMode>('modern');
   const [caseMenuOpen, setCaseMenuOpen] = useState(false);
-  const [outputsMenuOpen, setOutputsMenuOpen] = useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+
   const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
-  const [outputsMenuPos, setOutputsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 260 });
+  const [toolsMenuPos, setToolsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 320 });
+  const [settingsMenuPos, setSettingsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 600 });
+
   const [savedCases, setSavedCases] = useState<UnifiedSavedCaseEntry[]>([]);
   const [activeCaseInfo, setActiveCaseInfo] = useState<{ title: string; plantId: PlantId } | null>(null);
 
   const caseDropdownRef = useRef<HTMLDivElement | null>(null);
   const caseTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const outputsDropdownRef = useRef<HTMLDivElement | null>(null);
-  const outputsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const toolsDropdownRef = useRef<HTMLDivElement | null>(null);
+  const toolsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const settingsDropdownRef = useRef<HTMLDivElement | null>(null);
+  const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const jsonImportRef = useRef<HTMLInputElement | null>(null);
   const processTextImportRef = useRef<HTMLInputElement | null>(null);
 
@@ -93,6 +110,10 @@ export default function Header() {
   const setEquipSubTab = usePFDStore(s => s.setEquipSubTab);
   const lang = useUnitStore(s => s.lang);
   const setLang = useUnitStore(s => s.setLang);
+  const presetId = useUnitStore(s => s.presetId);
+  const applyPreset = useUnitStore(s => s.applyPreset);
+  const tagStandard = useUnitStore(s => s.tagStandard);
+  const setTagStandard = useUnitStore(s => s.setTagStandard);
   const hydrateUnits = useUnitStore(s => s.hydrate);
   const simOnly = isSimulatorOnlyUser(user);
 
@@ -110,20 +131,24 @@ export default function Header() {
   }, [refreshCaseState]);
 
   useEffect(() => {
-    if (!caseMenuOpen && !outputsMenuOpen) return;
+    if (!caseMenuOpen && !toolsMenuOpen && !settingsMenuOpen) return;
     const onDocDown = (e: MouseEvent) => {
       const target = e.target as Node;
       if (caseMenuOpen && caseDropdownRef.current && !caseDropdownRef.current.contains(target)) {
         setCaseMenuOpen(false);
       }
-      if (outputsMenuOpen && outputsDropdownRef.current && !outputsDropdownRef.current.contains(target)) {
-        setOutputsMenuOpen(false);
+      if (toolsMenuOpen && toolsDropdownRef.current && !toolsDropdownRef.current.contains(target)) {
+        setToolsMenuOpen(false);
+      }
+      if (settingsMenuOpen && settingsDropdownRef.current && !settingsDropdownRef.current.contains(target)) {
+        setSettingsMenuOpen(false);
       }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setCaseMenuOpen(false);
-        setOutputsMenuOpen(false);
+        setToolsMenuOpen(false);
+        setSettingsMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDocDown);
@@ -132,7 +157,7 @@ export default function Header() {
       document.removeEventListener('mousedown', onDocDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [caseMenuOpen, outputsMenuOpen]);
+  }, [caseMenuOpen, toolsMenuOpen, settingsMenuOpen]);
 
   useEffect(() => {
     const syncMob = () => {
@@ -190,11 +215,22 @@ export default function Header() {
   const isUnitCalcTool = pathname.startsWith('/unit-equipment');
   const isPropDbTool = pathname.startsWith('/property-db');
   const isGlobalToolMode = isUnitCalcTool || isPropDbTool;
+  const isFlowsheetOrClassicRoute =
+    pathname.startsWith('/flowsheet-simulator') || pathname.startsWith('/classic-simulator');
   const isSimulatorRoute =
     pathname === '/' ||
     pathname.startsWith('/material-balance') ||
-    pathname.startsWith('/flowsheet-simulator') ||
-    pathname.startsWith('/classic-simulator');
+    isFlowsheetOrClassicRoute;
+
+  const isOutputSubpage =
+    pathname.startsWith('/material-balance') ||
+    pathname.startsWith('/equipment-design') ||
+    pathname.startsWith('/unit-equipment') ||
+    pathname.startsWith('/process-economics') ||
+    pathname.startsWith('/pep-yearbook') ||
+    pathname.startsWith('/special-process');
+
+  const showReturnToSimBtn = !isSimulatorRoute;
 
   const effectiveUi: SimUiMode = pathname.startsWith('/classic-simulator')
     ? 'classic'
@@ -212,35 +248,10 @@ export default function Header() {
       ? activeCaseInfo.title
       : null;
 
-  const caseTriggerLabel =
+  const activeCasePillText =
     isSimulatorMode || simOnly
-      ? `${t(lang, 'header_my_cases')} · ${displayCaseTitle || t(lang, 'header_default_workspace')}`
-      : `${t(lang, 'header_example_prefix')} ${formatPlantCodeAndName(plantMeta, user)}`;
-
-  const getActiveWorkspaceTabKey = (): PlantWorkspaceTab['key'] => {
-    if (pathname.startsWith('/process-economics') || pathname.startsWith('/pep-yearbook')) return 'econ';
-    if (pathname.startsWith('/special-process')) return 'design';
-    if (pathname.startsWith('/equipment-design')) {
-      return equipSubTab === 'equip' ? 'equip' : 'design';
-    }
-    return 'pfd';
-  };
-  const currentTabKey = getActiveWorkspaceTabKey();
-
-  const getLocalizedTabLabel = (tab: PlantWorkspaceTab): string => {
-    switch (tab.key) {
-      case 'pfd':
-        return t(lang, 'header_tab_pfd');
-      case 'design':
-        return t(lang, 'header_tab_design');
-      case 'equip':
-        return t(lang, 'header_tab_equip');
-      case 'econ':
-        return t(lang, 'header_tab_econ');
-      default:
-        return tab.label;
-    }
-  };
+      ? displayCaseTitle || t(lang, 'header_default_workspace')
+      : formatPlantCodeAndName(plantMeta, user);
 
   const handleSelectPlant = (nextId: PlantId) => {
     const nextMeta = getPlantRegistryItem(nextId);
@@ -253,21 +264,7 @@ export default function Header() {
       return;
     }
     setActivePlantId(nextId);
-
-    if (isGlobalToolMode || nextMeta.isSandbox) {
-      router.push(nextMeta.defaultHref);
-      return;
-    }
-
-    const matchingTab = nextMeta.tabs.find(t => t.key === currentTabKey);
-    if (matchingTab) {
-      if (matchingTab.equipTab) {
-        setEquipSubTab(matchingTab.equipTab);
-      }
-      router.push(matchingTab.href);
-    } else {
-      router.push(nextMeta.defaultHref);
-    }
+    router.push(nextMeta.defaultHref);
   };
 
   const handleSelectSimUiMode = (targetUi: SimUiMode) => {
@@ -300,6 +297,8 @@ export default function Header() {
   const handleStartNewBlankCase = () => {
     const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
     setCaseMenuOpen(false);
+    setToolsMenuOpen(false);
+    setSettingsMenuOpen(false);
     setActiveCaseTitle(null, targetPlantId);
     stagePendingCaseLoad({
       action: 'new_blank',
@@ -311,6 +310,25 @@ export default function Header() {
       window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
     }
     router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
+  };
+
+  const handleTriggerSaveCase = () => {
+    setCaseMenuOpen(false);
+    setToolsMenuOpen(false);
+    setSettingsMenuOpen(false);
+    if (typeof window === 'undefined') return;
+    if (isFlowsheetOrClassicRoute) {
+      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT));
+      return;
+    }
+    const targetHref =
+      activePlantId === 'classic_sim' || simUiMode === 'classic'
+        ? '/classic-simulator'
+        : '/flowsheet-simulator';
+    router.push(targetHref);
+    window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT));
+    }, 250);
   };
 
   const handleOpenSavedCase = (item: UnifiedSavedCaseEntry) => {
@@ -518,15 +536,8 @@ export default function Header() {
     e.target.value = '';
   };
 
-  const handleWorkspaceTabClick = (tab: PlantWorkspaceTab) => {
-    setOutputsMenuOpen(false);
-    if (tab.equipTab) {
-      setEquipSubTab(tab.equipTab);
-    }
-    router.push(tab.href);
-  };
-
   const handleOpenToolbox = (toolHref: string) => {
+    setToolsMenuOpen(false);
     if (!isGlobalToolMode) {
       const curSearch = typeof window !== 'undefined' ? window.location.search : '';
       const returnUrl = pathname === '/' ? plantMeta.defaultHref : `${pathname}${curSearch}`;
@@ -536,6 +547,7 @@ export default function Header() {
   };
 
   const handleOpenShortcutCalc = () => {
+    setToolsMenuOpen(false);
     if (isSimulatorRoute && typeof window !== 'undefined') {
       const curSearch = window.location.search;
       const returnUrl = pathname === '/' ? plantMeta.defaultHref : `${pathname}${curSearch}`;
@@ -562,19 +574,27 @@ export default function Header() {
     router.push(validExampleReturn ? lastPlantReturnHref : '/material-balance');
   };
 
-  const auxPageTitle = isUnitCalcTool
-    ? t(lang, 'header_aux_shortcut')
-    : isPropDbTool
-      ? t(lang, 'header_aux_prop_db')
-      : pathname.startsWith('/process-economics') || pathname.startsWith('/pep-yearbook')
-        ? t(lang, 'header_aux_econ')
-        : pathname.startsWith('/equipment-design')
-          ? equipSubTab === 'equip'
-            ? t(lang, 'header_aux_equip')
-            : equipSubTab === 'psv_flare'
-              ? t(lang, 'header_aux_psv_flare')
-              : t(lang, 'header_aux_design')
-          : t(lang, 'header_aux_default');
+  const navBtnStyle: React.CSSProperties = {
+    padding: isMobile ? '4px 7px' : '4px 9px',
+    borderRadius: 6,
+    border: '1px solid #334155',
+    background: '#1E293B',
+    color: '#F8FAFC',
+    fontSize: 11,
+    fontWeight: 700,
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+  };
+
+  const isToolsActive =
+    isUnitCalcTool ||
+    isPropDbTool ||
+    (pathname.startsWith('/equipment-design') &&
+      (equipSubTab === 'psv_flare' || equipSubTab === 'compressor'));
 
   return (
     <header
@@ -587,12 +607,12 @@ export default function Header() {
         background: '#0F172A',
       }}
     >
-      {/* ── 1단 글로벌 바: 모노크롬 다크 슬레이트 ── */}
+      {/* ── 단일 데스크톱 스타일 글로벌 메뉴 바 ── */}
       <div
         className="no-scrollbar"
         style={{
           width: '100%',
-          minHeight: 40,
+          minHeight: 42,
           padding: '4px 12px',
           background: '#0F172A',
           borderBottom: '1px solid #334155',
@@ -604,12 +624,12 @@ export default function Header() {
           scrollbarWidth: 'none',
         }}
       >
-        {/* 좌측: 로고 + 케이스/예제 선택 + UI 스타일 + 참고/산출물 */}
+        {/* ── 좌측: 브랜드 + 빠른 파일 실행(새 공정 · 열기 · 저장 · 새로고침) + 활성 케이스 배지 ── */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             flexShrink: 0,
           }}
         >
@@ -657,24 +677,20 @@ export default function Header() {
 
           {isMobile && <PwaInstallButton variant="header" />}
 
-          {!isMobile && (
-            <>
-              <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: '#94A3B8',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 0,
-                }}
-              >
-                {t(lang, 'header_case_label')}
-              </span>
-            </>
-          )}
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
 
-          {/* 통합 작업 케이스 / 예제 드롭다운 */}
+          {/* 새 공정 */}
+          <button
+            type="button"
+            onClick={handleStartNewBlankCase}
+            title={t(lang, 'header_case_new_blank')}
+            style={navBtnStyle}
+          >
+            <PlusSquareIcon size={13} />
+            <span>{lang === 'en' ? 'New' : '새 공정'}</span>
+          </button>
+
+          {/* 열기 ▾ (케이스 / 파일 / 예제 드롭다운) */}
           <div ref={caseDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={caseTriggerRef}
@@ -690,7 +706,8 @@ export default function Header() {
                     });
                   }
                 }
-                setOutputsMenuOpen(false);
+                setToolsMenuOpen(false);
+                setSettingsMenuOpen(false);
                 setCaseMenuOpen(v => !v);
               }}
               title={
@@ -699,27 +716,14 @@ export default function Header() {
                   : t(lang, 'header_case_trigger_title')
               }
               style={{
-                padding: '4px 10px',
-                borderRadius: 6,
-                border: caseMenuOpen ? '1px solid #64748B' : '1px solid #334155',
-                background: '#1E293B',
-                color: '#F8FAFC',
-                fontSize: 11.5,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                whiteSpace: 'nowrap',
-                maxWidth: isMobile ? 200 : 280,
+                ...navBtnStyle,
+                border: caseMenuOpen ? '1px solid #60A5FA' : '1px solid #334155',
+                background: caseMenuOpen ? '#1E3A8A' : '#1E293B',
               }}
             >
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {caseTriggerLabel}
-              </span>
-              <span style={{ fontSize: 9.5, opacity: 0.75, flexShrink: 0 }}>
-                {caseMenuOpen ? '▲' : '▼'}
-              </span>
+              <FolderOpenIcon size={13} />
+              <span>{lang === 'en' ? 'Open' : '열기'}</span>
+              <span style={{ fontSize: 9, opacity: 0.78 }}>{caseMenuOpen ? '▴' : '▾'}</span>
             </button>
 
             {caseMenuOpen && (
@@ -784,32 +788,6 @@ export default function Header() {
                   {isSimulatorMode && !displayCaseTitle && (
                     <span style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A' }}>✓</span>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleStartNewBlankCase}
-                  style={{
-                    width: '100%',
-                    padding: '7px 9px',
-                    borderRadius: 7,
-                    border: '1px solid #E2E8F0',
-                    background: '#F8FAFC',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    textAlign: 'left',
-                    color: '#1E293B',
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <PlusSquareIcon size={13} />
-                    <span>{t(lang, 'header_case_new_blank')}</span>
-                  </span>
                 </button>
 
                 <button
@@ -1082,117 +1060,154 @@ export default function Header() {
             )}
           </div>
 
-          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
+          {/* 저장 */}
+          <button
+            type="button"
+            onClick={handleTriggerSaveCase}
+            title={lang === 'en' ? 'Save current case' : '현재 케이스 저장'}
+            style={navBtnStyle}
+          >
+            <SaveArchiveIcon size={13} />
+            <span>{lang === 'en' ? 'Save' : '저장'}</span>
+          </button>
 
-          {/* 보기: [모던 UI | 클래식 UI] */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            {!isMobile && (
-              <span
-                style={{
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  color: '#94A3B8',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t(lang, 'header_view_label')}
-              </span>
-            )}
-            <div
+          {/* 새로고침 (↻) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+            title={lang === 'en' ? 'Refresh' : '새로고침'}
+            aria-label={lang === 'en' ? 'Refresh' : '새로고침'}
+            style={{
+              ...navBtnStyle,
+              padding: '4px 7px',
+              fontSize: 13,
+              lineHeight: 1,
+            }}
+          >
+            ↻
+          </button>
+
+          {/* 활성 케이스 제목 필 */}
+          {!isMobile && (
+            <span
+              title={activeCasePillText}
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                background: '#0F172A',
+                padding: '3px 9px',
+                borderRadius: 999,
                 border: '1px solid #334155',
-                borderRadius: 6,
-                padding: 2,
-                gap: 2,
-              }}
-              title={t(lang, 'header_view_title')}
-            >
-              <button
-                type="button"
-                onClick={() => handleSelectSimUiMode('modern')}
-                style={{
-                  padding: '2.5px 8px',
-                  borderRadius: 4,
-                  border: 'none',
-                  background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
-                  color: effectiveUi === 'modern' ? '#FFFFFF' : '#94A3B8',
-                  fontSize: 10.5,
-                  fontWeight: effectiveUi === 'modern' ? 800 : 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t(lang, 'header_modern_ui')}
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSelectSimUiMode('classic')}
-                style={{
-                  padding: '2.5px 8px',
-                  borderRadius: 4,
-                  border: 'none',
-                  background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
-                  color: effectiveUi === 'classic' ? '#FFFFFF' : '#94A3B8',
-                  fontSize: 10.5,
-                  fontWeight: effectiveUi === 'classic' ? 800 : 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t(lang, 'header_classic_ui')}
-              </button>
-            </div>
-          </div>
-
-          {/* 참고 · 산출물 드롭다운 */}
-          <div ref={outputsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
-            <button
-              ref={outputsTriggerRef}
-              type="button"
-              onClick={() => {
-                if (!outputsMenuOpen && outputsTriggerRef.current) {
-                  const rect = outputsTriggerRef.current.getBoundingClientRect();
-                  setOutputsMenuPos({
-                    top: rect.bottom + 6,
-                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 260)),
-                  });
-                }
-                setCaseMenuOpen(false);
-                setOutputsMenuOpen(v => !v);
-              }}
-              title={t(lang, 'header_outputs_title')}
-              style={{
-                padding: '4px 9px',
-                borderRadius: 6,
-                border: outputsMenuOpen ? '1px solid #64748B' : '1px solid #334155',
-                background: '#1E293B',
-                color: '#E2E8F0',
+                background: '#0B1220',
+                color: '#CBD5E1',
                 fontSize: 11,
                 fontWeight: 700,
+                maxWidth: 180,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {activeCasePillText}
+            </span>
+          )}
+        </div>
+
+        {/* ── 중앙: UI 모드 토글 + 통합 도구 드롭다운 + 산출물 서브페이지 컨텍스트 ── */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
+          {/* 모던 UI | 클래식 UI */}
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: '#0B1220',
+              border: '1px solid #334155',
+              borderRadius: 6,
+              padding: 2,
+              gap: 2,
+              flexShrink: 0,
+            }}
+            title={t(lang, 'header_view_title')}
+          >
+            <button
+              type="button"
+              onClick={() => handleSelectSimUiMode('modern')}
+              style={{
+                padding: '2.5px 8px',
+                borderRadius: 4,
+                border: 'none',
+                background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
+                color: effectiveUi === 'modern' ? '#FFFFFF' : '#94A3B8',
+                fontSize: 10.5,
+                fontWeight: effectiveUi === 'modern' ? 800 : 600,
                 cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
                 whiteSpace: 'nowrap',
               }}
             >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <DocSheetIcon size={13} />
-                <span>{t(lang, 'header_outputs_btn')}</span>
-              </span>
-              <span style={{ fontSize: 9, opacity: 0.75 }}>{outputsMenuOpen ? '▲' : '▼'}</span>
+              {t(lang, 'header_modern_ui')}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectSimUiMode('classic')}
+              style={{
+                padding: '2.5px 8px',
+                borderRadius: 4,
+                border: 'none',
+                background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
+                color: effectiveUi === 'classic' ? '#FFFFFF' : '#94A3B8',
+                fontSize: 10.5,
+                fontWeight: effectiveUi === 'classic' ? 800 : 600,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t(lang, 'header_classic_ui')}
+            </button>
+          </div>
+
+          {/* 도구 ▾ 통합 드롭다운 */}
+          <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              ref={toolsTriggerRef}
+              type="button"
+              onClick={() => {
+                if (!toolsMenuOpen && toolsTriggerRef.current) {
+                  const rect = toolsTriggerRef.current.getBoundingClientRect();
+                  setToolsMenuPos({
+                    top: rect.bottom + 6,
+                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 268)),
+                  });
+                }
+                setCaseMenuOpen(false);
+                setSettingsMenuOpen(false);
+                setToolsMenuOpen(v => !v);
+              }}
+              title={lang === 'en' ? 'Engineering tools & calculators' : '엔지니어링 계산 도구 및 DB'}
+              style={{
+                ...navBtnStyle,
+                border: toolsMenuOpen || isToolsActive ? '1px solid #60A5FA' : '1px solid #334155',
+                background: toolsMenuOpen || isToolsActive ? '#1E3A8A' : '#1E293B',
+              }}
+            >
+              <CalcShortcutIcon size={13} />
+              <span>{lang === 'en' ? 'Tools' : '도구'}</span>
+              <span style={{ fontSize: 9, opacity: 0.78 }}>{toolsMenuOpen ? '▴' : '▾'}</span>
             </button>
 
-            {outputsMenuOpen && (
+            {toolsMenuOpen && (
               <div
                 style={{
                   position: 'fixed',
-                  top: outputsMenuPos.top,
-                  left: outputsMenuPos.left,
-                  width: 256,
+                  top: toolsMenuPos.top,
+                  left: toolsMenuPos.left,
+                  width: 260,
                   background: '#FFFFFF',
                   border: '1px solid #CBD5E1',
                   borderRadius: 9,
@@ -1210,51 +1225,78 @@ export default function Header() {
                     fontWeight: 800,
                     color: '#64748B',
                     padding: '3px 8px 4px',
+                    letterSpacing: '0.2px',
                   }}
                 >
-                  {t(lang, 'header_outputs_heading')}
+                  {lang === 'en' ? 'Engineering Tools' : '엔지니어링 도구'}
                 </div>
-                {plantMeta.tabs.map(tab => {
-                  const active =
-                    !isGlobalToolMode &&
-                    currentTabKey === tab.key &&
-                    !(pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare');
-                  return (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => handleWorkspaceTabClick(tab)}
-                      style={{
-                        width: '100%',
-                        padding: '6px 9px',
-                        borderRadius: 6,
-                        border: active ? '1px solid #1E3A8A' : '1px solid transparent',
-                        background: active ? '#F8FAFC' : '#FFFFFF',
-                        color: active ? '#1E3A8A' : '#1E293B',
-                        fontSize: 11.5,
-                        fontWeight: active ? 800 : 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <span>{getLocalizedTabLabel(tab)}</span>
-                      {active && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
-                    </button>
-                  );
-                })}
+
+                <button
+                  type="button"
+                  onClick={handleOpenShortcutCalc}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 6,
+                    border: isUnitCalcTool ? '1px solid #1E3A8A' : '1px solid transparent',
+                    background: isUnitCalcTool ? '#EFF6FF' : '#FFFFFF',
+                    color: isUnitCalcTool ? '#1E3A8A' : '#1E293B',
+                    fontSize: 11.3,
+                    fontWeight: isUnitCalcTool ? 800 : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <CalcShortcutIcon size={13} />
+                    <span>
+                      {lang === 'en' ? 'Unit Shortcut Calculators (6)' : '단품 숏컷 계산기 (6종)'}
+                    </span>
+                  </span>
+                  {isUnitCalcTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenToolbox('/property-db')}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 6,
+                    border: isPropDbTool ? '1px solid #1E3A8A' : '1px solid transparent',
+                    background: isPropDbTool ? '#EFF6FF' : '#FFFFFF',
+                    color: isPropDbTool ? '#1E3A8A' : '#1E293B',
+                    fontSize: 11.3,
+                    fontWeight: isPropDbTool ? 800 : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <FlaskCompIcon size={13} />
+                    <span>{lang === 'en' ? 'Property · Thermo DB' : '물성 · 열역학 DB'}</span>
+                  </span>
+                  {isPropDbTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
-                    setOutputsMenuOpen(false);
+                    setToolsMenuOpen(false);
                     setEquipSubTab('psv_flare');
                     router.push('/equipment-design?tab=psv_flare');
                   }}
                   style={{
                     width: '100%',
-                    padding: '6px 9px',
+                    padding: '7px 9px',
                     borderRadius: 6,
                     border:
                       pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
@@ -1262,13 +1304,13 @@ export default function Header() {
                         : '1px solid transparent',
                     background:
                       pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
-                        ? '#F8FAFC'
+                        ? '#EFF6FF'
                         : '#FFFFFF',
                     color:
                       pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
                         ? '#1E3A8A'
                         : '#1E293B',
-                    fontSize: 11.5,
+                    fontSize: 11.3,
                     fontWeight:
                       pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
                         ? 800
@@ -1277,25 +1319,70 @@ export default function Header() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    gap: 8,
                     textAlign: 'left',
                   }}
                 >
-                  <span>{t(lang, 'header_psv_flare')}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <VesselEquipIcon size={13} />
+                    <span>{lang === 'en' ? 'PSV · Flare Safety Design' : 'PSV · 플레어 안전설계'}</span>
+                  </span>
                   {pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare' && (
                     <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>
                   )}
                 </button>
-                <div
-                  style={{
-                    height: 1,
-                    background: '#E2E8F0',
-                    margin: '4px 4px',
-                  }}
-                />
+
                 <button
                   type="button"
                   onClick={() => {
-                    setOutputsMenuOpen(false);
+                    setToolsMenuOpen(false);
+                    setEquipSubTab('compressor');
+                    router.push('/equipment-design?tab=compressor');
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 6,
+                    border:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
+                        ? '1px solid #1E3A8A'
+                        : '1px solid transparent',
+                    background:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
+                        ? '#EFF6FF'
+                        : '#FFFFFF',
+                    color:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
+                        ? '#1E3A8A'
+                        : '#1E293B',
+                    fontSize: 11.3,
+                    fontWeight:
+                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
+                        ? 800
+                        : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <VesselEquipIcon size={13} />
+                    <span>{lang === 'en' ? 'Compressor Detailed Design' : '압축기 상세설계'}</span>
+                  </span>
+                  {pathname.startsWith('/equipment-design') && equipSubTab === 'compressor' && (
+                    <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>
+                  )}
+                </button>
+
+                <div style={{ height: 1, background: '#E2E8F0', margin: '4px 4px' }} />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsMenuOpen(false);
                     setValidationModalOpen(true);
                   }}
                   style={{
@@ -1305,12 +1392,12 @@ export default function Header() {
                     border: '1px solid transparent',
                     background: '#F8FAFC',
                     color: '#0F172A',
-                    fontSize: 11.5,
+                    fontSize: 11.3,
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
+                    gap: 7,
                     textAlign: 'left',
                   }}
                 >
@@ -1320,184 +1407,243 @@ export default function Header() {
               </div>
             )}
           </div>
+
+          {/* 산출물 서브페이지에서만 표시: 현재 케이스 산출물 드롭다운 + ← 시뮬레이션 복귀 */}
+          {isOutputSubpage && <CaseOutputsMenu compact />}
+
+          {showReturnToSimBtn && (
+            <button
+              type="button"
+              onClick={handleReturnToPlant}
+              title={t(lang, 'header_return_to_sim')}
+              style={{
+                ...navBtnStyle,
+                border: '1px solid #3B82F6',
+                background: '#1E3A8A',
+                color: '#FFFFFF',
+              }}
+            >
+              <span>{lang === 'en' ? '← Simulation' : '← 시뮬레이션'}</span>
+            </button>
+          )}
         </div>
 
-        {/* 우측: 독립 엔지니어링 도구함 & 계정 */}
+        {/* ── 우측: 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
             flexShrink: 0,
-            paddingLeft: 8,
           }}
         >
-          <button
-            type="button"
-            onClick={handleOpenShortcutCalc}
-            title={t(lang, 'header_shortcut_calc_title')}
-            style={{
-              padding: '4px 9px',
-              borderRadius: 6,
-              border: '1px solid #334155',
-              background: isUnitCalcTool ? '#1E3A8A' : '#1E293B',
-              color: '#F8FAFC',
-              fontSize: 10.8,
-              fontWeight: 700,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <CalcShortcutIcon size={13} />
-            <span>{t(lang, 'header_shortcut_calc')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenToolbox('/property-db')}
-            title={t(lang, 'header_prop_db_title')}
-            style={{
-              padding: '4px 9px',
-              borderRadius: 6,
-              border: '1px solid #334155',
-              background: isPropDbTool ? '#1E3A8A' : '#1E293B',
-              color: '#F8FAFC',
-              fontSize: 10.8,
-              fontWeight: 700,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <FlaskCompIcon size={13} />
-            <span>{t(lang, 'header_prop_db')}</span>
-          </button>
+          <div ref={settingsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              ref={settingsTriggerRef}
+              type="button"
+              onClick={() => {
+                if (!settingsMenuOpen && settingsTriggerRef.current) {
+                  const rect = settingsTriggerRef.current.getBoundingClientRect();
+                  const menuWidth = 286;
+                  setSettingsMenuPos({
+                    top: rect.bottom + 6,
+                    left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+                  });
+                }
+                setCaseMenuOpen(false);
+                setToolsMenuOpen(false);
+                setSettingsMenuOpen(v => !v);
+              }}
+              title={lang === 'en' ? 'Units, Tag Standard, Language & Feedback' : '단위계 · 태그 표준 · 언어 · 피드백 설정'}
+              style={{
+                ...navBtnStyle,
+                border: settingsMenuOpen ? '1px solid #60A5FA' : '1px solid #334155',
+                background: settingsMenuOpen ? '#1E3A8A' : '#1E293B',
+              }}
+            >
+              <SlidersParamIcon size={12} />
+              <span>{lang === 'en' ? 'Settings' : '설정'}</span>
+              <span style={{ fontSize: 9, opacity: 0.78 }}>{settingsMenuOpen ? '▴' : '▾'}</span>
+            </button>
 
-          <HeaderUnitSettingsButton isMobile={isMobile} />
+            {settingsMenuOpen && (
+              <div
+                style={{
+                  position: 'fixed',
+                  top: settingsMenuPos.top,
+                  left: settingsMenuPos.left,
+                  width: 286,
+                  background: '#FFFFFF',
+                  border: '1px solid #CBD5E1',
+                  borderRadius: 10,
+                  boxShadow: '0 14px 32px rgba(15, 23, 42, 0.24)',
+                  padding: 10,
+                  zIndex: 9999,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 10,
+                  color: '#0F172A',
+                }}
+              >
+                {/* 단위계 프리셋 */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
+                    {lang === 'en' ? 'Unit System Preset' : '단위계 프리셋'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                    {UNIT_PRESETS.map(p => {
+                      const active = presetId === p.id;
+                      const presetName = lang === 'en' ? UNIT_PRESET_NAMES_EN[p.id] : p.shortName;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => applyPreset(p.id)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: 6,
+                            border: active ? '1.5px solid #1E3A8A' : '1px solid #E2E8F0',
+                            background: active ? '#EFF6FF' : '#F8FAFC',
+                            color: active ? '#1E3A8A' : '#334155',
+                            fontSize: 11,
+                            fontWeight: active ? 800 : 600,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {presetName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-          {/* Compact KO | EN Language Toggle Pill */}
-          <div
-            role="group"
-            aria-label="Language Selector"
-            title={t(lang, 'header_lang_toggle_title')}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: '#0F172A',
-              border: '1px solid #334155',
-              borderRadius: 6,
-              padding: 2,
-              gap: 1,
-              flexShrink: 0,
-            }}
-          >
-            {(['ko', 'en'] as AppLang[]).map(code => {
-              const active = lang === code;
-              return (
+                {/* 장치 태그 표준 */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
+                    {lang === 'en' ? 'Equipment Tag Standard' : '장치 태그 표준'}
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                    {TAG_STANDARDS.map(std => {
+                      const active = tagStandard === std.id;
+                      const stdName = lang === 'en' ? TAG_STANDARD_TEXT_EN[std.id].name : std.name;
+                      return (
+                        <button
+                          key={std.id}
+                          type="button"
+                          onClick={() => setTagStandard(std.id)}
+                          style={{
+                            padding: '5px 8px',
+                            borderRadius: 6,
+                            border: active ? '1.5px solid #1E3A8A' : '1px solid #E2E8F0',
+                            background: active ? '#EFF6FF' : '#F8FAFC',
+                            color: active ? '#1E3A8A' : '#334155',
+                            fontSize: 10.5,
+                            fontWeight: active ? 800 : 600,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={stdName}
+                        >
+                          {stdName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 세부 단위 설정 모달 버튼 */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 700, color: '#475569' }}>
+                    {lang === 'en' ? 'Per-Quantity Overrides' : '항목별 세부 단위'}
+                  </span>
+                  <HeaderUnitSettingsButton isMobile={isMobile} />
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0' }} />
+
+                {/* 언어 전환 KO / EN */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                    {lang === 'en' ? 'Language' : '언어'}
+                  </span>
+                  <div
+                    role="group"
+                    aria-label="Language Selector"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      background: '#F1F5F9',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 6,
+                      padding: 2,
+                      gap: 2,
+                    }}
+                  >
+                    {(['ko', 'en'] as AppLang[]).map(code => {
+                      const active = lang === code;
+                      return (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => setLang(code)}
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: 4,
+                            border: 'none',
+                            background: active ? '#1E3A8A' : 'transparent',
+                            color: active ? '#FFFFFF' : '#475569',
+                            fontSize: 10.5,
+                            fontWeight: active ? 800 : 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {code === 'ko' ? '한국어 (KO)' : 'EN'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0' }} />
+
+                {/* 피드백 / 의견 보내기 */}
                 <button
-                  key={code}
                   type="button"
-                  onClick={() => setLang(code)}
+                  onClick={() => {
+                    setSettingsMenuOpen(false);
+                    setFeedbackOpen(true);
+                  }}
                   style={{
-                    padding: '2px 6px',
-                    borderRadius: 4,
-                    border: 'none',
-                    background: active ? '#1E3A8A' : 'transparent',
-                    color: active ? '#FFFFFF' : '#94A3B8',
-                    fontSize: 10,
-                    fontWeight: active ? 800 : 600,
-                    letterSpacing: '0.03em',
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    color: '#0F172A',
+                    fontSize: 11.3,
+                    fontWeight: 700,
                     cursor: 'pointer',
-                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    textAlign: 'left',
                   }}
                 >
-                  {code.toUpperCase()}
+                  <DocSheetIcon size={13} />
+                  <span>{lang === 'en' ? 'Send Feedback' : '피드백 / 의견 보내기'}</span>
                 </button>
-              );
-            })}
+              </div>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => setFeedbackOpen(true)}
-            title={lang === 'en' ? 'Send beta feedback' : '베타 피드백 접수'}
-            style={{
-              padding: '4px 8px',
-              borderRadius: 6,
-              border: '1px solid #334155',
-              background: '#1E293B',
-              color: '#E2E8F0',
-              fontSize: 10.5,
-              fontWeight: 700,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              flexShrink: 0,
-            }}
-          >
-            <DocSheetIcon size={12} />
-            <span>{lang === 'en' ? 'Feedback' : '피드백'}</span>
-          </button>
-
-          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0, marginLeft: 2 }} />
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
           <HeaderUserControls />
         </div>
       </div>
-
-      {/* ── 2단 컨텍스트 바: 비-시뮬레이터 보조 화면에서만 슬림 모노크롬 바 표시 ── */}
-      {!isSimulatorRoute && (
-        <div
-          className="no-scrollbar"
-          style={{
-            width: '100%',
-            minHeight: 32,
-            padding: '4px 12px',
-            background: '#F8FAFC',
-            borderBottom: '1px solid #E2E8F0',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 10,
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0F172A' }}>
-              {auxPageTitle}
-            </span>
-            <span style={{ color: '#CBD5E1' }}>·</span>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#475569' }}>
-              {caseTriggerLabel}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleReturnToPlant}
-            style={{
-              padding: '3px 10px',
-              borderRadius: 6,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#1E293B',
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            {t(lang, 'header_return_to_sim')}
-          </button>
-        </div>
-      )}
 
       <ValidationReportModal
         open={validationModalOpen}

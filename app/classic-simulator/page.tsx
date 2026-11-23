@@ -76,6 +76,7 @@ import {
   LOAD_SAVED_CASE_EVENT,
   PROJECTS_UPDATED_EVENT,
   OPEN_SHORTCUT_CALC_EVENT,
+  OPEN_SAVE_CASE_EVENT,
   consumePendingCaseLoad,
   getActiveCaseTitle,
   setActiveCaseTitle,
@@ -83,6 +84,7 @@ import {
   mapFlowUnitTypeToChemProTab,
   type PendingCaseLoadPayload,
 } from '@/lib/caseManagerBridge';
+import CaseOutputsMenu from '@/components/layout/CaseOutputsMenu';
 import {
   buildChemProHandoffPayload,
   saveChemProHandoffPayload,
@@ -1649,6 +1651,14 @@ export default function ClassicSimulatorPage() {
     return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
   }, []);
 
+  useEffect(() => {
+    const onOpenSaveCase = () => {
+      setShowProjectBar(true);
+    };
+    window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
+    return () => window.removeEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
+  }, []);
+
   const hasFeed = simDefs.some(d => d.unitType === 'feed');
   const convOverall = solved.convergence.overallStatus ?? (solved.convergence.converged ? 'converged' : 'failed');
   const statusState: 'incomplete' | 'ready' | 'ok' | 'warn' | 'fail' = !hasFeed || flowEdges.length === 0
@@ -1811,23 +1821,26 @@ export default function ClassicSimulatorPage() {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowProjectBar(v => !v)}
-            style={{
-              padding: '3px 8px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 4,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <SaveArchiveIcon size={12} /> 저장·열기
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <CaseOutputsMenu compact />
+            <button
+              type="button"
+              onClick={() => setShowProjectBar(v => !v)}
+              style={{
+                padding: '3px 8px',
+                fontSize: 10.5,
+                fontWeight: 700,
+                borderRadius: 4,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              <SaveArchiveIcon size={12} /> 저장·열기
+            </button>
+          </div>
         </div>
       )}
 
@@ -2088,82 +2101,96 @@ export default function ClassicSimulatorPage() {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
           {!isMobile && (
             <div
-              className="no-scrollbar"
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 2,
+                justifyContent: 'space-between',
+                gap: 8,
                 padding: '3px 8px 0',
                 background: '#E2E8F0',
                 borderBottom: '1px solid #CBD5E1',
-                overflowX: 'auto',
                 flexShrink: 0,
               }}
             >
-              {mdiTabs.map(tab => {
-                const isAct = activeMdiKey === tab.key;
-                const closable = tab.kind === 'block' || tab.kind === 'stream';
-                const tabBlk = tab.kind === 'block' && tab.refId ? simDefs.find(d => d.id === tab.refId) : undefined;
-                const displayTabTitle = tabBlk
-                  ? formatEquipmentTag(tabBlk.tag, tabBlk.unitType, tagStandard)
-                  : tab.title;
-                return (
-                  <div
-                    key={tab.key}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      padding: '4px 10px',
-                      borderRadius: '4px 4px 0 0',
-                      border: isAct ? '1px solid #CBD5E1' : '1px solid transparent',
-                      borderBottom: isAct ? '1px solid #FFFFFF' : 'none',
-                      background: isAct ? '#FFFFFF' : '#F1F5F9',
-                      color: isAct ? '#003399' : '#475569',
-                      fontSize: 11,
-                      fontWeight: isAct ? 800 : 600,
-                      cursor: 'pointer',
-                      marginBottom: -1,
-                      whiteSpace: 'nowrap',
-                    }}
-                    onClick={() => handleOpenMdiTab(tab)}
-                  >
-                    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
-                      {tab.kind === 'pfd' ? (
-                        <PfdSchematicIcon size={12} />
-                      ) : tab.kind === 'summary' ? (
-                        <TableGridIcon size={12} />
-                      ) : tab.kind === 'control' ? (
-                        <SlidersParamIcon size={12} />
-                      ) : tab.kind === 'block' ? (
-                        <VesselEquipIcon size={12} />
-                      ) : (
-                        <StreamFlowIcon size={12} />
+              <div
+                className="no-scrollbar"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  overflowX: 'auto',
+                  minWidth: 0,
+                  flex: '1 1 auto',
+                }}
+              >
+                {mdiTabs.map(tab => {
+                  const isAct = activeMdiKey === tab.key;
+                  const closable = tab.kind === 'block' || tab.kind === 'stream';
+                  const tabBlk = tab.kind === 'block' && tab.refId ? simDefs.find(d => d.id === tab.refId) : undefined;
+                  const displayTabTitle = tabBlk
+                    ? formatEquipmentTag(tabBlk.tag, tabBlk.unitType, tagStandard)
+                    : tab.title;
+                  return (
+                    <div
+                      key={tab.key}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '4px 10px',
+                        borderRadius: '4px 4px 0 0',
+                        border: isAct ? '1px solid #CBD5E1' : '1px solid transparent',
+                        borderBottom: isAct ? '1px solid #FFFFFF' : 'none',
+                        background: isAct ? '#FFFFFF' : '#F1F5F9',
+                        color: isAct ? '#003399' : '#475569',
+                        fontSize: 11,
+                        fontWeight: isAct ? 800 : 600,
+                        cursor: 'pointer',
+                        marginBottom: -1,
+                        whiteSpace: 'nowrap',
+                      }}
+                      onClick={() => handleOpenMdiTab(tab)}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                        {tab.kind === 'pfd' ? (
+                          <PfdSchematicIcon size={12} />
+                        ) : tab.kind === 'summary' ? (
+                          <TableGridIcon size={12} />
+                        ) : tab.kind === 'control' ? (
+                          <SlidersParamIcon size={12} />
+                        ) : tab.kind === 'block' ? (
+                          <VesselEquipIcon size={12} />
+                        ) : (
+                          <StreamFlowIcon size={12} />
+                        )}
+                      </span>
+                      <span>{displayTabTitle}</span>
+                      {closable && (
+                        <button
+                          type="button"
+                          onClick={ev => {
+                            ev.stopPropagation();
+                            handleCloseMdiTab(tab.key);
+                          }}
+                          style={{
+                            border: 'none',
+                            background: 'transparent',
+                            color: '#64748B',
+                            fontSize: 10,
+                            cursor: 'pointer',
+                            padding: '0 2px',
+                          }}
+                        >
+                          ✕
+                        </button>
                       )}
-                    </span>
-                    <span>{displayTabTitle}</span>
-                    {closable && (
-                      <button
-                        type="button"
-                        onClick={ev => {
-                          ev.stopPropagation();
-                          handleCloseMdiTab(tab.key);
-                        }}
-                        style={{
-                          border: 'none',
-                          background: 'transparent',
-                          color: '#64748B',
-                          fontSize: 10,
-                          cursor: 'pointer',
-                          padding: '0 2px',
-                        }}
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ flexShrink: 0, paddingBottom: 3 }}>
+                <CaseOutputsMenu compact />
+              </div>
             </div>
           )}
 

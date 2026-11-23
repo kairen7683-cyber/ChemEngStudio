@@ -5,6 +5,7 @@ export const ACTIVE_CASE_TITLE_KEY = 'chemplant-active-case-title-v1';
 export const PROJECTS_UPDATED_EVENT = 'chemplant:projects-updated';
 export const LOAD_SAVED_CASE_EVENT = 'chemplant:load-saved-case';
 export const OPEN_SHORTCUT_CALC_EVENT = 'chemplant:open-shortcut-calc';
+export const OPEN_SAVE_CASE_EVENT = 'chemplant:open-save-case';
 
 export interface UnifiedSavedCaseEntry {
   uid: string;
