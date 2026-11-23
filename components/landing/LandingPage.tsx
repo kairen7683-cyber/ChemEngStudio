@@ -1517,20 +1517,20 @@ export default function LandingPage({
               }}
             >
               <div style={{ fontSize: 13, fontWeight: 800, color: '#475569', marginBottom: 6 }}>
-                {lang === 'ko' ? 'Free / 얼리 액세스' : 'Free / Early Access'}
+                {lang === 'ko' ? '3일 무료 체험 (Trial)' : '3-Day Free Trial'}
               </div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
                 <span style={{ fontSize: 34, fontWeight: 800, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
                   $0
                 </span>
                 <span style={{ fontSize: 12.5, color: '#64748B' }}>
-                  {lang === 'ko' ? '/ 평가·베타 계정' : '/ preview & beta'}
+                  {lang === 'ko' ? '/ 3일 체험 (무료 플랜 미제공)' : '/ 3-day trial only'}
                 </span>
               </div>
               <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 20 }}>
                 {lang === 'ko'
-                  ? '핵심 플로우시트 시뮬레이터 미리보기 및 기본 물성 조회를 위한 시작 플랜'
-                  : 'Core simulator preview, basic property lookup, and early-access workspace.'}
+                  ? '가입 후 3일간 핵심 시뮬레이터와 핸드북을 직접 검증해 보는 평가용 체험 (체험 종료 후 유료 구독 전환)'
+                  : '3-day evaluation access to test the simulator and handbook preview before subscribing.'}
               </p>
 
               <ul
@@ -1573,7 +1573,7 @@ export default function LandingPage({
                 onClick={() => onOpenAuth('register')}
                 style={{ width: '100%', padding: '11px 16px', fontSize: 13.5 }}
               >
-                {lang === 'ko' ? '무료 계정 시작하기' : 'Start Free Access'}
+                {lang === 'ko' ? '3일 무료 체험 시작' : 'Start 3-Day Trial'}
               </button>
             </div>
 
@@ -1740,14 +1740,10 @@ export default function LandingPage({
                   ? [
                       'Pro Engineer의 모든 기능 포함 (5석 기본 제공)',
                       '팀 공유 워크스페이스 및 프로젝트별 접근 제어(ACL)',
-                      '법인카드 · 세금계산서 일괄 결제 및 통합 계정 관리',
-                      '우선 기술 지원 및 신규 물성 · 공정 모델 우선 반영',
                     ]
                   : [
                       'Everything in Pro Engineer (5 seats included)',
                       'Shared team workspaces & project-level access control (ACL)',
-                      'Consolidated corporate billing & seat administration',
-                      'Priority engineering support & expedited property/process additions',
                     ]
                 ).map((feat, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#1E293B' }}>
