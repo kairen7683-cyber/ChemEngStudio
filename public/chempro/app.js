@@ -1778,22 +1778,8 @@ window.App = (function () {
   }
 
   // =========================================================================
-  // GEMINI FLASH EXPERT REVIEW & CLOSED-LOOP AUTO-REDESIGN (STRICTLY FLASH ONLY!)
+  // GEMINI FLASH EXPERT REVIEW & CLOSED-LOOP AUTO-REDESIGN (SERVER-PROXIED)
   // =========================================================================
-  function getFlashFallbackEndpoint() {
-    // Zero hardcoded API keys in source code — uses local device storage only if needed
-    let key = localStorage.getItem('CHEMPRO_GEMINI_KEY') || '';
-    if (!key) {
-      const entered = window.prompt('외부 네트워크에서 직접 Gemini 2.5 Flash를 호출하려면 본인 API 키를 입력하세요 (휴대폰 브라우저 내부에만 저장되며 외부에 노출되지 않습니다. 취소 시 내장 수석 엔지니어 폐루프 솔버로 즉시 최적화됩니다):');
-      if (entered && entered.trim()) {
-        key = entered.trim();
-        localStorage.setItem('CHEMPRO_GEMINI_KEY', key);
-      }
-    }
-    if (!key) return null;
-    return `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-  }
-
   async function runGeminiReview(eqType) {
     const resContainer = document.getElementById('ai_res_' + eqType);
     const qInput = document.getElementById('ai_q_' + eqType);
@@ -1811,78 +1797,38 @@ window.App = (function () {
     let reviewData = null;
 
     try {
-      const resp = await fetch('https://crusader-caterer-overeater.ngrok-free.dev/api/chemeng/flash-review', {
+      const compactPrompt = `[장치 유형] ${eqType.toUpperCase()} (${state.mode} 모드)
+[입력] ${JSON.stringify(beforeInputs).slice(0, 1600)}
+[결과] ${JSON.stringify({ ...beforeResults, vleCurve: undefined, candidates: undefined }).slice(0, 1600)}
+[요청] ${userQuestion || '국제 규격(API/TEMA/ASME) 적합성, 운전 리스크, 핵심 개선 조치 2~3줄 진단'}`;
+
+      const resp = await fetch('/api/ai/advise', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': '1'
-        },
-        body: JSON.stringify({
-          equipment_type: eqType,
-          mode: state.mode,
-          inputs: beforeInputs,
-          results: beforeResults,
-          user_question: userQuestion
-        })
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: compactPrompt })
       });
       if (resp.ok) {
         const json = await resp.json();
-        if (json.status === 'ok' && json.review) {
-          reviewData = json.review;
+        const aiText = (json && json.text ? String(json.text).trim() : '');
+        if (aiText) {
+          const localOpt = buildLocalExpertReview(eqType, beforeInputs, beforeResults, userQuestion);
+          reviewData = Object.assign({}, localOpt, {
+            model_used: 'gemini-2.5-flash (서버 공용)',
+            headline: aiText.split('\n')[0].replace(/^[-*•#\s]+/, '').slice(0, 120) || localOpt.headline,
+            code_compliance: aiText
+          });
         }
       }
     } catch (e) {
-      // Fallback below
+      // Built-in closed-loop solver fallback below
     }
 
     if (!reviewData) {
       try {
-        const prompt = `당신은 25년 경력의 수석 화학공학 공정/장치 설계 엔지니어(Chief Process Engineer, PE)입니다.
-사용자가 'ChemPro Suite v2.3'에서 수행한 [${eqType.toUpperCase()}] (${state.mode} 모드) 반복 수렴 계산 결과와 입력 조건을 정밀 감사(Audit)하고, 더 안전하고 경제적인 최적 설계 파라미터(optimized_inputs)를 제안하세요.
-
-[설계 입력 파라미터 (inputs)]
-${JSON.stringify(beforeInputs)}
-
-[수치해석 수렴 결과 및 경고 (results)]
-${JSON.stringify({ ...beforeResults, vleCurve: undefined, candidates: undefined })}
-
-[사용자 추가 질문/요청]
-${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 수렴 건전성, HAZOP 위험요소 및 최적 재설계 파라미터를 도출해 주세요.'}
-
-반드시 아래 JSON 스키마로만 응답하세요 (이모지 사용 금지):
-{
-  "model_used": "gemini-2.5-flash",
-  "verdict": "OPTIMAL 또는 CAUTION 또는 REDESIGN_REQUIRED",
-  "score": 92,
-  "headline": "핵심 총평 한 줄 요약",
-  "code_compliance": "국제 규격(API 610 / TEMA / FRI / ASME Sec.VIII / API 520 / B31.3) 기준 상세 적합성 평가",
-  "convergence_analysis": "반복 수렴 계산 및 열/물질수지에 대한 공학적 해석",
-  "hazop_risks": [
-    "[위험요소 1] 원인 및 운전 리스크 -> 대책",
-    "[위험요소 2] 원인 및 운전 리스크 -> 대책",
-    "[위험요소 3] 원인 및 운전 리스크 -> 대책"
-  ],
-  "optimization_rationale": "왜 아래 optimized_inputs 값으로 변경하면 압력강하, 여유율, 진동/범람 방지 또는 경제성이 개선되는지 정량적 근거 설명",
-  "optimized_inputs": {}
-}
-주의: optimized_inputs 객체에는 반드시 위 [설계 입력 파라미터 (inputs)]에 존재하는 수치형 키(key) 중 2~4개를 골라 더 최적화된 수치 값으로 넣으세요.`;
-
-        const fbUrl = getFlashFallbackEndpoint();
-        if (fbUrl) {
-          const fbResp = await fetch(fbUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.2,
-                thinkingConfig: { thinkingBudget: 0 }
-              }
-            })
-          });
-          const fbJson = await fbResp.json();
-          const txt = fbJson?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        // Fallback directly to built-in closed-loop engineering solver (never prompt user for API key)
+        if (false) {
+          const txt = '{}';
           reviewData = JSON.parse(txt);
           reviewData.model_used = 'gemini-2.5-flash';
         }
