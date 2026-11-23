@@ -1109,58 +1109,9 @@ export default function Header() {
             <span>{lang === 'en' ? 'Save As' : isMobile ? '다른이름 저장' : '다른 이름으로 저장'}</span>
           </button>
 
-          {/* 새로고침 (↻) */}
-          <button
-            type="button"
-            onClick={() => {
-              if (typeof window !== 'undefined') window.location.reload();
-            }}
-            title={lang === 'en' ? 'Refresh' : '새로고침'}
-            aria-label={lang === 'en' ? 'Refresh' : '새로고침'}
-            style={{
-              ...navBtnStyle,
-              padding: '4px 7px',
-              fontSize: 13,
-              lineHeight: 1,
-            }}
-          >
-            ↻
-          </button>
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
 
-          {/* 활성 케이스 제목 필 */}
-          {!isMobile && (
-            <span
-              title={activeCasePillText}
-              style={{
-                padding: '3px 9px',
-                borderRadius: 999,
-                border: '1px solid #334155',
-                background: '#0B1220',
-                color: '#CBD5E1',
-                fontSize: 11,
-                fontWeight: 700,
-                maxWidth: 180,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-              }}
-            >
-              {activeCasePillText}
-            </span>
-          )}
-        </div>
-
-        {/* ── 중앙: 통합 도구 드롭다운 + 산출물 서브페이지 컨텍스트 ── */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            flexShrink: 0,
-          }}
-        >
-          {/* 도구 ▾ 통합 드롭다운 */}
+          {/* 도구 ▾ 통합 드롭다운 (좌측 메뉴 그룹에 자연스럽게 배치) */}
           <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={toolsTriggerRef}
@@ -1414,7 +1365,39 @@ export default function Header() {
           )}
         </div>
 
-        {/* ── 우측: 피드백 + 언어(KO|EN) + 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
+        {/* ── 중앙: 현재 열린 케이스(문서) 제목 ── */}
+        {!isMobile && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minWidth: 0,
+              flex: '0 1 auto',
+            }}
+          >
+            <span
+              title={activeCasePillText}
+              style={{
+                padding: '3px 12px',
+                borderRadius: 999,
+                border: '1px solid #334155',
+                background: '#0B1220',
+                color: '#E2E8F0',
+                fontSize: 11.2,
+                fontWeight: 700,
+                maxWidth: 220,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {activeCasePillText}
+            </span>
+          </div>
+        )}
+
+        {/* ── 우측: 새로고침(↻) + 피드백 + 언어(KO|EN) + 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
         <div
           style={{
             display: 'flex',
@@ -1423,6 +1406,24 @@ export default function Header() {
             flexShrink: 0,
           }}
         >
+          {/* 새로고침 (↻) — 우측 유틸리티 영역 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') window.location.reload();
+            }}
+            title={lang === 'en' ? 'Refresh' : '새로고침'}
+            aria-label={lang === 'en' ? 'Refresh' : '새로고침'}
+            style={{
+              ...navBtnStyle,
+              padding: '4px 7px',
+              fontSize: 13,
+              lineHeight: 1,
+            }}
+          >
+            ↻
+          </button>
+
           {/* 피드백 (상단 바 상시 노출) */}
           <button
             type="button"
