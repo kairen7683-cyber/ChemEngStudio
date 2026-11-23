@@ -2424,6 +2424,92 @@ ${userQuestion || '현재 설계의 국제 규격(API/TEMA/ASME/FRI) 적합성, 
       if (d.type === 'CHEMPRO_APPLY_SIM_HANDOFF') {
         applySimulatorHandoff(d.payload || null);
       }
+      if (d.type === 'CHEMPRO_EXPORT_STATE') {
+        const activeTab = state.tab || 'hx';
+        const panel =
+          document.getElementById('panel-' + activeTab) ||
+          document.getElementById('tab_' + activeTab) ||
+          document.querySelector('.module-panel.active');
+        const inputs = {};
+        if (panel) {
+          panel.querySelectorAll('input[id], select[id]').forEach(el => {
+            if (el.type === 'file' || el.type === 'button' || el.type === 'submit') return;
+            inputs[el.id] = el.type === 'checkbox' ? Boolean(el.checked) : el.value;
+          });
+        }
+        if (activeTab === 'hx' && state.hxDof) {
+          inputs.__hxDof = state.hxDof;
+        }
+        let autoSummary = '';
+        try {
+          const res = state.lastResults && state.lastResults[activeTab];
+          if (activeTab === 'hx' && res) {
+            autoSummary = `A=${Number(res.A_prov_m2 || 0).toFixed(1)}m² · Q=${Number(res.Q_kW || 0).toFixed(0)}kW · U=${Number(res.U_calc || 0).toFixed(0)} W/m²K`;
+          } else if (activeTab === 'pump' && res) {
+            autoSummary = `Motor ${res.P_motor_std_kW}kW (축 ${Number(res.P_shaft_kW || 0).toFixed(1)}kW) · TDH ${Number(res.H_total_m || 0).toFixed(1)}m`;
+          } else if (activeTab === 'vessel' && res) {
+            autoSummary = `ID ${(Number(res.D_m || 0) * 1000).toFixed(0)}mm × L ${(Number(res.L_m || 0) * 1000).toFixed(0)}mm (${Number(res.V_total_m3 || 0).toFixed(1)}m³)`;
+          } else if (activeTab === 'column' && res) {
+            autoSummary = `ID ${(Number(res.D_col_m || 0) * 1000).toFixed(0)}mm × H ${Number(res.H_tangent_m || 0).toFixed(1)}m`;
+          } else if (activeTab === 'psv' && res && res.selectedOrifice) {
+            autoSummary = `Orifice '${res.selectedOrifice.letter}' (${res.selectedOrifice.size || ''}, A_req=${Number(res.A_req_mm2 || 0).toFixed(1)}mm²)`;
+          } else if (activeTab === 'piping' && res && res.selected) {
+            autoSummary = `NPS ${res.selected.nps} (ID ${Number(res.selected.id_mm || 0).toFixed(1)}mm · v=${Number(res.selected.v || 0).toFixed(2)}m/s)`;
+          }
+        } catch (_) {}
+        try {
+          window.parent.postMessage(
+            {
+              type: 'CHEMPRO_STATE_SNAPSHOT',
+              requestId: d.requestId || '',
+              tab: activeTab,
+              inputs,
+              autoSummary,
+            },
+            '*'
+          );
+        } catch (_) {}
+      }
+      if (d.type === 'CHEMPRO_RESTORE_STATE') {
+        if (d.tab && d.tab !== state.tab) {
+          setTab(d.tab);
+        }
+        const restoreInputs = d.inputs && typeof d.inputs === 'object' ? d.inputs : {};
+        const prevSuppress = _suppressRecalc;
+        _suppressRecalc = true;
+        try {
+          for (const [id, val] of Object.entries(restoreInputs)) {
+            if (id === '__hxDof') continue;
+            const el = document.getElementById(id);
+            if (!el) continue;
+            if (el.type === 'checkbox') {
+              el.checked = Boolean(val);
+            } else {
+              el.value = val === undefined || val === null ? '' : String(val);
+            }
+          }
+          if (state.tab === 'hx') {
+            if (typeof restoreInputs.__hxDof === 'string' && typeof setHXDof === 'function') {
+              setHXDof(restoreInputs.__hxDof);
+            }
+            if (typeof onHXTypeChange === 'function') onHXTypeChange();
+            if (typeof onHXPhaseModeChange === 'function') onHXPhaseModeChange();
+          } else if (state.tab === 'column') {
+            if (typeof onColumnModeChange === 'function') onColumnModeChange();
+            if (typeof onColumnDofModeChange === 'function') onColumnDofModeChange();
+            if (typeof onColumnSideCutChange === 'function') onColumnSideCutChange();
+            if (restoreInputs.col_internals !== undefined) {
+              const colIntEl = document.getElementById('col_internals');
+              if (colIntEl) colIntEl.value = String(restoreInputs.col_internals);
+            }
+            if (typeof onColumnInternalsChange === 'function') onColumnInternalsChange();
+          }
+          if (typeof syncAllCustomSelects === 'function') syncAllCustomSelects();
+        } finally {
+          _suppressRecalc = prevSuppress;
+        }
+        recalc();
+      }
       if (d.type === 'CHEMPRO_EXPORT_EXCEL') downloadExcelDatasheet();
       if (d.type === 'CHEMPRO_EXPORT_DWG') downloadDWGImage();
       if (d.type === 'CHEMPRO_RUN_AI') runActiveGeminiReview();

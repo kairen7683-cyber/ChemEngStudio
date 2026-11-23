@@ -57,11 +57,18 @@ const MATERIAL_OPTIONS: Array<{ key: CostMaterialKey; shortLabel: string }> = [
   { key: 'PTFE_LINED', shortLabel: 'PTFE-Lined CS' },
 ];
 
+export interface ChemProStateSnapshot {
+  tab: string;
+  inputs: Record<string, string | boolean>;
+  savedAt: string;
+}
+
 export interface UnitDeliverableOverride {
   material: CostMaterialKey;
   datasheetSaved?: boolean;
   datasheetSavedAt?: string;
   datasheetSummary?: string;
+  chemproSnapshot?: ChemProStateSnapshot;
   customAreaM2?: number;
   customPowerKw?: number;
   customVolumeM3?: number;
@@ -426,6 +433,7 @@ export default function CaseEquipmentDeliverables() {
   const [modalTs, setModalTs] = useState<number>(0);
   const [modalSizingInput, setModalSizingInput] = useState<string>('');
   const [modalSummaryInput, setModalSummaryInput] = useState<string>('');
+  const [isSavingDatasheet, setIsSavingDatasheet] = useState<boolean>(false);
   const modalIframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
@@ -877,6 +885,7 @@ export default function CaseEquipmentDeliverables() {
   );
 
   // Sync messages to inline datasheet modal iframe
+  const activeModalSnapshot = activeModalRow?.override.chemproSnapshot;
   const postModalSync = useCallback(() => {
     const win = modalIframeRef.current?.contentWindow;
     if (!win) return;
@@ -889,9 +898,27 @@ export default function CaseEquipmentDeliverables() {
       },
       '*'
     );
-    win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
+    if (activeModalSnapshot && activeModalSnapshot.inputs) {
+      win.postMessage(
+        {
+          type: 'CHEMPRO_RESTORE_STATE',
+          tab: activeModalSnapshot.tab,
+          inputs: activeModalSnapshot.inputs,
+        },
+        '*'
+      );
+    } else {
+      win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
+    }
     win.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
-  }, [activePlantId, units]);
+  }, [activePlantId, activeModalSnapshot, units]);
+
+  const handleResetModalToSimHandoff = useCallback(() => {
+    const win = modalIframeRef.current?.contentWindow;
+    if (!win || !activeModalRow) return;
+    win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
+    showToast(`[${activeModalRow.def.tag}] 시뮬레이션 운전조건으로 초기화했습니다.`);
+  }, [activeModalRow, showToast]);
 
   useEffect(() => {
     if (!modalRowKey) return;
@@ -940,52 +967,122 @@ export default function CaseEquipmentDeliverables() {
           ? row.override.customPowerKw
           : row.override.customVolumeM3;
 
-    setModalTab(payload.tab || row.chemproTab);
+    const savedTab = row.override.chemproSnapshot?.tab as ChemProTargetTab | undefined;
+    setModalTab(savedTab || payload.tab || row.chemproTab);
     setModalTs(Date.now());
     setModalSizingInput(existingVal && existingVal > 0 ? String(existingVal) : '');
     setModalSummaryInput(row.override.datasheetSummary || '');
     setModalRowKey(row.key);
   };
 
-  const handleSaveDatasheetToCase = () => {
-    if (!activeModalRow) return;
-    const parsedSize = Number(modalSizingInput);
-    const validSize = Number.isFinite(parsedSize) && parsedSize > 0 ? parsedSize : undefined;
-    const summaryText =
-      modalSummaryInput.trim() ||
-      `${activeModalRow.unitTypeLabel} · ${activeModalRow.material} · ${
-        validSize
-          ? `${validSize.toFixed(1)} ${activeModalRow.sizingUnit}`
-          : activeModalRow.cost.basisSummary
-      }`;
+  const requestChemProStateSnapshot = useCallback(
+    (): Promise<{
+      tab: string;
+      inputs: Record<string, string | boolean>;
+      autoSummary: string;
+    } | null> => {
+      return new Promise(resolve => {
+        const win = modalIframeRef.current?.contentWindow;
+        if (!win) {
+          resolve(null);
+          return;
+        }
+        const requestId = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        let settled = false;
+        const finish = (
+          result: { tab: string; inputs: Record<string, string | boolean>; autoSummary: string } | null
+        ) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          window.removeEventListener('message', onSnapshotMessage);
+          resolve(result);
+        };
+        const onSnapshotMessage = (e: MessageEvent) => {
+          const d = e?.data;
+          if (!d || typeof d !== 'object' || d.type !== 'CHEMPRO_STATE_SNAPSHOT') return;
+          if (d.requestId && d.requestId !== requestId) return;
+          finish({
+            tab: typeof d.tab === 'string' && d.tab ? d.tab : modalTab,
+            inputs:
+              d.inputs && typeof d.inputs === 'object'
+                ? (d.inputs as Record<string, string | boolean>)
+                : {},
+            autoSummary: typeof d.autoSummary === 'string' ? d.autoSummary.trim() : '',
+          });
+        };
+        const timer = window.setTimeout(() => finish(null), 600);
+        window.addEventListener('message', onSnapshotMessage);
+        try {
+          win.postMessage({ type: 'CHEMPRO_EXPORT_STATE', requestId }, '*');
+        } catch {
+          finish(null);
+        }
+      });
+    },
+    [modalTab]
+  );
 
-    savePersistState(prev => {
-      const cur = prev.unitOverrides[activeModalRow.key] ?? { material: activeModalRow.material };
-      const updated: UnitDeliverableOverride = {
-        ...cur,
-        material: activeModalRow.material,
-        datasheetSaved: true,
-        datasheetSavedAt: new Date().toISOString(),
-        datasheetSummary: summaryText,
-      };
-      if (activeModalRow.sizingKind === 'area') {
-        updated.customAreaM2 = validSize;
-      } else if (activeModalRow.sizingKind === 'power') {
-        updated.customPowerKw = validSize;
-      } else {
-        updated.customVolumeM3 = validSize;
-      }
-      return {
-        ...prev,
-        unitOverrides: {
-          ...prev.unitOverrides,
-          [activeModalRow.key]: updated,
-        },
-      };
-    });
+  const handleSaveDatasheetToCase = async () => {
+    if (!activeModalRow || isSavingDatasheet) return;
+    setIsSavingDatasheet(true);
+    try {
+      const captured = await requestChemProStateSnapshot();
+      const nowIso = new Date().toISOString();
+      const parsedSize = Number(modalSizingInput);
+      const validSize = Number.isFinite(parsedSize) && parsedSize > 0 ? parsedSize : undefined;
+      const summaryText =
+        modalSummaryInput.trim() ||
+        captured?.autoSummary ||
+        `${activeModalRow.unitTypeLabel} · ${activeModalRow.material} · ${
+          validSize
+            ? `${validSize.toFixed(1)} ${activeModalRow.sizingUnit}`
+            : activeModalRow.cost.basisSummary
+        }`;
 
-    showToast(`[${activeModalRow.def.tag}] 데이터시트가 현재 케이스에 저장되고 투자비에 반영되었습니다.`);
-    setModalRowKey(null);
+      const nextSnapshot: ChemProStateSnapshot | undefined = captured
+        ? {
+            tab: captured.tab,
+            inputs: captured.inputs,
+            savedAt: nowIso,
+          }
+        : undefined;
+
+      savePersistState(prev => {
+        const cur = prev.unitOverrides[activeModalRow.key] ?? { material: activeModalRow.material };
+        const updated: UnitDeliverableOverride = {
+          ...cur,
+          material: activeModalRow.material,
+          datasheetSaved: true,
+          datasheetSavedAt: nowIso,
+          datasheetSummary: summaryText,
+          chemproSnapshot: nextSnapshot ?? cur.chemproSnapshot,
+        };
+        if (activeModalRow.sizingKind === 'area') {
+          updated.customAreaM2 = validSize;
+        } else if (activeModalRow.sizingKind === 'power') {
+          updated.customPowerKw = validSize;
+        } else {
+          updated.customVolumeM3 = validSize;
+        }
+        return {
+          ...prev,
+          unitOverrides: {
+            ...prev.unitOverrides,
+            [activeModalRow.key]: updated,
+          },
+        };
+      });
+
+      showToast(
+        nextSnapshot
+          ? `[${activeModalRow.def.tag}] 숏컷 설계 상태와 데이터시트가 현재 케이스에 저장되었습니다.`
+          : `[${activeModalRow.def.tag}] 데이터시트가 현재 케이스에 저장되고 투자비에 반영되었습니다.`
+      );
+      setModalRowKey(null);
+    } finally {
+      setIsSavingDatasheet(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -1108,10 +1205,11 @@ export default function CaseEquipmentDeliverables() {
 
   const modalIframeSrc = useMemo(() => {
     if (!modalRowKey) return '';
+    const hasSnap = Boolean(activeModalSnapshot);
     return `${BASE_PATH}/chempro/index.html?embed=1&standalone=1&plant=${encodeURIComponent(
       activePlantId
-    )}&tab=${encodeURIComponent(modalTab)}&handoff=1&ts=${modalTs}&v=20261119a`;
-  }, [activePlantId, modalRowKey, modalTab, modalTs]);
+    )}&tab=${encodeURIComponent(modalTab)}${hasSnap ? '' : '&handoff=1'}&ts=${modalTs}&v=20261119a`;
+  }, [activePlantId, activeModalSnapshot, modalRowKey, modalTab, modalTs]);
 
   return (
     <div
@@ -1547,8 +1645,8 @@ export default function CaseEquipmentDeliverables() {
                       </td>
 
                       {/* Datasheet Status */}
-                      <td style={{ padding: '10px 10px', verticalAlign: 'middle', maxWidth: 190 }}>
-                        {row.override.datasheetSaved ? (
+                      <td style={{ padding: '10px 10px', verticalAlign: 'middle', maxWidth: 210 }}>
+                        {row.override.chemproSnapshot || row.override.datasheetSaved ? (
                           <div>
                             <span
                               style={{
@@ -1562,9 +1660,12 @@ export default function CaseEquipmentDeliverables() {
                                 color: '#047857',
                                 fontSize: 11.5,
                                 fontWeight: 700,
+                                whiteSpace: 'nowrap',
                               }}
                             >
-                              ✅ 저장됨
+                              {row.override.chemproSnapshot
+                                ? '✅ 저장됨 (숏컷 보관)'
+                                : '✅ 저장됨'}
                             </span>
                             {row.override.datasheetSummary && (
                               <div
@@ -1770,6 +1871,23 @@ export default function CaseEquipmentDeliverables() {
               >
                 이 케이스 전용
               </span>
+              <button
+                type="button"
+                onClick={handleResetModalToSimHandoff}
+                title="저장된 숏컷 입력값 대신 현재 시뮬레이션 운전조건을 다시 불러옵니다"
+                style={{
+                  padding: '3px 9px',
+                  borderRadius: 6,
+                  border: '1px solid #475569',
+                  background: 'rgba(30, 41, 59, 0.85)',
+                  color: '#CBD5E1',
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ↺ 시뮬레이션 값으로 초기화
+              </button>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -1821,18 +1939,20 @@ export default function CaseEquipmentDeliverables() {
               <button
                 type="button"
                 onClick={handleSaveDatasheetToCase}
+                disabled={isSavingDatasheet}
                 style={{
                   padding: '6px 13px',
                   borderRadius: 6,
                   border: 'none',
-                  background: '#059669',
+                  background: isSavingDatasheet ? '#047857' : '#059669',
                   color: '#FFFFFF',
                   fontSize: 12.5,
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: isSavingDatasheet ? 'wait' : 'pointer',
+                  opacity: isSavingDatasheet ? 0.85 : 1,
                 }}
               >
-                ✅ 이 케이스에 데이터시트 저장
+                {isSavingDatasheet ? '⏳ 저장 중...' : '✅ 이 케이스에 데이터시트 저장'}
               </button>
 
               <button

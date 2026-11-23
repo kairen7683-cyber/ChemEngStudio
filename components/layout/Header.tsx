@@ -95,8 +95,7 @@ export default function Header() {
   const toolsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const settingsDropdownRef = useRef<HTMLDivElement | null>(null);
   const settingsTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const jsonImportRef = useRef<HTMLInputElement | null>(null);
-  const processTextImportRef = useRef<HTMLInputElement | null>(null);
+  const unifiedImportRef = useRef<HTMLInputElement | null>(null);
 
   const {
     activePlantId,
@@ -303,13 +302,13 @@ export default function Header() {
     router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
   };
 
-  const handleTriggerSaveCase = () => {
+  const handleTriggerSaveCase = (mode: 'quick_save' | 'save_as') => {
     setCaseMenuOpen(false);
     setToolsMenuOpen(false);
     setSettingsMenuOpen(false);
     if (typeof window === 'undefined') return;
     if (isFlowsheetOrClassicRoute) {
-      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT));
+      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT, { detail: { mode } }));
       return;
     }
     const targetHref =
@@ -318,7 +317,7 @@ export default function Header() {
         : '/flowsheet-simulator';
     router.push(targetHref);
     window.setTimeout(() => {
-      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT));
+      window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT, { detail: { mode } }));
     }, 250);
   };
 
@@ -353,9 +352,7 @@ export default function Header() {
     router.push('/material-balance');
   };
 
-  const handleImportJsonCase = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const importJsonFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -395,12 +392,9 @@ export default function Header() {
       }
     };
     reader.readAsText(file);
-    e.target.value = '';
   };
 
-  const handleImportProcessTextCase = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const importProcessTextFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -524,6 +518,81 @@ export default function Header() {
       }
     };
     reader.readAsText(file);
+  };
+
+  const processImportedFile = (file: File) => {
+    if (file.name.toLowerCase().endsWith('.json')) {
+      importJsonFile(file);
+    } else {
+      importProcessTextFile(file);
+    }
+  };
+
+  const handleOpenUnifiedFilePicker = async () => {
+    type OpenFilePickerFn = (options?: {
+      multiple?: boolean;
+      types?: Array<{ description?: string; accept: Record<string, string[]> }>;
+    }) => Promise<Array<{ getFile: () => Promise<File> }>>;
+
+    const picker =
+      typeof window !== 'undefined'
+        ? (window as Window & { showOpenFilePicker?: OpenFilePickerFn }).showOpenFilePicker
+        : undefined;
+
+    if (typeof picker === 'function') {
+      try {
+        const [handle] = await picker({
+          multiple: false,
+          types: [
+            {
+              description:
+                lang === 'en'
+                  ? 'All Process Files (.json, .bkp, .inp)'
+                  : '모든 공정 파일 (.json, .bkp, .inp)',
+              accept: { 'application/octet-stream': ['.json', '.bkp', '.inp', '.txt'] },
+            },
+            {
+              description:
+                lang === 'en'
+                  ? 'ChemPlant JSON Case (.json)'
+                  : 'ChemPlant JSON 케이스 (.json)',
+              accept: { 'application/json': ['.json'] },
+            },
+            {
+              description:
+                lang === 'en'
+                  ? 'Process Text / Backup (.bkp, .inp)'
+                  : '공정 텍스트 / 백업 파일 (.bkp, .inp)',
+              accept: { 'text/plain': ['.bkp', '.inp', '.txt'] },
+            },
+          ],
+        });
+        if (handle) {
+          const file = await handle.getFile();
+          processImportedFile(file);
+        }
+        return;
+      } catch (err: unknown) {
+        if (
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (typeof err === 'object' &&
+            err !== null &&
+            'name' in err &&
+            (err as { name?: string }).name === 'AbortError')
+        ) {
+          return;
+        }
+        // Fallback to hidden file input if showOpenFilePicker fails in restricted contexts
+      }
+    }
+    unifiedImportRef.current?.click();
+  };
+
+  const handleUnifiedFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processImportedFile(file);
+    }
     e.target.value = '';
   };
 
@@ -783,43 +852,10 @@ export default function Header() {
 
                 <button
                   type="button"
-                  onClick={() => jsonImportRef.current?.click()}
+                  onClick={() => void handleOpenUnifiedFilePicker()}
                   style={{
                     width: '100%',
-                    padding: '6px 9px',
-                    borderRadius: 7,
-                    border: '1px dashed #CBD5E1',
-                    background: '#FFFFFF',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    textAlign: 'left',
-                    color: '#334155',
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <FolderOpenIcon size={13} />
-                    <span>{t(lang, 'header_case_import_json')}</span>
-                  </span>
-                </button>
-                <input
-                  ref={jsonImportRef}
-                  type="file"
-                  accept=".json,application/json"
-                  onChange={handleImportJsonCase}
-                  style={{ display: 'none' }}
-                />
-
-                <button
-                  type="button"
-                  onClick={() => processTextImportRef.current?.click()}
-                  style={{
-                    width: '100%',
-                    padding: '6px 9px',
+                    padding: '7px 9px',
                     borderRadius: 7,
                     border: '1px dashed #93C5FD',
                     background: '#F8FAFF',
@@ -838,16 +874,16 @@ export default function Header() {
                     <FolderOpenIcon size={13} />
                     <span>
                       {lang === 'en'
-                        ? 'Import .bkp / .inp Process File...'
-                        : '.bkp / .inp 공정 파일 불러오기...'}
+                        ? 'Import File (.json, .bkp, .inp)...'
+                        : '파일에서 불러오기 (.json, .bkp, .inp)...'}
                     </span>
                   </span>
                 </button>
                 <input
-                  ref={processTextImportRef}
+                  ref={unifiedImportRef}
                   type="file"
-                  accept=".bkp,.inp,.txt"
-                  onChange={handleImportProcessTextCase}
+                  accept=".json,.bkp,.inp,.txt"
+                  onChange={handleUnifiedFileInputChange}
                   style={{ display: 'none' }}
                 />
 
@@ -1054,12 +1090,23 @@ export default function Header() {
           {/* 저장 */}
           <button
             type="button"
-            onClick={handleTriggerSaveCase}
-            title={lang === 'en' ? 'Save current case' : '현재 케이스 저장'}
+            onClick={() => handleTriggerSaveCase('quick_save')}
+            title={lang === 'en' ? 'Quick save current case' : '현재 케이스 바로 저장'}
             style={navBtnStyle}
           >
             <SaveArchiveIcon size={13} />
             <span>{lang === 'en' ? 'Save' : '저장'}</span>
+          </button>
+
+          {/* 다른 이름으로 저장 */}
+          <button
+            type="button"
+            onClick={() => handleTriggerSaveCase('save_as')}
+            title={lang === 'en' ? 'Save as new name or export file' : '새 이름으로 저장 및 파일 내보내기'}
+            style={navBtnStyle}
+          >
+            <DocSheetIcon size={13} />
+            <span>{lang === 'en' ? 'Save As' : isMobile ? '다른이름 저장' : '다른 이름으로 저장'}</span>
           </button>
 
           {/* 새로고침 (↻) */}
@@ -1104,7 +1151,7 @@ export default function Header() {
           )}
         </div>
 
-        {/* ── 중앙: UI 모드 토글 + 통합 도구 드롭다운 + 산출물 서브페이지 컨텍스트 ── */}
+        {/* ── 중앙: 통합 도구 드롭다운 + 산출물 서브페이지 컨텍스트 ── */}
         <div
           style={{
             display: 'flex',
@@ -1113,56 +1160,6 @@ export default function Header() {
             flexShrink: 0,
           }}
         >
-          {/* 모던 UI | 클래식 UI */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              background: '#0B1220',
-              border: '1px solid #334155',
-              borderRadius: 6,
-              padding: 2,
-              gap: 2,
-              flexShrink: 0,
-            }}
-            title={t(lang, 'header_view_title')}
-          >
-            <button
-              type="button"
-              onClick={() => handleSelectSimUiMode('modern')}
-              style={{
-                padding: '2.5px 8px',
-                borderRadius: 4,
-                border: 'none',
-                background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
-                color: effectiveUi === 'modern' ? '#FFFFFF' : '#94A3B8',
-                fontSize: 10.5,
-                fontWeight: effectiveUi === 'modern' ? 800 : 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t(lang, 'header_modern_ui')}
-            </button>
-            <button
-              type="button"
-              onClick={() => handleSelectSimUiMode('classic')}
-              style={{
-                padding: '2.5px 8px',
-                borderRadius: 4,
-                border: 'none',
-                background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
-                color: effectiveUi === 'classic' ? '#FFFFFF' : '#94A3B8',
-                fontSize: 10.5,
-                fontWeight: effectiveUi === 'classic' ? 800 : 600,
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t(lang, 'header_classic_ui')}
-            </button>
-          </div>
-
           {/* 도구 ▾ 통합 드롭다운 */}
           <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
@@ -1417,7 +1414,7 @@ export default function Header() {
           )}
         </div>
 
-        {/* ── 우측: 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
+        {/* ── 우측: 피드백 + 언어(KO|EN) + 통합 설정 드롭다운 + 계정/관리자 컨트롤 ── */}
         <div
           style={{
             display: 'flex',
@@ -1426,6 +1423,63 @@ export default function Header() {
             flexShrink: 0,
           }}
         >
+          {/* 피드백 (상단 바 상시 노출) */}
+          <button
+            type="button"
+            onClick={() => {
+              setCaseMenuOpen(false);
+              setToolsMenuOpen(false);
+              setSettingsMenuOpen(false);
+              setFeedbackOpen(true);
+            }}
+            title={lang === 'en' ? 'Send Feedback' : '피드백 / 의견 보내기'}
+            style={navBtnStyle}
+          >
+            <DocSheetIcon size={12} />
+            <span>{lang === 'en' ? 'Feedback' : '피드백'}</span>
+          </button>
+
+          {/* 언어 전환 KO | EN (상단 바 상시 노출) */}
+          <div
+            role="group"
+            aria-label="Language Selector"
+            title={lang === 'en' ? 'Switch Language (KO / EN)' : '언어 전환 (KO / EN)'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              background: '#0B1220',
+              border: '1px solid #334155',
+              borderRadius: 6,
+              padding: 2,
+              gap: 2,
+              flexShrink: 0,
+            }}
+          >
+            {(['ko', 'en'] as AppLang[]).map(code => {
+              const active = lang === code;
+              return (
+                <button
+                  key={code}
+                  type="button"
+                  onClick={() => setLang(code)}
+                  style={{
+                    padding: '2.5px 6px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background: active ? '#1E3A8A' : 'transparent',
+                    color: active ? '#FFFFFF' : '#94A3B8',
+                    fontSize: 10.5,
+                    fontWeight: active ? 800 : 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {code.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+
           <div ref={settingsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={settingsTriggerRef}
@@ -1443,7 +1497,7 @@ export default function Header() {
                 setToolsMenuOpen(false);
                 setSettingsMenuOpen(v => !v);
               }}
-              title={lang === 'en' ? 'Units, Tag Standard, Language & Feedback' : '단위계 · 태그 표준 · 언어 · 피드백 설정'}
+              title={lang === 'en' ? 'View Mode, Units & Tag Standard' : '화면 보기 모드 · 단위계 · 태그 표준 설정'}
               style={{
                 ...navBtnStyle,
                 border: settingsMenuOpen ? '1px solid #60A5FA' : '1px solid #334155',
@@ -1474,6 +1528,69 @@ export default function Header() {
                   color: '#0F172A',
                 }}
               >
+                {/* 화면 보기 모드 (UI) */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
+                    {lang === 'en' ? 'View Mode (UI)' : '화면 보기 모드 (UI)'}
+                  </div>
+                  <div
+                    role="group"
+                    aria-label={t(lang, 'header_view_title')}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 4,
+                      background: '#F1F5F9',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 7,
+                      padding: 3,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        handleSelectSimUiMode('modern');
+                      }}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: 5,
+                        border: 'none',
+                        background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
+                        color: effectiveUi === 'modern' ? '#FFFFFF' : '#475569',
+                        fontSize: 11,
+                        fontWeight: effectiveUi === 'modern' ? 800 : 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {t(lang, 'header_modern_ui')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsMenuOpen(false);
+                        handleSelectSimUiMode('classic');
+                      }}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: 5,
+                        border: 'none',
+                        background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
+                        color: effectiveUi === 'classic' ? '#FFFFFF' : '#475569',
+                        fontSize: 11,
+                        fontWeight: effectiveUi === 'classic' ? 800 : 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {t(lang, 'header_classic_ui')}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0' }} />
+
                 {/* 단위계 프리셋 */}
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
@@ -1551,80 +1668,6 @@ export default function Header() {
                   </span>
                   <HeaderUnitSettingsButton isMobile={isMobile} />
                 </div>
-
-                <div style={{ height: 1, background: '#E2E8F0' }} />
-
-                {/* 언어 전환 KO / EN */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                    {lang === 'en' ? 'Language' : '언어'}
-                  </span>
-                  <div
-                    role="group"
-                    aria-label="Language Selector"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      background: '#F1F5F9',
-                      border: '1px solid #CBD5E1',
-                      borderRadius: 6,
-                      padding: 2,
-                      gap: 2,
-                    }}
-                  >
-                    {(['ko', 'en'] as AppLang[]).map(code => {
-                      const active = lang === code;
-                      return (
-                        <button
-                          key={code}
-                          type="button"
-                          onClick={() => setLang(code)}
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: 4,
-                            border: 'none',
-                            background: active ? '#1E3A8A' : 'transparent',
-                            color: active ? '#FFFFFF' : '#475569',
-                            fontSize: 10.5,
-                            fontWeight: active ? 800 : 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {code === 'ko' ? '한국어 (KO)' : 'EN'}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div style={{ height: 1, background: '#E2E8F0' }} />
-
-                {/* 피드백 / 의견 보내기 */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSettingsMenuOpen(false);
-                    setFeedbackOpen(true);
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '7px 9px',
-                    borderRadius: 6,
-                    border: '1px solid #E2E8F0',
-                    background: '#F8FAFC',
-                    color: '#0F172A',
-                    fontSize: 11.3,
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    textAlign: 'left',
-                  }}
-                >
-                  <DocSheetIcon size={13} />
-                  <span>{lang === 'en' ? 'Send Feedback' : '피드백 / 의견 보내기'}</span>
-                </button>
               </div>
             )}
           </div>

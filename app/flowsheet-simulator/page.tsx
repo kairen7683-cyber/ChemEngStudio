@@ -5399,8 +5399,32 @@ export function FlowsheetWorkspace({
     return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
   }, []);
 
+  const quickSaveRef = useRef<() => boolean>(() => false);
+  quickSaveRef.current = () => {
+    const matched = activeCaseName
+      ? namedProjects.find(p => p.name === activeCaseName) ?? null
+      : null;
+    if (matched) {
+      overwriteNamedProject(matched.id);
+      setInteropNotice({
+        kind: 'success',
+        text: `"${matched.name}" 케이스에 바로 저장되었습니다.`,
+        warnings: [],
+      });
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
-    const onOpenSaveCase = () => {
+    const onOpenSaveCase = (ev: Event) => {
+      const mode = (ev as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (mode === 'quick_save') {
+        if (!quickSaveRef.current()) {
+          setShowStorageBar(true);
+        }
+        return;
+      }
       setShowStorageBar(v => !v);
     };
     window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);

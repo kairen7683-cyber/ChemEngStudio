@@ -1651,8 +1651,32 @@ export default function ClassicSimulatorPage() {
     return () => window.removeEventListener(OPEN_SHORTCUT_CALC_EVENT, onOpenShortcutCalc);
   }, []);
 
+  const quickSaveRef = useRef<() => boolean>(() => false);
+  quickSaveRef.current = () => {
+    const matched = activeClassicCaseName
+      ? savedProjects.find(p => p.name === activeClassicCaseName) ?? null
+      : null;
+    if (matched) {
+      overwriteClassicProject(matched.id);
+      setInteropNotice({
+        kind: 'success',
+        text: `"${matched.name}" 케이스에 바로 저장되었습니다.`,
+        warnings: [],
+      });
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
-    const onOpenSaveCase = () => {
+    const onOpenSaveCase = (ev: Event) => {
+      const mode = (ev as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (mode === 'quick_save') {
+        if (!quickSaveRef.current()) {
+          setShowProjectBar(true);
+        }
+        return;
+      }
       setShowProjectBar(v => !v);
     };
     window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
