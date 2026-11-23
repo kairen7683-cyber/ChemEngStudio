@@ -6474,7 +6474,7 @@ export function FlowsheetWorkspace({
         accept=".bkp,.inp,.txt"
         ref={processTextInputRef}
         onChange={handleImportProcessText}
-        className="hidden"
+        style={{ display: 'none' }}
       />
 
       {/* ── 케이스 저장 및 JSON 백업 바 ── */}
