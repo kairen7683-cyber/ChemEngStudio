@@ -212,7 +212,8 @@ export default function Header() {
   const isSimulatorMode = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
   const isUnitCalcTool = pathname.startsWith('/unit-equipment');
   const isPropDbTool = pathname.startsWith('/property-db');
-  const isGlobalToolMode = isUnitCalcTool || isPropDbTool;
+  const isEconHandbookTool = pathname.startsWith('/economics-handbook');
+  const isGlobalToolMode = isUnitCalcTool || isPropDbTool || isEconHandbookTool;
   const isFlowsheetOrClassicRoute =
     pathname.startsWith('/flowsheet-simulator') || pathname.startsWith('/classic-simulator');
   const isSimulatorRoute =
@@ -653,6 +654,7 @@ export default function Header() {
   const isToolsActive =
     isUnitCalcTool ||
     isPropDbTool ||
+    isEconHandbookTool ||
     (pathname.startsWith('/equipment-design') &&
       (equipSubTab === 'psv_flare' || equipSubTab === 'compressor'));
 
@@ -1121,7 +1123,7 @@ export default function Header() {
                   const rect = toolsTriggerRef.current.getBoundingClientRect();
                   setToolsMenuPos({
                     top: rect.bottom + 6,
-                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 268)),
+                    left: Math.max(8, Math.min(rect.left, window.innerWidth - 284)),
                   });
                 }
                 setCaseMenuOpen(false);
@@ -1146,7 +1148,7 @@ export default function Header() {
                   position: 'fixed',
                   top: toolsMenuPos.top,
                   left: toolsMenuPos.left,
-                  width: 260,
+                  width: 276,
                   background: '#FFFFFF',
                   border: '1px solid #CBD5E1',
                   borderRadius: 9,
@@ -1224,6 +1226,37 @@ export default function Header() {
                     <span>{lang === 'en' ? 'Property · Thermo DB' : '물성 · 열역학 DB'}</span>
                   </span>
                   {isPropDbTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenToolbox('/economics-handbook')}
+                  style={{
+                    width: '100%',
+                    padding: '7px 9px',
+                    borderRadius: 6,
+                    border: isEconHandbookTool ? '1px solid #1E3A8A' : '1px solid transparent',
+                    background: isEconHandbookTool ? '#EFF6FF' : '#FFFFFF',
+                    color: isEconHandbookTool ? '#1E3A8A' : '#1E293B',
+                    fontSize: 11.3,
+                    fontWeight: isEconHandbookTool ? 800 : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                    <DocSheetIcon size={13} />
+                    <span>
+                      {lang === 'en'
+                        ? 'Process Economics Handbook (28)'
+                        : '공정 경제성 · 원단위 핸드북 (28종)'}
+                    </span>
+                  </span>
+                  {isEconHandbookTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
                 </button>
 
                 <button
