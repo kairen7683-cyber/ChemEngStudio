@@ -10,6 +10,11 @@
  * Trademark-neutral, open-literature stoichiometry and CAPEX/OPEX scaling model.
  */
 
+import { HANDBOOK_PETROCHEM_EXTRA } from './handbookDataPetrochem';
+import { HANDBOOK_POLYMERS_EXTRA } from './handbookDataPolymers';
+import { HANDBOOK_INORGANIC_EXTRA } from './handbookDataInorganic';
+import { HANDBOOK_BATTERY_GREEN_EXTRA } from './handbookDataBatteryGreen';
+
 export type HandbookCategory =
   | 'petrochem'
   | 'inorganic'
@@ -1357,7 +1362,42 @@ export const PROCESS_ECONOMICS_HANDBOOK: HandbookProcessEntry[] = [
     sourceNote: 'IEA CCUS Cost Benchmarks, NETL Post-Combustion Capture Report (CEPCI=800)',
     keywords: ['ccus', 'ccs', 'co2', '탄소포집', '이산화탄소', '아민', 'mea', '탄소중립'],
   },
+
+  // =========================================================================
+  // 5. EXPANDED COMMERCIAL CATALOG (+76 → 104 TOTAL PROCESSES)
+  // =========================================================================
+  ...HANDBOOK_PETROCHEM_EXTRA,
+  ...HANDBOOK_POLYMERS_EXTRA,
+  ...HANDBOOK_INORGANIC_EXTRA,
+  ...HANDBOOK_BATTERY_GREEN_EXTRA,
 ];
+
+/**
+ * Representative 10 flagship commercial processes unlocked in full for
+ * Beta (`simulator_only`) preview accounts while the remaining 94 routes
+ * display stoichiometry & block-flow previews behind a Pro upgrade gate.
+ * Admin and full accounts always have all 104 processes unlocked.
+ */
+export const BETA_UNLOCKED_HANDBOOK_IDS: ReadonlySet<string> = new Set([
+  'ethylene_ncc',
+  'methanol_smr',
+  'po_hppo',
+  'po_posm',
+  'ammonia_hb',
+  'h2o2_anthraquinone',
+  'bpa_phenol_acetone',
+  'nmp_gbl_mma',
+  'h2_alkaline',
+  'ccus_amine_capture',
+]);
+
+export function isHandbookProcessUnlockedForUser(
+  entryId: string,
+  isBetaSimOnly: boolean
+): boolean {
+  if (!isBetaSimOnly) return true;
+  return BETA_UNLOCKED_HANDBOOK_IDS.has(entryId);
+}
 
 /**
  * Calculate scaled CAPEX, OPEX, unit production cost, margins, EBITDA, Payback, and ROI

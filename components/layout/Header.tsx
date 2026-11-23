@@ -1252,8 +1252,8 @@ export default function Header() {
                     <DocSheetIcon size={13} />
                     <span>
                       {lang === 'en'
-                        ? 'Process Economics Handbook (28)'
-                        : '공정 경제성 · 원단위 핸드북 (28종)'}
+                        ? 'Process Economics Handbook (104)'
+                        : '공정 경제성 · 원단위 핸드북 (104종)'}
                     </span>
                   </span>
                   {isEconHandbookTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}

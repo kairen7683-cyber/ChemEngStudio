@@ -4,10 +4,12 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   HANDBOOK_CATEGORIES,
   PROCESS_ECONOMICS_HANDBOOK,
+  BETA_UNLOCKED_HANDBOOK_IDS,
   BASE_CEPCI,
   DEFAULT_FX_KRW_PER_USD,
   calculateHandbookEconomics,
   getComparableRoutes,
+  isHandbookProcessUnlockedForUser,
   type HandbookCategory,
   type HandbookProcessEntry,
   type HandbookCalcOverrides,
@@ -17,6 +19,8 @@ import {
   ENGINEERING_DISCLAIMER_EN,
   ENGINEERING_DISCLAIMER_ROWS,
 } from '@/lib/legal/engineeringDisclaimer';
+import { useAuth } from '@/components/auth/AuthContext';
+import { isSimulatorOnlyUser } from '@/lib/plantRegistry';
 import { useUnitStore } from '@/lib/stores/unitStore';
 
 type CategoryFilter = 'all' | HandbookCategory;
@@ -59,6 +63,8 @@ function getDefaultUtilityPrice(
 }
 
 export default function EconomicsHandbookPage() {
+  const { user } = useAuth();
+  const isBetaSimOnly = isSimulatorOnlyUser(user);
   const lang = useUnitStore((s) => s.lang);
   const isEn = lang === 'en';
 
@@ -139,9 +145,22 @@ export default function EconomicsHandbookPage() {
     return counts;
   }, []);
 
+  const isSelectedUnlocked = isHandbookProcessUnlockedForUser(
+    selectedEntry.id,
+    isBetaSimOnly
+  );
+
+  const betaUnlockedEntries = useMemo(
+    () =>
+      PROCESS_ECONOMICS_HANDBOOK.filter((item) =>
+        BETA_UNLOCKED_HANDBOOK_IDS.has(item.id)
+      ),
+    []
+  );
+
   const filteredProcesses = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return PROCESS_ECONOMICS_HANDBOOK.filter((item) => {
+    const list = PROCESS_ECONOMICS_HANDBOOK.filter((item) => {
       if (activeCategory !== 'all' && item.category !== activeCategory) {
         return false;
       }
@@ -159,7 +178,13 @@ export default function EconomicsHandbookPage() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [searchQuery, activeCategory]);
+    if (!isBetaSimOnly) return list;
+    return [...list].sort((a, b) => {
+      const aOpen = BETA_UNLOCKED_HANDBOOK_IDS.has(a.id) ? 0 : 1;
+      const bOpen = BETA_UNLOCKED_HANDBOOK_IDS.has(b.id) ? 0 : 1;
+      return aOpen - bOpen;
+    });
+  }, [searchQuery, activeCategory, isBetaSimOnly]);
 
   const effectiveCapacity = capacityOverride ?? selectedEntry.baseCapacityTpa;
   const effectiveProductPrice =
@@ -295,7 +320,7 @@ export default function EconomicsHandbookPage() {
     Object.keys(byproductPriceOverrides).length > 0;
 
   const handleDownloadExcel = async () => {
-    if (exporting) return;
+    if (exporting || !isSelectedUnlocked) return;
     setExporting(true);
     try {
       const ExcelJS = await import('exceljs');
@@ -839,6 +864,26 @@ export default function EconomicsHandbookPage() {
               );
             })}
           </div>
+          {/* Beta Preview Banner */}
+          {isBetaSimOnly && (
+            <div
+              style={{
+                marginTop: 8,
+                padding: '6px 9px',
+                borderRadius: 7,
+                background: '#EFF6FF',
+                border: '1px solid #BFDBFE',
+                fontSize: 10.3,
+                lineHeight: 1.4,
+                color: '#1E3A8A',
+                fontWeight: 700,
+              }}
+            >
+              {isEn
+                ? `Beta Preview: ${PROCESS_ECONOMICS_HANDBOOK.length} commercial processes indexed · Top ${BETA_UNLOCKED_HANDBOOK_IDS.size} flagship routes unlocked in full.`
+                : `베타 체험판: 총 ${PROCESS_ECONOMICS_HANDBOOK.length}종 수록 · 대표 ${BETA_UNLOCKED_HANDBOOK_IDS.size}개 공법 상세 공개`}
+            </div>
+          )}
         </div>
 
         {/* Scrollable Process List */}
@@ -869,6 +914,7 @@ export default function EconomicsHandbookPage() {
             filteredProcesses.map((item) => {
               const active = item.id === selectedEntry.id;
               const hasComparison = getComparableRoutes(item).length > 1;
+              const itemUnlocked = isHandbookProcessUnlockedForUser(item.id, isBetaSimOnly);
               return (
                 <button
                   key={item.id}
@@ -880,7 +926,8 @@ export default function EconomicsHandbookPage() {
                     padding: '9px 10px',
                     borderRadius: 8,
                     border: active ? '1.5px solid #1E3A8A' : '1px solid #E2E8F0',
-                    background: active ? '#EFF6FF' : '#FFFFFF',
+                    background: active ? '#EFF6FF' : itemUnlocked ? '#FFFFFF' : '#F8FAFC',
+                    opacity: itemUnlocked || active ? 1 : 0.84,
                     cursor: 'pointer',
                     display: 'flex',
                     flexDirection: 'column',
@@ -949,22 +996,44 @@ export default function EconomicsHandbookPage() {
                     <span style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>
                       {isEn ? 'Base' : '기준'} {fmtNum(item.baseCapacityTpa, 0)} TPA
                     </span>
-                    {hasComparison && (
-                      <span
-                        style={{
-                          fontSize: 9.5,
-                          fontWeight: 800,
-                          padding: '1px 6px',
-                          borderRadius: 999,
-                          background: '#FEF3C7',
-                          border: '1px solid #FDE68A',
-                          color: '#92400E',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isEn ? 'Route Compare' : '공법비교'}
-                      </span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      {hasComparison && (
+                        <span
+                          style={{
+                            fontSize: 9.5,
+                            fontWeight: 800,
+                            padding: '1px 6px',
+                            borderRadius: 999,
+                            background: '#FEF3C7',
+                            border: '1px solid #FDE68A',
+                            color: '#92400E',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isEn ? 'Compare' : '공법비교'}
+                        </span>
+                      )}
+                      {isBetaSimOnly && (
+                        <span
+                          style={{
+                            fontSize: 9.2,
+                            fontWeight: 800,
+                            padding: '1px 6px',
+                            borderRadius: 999,
+                            background: itemUnlocked ? '#DCFCE7' : '#E2E8F0',
+                            border: itemUnlocked ? '1px solid #86EFAC' : '1px solid #CBD5E1',
+                            color: itemUnlocked ? '#166534' : '#475569',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {itemUnlocked
+                            ? isEn
+                              ? '✓ Free'
+                              : '✓ 체험'
+                            : '🔒 Pro'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
@@ -1077,37 +1146,62 @@ export default function EconomicsHandbookPage() {
               </h2>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void handleDownloadExcel()}
-              disabled={exporting}
-              style={{
-                padding: '8px 14px',
-                borderRadius: 8,
-                border: '1px solid #1E3A8A',
-                background: exporting ? '#94A3B8' : '#1E3A8A',
-                color: '#FFFFFF',
-                fontSize: 12,
-                fontWeight: 800,
-                cursor: exporting ? 'wait' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                whiteSpace: 'nowrap',
-                boxShadow: '0 2px 6px rgba(30, 58, 138, 0.22)',
-              }}
-            >
-              <span>📊</span>
-              <span>
-                {exporting
-                  ? isEn
-                    ? 'Generating .xlsx...'
-                    : '엑셀 생성 중...'
-                  : isEn
-                    ? 'Download Excel (.xlsx) Report'
-                    : '엑셀(.xlsx) 리포트 다운로드'}
+            {isSelectedUnlocked ? (
+              <button
+                type="button"
+                onClick={() => void handleDownloadExcel()}
+                disabled={exporting}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #1E3A8A',
+                  background: exporting ? '#94A3B8' : '#1E3A8A',
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: exporting ? 'wait' : 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  whiteSpace: 'nowrap',
+                  boxShadow: '0 2px 6px rgba(30, 58, 138, 0.22)',
+                }}
+              >
+                <span>📊</span>
+                <span>
+                  {exporting
+                    ? isEn
+                      ? 'Generating .xlsx...'
+                      : '엑셀 생성 중...'
+                    : isEn
+                      ? 'Download Excel (.xlsx) Report'
+                      : '엑셀(.xlsx) 리포트 다운로드'}
+                </span>
+              </button>
+            ) : (
+              <span
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 8,
+                  border: '1px solid #CBD5E1',
+                  background: '#F1F5F9',
+                  color: '#475569',
+                  fontSize: 11.8,
+                  fontWeight: 800,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>🔒</span>
+                <span>
+                  {isEn
+                    ? 'Pro Plan Only (.xlsx · Unit Cost)'
+                    : 'Pro 전용 (원단위 · CAPEX · .xlsx)'}
+                </span>
               </span>
-            </button>
+            )}
           </div>
 
           {/* Reaction Equation + Operating Summary */}
@@ -1195,6 +1289,235 @@ export default function EconomicsHandbookPage() {
           </div>
         </section>
 
+        {!isSelectedUnlocked ? (
+          <>
+            {/* BLOCK FLOW PREVIEW (Visible as teaser for locked processes) */}
+            <section
+              style={{
+                background: '#FFFFFF',
+                border: '1px solid #CBD5E1',
+                borderRadius: 11,
+                padding: '14px 18px',
+                boxShadow: '0 1px 3px rgba(15, 23, 42, 0.04)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: '#0F172A',
+                  marginBottom: 10,
+                }}
+              >
+                {isEn
+                  ? 'Commercial Process Block Flow (Preview)'
+                  : '상용 공정 블록 플로우 (미리보기)'}
+              </div>
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                {selectedEntry.blockSteps.map((step, idx) => (
+                  <React.Fragment key={step}>
+                    <div
+                      style={{
+                        padding: '7px 11px',
+                        borderRadius: 8,
+                        background: '#F8FAFC',
+                        border: '1px solid #CBD5E1',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: '#1E293B',
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: '#1E3A8A',
+                          fontWeight: 900,
+                          marginRight: 5,
+                        }}
+                      >
+                        {idx + 1}.
+                      </span>
+                      {step}
+                    </div>
+                    {idx < selectedEntry.blockSteps.length - 1 && (
+                      <span style={{ color: '#94A3B8', fontWeight: 900 }}>→</span>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+            </section>
+
+            {/* BETA PREVIEW LOCK GATE CARD */}
+            <section
+              style={{
+                background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 55%, #1E3A8A 100%)',
+                border: '1px solid #1E3A8A',
+                borderRadius: 12,
+                padding: '24px 24px 22px',
+                color: '#F8FAFC',
+                boxShadow: '0 8px 24px rgba(15, 23, 42, 0.16)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  marginBottom: 12,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    padding: '3px 10px',
+                    borderRadius: 999,
+                    background: 'rgba(251, 191, 36, 0.18)',
+                    border: '1px solid rgba(251, 191, 36, 0.45)',
+                    color: '#FDE68A',
+                  }}
+                >
+                  {isEn
+                    ? `🔒 Beta Preview Limit (${BETA_UNLOCKED_HANDBOOK_IDS.size} of ${PROCESS_ECONOMICS_HANDBOOK.length} Routes Unlocked)`
+                    : `🔒 베타 체험판 열람 제한 (전체 ${PROCESS_ECONOMICS_HANDBOOK.length}종 중 대표 ${BETA_UNLOCKED_HANDBOOK_IDS.size}종 공개)`}
+                </span>
+                <span style={{ fontSize: 11, color: '#CBD5E1', fontWeight: 600 }}>
+                  {isEn
+                    ? `Base Capacity: ${fmtNum(selectedEntry.baseCapacityTpa, 0)} TPA`
+                    : `기준 생산규모: ${fmtNum(selectedEntry.baseCapacityTpa, 0)} TPA`}
+                </span>
+              </div>
+
+              <h3
+                style={{
+                  margin: '0 0 8px',
+                  fontSize: 18,
+                  fontWeight: 900,
+                  color: '#FFFFFF',
+                  letterSpacing: '-0.2px',
+                }}
+              >
+                {isEn
+                  ? `${selectedEntry.nameEn} (${selectedEntry.routeNameEn}) — Full Economics Locked`
+                  : `${selectedEntry.nameKo} (${selectedEntry.routeNameKo}) 상세 원단위 · 투자비는 Pro 전용입니다`}
+              </h3>
+
+              <p
+                style={{
+                  margin: '0 0 16px',
+                  fontSize: 12.5,
+                  lineHeight: 1.6,
+                  color: '#CBD5E1',
+                  maxWidth: 760,
+                }}
+              >
+                {isEn
+                  ? `ChemPlant Studio indexes ${PROCESS_ECONOMICS_HANDBOOK.length} stoichiometry-verified commercial chemical processes across Petrochemicals, Polymers, Inorganics, and Battery/Green H₂/CCUS. During the Beta preview, detailed unit consumption tables, live CEPCI/TPA CAPEX scaling, 1:1 route comparisons, and Excel (.xlsx) reports are unlocked for ${BETA_UNLOCKED_HANDBOOK_IDS.size} flagship routes below.`
+                  : `ChemPlant Studio 공정 경제성 핸드북에는 석유화학·고분자·무기·배터리·수소·CCUS 등 총 ${PROCESS_ECONOMICS_HANDBOOK.length}종의 상용 공법 데이터가 수록되어 있습니다. 베타 체험 계정에서는 아래 대표 ${BETA_UNLOCKED_HANDBOOK_IDS.size}개 공법의 원료/유틸리티 원단위, 실시간 CAPEX·제조원가 감도분석, 공법 1:1 비교 및 엑셀(.xlsx) 리포트를 무료로 체험하실 수 있습니다.`}
+              </p>
+
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: isNarrow ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+                  gap: 10,
+                  marginBottom: 18,
+                }}
+              >
+                {[
+                  {
+                    title: isEn ? 'Unit Consumption Matrix' : '원료 · 유틸리티 · 부산물 원단위',
+                    desc: isEn
+                      ? 'Stoichiometry-verified feed, steam, power & byproduct credit table'
+                      : '양론 기반 원료 투입량, 스팀·전력 소비량, 부산물 크레딧 단가 편집',
+                  },
+                  {
+                    title: isEn ? 'Live CAPEX & Margin Engine' : '실시간 CAPEX · 제조원가 감도분석',
+                    desc: isEn
+                      ? 'Six-tenths TPA scaling, CEPCI escalation, EBITDA, Payback & ROI'
+                      : '생산규모(TPA)·CEPCI·환율·전력/스팀 단가 연동 투자비·EBITDA·회수기간',
+                  },
+                  {
+                    title: isEn ? 'Route Comparison & Excel' : '동일제품 공법 비교 & 엑셀(.xlsx)',
+                    desc: isEn
+                      ? '1:1 side-by-side route economics + multi-sheet styled Excel export'
+                      : 'PO·ECH·H₂·PC·MMA·인산·메탄올·암모니아 공법 비교 및 보고서 다운로드',
+                  },
+                ].map((feat) => (
+                  <div
+                    key={feat.title}
+                    style={{
+                      padding: '10px 12px',
+                      borderRadius: 9,
+                      background: 'rgba(255, 255, 255, 0.07)',
+                      border: '1px solid rgba(255, 255, 255, 0.14)',
+                    }}
+                  >
+                    <div style={{ fontSize: 11.8, fontWeight: 800, color: '#FFFFFF', marginBottom: 3 }}>
+                      {feat.title}
+                    </div>
+                    <div style={{ fontSize: 10.8, color: '#CBD5E1', lineHeight: 1.45 }}>
+                      {feat.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  borderTop: '1px solid rgba(255, 255, 255, 0.16)',
+                  paddingTop: 14,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11.2,
+                    fontWeight: 800,
+                    color: '#93C5FD',
+                    marginBottom: 8,
+                  }}
+                >
+                  {isEn
+                    ? `Try ${BETA_UNLOCKED_HANDBOOK_IDS.size} Unlocked Flagship Processes Now:`
+                    : `지금 바로 전체 기능을 체험할 수 있는 대표 ${BETA_UNLOCKED_HANDBOOK_IDS.size}종 공법:`}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {betaUnlockedEntries.map((openItem) => (
+                    <button
+                      key={openItem.id}
+                      type="button"
+                      onClick={() => handleSelectProcess(openItem)}
+                      style={{
+                        padding: '6px 11px',
+                        borderRadius: 8,
+                        border: '1px solid rgba(147, 197, 253, 0.45)',
+                        background: 'rgba(255, 255, 255, 0.12)',
+                        color: '#FFFFFF',
+                        fontSize: 11.2,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ✓ {isEn ? openItem.nameEn : openItem.nameKo} ·{' '}
+                      <span style={{ color: '#BFDBFE', fontWeight: 600 }}>
+                        {isEn ? openItem.routeNameEn : openItem.routeNameKo}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </>
+        ) : (
+          <>
         {/* 2. INTERACTIVE SENSITIVITY BAR */}
         <section
           style={{
@@ -1954,6 +2277,9 @@ export default function EconomicsHandbookPage() {
         )}
 
         {/* 8. ENGINEERING DISCLAIMER FOOTER */}
+          </>
+        )}
+
         <footer
           style={{
             padding: '10px 14px',
