@@ -6480,149 +6480,124 @@ export function FlowsheetWorkspace({
         style={{ display: 'none' }}
       />
 
-      {/* ── 케이스 저장 및 JSON 백업 바 ── */}
-      {showStorageBar && (() => {
-        const activeMatchedProj = activeCaseName
-          ? namedProjects.find(p => p.name === activeCaseName)
-          : undefined;
-        return (
-          <div
-            style={{
-              padding: '8px 14px',
-              background: '#F8FAFC',
-              borderBottom: '1px solid #CBD5E1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 8,
-              flexShrink: 0,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SaveArchiveIcon size={13} /> 현재 케이스 저장</span>
-              </span>
-              {activeMatchedProj && (
-                <button
-                  type="button"
-                  onClick={() => overwriteNamedProject(activeMatchedProj.id)}
-                  style={{
-                    height: 27,
-                    padding: '0 10px',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    borderRadius: 5,
-                    border: '1px solid #1E3A8A',
-                    background: '#1E3A8A',
-                    color: '#FFFFFF',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  덮어쓰기 (&quot;{activeMatchedProj.name}&quot;)
-                </button>
-              )}
-              <input
-                type="text"
-                value={projectNameInput}
-                onChange={e => setProjectNameInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') saveNamedProject();
-                }}
-                placeholder="새 케이스 이름 입력 (예: ECH 2탑 테스트)"
-                style={{
-                  height: 27,
-                  padding: '0 9px',
-                  fontSize: 11,
-                  borderRadius: 5,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#0F172A',
-                  minWidth: 210,
-                  outline: 'none',
-                }}
-              />
-              <button
-                type="button"
-                onClick={saveNamedProject}
-                style={{
-                  height: 27,
-                  padding: '0 10px',
-                  fontSize: 11,
-                  fontWeight: 800,
-                  borderRadius: 5,
-                  border: '1px solid #1E293B',
-                  background: '#1E293B',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                + 새 이름으로 저장
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                onClick={handleExportProcessText}
-                title="현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기"
-                style={{
-                  height: 27,
-                  padding: '0 9px',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> .inp 내보내기</span>
-              </button>
-              <button
-                type="button"
-                onClick={exportJsonFile}
-                style={{
-                  height: 27,
-                  padding: '0 9px',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> JSON 파일 내보내기</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowStorageBar(false)}
-                title="저장 바 닫기"
-                style={{
-                  height: 27,
-                  padding: '0 8px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#64748B',
-                  cursor: 'pointer',
-                }}
-              >
-                ✕
-              </button>
-            </div>
+      {/* ── 다른 이름으로 저장 및 파일 내보내기 바 ── */}
+      {showStorageBar && (
+        <div
+          style={{
+            padding: '8px 14px',
+            background: '#F8FAFC',
+            borderBottom: '1px solid #CBD5E1',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SaveArchiveIcon size={13} /> 다른 이름으로 저장</span>
+            </span>
+            <input
+              type="text"
+              value={projectNameInput}
+              onChange={e => setProjectNameInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveNamedProject();
+              }}
+              placeholder="새 케이스 이름 입력 (예: ECH 2탑 테스트)"
+              style={{
+                height: 27,
+                padding: '0 9px',
+                fontSize: 11,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
+                minWidth: 220,
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={saveNamedProject}
+              style={{
+                height: 27,
+                padding: '0 12px',
+                fontSize: 11,
+                fontWeight: 800,
+                borderRadius: 5,
+                border: '1px solid #1E3A8A',
+                background: '#1E3A8A',
+                color: '#FFFFFF',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              저장
+            </button>
           </div>
-        );
-      })()}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleExportProcessText}
+              title="현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기"
+              style={{
+                height: 27,
+                padding: '0 9px',
+                fontSize: 10.5,
+                fontWeight: 700,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> .inp 내보내기</span>
+            </button>
+            <button
+              type="button"
+              onClick={exportJsonFile}
+              style={{
+                height: 27,
+                padding: '0 9px',
+                fontSize: 10.5,
+                fontWeight: 700,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#1E293B',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><DownloadFileIcon size={12} /> JSON 파일 내보내기</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowStorageBar(false)}
+              title="저장 바 닫기"
+              style={{
+                height: 27,
+                padding: '0 8px',
+                fontSize: 11,
+                fontWeight: 700,
+                borderRadius: 5,
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#64748B',
+                cursor: 'pointer',
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── 공정 텍스트 파일 입출력 알림 배너 ── */}
       {interopNotice && (
