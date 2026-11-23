@@ -20,6 +20,8 @@ export interface LandingPageProps {
   onOpenAuth: (defaultTab?: 'login' | 'register') => void;
   registrationMode: string;
   authError?: string | null;
+  isLoggedInPreview?: boolean;
+  onReturnToWorkspace?: () => void;
 }
 
 type Lang = 'ko' | 'en';
@@ -675,6 +677,8 @@ export default function LandingPage({
   onOpenAuth,
   registrationMode,
   authError,
+  isLoggedInPreview = false,
+  onReturnToWorkspace,
 }: LandingPageProps) {
   const lang = useUnitStore(s => s.lang);
   const setLang = useUnitStore(s => s.setLang);
@@ -1006,14 +1010,26 @@ export default function LandingPage({
             <button
               type="button"
               className="cp-btn-primary"
-              onClick={() => onOpenAuth('login')}
+              onClick={() => {
+                if (isLoggedInPreview && onReturnToWorkspace) {
+                  onReturnToWorkspace();
+                } else {
+                  onOpenAuth('login');
+                }
+              }}
               style={{
                 padding: '7px 14px',
                 fontSize: 12.5,
                 whiteSpace: 'nowrap',
               }}
             >
-              {lang === 'ko' ? '로그인' : 'Sign In'}
+              {isLoggedInPreview
+                ? lang === 'ko'
+                  ? '← 워크스페이스로 돌아가기'
+                  : '← Back to Workspace'
+                : lang === 'ko'
+                  ? '로그인'
+                  : 'Sign In'}
             </button>
           </div>
         </div>

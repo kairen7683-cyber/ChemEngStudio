@@ -60,6 +60,26 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   } = useAuth();
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [showLandingPreview, setShowLandingPreview] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('landing') === '1') {
+      setShowLandingPreview(true);
+    }
+    const onOpenLanding = () => setShowLandingPreview(true);
+    window.addEventListener('chemeng:open-landing', onOpenLanding);
+    return () => window.removeEventListener('chemeng:open-landing', onOpenLanding);
+  }, []);
+
+  const handleCloseLandingPreview = () => {
+    setShowLandingPreview(false);
+    if (typeof window !== 'undefined' && window.location.search.includes('landing=1')) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('landing');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }
+  };
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -161,6 +181,17 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }
 
   if (authenticated) {
+    if (showLandingPreview) {
+      return (
+        <LandingPage
+          onOpenAuth={() => handleCloseLandingPreview()}
+          registrationMode={registrationMode}
+          authError={null}
+          isLoggedInPreview
+          onReturnToWorkspace={handleCloseLandingPreview}
+        />
+      );
+    }
     return <>{children}</>;
   }
 

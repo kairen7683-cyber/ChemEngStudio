@@ -1702,6 +1702,41 @@ export default function Header() {
                   </span>
                   <HeaderUnitSettingsButton isMobile={isMobile} />
                 </div>
+
+                {/* 서비스 소개 / 요금제 (랜딩 페이지 보기) */}
+                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSettingsMenuOpen(false);
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('chemeng:open-landing'));
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      color: '#0F172A',
+                      fontSize: 11.2,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 6,
+                    }}
+                  >
+                    <span>
+                      {lang === 'en'
+                        ? 'Product Overview & Pricing'
+                        : '서비스 소개 · 요금제 보기 (랜딩)'}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#1E3A8A', fontWeight: 900 }}>↗</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
