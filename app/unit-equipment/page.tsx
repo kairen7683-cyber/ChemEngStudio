@@ -24,6 +24,7 @@ import { createInitialHcl1AHierarchySheets } from '@/lib/calculations/hcl1AHiera
 import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHierarchy';
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
 import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
+import CaseEquipmentDeliverables from '@/components/unit-equipment/CaseEquipmentDeliverables';
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 const PLANT02_SAVE_KEY = 'chemplant-plant02-electrolyzer-v2';
@@ -700,10 +701,21 @@ function UnitEquipmentInner() {
   );
 }
 
+function UnitEquipmentRouter() {
+  const searchParams = useSearchParams();
+  const { activePlantId } = useBalanceStore();
+  const isDirectHandoff = searchParams?.get('handoff') === '1';
+
+  if ((activePlantId === 'new_builder' || activePlantId === 'classic_sim') && !isDirectHandoff) {
+    return <CaseEquipmentDeliverables />;
+  }
+  return <UnitEquipmentInner />;
+}
+
 export default function UnitEquipmentPage() {
   return (
     <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#F6F7F2' }} />}>
-      <UnitEquipmentInner />
+      <UnitEquipmentRouter />
     </Suspense>
   );
 }

@@ -125,8 +125,8 @@ export default function CaseOutputsMenu({ compact = false, unitCount }: CaseOutp
       key: 'unit-equipment',
       label:
         lang === 'en'
-          ? 'Equipment List · Datasheets'
-          : '장치목록 · 기기 사양서 (Equipment List)',
+          ? 'Equipment List · Datasheets · CAPEX'
+          : '장치목록 · 데이터시트 · 투자비 (CAPEX)',
       href: '/unit-equipment',
       active: pathname.startsWith('/unit-equipment'),
       equipTab: undefined as string | undefined,
@@ -165,9 +165,13 @@ export default function CaseOutputsMenu({ compact = false, unitCount }: CaseOutp
         type="button"
         onClick={handleToggle}
         title={
-          lang === 'en'
-            ? 'Outputs and engineering sheets for the active simulation'
-            : '현재 시뮬레이션 케이스의 장치목록·설계·경제성 산출물'
+          isStandalone
+            ? lang === 'en'
+              ? 'Equipment list, datasheets, and CAPEX for the active case'
+              : '현재 시뮬레이션 케이스의 장치목록·데이터시트·투자비(CAPEX) 산출물'
+            : lang === 'en'
+              ? 'Outputs and engineering sheets for the active simulation'
+              : '현재 시뮬레이션 케이스의 장치목록·설계·경제성 산출물'
         }
         style={{
           padding: compact ? '4px 9px' : '5px 10px',

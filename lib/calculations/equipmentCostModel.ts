@@ -726,3 +726,156 @@ export function costCompressor(inp: CompressorCostInput): EquipmentCostResult {
     basisSummary: `축동력 ${powerKw.toFixed(1)} kW (${inp.includeElectricDrive ?? true ? '방폭 전동기 포함' : '본체만'})`,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 공정 용기 · 반응기 원가 (Turton 2018 Table A.1 — Vertical / Horizontal Vessel)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProcessVesselCostInput extends CostIndexOptions {
+  /** 용기 내용적 V (m³, Turton 적용 범위 0.3 ~ 520 m³) */
+  volumeM3: number;
+  /** 설치 방향 ('vertical' | 'horizontal', 기본 'vertical') */
+  orientation?: 'vertical' | 'horizontal';
+  /** 반응기 여부 (재킷·내부장치 보정계수 적용) */
+  isReactor?: boolean;
+  /** 교반기 포함 여부 (반응기일 때 1.55배 적용) */
+  hasAgitator?: boolean;
+  /** 설계 압력 (bar g, 진공 시 음수, 기본 3.5) */
+  designPressBarG?: number;
+  /** 재질 (기본 'SS316L') */
+  material?: CostMaterialKey;
+}
+
+export function costProcessVessel(inp: ProcessVesselCostInput): EquipmentCostResult {
+  const cepci = clamp(inp.cepci ?? DEFAULT_CEPCI, 300, 1500);
+  const fx = clamp(inp.fxKrwPerUsd ?? DEFAULT_FX_KRW_PER_USD, 800, 2500);
+  const ctmFactor = clamp(inp.contingencyFeeFactor ?? 1.18, 1.0, 1.6);
+
+  const orientation = inp.orientation ?? 'vertical';
+  const vol = clamp(inp.volumeM3, 0.3, 520.0);
+  const pBarG = inp.designPressBarG ?? 3.5;
+  const mat = COST_MATERIAL_FACTORS[inp.material ?? 'SS316L'] ?? COST_MATERIAL_FACTORS.SS316L;
+
+  // Turton (2018) Table A.1 Process Vessels
+  const isHorizontal = orientation === 'horizontal';
+  const k1 = isHorizontal ? 3.5565 : 3.4974;
+  const k2 = isHorizontal ? 0.3776 : 0.4485;
+  const k3 = isHorizontal ? 0.0905 : 0.1074;
+  const b1 = isHorizontal ? 1.49 : 2.25;
+  const b2 = isHorizontal ? 1.52 : 1.82;
+
+  const reactorMult = inp.isReactor ? (inp.hasAgitator ? 1.55 : 1.35) : 1.0;
+  const baseCp0Usd = turtonCp0(vol, k1, k2, k3, cepci) * reactorMult;
+
+  // Turton Eq. A.3 ASME 압력용기 동체 두께 기반 압력계수 F_P (L/D ≈ 3 추정 내경)
+  const estDiamM = clamp(Math.cbrt((4 * vol) / (3 * Math.PI)), 0.5, 5.0);
+  let fp = 1.0;
+  if (pBarG < -0.5) {
+    fp = 1.25;
+  } else if (pBarG > 5.0) {
+    const denom = Math.max(50, 2 * (850 - 0.6 * (pBarG + 1)));
+    const fpAsme = (((pBarG + 1) * estDiamM) / denom + 0.00315) / 0.0063;
+    fp = clamp(Math.max(1.0, fpAsme), 1.0, 8.0);
+  }
+
+  const fm = mat.fmVessel;
+  const fbm = b1 + b2 * fm * fp;
+
+  const purchasedUsd = baseCp0Usd * fm * fp;
+  const bareModuleUsd = baseCp0Usd * fbm;
+  const totalModuleUsd = bareModuleUsd * ctmFactor;
+
+  const typeLabel = inp.isReactor
+    ? `반응기 (${isHorizontal ? '수평' : '수직'}${inp.hasAgitator ? ' · 교반기' : ''})`
+    : `공정 용기 (${isHorizontal ? '수평' : '수직'})`;
+
+  return {
+    equipmentType: typeLabel,
+    materialLabel: mat.label,
+    cepciUsed: cepci,
+    fxKrwPerUsd: fx,
+    baseCp0Usd: Math.round(baseCp0Usd),
+    purchasedUsd: Math.round(purchasedUsd),
+    bareModuleUsd: Math.round(bareModuleUsd),
+    totalModuleUsd: Math.round(totalModuleUsd),
+    purchasedKrw: Math.round(purchasedUsd * fx),
+    bareModuleKrw: Math.round(bareModuleUsd * fx),
+    totalModuleKrw: Math.round(totalModuleUsd * fx),
+    bareModuleEokKrw: Number(((bareModuleUsd * fx) / 1e8).toFixed(3)),
+    totalModuleEokKrw: Number(((totalModuleUsd * fx) / 1e8).toFixed(3)),
+    factors: {
+      fm: Number(fm.toFixed(2)),
+      fp: Number(fp.toFixed(2)),
+      fbm: Number(fbm.toFixed(2)),
+      contingencyFeeFactor: ctmFactor,
+    },
+    basisSummary: `V=${vol.toFixed(1)} m³ (${orientation}), P=${pBarG.toFixed(1)} bar(g)${
+      inp.isReactor ? `, 반응기×${reactorMult.toFixed(2)}` : ''
+    }`,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 제어 밸브 원가 (체적유량 Cv 근사 → 호칭구경 DN 기반 산업 상관식)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ControlValveCostInput extends CostIndexOptions {
+  /** 체적 유량 (m³/h) */
+  flowM3H: number;
+  /** 설계 압력 (bar g, 기본 10) */
+  designPressBarG?: number;
+  /** 재질 (기본 'SS316L') */
+  material?: CostMaterialKey;
+}
+
+export function costControlValve(inp: ControlValveCostInput): EquipmentCostResult {
+  const cepci = clamp(inp.cepci ?? DEFAULT_CEPCI, 300, 1500);
+  const fx = clamp(inp.fxKrwPerUsd ?? DEFAULT_FX_KRW_PER_USD, 800, 2500);
+  const ctmFactor = clamp(inp.contingencyFeeFactor ?? 1.18, 1.0, 1.6);
+
+  const flowM3H = Math.max(0.1, inp.flowM3H);
+  const pBarG = Math.max(0, inp.designPressBarG ?? 10.0);
+  const mat = COST_MATERIAL_FACTORS[inp.material ?? 'SS316L'] ?? COST_MATERIAL_FACTORS.SS316L;
+
+  // 유량 기반 Cv 근사 및 호칭구경 DN (mm) 추정 (기준 유속 ~2.0 m/s)
+  const cvProxy = flowM3H * 1.156;
+  const qM3S = flowM3H / 3600;
+  const estDiamMm = Math.sqrt((4 * qM3S) / (Math.PI * 2.0)) * 1000;
+  const dnMm = clamp(estDiamMm, 25, 600);
+
+  // 기준 CEPCI=397 탄소강 제어밸브(공압 구동기+포지셔너 포함) 구입원가 상관식
+  const baseCp0Usd = (650 + 48 * Math.pow(dnMm, 0.92)) * (cepci / CEPCI_TURTON_REF);
+
+  // ANSI 압력등급 계수 F_P
+  const fp = pBarG > 100 ? 1.85 : pBarG > 50 ? 1.45 : pBarG > 19 ? 1.18 : 1.0;
+  const fm = mat.fmMachinery;
+  const installFactor = 1.85;
+
+  const purchasedUsd = baseCp0Usd * fm * fp;
+  const bareModuleUsd = purchasedUsd * installFactor;
+  const totalModuleUsd = bareModuleUsd * ctmFactor;
+  const fbm = bareModuleUsd / Math.max(1, baseCp0Usd);
+
+  return {
+    equipmentType: `제어 밸브 (DN${Math.round(dnMm)})`,
+    materialLabel: mat.label,
+    cepciUsed: cepci,
+    fxKrwPerUsd: fx,
+    baseCp0Usd: Math.round(baseCp0Usd),
+    purchasedUsd: Math.round(purchasedUsd),
+    bareModuleUsd: Math.round(bareModuleUsd),
+    totalModuleUsd: Math.round(totalModuleUsd),
+    purchasedKrw: Math.round(purchasedUsd * fx),
+    bareModuleKrw: Math.round(bareModuleUsd * fx),
+    totalModuleKrw: Math.round(totalModuleUsd * fx),
+    bareModuleEokKrw: Number(((bareModuleUsd * fx) / 1e8).toFixed(3)),
+    totalModuleEokKrw: Number(((totalModuleUsd * fx) / 1e8).toFixed(3)),
+    factors: {
+      fm: Number(fm.toFixed(2)),
+      fp: Number(fp.toFixed(2)),
+      fbm: Number(fbm.toFixed(2)),
+      contingencyFeeFactor: ctmFactor,
+    },
+    basisSummary: `Q=${flowM3H.toFixed(1)} m³/h (Cv≈${Math.round(cvProxy)}, DN${Math.round(dnMm)}), P=${pBarG.toFixed(1)} bar(g)`,
+  };
+}
