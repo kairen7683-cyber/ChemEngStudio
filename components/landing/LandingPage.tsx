@@ -1549,13 +1549,13 @@ export default function LandingPage({
                       '핵심 플로우시트 시뮬레이터 미리보기',
                       '기본 화학물질 물성 조회 (CAS / 화학식)',
                       '단위장치 숏컷 계산기 체험',
-                      '초대코드·베타 워크스페이스 접속',
+                      '공정 경제성 · 원단위 핸드북 대표 10종 체험 (104종 수록)',
                     ]
                   : [
                       'Core flowsheet simulator preview',
                       'Basic chemical property lookup (CAS / formula)',
                       'Shortcut equipment calculator access',
-                      'Invite / beta workspace onboarding',
+                      'Process Economics Handbook preview (10 of 104 commercial routes)',
                     ]
                 ).map((feat, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#1E293B' }}>
@@ -1618,10 +1618,10 @@ export default function LandingPage({
 
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 34, fontWeight: 800, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                  $39
+                  $19
                 </span>
                 <span style={{ fontSize: 12.5, color: '#64748B' }}>
-                  {lang === 'ko' ? '/ 월' : '/ mo'}
+                  {lang === 'ko' ? '/ 월 (약 2.6만 원)' : '/ mo'}
                 </span>
               </div>
               <div
@@ -1633,13 +1633,13 @@ export default function LandingPage({
                   marginBottom: 12,
                 }}
               >
-                {lang === 'ko' ? '연간 결제 시 $390 / 년 (2개월 절감)' : 'or $390 / yr (save 2 months)'}
+                {lang === 'ko' ? '연간 결제 시 $190 / 년 (2개월 절감)' : 'or $190 / yr (save 2 months)'}
               </div>
 
               <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 20 }}>
                 {lang === 'ko'
-                  ? '실무 공정 엔지니어를 위한 전체 열역학 DB 및 공식 규격 데이터시트 무제한 출력'
-                  : 'Full engineering suite for practicing process engineers with official .xlsx deliverables.'}
+                  ? '실무 공정 엔지니어를 위한 전체 열역학 DB, 104종 공정 경제성 핸드북 및 공식 데이터시트 무제한 출력'
+                  : 'Full engineering suite with 104-process economics handbook and official .xlsx deliverables.'}
               </p>
 
               <ul
@@ -1656,14 +1656,14 @@ export default function LandingPage({
                 {(lang === 'ko'
                   ? [
                       '전체 물성 DB (120+ 물질, 212 NRTL, 78 PR kij, Pitzer/eNRTL)',
-                      '공식 TEMA / API 662 / API 520 / 521 .xlsx 데이터시트 내보내기',
-                      '플레어 복사열(1.58 / 4.73 / 6.31 kW/m²) 리포트 생성',
+                      '공정 경제성 · 원단위 핸드북 104종 전체 열람 및 엑셀(.xlsx) 내보내기',
+                      '공식 TEMA / API 662 / API 520 / 521 .xlsx 데이터시트 & 플레어 리포트',
                       '무제한 클라우드 케이스 저장 및 개인 워크스페이스 동기화',
                     ]
                   : [
                       'Full Property DB (120+ compounds, 212 NRTL, 78 PR kij, Pitzer/eNRTL)',
-                      'Official TEMA / API 662 / API 520 / 521 .xlsx Datasheet Exports',
-                      'Flare Thermal Radiation Reports (1.58 / 4.73 / 6.31 kW/m²)',
+                      'Full 104-Process Economics & Unit Consumption Handbook + .xlsx Export',
+                      'Official TEMA / API 662 / API 520 / 521 Datasheets & Flare Reports',
                       'Unlimited Cloud Cases & Private Workspace Sync',
                     ]
                 ).map((feat, i) => (
@@ -1700,17 +1700,28 @@ export default function LandingPage({
               <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>
                 Team / Enterprise
               </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 4 }}>
                 <span style={{ fontSize: 34, fontWeight: 800, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                  $149
+                  $79
                 </span>
                 <span style={{ fontSize: 12.5, color: '#64748B' }}>
-                  {lang === 'ko' ? '/ 월' : '/ mo'}
+                  {lang === 'ko' ? '/ 월 (5석 기준)' : '/ mo (up to 5 seats)'}
                 </span>
+              </div>
+              <div
+                style={{
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontSize: 11.5,
+                  color: '#475569',
+                  fontWeight: 600,
+                  marginBottom: 12,
+                }}
+              >
+                {lang === 'ko' ? '인당 월 $15.8 · 추가 좌석 맞춤 견적' : '$15.8 / seat · custom scaling available'}
               </div>
               <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 20 }}>
                 {lang === 'ko'
-                  ? 'EPC 프로젝트 팀 및 플랜트 공정기술팀을 위한 협업·권한 관리 플랜'
+                  ? 'EPC 프로젝트 팀 및 플랜트 공정기술팀을 위한 다중 좌석·권한 관리 플랜'
                   : 'Designed for EPC engineering teams and plant technical departments.'}
               </p>
 
@@ -1727,16 +1738,16 @@ export default function LandingPage({
               >
                 {(lang === 'ko'
                   ? [
-                      'Pro Engineer의 모든 기능 포함',
-                      '공식 데이터시트 내 자사 로고·문서 헤더 커스텀 브랜딩',
-                      '플랜트·프로젝트 단위 접근 제어(ACL) 및 관리자 콘솔',
-                      '팀 공유 워크스페이스 및 우선 기술 지원',
+                      'Pro Engineer의 모든 기능 포함 (5석 기본 제공)',
+                      '팀 공유 워크스페이스 및 프로젝트별 접근 제어(ACL)',
+                      '법인카드 · 세금계산서 일괄 결제 및 통합 계정 관리',
+                      '우선 기술 지원 및 신규 물성 · 공정 모델 우선 반영',
                     ]
                   : [
-                      'Everything in Pro Engineer',
-                      'Custom company logo & title block branding on datasheets',
-                      'Plant-level access control (ACL) & admin management',
-                      'Shared team workspaces & priority engineering support',
+                      'Everything in Pro Engineer (5 seats included)',
+                      'Shared team workspaces & project-level access control (ACL)',
+                      'Consolidated corporate billing & seat administration',
+                      'Priority engineering support & expedited property/process additions',
                     ]
                 ).map((feat, i) => (
                   <li key={i} style={{ display: 'flex', gap: 8, fontSize: 13, color: '#1E293B' }}>
