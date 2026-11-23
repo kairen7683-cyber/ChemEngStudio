@@ -5401,7 +5401,7 @@ export function FlowsheetWorkspace({
 
   useEffect(() => {
     const onOpenSaveCase = () => {
-      setShowStorageBar(true);
+      setShowStorageBar(v => !v);
     };
     window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
     return () => window.removeEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
@@ -5844,25 +5844,7 @@ export function FlowsheetWorkspace({
             )}
           </button>
 
-          <button
-            onClick={() => setShowStorageBar(v => !v)}
-            style={{
-              padding: '4px 7px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 6,
-              border: showStorageBar ? '1px solid #64748B' : '1px solid #CBD5E1',
-              background: showStorageBar ? '#F1F5F9' : '#FFFFFF',
-              color: '#1E293B',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={11} /> 저장</span>
-          </button>
-
-          <CaseOutputsMenu compact />
+          <CaseOutputsMenu compact unitCount={simDefs.length} />
         </div>
       ) : (
       <div
@@ -6397,24 +6379,7 @@ export function FlowsheetWorkspace({
             )}
           </button>
 
-          <button
-            onClick={() => setShowStorageBar(v => !v)}
-            style={{
-              padding: '3px 8px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 5,
-              cursor: 'pointer',
-              border: showStorageBar ? '1px solid #64748B' : '1px solid #CBD5E1',
-              background: showStorageBar ? '#F1F5F9' : '#FFFFFF',
-              color: '#1E293B',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SaveArchiveIcon size={12} /> 저장 {showStorageBar ? '▲' : '▼'}</span>
-          </button>
-
-          <CaseOutputsMenu compact />
+          <CaseOutputsMenu compact unitCount={simDefs.length} />
 
           <button
             onClick={() => setInspectorOpen(v => !v)}

@@ -170,21 +170,23 @@ export default function EquipmentDesignPage() {
   const router = useRouter();
   const { user } = useAuth();
   const simOnly = isSimulatorOnlyUser(user);
+  const { activePlantId, setActivePlantId, requestSimSheet, requestSimNodeAction } = useBalanceStore();
+  const isStandaloneCase = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
+  const isStandaloneMode = simOnly || isStandaloneCase;
   const allowedPlants = useMemo(
     () =>
-      simOnly
+      isStandaloneMode
         ? []
         : PLANT_REGISTRY.filter(
             p => !p.isSandbox && !p.hiddenFromSelector && isPlantAllowed(p.id, user)
           ).map(p => p.id),
-    [simOnly, user]
+    [isStandaloneMode, user]
   );
-  const { activePlantId, setActivePlantId, requestSimSheet, requestSimNodeAction } = useBalanceStore();
   const units = useUnitStore(s => s.units);
   const hydrateUnits = useUnitStore(s => s.hydrate);
   const activeTab = usePFDStore(s => s.equipSubTab || (simOnly ? 'psv_flare' : 'evap'));
   const setActiveTab = usePFDStore(s => s.setEquipSubTab);
-  const [chemproTag, setChemproTag] = useState<string>(() => (simOnly ? '' : getDefaultChemProTag(activePlantId)));
+  const [chemproTag, setChemproTag] = useState<string>(() => (isStandaloneMode ? '' : getDefaultChemProTag(activePlantId)));
   const [chemproSubTab, setChemproSubTab] = useState<string>('');
   const [chemproHandoff, setChemproHandoff] = useState<boolean>(false);
   const activeDesignRequest = usePFDStore(s => s.activeDesignRequest);
@@ -215,10 +217,10 @@ export default function EquipmentDesignPage() {
         setActiveTab('psv_flare');
       }
       if (qSub) setChemproSubTab(qSub);
-      if (qTag && !simOnly) setChemproTag(qTag);
+      if (qTag && !isStandaloneMode) setChemproTag(qTag);
       if (qHandoff) setChemproHandoff(true);
     }
-  }, [setActiveTab, simOnly, user]);
+  }, [setActiveTab, simOnly, isStandaloneMode, user]);
 
   // 공장 전환 시 다른 공장의 전용 설계 탭(및 전해 전용 설계기준)이 남지 않도록 자동 정합성 보정
   useEffect(() => {
@@ -281,8 +283,9 @@ export default function EquipmentDesignPage() {
     if (lastSyncedPlantRef.current === activePlantId) return;
     lastSyncedPlantRef.current = activePlantId;
     lastSyncedAllowedRef.current = allowedPlants.join(',');
-    const targetPlantId = simOnly ? 'new_builder' : activePlantId;
-    const defaultTag = simOnly ? '' : getDefaultChemProTag(activePlantId);
+    const targetPlantId = isStandaloneMode ? 'new_builder' : activePlantId;
+    const targetAllowedPlants = isStandaloneMode ? [] : allowedPlants;
+    const defaultTag = isStandaloneMode ? '' : getDefaultChemProTag(activePlantId);
     setChemproTag(defaultTag);
     setChemproSubTab('');
     setChemproHandoff(false);
@@ -290,28 +293,30 @@ export default function EquipmentDesignPage() {
       {
         type: 'CHEMPRO_SET_PLANT',
         plantId: targetPlantId,
-        allowedPlants,
+        allowedPlants: targetAllowedPlants,
         tag: defaultTag,
-        skipPresetLoad: simOnly,
+        skipPresetLoad: isStandaloneMode,
       },
       '*'
     );
-  }, [activePlantId, allowedPlants, simOnly]);
+  }, [activePlantId, allowedPlants, isStandaloneMode]);
 
   useEffect(() => {
-    const key = allowedPlants.join(',');
+    const targetAllowedPlants = isStandaloneMode ? [] : allowedPlants;
+    const key = `${isStandaloneMode ? 'standalone' : activePlantId}:${targetAllowedPlants.join(',')}`;
     if (lastSyncedAllowedRef.current === key) return;
     lastSyncedAllowedRef.current = key;
     iframeRef.current?.contentWindow?.postMessage(
       {
         type: 'CHEMPRO_SET_PLANT',
-        plantId: simOnly ? 'new_builder' : activePlantId,
-        allowedPlants,
+        plantId: isStandaloneMode ? 'new_builder' : activePlantId,
+        allowedPlants: targetAllowedPlants,
+        tag: isStandaloneMode ? '' : (chemproTag || getDefaultChemProTag(activePlantId)),
         skipPresetLoad: true,
       },
       '*'
     );
-  }, [allowedPlants, activePlantId, simOnly]);
+  }, [allowedPlants, activePlantId, isStandaloneMode, chemproTag]);
 
   useEffect(() => {
     if (activeDesignRequest?.tab) {
@@ -354,10 +359,17 @@ export default function EquipmentDesignPage() {
       const d = e?.data;
       if (!d || typeof d !== 'object') return;
       if (d.type === 'CHEMPRO_READY') {
-        const targetPlantId = simOnly ? 'new_builder' : activePlantId;
+        const targetPlantId = isStandaloneMode ? 'new_builder' : activePlantId;
+        const targetAllowedPlants = isStandaloneMode ? [] : allowedPlants;
         if (chemproHandoff) {
           iframeRef.current?.contentWindow?.postMessage(
-            { type: 'CHEMPRO_SET_PLANT', plantId: targetPlantId, allowedPlants, skipPresetLoad: true },
+            {
+              type: 'CHEMPRO_SET_PLANT',
+              plantId: targetPlantId,
+              allowedPlants: targetAllowedPlants,
+              tag: isStandaloneMode ? '' : chemproTag,
+              skipPresetLoad: true,
+            },
             '*'
           );
           iframeRef.current?.contentWindow?.postMessage(
@@ -365,15 +377,15 @@ export default function EquipmentDesignPage() {
             '*'
           );
         } else {
-          const targetTag = simOnly ? '' : (chemproTag || getDefaultChemProTag(activePlantId));
+          const targetTag = isStandaloneMode ? '' : (chemproTag || getDefaultChemProTag(activePlantId));
           iframeRef.current?.contentWindow?.postMessage(
             {
               type: 'CHEMPRO_SET_PLANT',
               plantId: targetPlantId,
-              allowedPlants,
+              allowedPlants: targetAllowedPlants,
               tag: targetTag,
               subTab: chemproSubTab,
-              skipPresetLoad: simOnly,
+              skipPresetLoad: isStandaloneMode,
             },
             '*'
           );
@@ -400,7 +412,7 @@ export default function EquipmentDesignPage() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [setEquipmentSpecOverride, activePlantId, allowedPlants, chemproTag, chemproSubTab, chemproHandoff, units, simOnly]);
+  }, [setEquipmentSpecOverride, activePlantId, allowedPlants, chemproTag, chemproSubTab, chemproHandoff, units, isStandaloneMode]);
 
   // 1) 장치목록 탭: 선택된 공장의 장치목록만 정확히 출력 (simulator_only 계정은 차단)
   if (!simOnly && activeTab === 'equip') {
@@ -426,7 +438,6 @@ export default function EquipmentDesignPage() {
   }
 
   // 3) 단위·패키지 장치 상세설계 모드 (공장별 맞춤 서브바 제공 — 내 케이스/범용 시뮬레이터에서는 범용 장치설계만 표시)
-  const isStandaloneCase = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
   const isMdiMode = !simOnly && !isStandaloneCase && isPlantAllowed('mdi_plant', user) && (activePlantId === 'mdi_plant' || activeTab === 'mdi_hub');
   const isCmsMode = !simOnly && !isStandaloneCase && !isMdiMode && isPlantAllowed('cms_plant', user) && (activePlantId === 'cms_plant' || activeTab === 'cms_hub');
   const isEchMode = !simOnly && !isStandaloneCase && !isMdiMode && !isCmsMode && isPlantAllowed('ech_gte', user) && (activePlantId === 'ech_gte' || activeTab === 'distill');
@@ -1110,7 +1121,7 @@ export default function EquipmentDesignPage() {
         <div style={{ width: '100%', height: '100%', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#F6F7F2' }}>
           <iframe
             ref={iframeRef}
-            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261119a&plant=${encodeURIComponent(simOnly ? 'new_builder' : activePlantId)}${!simOnly && chemproTag ? `&tag=${encodeURIComponent(chemproTag)}` : ''}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}${simOnly ? '&standalone=1' : ''}`}
+            src={`${BASE_PATH}/chempro/index.html?embed=1&v=20261119a&plant=${encodeURIComponent(isStandaloneMode ? 'new_builder' : activePlantId)}${!isStandaloneMode && chemproTag ? `&tag=${encodeURIComponent(chemproTag)}` : ''}${chemproSubTab ? `&sub=${encodeURIComponent(chemproSubTab)}` : ''}${chemproHandoff ? '&handoff=1' : ''}${isStandaloneMode ? '&standalone=1' : ''}`}
             onLoad={() => {
               iframeRef.current?.contentWindow?.postMessage({ type: 'CHEMENG_UNITS_SYNC', units }, '*');
             }}

@@ -44,7 +44,6 @@ import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
-import CaseOutputsMenu from '@/components/layout/CaseOutputsMenu';
 import {
   CalcShortcutIcon,
   DocSheetIcon,
@@ -221,14 +220,6 @@ export default function Header() {
     pathname === '/' ||
     pathname.startsWith('/material-balance') ||
     isFlowsheetOrClassicRoute;
-
-  const isOutputSubpage =
-    pathname.startsWith('/material-balance') ||
-    pathname.startsWith('/equipment-design') ||
-    pathname.startsWith('/unit-equipment') ||
-    pathname.startsWith('/process-economics') ||
-    pathname.startsWith('/pep-yearbook') ||
-    pathname.startsWith('/special-process');
 
   const showReturnToSimBtn = !isSimulatorRoute;
 
@@ -1408,9 +1399,7 @@ export default function Header() {
             )}
           </div>
 
-          {/* 산출물 서브페이지에서만 표시: 현재 케이스 산출물 드롭다운 + ← 시뮬레이션 복귀 */}
-          {isOutputSubpage && <CaseOutputsMenu compact />}
-
+          {/* 서브페이지에서만 표시: ← 시뮬레이션 복귀 */}
           {showReturnToSimBtn && (
             <button
               type="button"

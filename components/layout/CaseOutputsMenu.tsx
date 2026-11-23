@@ -16,9 +16,10 @@ import { t } from '@/lib/i18n/uiText';
 
 export interface CaseOutputsMenuProps {
   compact?: boolean;
+  unitCount?: number;
 }
 
-export default function CaseOutputsMenu({ compact = false }: CaseOutputsMenuProps) {
+export default function CaseOutputsMenu({ compact = false, unitCount }: CaseOutputsMenuProps) {
   const pathname = usePathname() || '/';
   const router = useRouter();
   const { user } = useAuth();
@@ -52,7 +53,7 @@ export default function CaseOutputsMenu({ compact = false }: CaseOutputsMenuProp
   }, [open]);
 
   const simOnly = isSimulatorOnlyUser(user);
-  const isCustomSim =
+  const isStandalone =
     activePlantId === 'new_builder' || activePlantId === 'classic_sim' || simOnly;
   const activePlant = getPlantRegistryItem(activePlantId);
 
@@ -113,38 +114,27 @@ export default function CaseOutputsMenu({ compact = false }: CaseOutputsMenuProp
   };
 
   const plantOutputTabs = activePlant.tabs.filter(
-    tab => tab.href !== '/flowsheet-simulator' && tab.href !== '/classic-simulator'
+    tab =>
+      tab.href !== '/flowsheet-simulator' &&
+      tab.href !== '/classic-simulator' &&
+      tab.href !== '/material-balance'
   );
 
-  const customOutputItems = [
+  const standaloneOutputItems = [
     {
       key: 'unit-equipment',
-      label: lang === 'en' ? 'Equipment List · Datasheets' : '장치목록 · 기기 사양서',
-      href: '/unit-equipment',
-      active: pathname.startsWith('/unit-equipment'),
-      equipTab: undefined as string | undefined,
-    },
-    {
-      key: 'chempro-design',
       label:
         lang === 'en'
-          ? 'Equipment Detailed Design (ChemPro · Compressor · PSV)'
-          : '범용 장치 상세설계 (ChemPro · 압축기 · PSV)',
-      href: '/equipment-design?tab=chempro',
-      active: pathname.startsWith('/equipment-design'),
-      equipTab: 'chempro',
-    },
-    {
-      key: 'process-economics',
-      label: lang === 'en' ? 'Process Economics · Unit Cost' : '공정 경제성 · 원단위 분석',
-      href: '/process-economics',
-      active: pathname.startsWith('/process-economics') || pathname.startsWith('/pep-yearbook'),
+          ? 'Equipment List · Datasheets'
+          : '장치목록 · 기기 사양서 (Equipment List)',
+      href: '/unit-equipment',
+      active: pathname.startsWith('/unit-equipment'),
       equipTab: undefined as string | undefined,
     },
   ];
 
   const plantHeadingLabel = formatPlantLabelForUser(activePlant.shortLabel, user);
-  const headingText = isCustomSim
+  const headingText = isStandalone
     ? lang === 'en'
       ? 'Current Case Outputs'
       : '현재 케이스 산출물'
@@ -228,8 +218,26 @@ export default function CaseOutputsMenu({ compact = false }: CaseOutputsMenuProp
             {headingText}
           </div>
 
-          {isCustomSim
-            ? customOutputItems.map(item => (
+          {isStandalone ? (
+            unitCount === 0 ? (
+              <div
+                style={{
+                  padding: '8px 9px',
+                  borderRadius: 6,
+                  background: '#F8FAFC',
+                  border: '1px dashed #CBD5E1',
+                  color: '#64748B',
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                  fontWeight: 500,
+                }}
+              >
+                {lang === 'en'
+                  ? 'Empty case. Place units and run the simulation to generate outputs for this case.'
+                  : '빈 케이스입니다. 장치를 배치하고 실행하면 이 케이스의 산출물이 생성됩니다.'}
+              </div>
+            ) : (
+              standaloneOutputItems.map(item => (
                 <button
                   key={item.key}
                   type="button"
@@ -257,39 +265,42 @@ export default function CaseOutputsMenu({ compact = false }: CaseOutputsMenuProp
                   )}
                 </button>
               ))
-            : plantOutputTabs.map(tab => {
-                const active =
-                  currentTabKey === tab.key &&
-                  !(pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare');
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => handleNavigatePlantTab(tab)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 9px',
-                      borderRadius: 6,
-                      border: active ? '1px solid #1E3A8A' : '1px solid transparent',
-                      background: active ? '#EFF6FF' : '#FFFFFF',
-                      color: active ? '#1E3A8A' : '#1E293B',
-                      fontSize: 11.3,
-                      fontWeight: active ? 800 : 600,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      textAlign: 'left',
-                    }}
-                  >
-                    <span>{getLocalizedTabLabel(tab)}</span>
-                    {active && (
-                      <span style={{ fontSize: 11, fontWeight: 900, flexShrink: 0 }}>✓</span>
-                    )}
-                  </button>
-                );
-              })}
+            )
+          ) : (
+            plantOutputTabs.map(tab => {
+              const active =
+                currentTabKey === tab.key &&
+                !(pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare');
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => handleNavigatePlantTab(tab)}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 6,
+                    border: active ? '1px solid #1E3A8A' : '1px solid transparent',
+                    background: active ? '#EFF6FF' : '#FFFFFF',
+                    color: active ? '#1E3A8A' : '#1E293B',
+                    fontSize: 11.3,
+                    fontWeight: active ? 800 : 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 8,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span>{getLocalizedTabLabel(tab)}</span>
+                  {active && (
+                    <span style={{ fontSize: 11, fontWeight: 900, flexShrink: 0 }}>✓</span>
+                  )}
+                </button>
+              );
+            })
+          )}
         </div>
       )}
     </div>

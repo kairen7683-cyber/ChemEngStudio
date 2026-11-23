@@ -1653,7 +1653,7 @@ export default function ClassicSimulatorPage() {
 
   useEffect(() => {
     const onOpenSaveCase = () => {
-      setShowProjectBar(true);
+      setShowProjectBar(v => !v);
     };
     window.addEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
     return () => window.removeEventListener(OPEN_SAVE_CASE_EVENT, onOpenSaveCase);
@@ -1822,24 +1822,7 @@ export default function ClassicSimulatorPage() {
             ))}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-            <CaseOutputsMenu compact />
-            <button
-              type="button"
-              onClick={() => setShowProjectBar(v => !v)}
-              style={{
-                padding: '3px 8px',
-                fontSize: 10.5,
-                fontWeight: 700,
-                borderRadius: 4,
-                border: '1px solid #CBD5E1',
-                background: '#FFFFFF',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              <SaveArchiveIcon size={12} /> 저장·열기
-            </button>
+            <CaseOutputsMenu compact unitCount={simDefs.length} />
           </div>
         </div>
       )}
@@ -2189,7 +2172,7 @@ export default function ClassicSimulatorPage() {
                 })}
               </div>
               <div style={{ flexShrink: 0, paddingBottom: 3 }}>
-                <CaseOutputsMenu compact />
+                <CaseOutputsMenu compact unitCount={simDefs.length} />
               </div>
             </div>
           )}

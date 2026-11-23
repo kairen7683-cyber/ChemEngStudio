@@ -287,7 +287,7 @@ function getPlantEconomicsKeys(
   plantId: PlantId,
   user?: { role?: string; allowed_plants?: string[] | null } | null
 ): string[] {
-  if (isSimulatorOnlyUser(user)) {
+  if (isSimulatorOnlyUser(user) || plantId === 'new_builder' || plantId === 'classic_sim') {
     return GENERIC_ECONOMICS_KEYS;
   }
   const baseKeys = (() => {
@@ -303,10 +303,8 @@ function getPlantEconomicsKeys(
         return ['cms_plant'];
       case 'mdi_plant':
         return ['mdi_plant'];
-      case 'new_builder':
-      case 'classic_sim':
       default:
-        return ['mdi_plant', 'cms_plant', 'ech_gte', 'hcl_1a', 'chlor_alkali', 'naoh_evap', 'amine_ccus', 'methanol_purif'];
+        return GENERIC_ECONOMICS_KEYS;
     }
   })();
 
@@ -551,7 +549,7 @@ export default function ProcessEconomicsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
             <div style={{ gridColumn: 'span 2', minWidth: 260 }}>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#52525B', display: 'block', marginBottom: 4 }}>
-                {activePlantId === 'new_builder'
+                {activePlantId === 'new_builder' || activePlantId === 'classic_sim'
                   ? '신규 프로젝트 벤치마크 공정 선택'
                   : showPlantNumbersForUser(user)
                     ? `${plantMeta.code} 적용 공정 패키지`
