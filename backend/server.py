@@ -298,6 +298,16 @@ def init_db() -> str:
             admin_note TEXT DEFAULT '',
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS interop_gap_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL DEFAULT 'bkp',
+            unmapped_components TEXT NOT NULL DEFAULT '[]',
+            unsupported_blocks TEXT NOT NULL DEFAULT '[]',
+            connection_warnings TEXT NOT NULL DEFAULT '[]',
+            missing_searches TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        );
         """
     )
 
@@ -703,6 +713,14 @@ class FeedbackCreatePayload(BaseModel):
 class AdminUpdateFeedbackPayload(BaseModel):
     status: Optional[Literal["new", "in_progress", "done"]] = None
     admin_note: Optional[str] = None
+
+
+class InteropGapPayload(BaseModel):
+    source_type: Literal["bkp", "inp", "xlsx", "property_db_search", "component_search"] = "bkp"
+    unmapped_components: list[str] = Field(default_factory=list)
+    unsupported_blocks: list[str] = Field(default_factory=list)
+    connection_warnings: list[str] = Field(default_factory=list)
+    missing_searches: list[str] = Field(default_factory=list)
 
 
 # ── Health & Auth Endpoints ─────────────────────────────────────────────
@@ -1646,6 +1664,173 @@ def api_admin_update_feedback(
             (item_id,),
         ).fetchone()
         return {"ok": True, "item": serialize_feedback(updated)}
+
+
+# ── Privacy-Safe Interop & Missing-Component Gap Telemetry ──────────────
+INTEROP_GAP_BACKLOG_PATH = DATA_DIR / "interop_gap_backlog.md"
+
+
+def _sanitize_gap_list(items: list[str], max_items: int = 40, max_len: int = 120) -> list[str]:
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for raw in items:
+        if not isinstance(raw, str):
+            continue
+        val = " ".join(raw.strip().split())[:max_len]
+        if not val or val in seen:
+            continue
+        seen.add(val)
+        cleaned.append(val)
+        if len(cleaned) >= max_items:
+            break
+    return cleaned
+
+
+def _parse_json_str_list(raw: Any) -> list[str]:
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(x).strip() for x in parsed if isinstance(x, str) and x.strip()]
+
+
+def _aggregate_interop_gaps(conn: sqlite3.Connection) -> dict[str, Any]:
+    rows = conn.execute(
+        """
+        SELECT source_type, unmapped_components, unsupported_blocks,
+               connection_warnings, missing_searches, created_at
+        FROM interop_gap_logs
+        ORDER BY id DESC
+        """
+    ).fetchall()
+
+    source_counts: dict[str, int] = {}
+    unmapped_counts: dict[str, int] = {}
+    missing_counts: dict[str, int] = {}
+    block_counts: dict[str, int] = {}
+    warning_counts: dict[str, int] = {}
+
+    for r in rows:
+        st = (r["source_type"] or "bkp").strip()
+        source_counts[st] = source_counts.get(st, 0) + 1
+        for item in _parse_json_str_list(r["unmapped_components"]):
+            unmapped_counts[item] = unmapped_counts.get(item, 0) + 1
+        for item in _parse_json_str_list(r["missing_searches"]):
+            missing_counts[item] = missing_counts.get(item, 0) + 1
+        for item in _parse_json_str_list(r["unsupported_blocks"]):
+            block_counts[item] = block_counts.get(item, 0) + 1
+        for item in _parse_json_str_list(r["connection_warnings"]):
+            warning_counts[item] = warning_counts.get(item, 0) + 1
+
+    def _to_sorted_list(counter: dict[str, int]) -> list[dict[str, Any]]:
+        return [
+            {"item": k, "count": v}
+            for k, v in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0].lower()))
+        ]
+
+    return {
+        "total_logs": len(rows),
+        "source_counts": source_counts,
+        "unmapped_components": _to_sorted_list(unmapped_counts),
+        "missing_searches": _to_sorted_list(missing_counts),
+        "unsupported_blocks": _to_sorted_list(block_counts),
+        "connection_warnings": _to_sorted_list(warning_counts),
+    }
+
+
+def sync_interop_gap_backlog_md(conn: sqlite3.Connection) -> None:
+    """Aggregate anonymous engineering gap telemetry into DATA_DIR / 'interop_gap_backlog.md'."""
+    agg = _aggregate_interop_gaps(conn)
+    updated_kst = (utcnow() + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M:%S KST")
+
+    source_summary = ", ".join(
+        f"`{k}`: **{v}**"
+        for k, v in sorted(agg["source_counts"].items(), key=lambda kv: (-kv[1], kv[0]))
+    ) or "_none_"
+
+    lines: list[str] = [
+        "# ChemPlant Studio — Interop & Missing-Component Gap Backlog",
+        "",
+        f"- Updated: `{updated_kst}`",
+        f"- Total Anonymous Reports: **{agg['total_logs']}** ({source_summary})",
+        "- Privacy: No user PII and no filenames are stored.",
+        "",
+    ]
+
+    sections = [
+        ("1. 미매핑 물질 (`.bkp` / `.inp`)", agg["unmapped_components"]),
+        ("2. 검색 결과 0건 물질 (물성 DB / 성분 검색)", agg["missing_searches"]),
+        ("3. 미지원 / 대체 매핑 블록 유형", agg["unsupported_blocks"]),
+        ("4. 연결점 / 포트 경고", agg["connection_warnings"]),
+    ]
+
+    for title, entries in sections:
+        lines.append(f"## {title} ({len(entries)})")
+        lines.append("")
+        if not entries:
+            lines.append("_No items._")
+            lines.append("")
+            continue
+        lines.append("| Item | Count |")
+        lines.append("| --- | ---: |")
+        for entry in entries:
+            safe_item = str(entry["item"]).replace("|", "\\|")
+            lines.append(f"| `{safe_item}` | {entry['count']} |")
+        lines.append("")
+
+    INTEROP_GAP_BACKLOG_PATH.write_text("\n".join(lines), encoding="utf-8")
+    try:
+        os.chmod(INTEROP_GAP_BACKLOG_PATH, 0o600)
+    except OSError:
+        pass
+
+
+@app.post("/api/telemetry/interop-gaps")
+def api_report_interop_gaps(
+    payload: InteropGapPayload,
+    _user: sqlite3.Row = Depends(require_active_user),
+):
+    unmapped = _sanitize_gap_list(payload.unmapped_components)
+    unsupported = _sanitize_gap_list(payload.unsupported_blocks)
+    warnings = _sanitize_gap_list(payload.connection_warnings)
+    missing = _sanitize_gap_list(payload.missing_searches)
+
+    if not (unmapped or unsupported or warnings or missing):
+        return {"ok": True}
+
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO interop_gap_logs(
+                source_type, unmapped_components, unsupported_blocks,
+                connection_warnings, missing_searches, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                payload.source_type,
+                json.dumps(unmapped, ensure_ascii=False),
+                json.dumps(unsupported, ensure_ascii=False),
+                json.dumps(warnings, ensure_ascii=False),
+                json.dumps(missing, ensure_ascii=False),
+                iso_now(),
+            ),
+        )
+        sync_interop_gap_backlog_md(conn)
+
+    return {"ok": True}
+
+
+@app.get("/api/admin/interop-gaps")
+def api_admin_get_interop_gaps(
+    _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
+):
+    with get_db() as conn:
+        return _aggregate_interop_gaps(conn)
 
 
 # ── Protected Proprietary Data + Next.js Static Export Hosting ──────────

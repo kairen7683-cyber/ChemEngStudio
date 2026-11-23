@@ -644,3 +644,52 @@ export async function adminUpdateFeedback(
   if (!res.ok) throw new Error(data.detail || '피드백 상태 변경 실패');
   return data.item as BetaFeedbackItem;
 }
+
+// ── Privacy-Safe Interop & Missing-Component Gap Telemetry ──────────────
+export type InteropGapSourceType =
+  | 'bkp'
+  | 'inp'
+  | 'xlsx'
+  | 'property_db_search'
+  | 'component_search';
+
+export async function reportInteropGaps(payload: {
+  source_type: InteropGapSourceType;
+  unmapped_components?: string[];
+  unsupported_blocks?: string[];
+  connection_warnings?: string[];
+  missing_searches?: string[];
+}): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const clean = (arr?: string[]) =>
+    (arr ?? []).map(s => (typeof s === 'string' ? s.trim() : '')).filter(Boolean);
+  const unmapped_components = clean(payload.unmapped_components);
+  const unsupported_blocks = clean(payload.unsupported_blocks);
+  const connection_warnings = clean(payload.connection_warnings);
+  const missing_searches = clean(payload.missing_searches);
+  if (
+    unmapped_components.length === 0 &&
+    unsupported_blocks.length === 0 &&
+    connection_warnings.length === 0 &&
+    missing_searches.length === 0
+  ) {
+    return;
+  }
+  try {
+    await fetch('/api/telemetry/interop-gaps', {
+      method: 'POST',
+      credentials: 'include',
+      keepalive: true,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source_type: payload.source_type,
+        unmapped_components,
+        unsupported_blocks,
+        connection_warnings,
+        missing_searches,
+      }),
+    });
+  } catch {
+    // Fire-and-forget telemetry: never throw
+  }
+}

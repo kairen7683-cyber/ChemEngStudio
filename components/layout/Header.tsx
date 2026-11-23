@@ -32,6 +32,7 @@ import {
   type UnifiedSavedCaseEntry,
 } from '@/lib/caseManagerBridge';
 import { parseProcessTextFile } from '@/lib/interop/processTextInterop';
+import { reportInteropGaps } from '@/lib/auth/authClient';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -397,6 +398,62 @@ export default function Header() {
         const rawText = String(reader.result ?? '');
         const res = parseProcessTextFile(rawText, file.name);
         const importedDefs = Array.isArray(res.defs) ? res.defs : Object.values(res.defs ?? {});
+
+        // Privacy-safe automatic interop gap reporting (no filenames or confidential tags)
+        const unmapped_components = res.summary?.unmappedComps ?? [];
+        const unsupportedBlocksSet = new Set<string>();
+        let portConnWarnCount = 0;
+        for (const w of res.warnings ?? []) {
+          if (w.includes('대체 매핑')) {
+            const m = w.match(/장치\s*유형\s*'([^']+)'/);
+            unsupportedBlocksSet.add(m?.[1] ? m[1].trim() : 'unknown_block_fallback');
+          } else if (w.includes('지원되지 않는')) {
+            const mThermo = w.match(/열역학\s*모델\s*'([^']+)'/);
+            if (mThermo?.[1]) {
+              unsupportedBlocksSet.add(`thermo:${mThermo[1].trim()}`);
+            } else {
+              const mAny = w.match(/'([^']+)'/);
+              unsupportedBlocksSet.add(mAny?.[1] ? mAny[1].trim() : 'unsupported_feature');
+            }
+          }
+          if (/포트|연결|port|connect/i.test(w)) {
+            portConnWarnCount += 1;
+          }
+        }
+        const unsupported_blocks = Array.from(unsupportedBlocksSet);
+
+        const connectedIds = new Set<string>();
+        for (const edge of res.edges ?? []) {
+          if (edge.source) connectedIds.add(edge.source);
+          if (edge.target) connectedIds.add(edge.target);
+        }
+        const isolatedBlocks = importedDefs.filter(
+          def => def.unitType !== 'feed' && def.unitType !== 'product' && !connectedIds.has(def.id)
+        );
+        const connectionWarningsSet = new Set<string>();
+        for (const blk of isolatedBlocks) {
+          connectionWarningsSet.add(`isolated_block:${blk.unitType}`);
+        }
+        if (isolatedBlocks.length > 0) {
+          connectionWarningsSet.add(`missing_connections:${isolatedBlocks.length}`);
+        }
+        if (portConnWarnCount > 0) {
+          connectionWarningsSet.add(`port_connection_warnings:${portConnWarnCount}`);
+        }
+        const connection_warnings = Array.from(connectionWarningsSet);
+
+        if (
+          unmapped_components.length > 0 ||
+          unsupported_blocks.length > 0 ||
+          connection_warnings.length > 0
+        ) {
+          void reportInteropGaps({
+            source_type: file.name.toLowerCase().endsWith('.bkp') ? 'bkp' : 'inp',
+            unmapped_components,
+            unsupported_blocks,
+            connection_warnings,
+          });
+        }
         if (importedDefs.length === 0) {
           alert(
             lang === 'en'

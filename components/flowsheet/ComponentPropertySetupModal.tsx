@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { reportInteropGaps } from '@/lib/auth/authClient';
 import { SIM_COMPS, COMP_META, type SimCompKey } from '@/lib/calculations/flowsheetSolver';
 import {
   type SimPropertyMethod,
@@ -178,6 +179,53 @@ export default function ComponentPropertySetupModal({
     const tbOpt = parsedTb !== undefined && Number.isFinite(parsedTb) ? parsedTb : undefined;
     return predictPropertiesFromJobackGroups(jbGroups, { tbExpC: tbOpt });
   }, [jbGroups, jbTbExpStr]);
+
+  const reportedMissingRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!open) return;
+    const isExtTab = sourceTab === 'custom' && customSubTab === 'library';
+    const rawQuery = isExtTab ? extSearch : sourceTab === 'general' ? searchQuery : '';
+    const q = rawQuery.trim();
+    if (q.length < 2 || q.length > 60) return;
+
+    const visibleCount = isExtTab ? filteredExtLibrary.length : filteredComps.length;
+    if (visibleCount > 0) return;
+
+    const normKey = q.toLowerCase();
+    if (reportedMissingRef.current.has(normKey)) return;
+
+    const timer = window.setTimeout(() => {
+      const hasCoreMatch = SIM_COMPS.some(k => {
+        const cat = COMP_CATALOG_META[k];
+        const meta = COMP_META[k];
+        if (!cat || !meta) return false;
+        return (
+          k.toLowerCase().includes(normKey) ||
+          meta.label.toLowerCase().includes(normKey) ||
+          meta.formula.toLowerCase().includes(normKey) ||
+          cat.cas.includes(normKey) ||
+          cat.noteKo.toLowerCase().includes(normKey)
+        );
+      });
+      const hasExtMatch = EXTENDED_CHEMICAL_LIBRARY.some(item =>
+        item.id.toLowerCase().includes(normKey) ||
+        item.nameKo.toLowerCase().includes(normKey) ||
+        item.nameEn.toLowerCase().includes(normKey) ||
+        item.formula.toLowerCase().includes(normKey) ||
+        item.cas.includes(normKey)
+      );
+      if (hasCoreMatch || hasExtMatch) return;
+      if (reportedMissingRef.current.has(normKey)) return;
+      reportedMissingRef.current.add(normKey);
+      void reportInteropGaps({
+        source_type: 'component_search',
+        missing_searches: [q],
+      });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [open, sourceTab, customSubTab, searchQuery, extSearch, filteredComps.length, filteredExtLibrary.length]);
 
   if (!open) return null;
 

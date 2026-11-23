@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { reportInteropGaps } from '@/lib/auth/authClient';
 import {
   ALL_FLUIDS,
   FLUID_DB,
@@ -543,6 +544,37 @@ export default function PropertyDbPage() {
 
     return { primaryFluids, elecMatches };
   }, [searchQuery, categoryFilter, allUnifiedFluids, fluidsByCategory]);
+
+  const reportedMissingRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2 || q.length > 60) return;
+    if (searchResults.primaryFluids.length + searchResults.elecMatches.length > 0) return;
+    const normKey = q.toLowerCase();
+    if (reportedMissingRef.current.has(normKey)) return;
+
+    const timer = window.setTimeout(() => {
+      if (categoryFilter !== 'all') {
+        const norm = normalizeSearchText(q);
+        const anyFluid = searchFluidProps(q, allUnifiedFluids).length > 0;
+        const anyElec = ELECTROLYTE_SYSTEMS.some(s =>
+          [s.key, s.name, s.formula, s.cas, ...s.aliases].some(v =>
+            normalizeSearchText(v).includes(norm)
+          )
+        );
+        if (anyFluid || anyElec) return;
+      }
+      if (reportedMissingRef.current.has(normKey)) return;
+      reportedMissingRef.current.add(normKey);
+      void reportInteropGaps({
+        source_type: 'property_db_search',
+        missing_searches: [q],
+      });
+    }, 1200);
+
+    return () => window.clearTimeout(timer);
+  }, [searchQuery, searchResults, categoryFilter, allUnifiedFluids]);
 
   // 선택된 물질 + 호환 열역학 모델 기반 물성 계산
   const calcPropsAt = (T: number, wtInput: number, pBar: number) => {
