@@ -35,6 +35,7 @@ export interface EquipmentAutoFixResult<TPatch, TSolve> {
   improved: boolean;
   resolved: boolean;
   patch: Partial<TPatch>;
+  paramsPatch?: Partial<FlowUnitParams>;
   solvedBefore: TSolve;
   solvedAfter: TSolve;
   headline: string;
@@ -60,11 +61,14 @@ function scoreHxResult(r: HxDesignSolveResult): number {
   let pen = 0;
   if (r.overallStatus === 'error') pen += 1000;
   else if (r.overallStatus === 'warning') pen += 250;
+  if (r.minPinchDeltaTC <= 0.5) pen += 3000 + Math.abs(r.minPinchDeltaTC) * 100;
+  else if (r.minPinchDeltaTC < 3.5) pen += (3.5 - r.minPinchDeltaTC) * 180 + 150;
   if (r.dpTubeBar > 0.7) pen += (r.dpTubeBar - 0.7) * 400 + 80;
   if (r.dpShellBar > 0.7) pen += (r.dpShellBar - 0.7) * 400 + 80;
   if (r.ftFactor < 0.78) pen += (0.78 - r.ftFactor) * 900 + 90;
   if (r.vibRatio > 0.8) pen += (r.vibRatio - 0.8) * 500 + 70;
   if (r.actualOverdesignPct < 0) pen += Math.abs(r.actualOverdesignPct) * 15 + 120;
+  if (r.areaProvM2 > 2000) pen += (r.areaProvM2 - 2000) * 0.05;
   if (r.material.code !== r.recommendedMaterial) pen += 40;
   return pen;
 }
@@ -134,6 +138,7 @@ export function autoFixHeatExchanger(
     }
   }
 
+  let bestParams: FlowUnitParams = { ...params };
   let bestCfg: HxDesignParams = { ...initialCfg };
   let bestRes = solvedBefore;
   let bestScore = scoreHxResult(solvedBefore);
@@ -143,7 +148,7 @@ export function autoFixHeatExchanger(
     const nextCfg: HxDesignParams = { ...bestCfg, ...patch };
     const candidate = solveHeatExchangerDesign(
       unitType,
-      params,
+      bestParams,
       nextCfg,
       procInStreams,
       procOutStreams,
@@ -161,6 +166,70 @@ export function autoFixHeatExchanger(
     }
     return false;
   };
+
+  // ── Step 0: 열역학적 핀치(Pinch) 역전 / 온도교차 유틸리티 자동 해결 ──
+  if (bestRes.minPinchDeltaTC < 3.5) {
+    const isCooling = bestRes.dutyMcalH < 0 || bestRes.processSide.outTempC < bestRes.processSide.inTempC;
+    if (utilInStreams.length === 0) {
+      const utilityCandidates: Array<{ pPatch: Partial<FlowUnitParams>; label: string }> = isCooling
+        ? [
+            { pPatch: { refrigerantPreset: 'cw' }, label: '냉각수(CW 28→36°C)로 유틸리티 전환' },
+            { pPatch: { refrigerantPreset: 'chw' }, label: '칠드워터(CHW 7→12°C)로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'meg_brine' }, label: '글리콜 브라인(-15→-8°C)으로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'brine_m20' }, label: '심냉 브라인(-25→-18°C)으로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'r404a_m32' }, label: 'R-404A 증발냉매(-35→-30°C)로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'freon_m35' }, label: 'R-507A 저온 증발냉매(-38→-33°C)로 냉매 자동 전환' },
+          ]
+        : [
+            { pPatch: { refrigerantPreset: 'steam_lp' }, label: '저압 스팀(LP Steam 145°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 185, utilOutTempC: 184, utilCp: 1.0 }, label: '중압 스팀(MP Steam 185°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 235, utilOutTempC: 234, utilCp: 1.0 }, label: '고압 스팀(HP Steam 235°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 290, utilOutTempC: 260, utilCp: 0.56 }, label: '고온 열매체유(Therminol 66, 290→260°C)로 열매 자동 전환' },
+          ];
+
+      for (const cand of utilityCandidates) {
+        const nextParams: FlowUnitParams = { ...bestParams, ...cand.pPatch };
+        const solvedCand = solveHeatExchangerDesign(
+          unitType,
+          nextParams,
+          bestCfg,
+          procInStreams,
+          procOutStreams,
+          utilInStreams,
+          utilOutStreams,
+          unitRes
+        );
+        const sc = scoreHxResult(solvedCand);
+        if (sc < bestScore - 1e-3) {
+          bestParams = nextParams;
+          bestRes = solvedCand;
+          bestScore = sc;
+          actionsTaken.push(
+            `${cand.label} (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${solvedCand.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${solvedCand.areaProvM2.toFixed(1)} m²)`
+          );
+          if (solvedCand.minPinchDeltaTC >= 5.0) break;
+        }
+      }
+    } else {
+      // PFD에 외부 유틸리티 스트림이 직접 연결된 경우: 필요 최소 유량 정량 계산 안내
+      const absQ = Math.abs(bestRes.dutyMcalH) * 1000;
+      const uCp = Math.max(0.25, bestRes.utilitySide.cpKcalKgC || 1.0);
+      const targetDt = isCooling ? 8.0 : 15.0;
+      const reqFlowKgH = Math.ceil(absQ / (uCp * targetDt));
+      const curFlowKgH = Math.round(bestRes.utilitySide.massFlowKgH);
+      const utilIn = bestRes.utilitySide.inTempC;
+      const procOut = bestRes.processSide.outTempC;
+      if (isCooling && utilIn >= procOut - 4) {
+        actionsTaken.push(
+          `외부 연결 냉매 공급온도(${utilIn.toFixed(1)}°C)가 공정 목표온도(${procOut.toFixed(1)}°C)에 너무 가깝습니다. PFD 유틸리티 피드 온도를 칠드워터(7°C) 이하로 낮추고 유량을 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 증대하세요 (현재 ${curFlowKgH.toLocaleString()} kg/h).`
+        );
+      } else {
+        actionsTaken.push(
+          `외부 연결 유틸리티 스트림 유량이 부족하여 출구온도가 ${bestRes.utilitySide.outTempC.toFixed(1)}°C까지 변했습니다. PFD 유틸리티 피드 유량을 현재 ${curFlowKgH.toLocaleString()} kg/h → 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 늘려주세요.`
+        );
+      }
+    }
+  }
 
   // 진단 자체 remedyPatch 우선 시도
   for (const d of solvedBefore.diagnostics) {
@@ -273,18 +342,28 @@ export function autoFixHeatExchanger(
     }
   });
 
+  const paramsPatch: Partial<FlowUnitParams> = {};
+  (Object.keys(bestParams) as Array<keyof FlowUnitParams>).forEach((k) => {
+    if (bestParams[k] !== params[k]) {
+      (paramsPatch as Record<string, unknown>)[k] = bestParams[k];
+    }
+  });
+
   const improved = bestScore < scoreHxResult(solvedBefore) - 1e-3;
   const resolved = bestRes.overallStatus === 'ok';
   const headline = resolved
-    ? `AI 자동 보정 완료: 정상 운전 범위 달성 (Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, Ft ${bestRes.ftFactor.toFixed(2)}).`
+    ? `AI 자동 보정 완료: 정상 운전 범위 달성 (Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C, Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, Ft ${bestRes.ftFactor.toFixed(2)}).`
     : improved
-    ? `AI 부분 개선 완료 (Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${solvedBefore.dpShellBar.toFixed(2)}→${bestRes.dpShellBar.toFixed(2)} bar).`
+    ? `AI 부분 개선 완료 (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${bestRes.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${bestRes.areaProvM2.toFixed(1)} m², Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar).`
+    : bestRes.minPinchDeltaTC <= 0.5 && utilInStreams.length > 0
+    ? 'PFD에 직접 연결된 유틸리티 스트림의 유량 부족 또는 온도 역전으로 기하학적 보정만으로는 해결할 수 없습니다 (아래 유량·온도 가이드 적용 필요).'
     : '현재 열부하·상변화 조건에서 기하학적 조정 여지가 제한적입니다 (공정 유량·핀치 온도 점검 필요).';
 
   return {
     improved,
     resolved,
     patch,
+    ...(Object.keys(paramsPatch).length > 0 ? { paramsPatch } : {}),
     solvedBefore,
     solvedAfter: bestRes,
     headline,

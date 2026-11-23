@@ -285,11 +285,14 @@ export default function HeatExchangerWorkbenchModal({
           setAiStepLabel(`(${step}/${total}) ${label}`);
         }
       );
+      if (fix.paramsPatch && Object.keys(fix.paramsPatch).length > 0) {
+        onChangeParams(fix.paramsPatch);
+      }
       if (Object.keys(fix.patch).length > 0) {
         patchHxCfg(fix.patch);
       }
       setWorkbenchView('mechanical');
-      const prompt = `[열교환기 ${unitTag}] Q=${fix.solvedAfter.dutyMcalH.toFixed(1)} Mcal/h, Ft=${fix.solvedAfter.ftFactor.toFixed(2)}, Tube ΔP=${fix.solvedAfter.dpTubeBar.toFixed(2)} bar, Shell ΔP=${fix.solvedAfter.dpShellBar.toFixed(2)} bar. 조치: ${fix.actionsTaken.join(', ')}`;
+      const prompt = `[열교환기 ${unitTag}] Q=${fix.solvedAfter.dutyMcalH.toFixed(1)} Mcal/h, Pinch ΔT=${fix.solvedAfter.minPinchDeltaTC.toFixed(1)}°C, 전열면적=${fix.solvedAfter.areaProvM2.toFixed(1)} m², 유틸리티=${fix.solvedAfter.utilitySide.inTempC.toFixed(1)}→${fix.solvedAfter.utilitySide.outTempC.toFixed(1)}°C, Ft=${fix.solvedAfter.ftFactor.toFixed(2)}, Tube ΔP=${fix.solvedAfter.dpTubeBar.toFixed(2)} bar, Shell ΔP=${fix.solvedAfter.dpShellBar.toFixed(2)} bar. 조치: ${fix.actionsTaken.join(', ')}`;
       const geminiNote = await fetchOptionalGeminiAdvice(prompt);
       setAiReport({ result: fix, geminiNote });
     } catch (err) {
