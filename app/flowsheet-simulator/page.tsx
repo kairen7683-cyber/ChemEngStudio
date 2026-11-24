@@ -38,6 +38,12 @@ import {
   emptySimFlows,
   createIdleFlowsheetResult,
   solveFlowsheet,
+  THERMAL_SPEC_MODE_OPTIONS,
+  ELECTROLYZER_PRESET_SPECS,
+  PUBLIC_REACTOR_PRESET_SPECS,
+  type ThermalSpecMode,
+  type ElectrolyzerPresetId,
+  type PublicReactorPresetId,
   type SolvedStream,
   type TearSolverMethod,
 } from '@/lib/calculations/flowsheetSolver';
@@ -5825,6 +5831,184 @@ export function FlowsheetWorkspace({
     );
   };
 
+  const updateParams = (patch: Partial<FlowNodeDef['params']>) => {
+    if (!selectedNodeId) return;
+    recordParamEditSnapshot();
+    setSimDefs(prev =>
+      prev.map(d => (d.id === selectedNodeId ? { ...d, params: { ...d.params, ...patch } } : d))
+    );
+  };
+
+  const renderThermalSpecControls = (
+    def: FlowNodeDef,
+    opts: {
+      tempLabel: string;
+      tempKey: 'feedTempC' | 'operTempC';
+      tempDefault: number;
+      tempSyncKey: string;
+      tempInputStyle: React.CSSProperties;
+    }
+  ) => {
+    const mode: ThermalSpecMode = def.params.thermalSpecMode ?? 'tp';
+    return (
+      <>
+        <div>
+          <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
+            열상태 지정 모드 (압력 기준)
+          </label>
+          <select
+            value={mode}
+            onChange={e => updateParam('thermalSpecMode', e.target.value as ThermalSpecMode)}
+            style={{
+              width: '100%',
+              padding: '5px 6px',
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#0F172A',
+              borderRadius: 5,
+              fontSize: 11.5,
+              fontWeight: 700,
+              marginTop: 2,
+            }}
+          >
+            {THERMAL_SPEC_MODE_OPTIONS.map(opt => (
+              <option key={opt.id} value={opt.id}>
+                {opt.labelKo}
+              </option>
+            ))}
+          </select>
+        </div>
+        {mode === 'tp' && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+              {opts.tempLabel}
+            </div>
+            <UnitNumberInput
+              quantity="temp"
+              syncKey={opts.tempSyncKey}
+              value={def.params[opts.tempKey] ?? opts.tempDefault}
+              onValueChange={v => updateParam(opts.tempKey, v)}
+              onEnterRun={() => runSimulationNow()}
+              inputStyle={opts.tempInputStyle}
+            />
+          </div>
+        )}
+        {mode === 'sat_liq' && (
+          <div
+            style={{
+              padding: '6px 8px',
+              borderRadius: 5,
+              background: '#EFF6FF',
+              border: '1px solid #BFDBFE',
+              color: '#1E40AF',
+              fontSize: 10.5,
+              fontWeight: 700,
+            }}
+          >
+            압력 기준 기포점 온도 자동 산출 (VF = 0)
+          </div>
+        )}
+        {mode === 'sat_vap' && (
+          <div
+            style={{
+              padding: '6px 8px',
+              borderRadius: 5,
+              background: '#FEF3C7',
+              border: '1px solid #FDE68A',
+              color: '#92400E',
+              fontSize: 10.5,
+              fontWeight: 700,
+            }}
+          >
+            압력 기준 이슬점 온도 자동 산출 (VF = 1)
+          </div>
+        )}
+        {mode === 'subcool' && (
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
+              과냉각도 ΔT (°C, 기포점 대비)
+            </label>
+            <BufferedNumberInput
+              syncKey={`${def.id}-subcool`}
+              step={1}
+              min={0}
+              value={def.params.subcoolDeltaC ?? 5}
+              onValueChange={v => updateParam('subcoolDeltaC', Math.max(0, v))}
+              onEnterRun={() => runSimulationNow()}
+              style={{
+                width: '100%',
+                padding: '5px 7px',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
+                borderRadius: 5,
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: 'JetBrains Mono, monospace',
+                marginTop: 2,
+              }}
+            />
+          </div>
+        )}
+        {mode === 'superheat' && (
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
+              과열도 ΔT (°C, 이슬점 대비)
+            </label>
+            <BufferedNumberInput
+              syncKey={`${def.id}-superheat`}
+              step={1}
+              min={0}
+              value={def.params.superheatDeltaC ?? 10}
+              onValueChange={v => updateParam('superheatDeltaC', Math.max(0, v))}
+              onEnterRun={() => runSimulationNow()}
+              style={{
+                width: '100%',
+                padding: '5px 7px',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
+                borderRadius: 5,
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: 'JetBrains Mono, monospace',
+                marginTop: 2,
+              }}
+            />
+          </div>
+        )}
+        {mode === 'vf' && (
+          <div>
+            <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
+              목표 기상분율 (VF, 0~1)
+            </label>
+            <BufferedNumberInput
+              syncKey={`${def.id}-targetvf`}
+              step={0.05}
+              min={0}
+              max={1}
+              value={def.params.targetVaporFraction ?? 0.5}
+              onValueChange={v => updateParam('targetVaporFraction', Math.min(1, Math.max(0, v)))}
+              onEnterRun={() => runSimulationNow()}
+              style={{
+                width: '100%',
+                padding: '5px 7px',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
+                borderRadius: 5,
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: 'JetBrains Mono, monospace',
+                marginTop: 2,
+              }}
+            />
+          </div>
+        )}
+      </>
+    );
+  };
+
   const updateFeedComp = (comp: SimCompKey, kgH: number) => {
     if (!selectedNodeId) return;
     recordParamEditSnapshot();
@@ -9078,17 +9262,13 @@ export function FlowsheetWorkspace({
               {selectedDef.unitType === 'feed' && (
                 <>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>공급 온도</div>
-                      <UnitNumberInput
-                        quantity="temp"
-                        syncKey={`${selectedDef.id}-ftemp`}
-                        value={selectedDef.params.feedTempC ?? 25}
-                        onValueChange={v => updateParam('feedTempC', v)}
-                        onEnterRun={() => runSimulationNow()}
-                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
-                      />
-                    </div>
+                    {renderThermalSpecControls(selectedDef, {
+                      tempLabel: '공급 온도',
+                      tempKey: 'feedTempC',
+                      tempDefault: 25,
+                      tempSyncKey: `${selectedDef.id}-ftemp`,
+                      tempInputStyle: { padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' },
+                    })}
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>공급 압력</div>
                       <UnitNumberInput
@@ -9173,9 +9353,86 @@ export function FlowsheetWorkspace({
               )}
 
               {/* ── B) 이온교환막 전해조 (Electrolyzer) ── */}
-              {selectedDef.unitType === 'electrolyzer' && (
+              {selectedDef.unitType === 'electrolyzer' && (() => {
+                const activeElPresetId: ElectrolyzerPresetId =
+                  selectedDef.params.electrolyzerPreset ?? 'nacl_chlor_alkali';
+                const activeElPreset =
+                  ELECTROLYZER_PRESET_SPECS.find(s => s.id === activeElPresetId) ?? ELECTROLYZER_PRESET_SPECS[0];
+                return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', alignItems: 'center', gap: 5 }}><VesselEquipIcon size={12} /> 전해조 양극·음극 동시 수지</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>전해조 화학종 프리셋</label>
+                      <select
+                        value={activeElPreset.id}
+                        onChange={e => updateParam('electrolyzerPreset', e.target.value as ElectrolyzerPresetId)}
+                        style={{
+                          width: '100%',
+                          padding: '5px 6px',
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          color: '#0F172A',
+                          borderRadius: 5,
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          marginTop: 2,
+                        }}
+                      >
+                        {ELECTROLYZER_PRESET_SPECS.map(spec => (
+                          <option key={spec.id} value={spec.id}>
+                            {spec.labelKo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 5,
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
+                        {activeElPreset.reactionEq}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#64748B', lineHeight: 1.35 }}>
+                        {activeElPreset.noteKo}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateParams({
+                            electrolyzerPreset: activeElPreset.id,
+                            cellVoltageV: activeElPreset.defaultVoltageV,
+                            currentKA: activeElPreset.defaultCurrentKA,
+                            cellCount: activeElPreset.defaultCells,
+                            operTempC: activeElPreset.defaultTempC,
+                            operPressKgcm2g: activeElPreset.defaultPressKgcm2g,
+                            currentEffPct: activeElPreset.defaultEffPct,
+                          })
+                        }
+                        style={{
+                          alignSelf: 'flex-start',
+                          marginTop: 2,
+                          padding: '4px 8px',
+                          borderRadius: 4,
+                          border: '1px solid #1E3A8A',
+                          background: '#EFF6FF',
+                          color: '#1E3A8A',
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        권장 운전조건 적용 ({activeElPreset.defaultVoltageV}V · {activeElPreset.defaultCurrentKA}kA · {activeElPreset.defaultCells}셀)
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
                     <div>
                       <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>운전 전류 (kA)</label>
@@ -9220,7 +9477,8 @@ export function FlowsheetWorkspace({
                     </div>
                   )}
                 </div>
-              )}
+                );
+              })()}
 
               {/* ── C) 염소/가스 액화기 (Liquefier) & 열교환기 (HEX / Cooler) + 내장 설계 워크벤치 ── */}
               {(selectedDef.unitType === 'liquefier' || selectedDef.unitType === 'hex' || selectedDef.unitType === 'cooler') && (
@@ -9289,17 +9547,13 @@ export function FlowsheetWorkspace({
 
                   {(selectedDef.params.hexSpecMode ?? 'proc_temp') === 'proc_temp' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>공정 출구 온도</div>
-                        <UnitNumberInput
-                          quantity="temp"
-                          syncKey={`${selectedDef.id}-hxtemp`}
-                          value={selectedDef.params.operTempC ?? (selectedDef.unitType === 'liquefier' ? -22 : 25)}
-                          onValueChange={v => updateParam('operTempC', v)}
-                          onEnterRun={() => runSimulationNow()}
-                          inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF', color: '#0F172A' }}
-                        />
-                      </div>
+                      {renderThermalSpecControls(selectedDef, {
+                        tempLabel: '공정 출구 온도',
+                        tempKey: 'operTempC',
+                        tempDefault: selectedDef.unitType === 'liquefier' ? -22 : 25,
+                        tempSyncKey: `${selectedDef.id}-hxtemp`,
+                        tempInputStyle: { padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 12, fontWeight: 800, background: '#FFFFFF', color: '#0F172A' },
+                      })}
                       <div>
                         <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', marginBottom: 2 }}>운전압(비우면 전단추종)</div>
                         <UnitNullableNumberInput
@@ -9861,17 +10115,29 @@ export function FlowsheetWorkspace({
               {selectedDef.unitType === 'separator' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>분리 온도</div>
-                      <UnitNumberInput
-                        quantity="temp"
-                        syncKey={`${selectedDef.id}-sept`}
-                        value={selectedDef.params.operTempC ?? 40}
-                        onValueChange={v => updateParam('operTempC', v)}
-                        onEnterRun={() => runSimulationNow()}
-                        inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 }}
-                      />
-                    </div>
+                    {(selectedDef.params.flashMode ?? 'isothermal') !== 'adiabatic' ? (
+                      renderThermalSpecControls(selectedDef, {
+                        tempLabel: '분리 온도',
+                        tempKey: 'operTempC',
+                        tempDefault: 40,
+                        tempSyncKey: `${selectedDef.id}-sept`,
+                        tempInputStyle: { padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12 },
+                      })
+                    ) : (
+                      <div
+                        style={{
+                          padding: '6px 8px',
+                          borderRadius: 5,
+                          background: '#F8FAFC',
+                          border: '1px solid #CBD5E1',
+                          color: '#475569',
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                        }}
+                      >
+                        단열 감압 플래시 모드 (출구 온도 자동 산출)
+                      </div>
+                    )}
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>압력(비우면 전단추종)</div>
                       <UnitNullableNumberInput
@@ -10208,30 +10474,90 @@ export function FlowsheetWorkspace({
                   >
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><FlaskCompIcon size={12} /> 반응기 정밀설계 워크벤치 열기 (STOIC·평형·Gibbs·CSTR·PFR) →</span>
                   </button>
-                  <div>
-                    <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응 모델</label>
-                    <select
-                      value={
-                        isSimulatorOnlyUser(user)
-                          ? 'custom'
-                          : (selectedDef.params.reactionPreset ?? (useGenericDefault ? 'custom' : 'hcl_burner'))
-                      }
-                      onChange={e => updateParam('reactionPreset', e.target.value)}
-                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}
-                    >
-                      <option value="custom">사용자 지정 반응식 / 워크벤치 설정</option>
-                      {!isSimulatorOnlyUser(user) && (
-                        <>
-                          <option value="hcl_burner">염산 합성 (Cl₂ + H₂ → 2HCl)</option>
-                          <option value="caustic_scrub">폐염소 가성제해 · 차아염소산소다 생성 (Cl₂ + 2NaOH → NaOCl + NaCl + H₂O)</option>
-                          <option value="fecl3_chlorination">1B 에칭폐액 염소화 재생 (2FeCl₂ + Cl₂ → 2FeCl₃)</option>
-                          <option value="gte_hydrochlorination">2순위 ECH 1단계 글리세린 염소화 (Glycerol + 2HCl → DCH + 2H₂O)</option>
-                          <option value="ech_saponification">2순위 ECH 2단계 비누화 고리화 (DCH + NaOH → ECH + NaCl + H₂O)</option>
-                          <option value="brine_electrolysis">염수 전해 총괄반응</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
+                  {(() => {
+                    const publicReactorIds = PUBLIC_REACTOR_PRESET_SPECS.map(s => s.id as string);
+                    const rawRxnPreset =
+                      selectedDef.params.reactionPreset ?? (useGenericDefault ? 'custom' : 'hcl_burner');
+                    const displayRxnPreset =
+                      isSimulatorOnlyUser(user) && !publicReactorIds.includes(rawRxnPreset)
+                        ? 'custom'
+                        : rawRxnPreset;
+                    const activePublicRxn = PUBLIC_REACTOR_PRESET_SPECS.find(
+                      s => s.id === displayRxnPreset
+                    );
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응 모델</label>
+                          <select
+                            value={displayRxnPreset}
+                            onChange={e => updateParam('reactionPreset', e.target.value)}
+                            style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 11.5 }}
+                          >
+                            <option value="custom">사용자 지정 반응식 / 워크벤치 설정</option>
+                            <optgroup label="범용 · 배터리 · 에너지 프리셋">
+                              {PUBLIC_REACTOR_PRESET_SPECS.map(spec => (
+                                <option key={spec.id} value={spec.id}>
+                                  {spec.labelKo}
+                                </option>
+                              ))}
+                            </optgroup>
+                            {!isSimulatorOnlyUser(user) && (
+                              <optgroup label="염소·전해·정밀화학 공정 프리셋">
+                                <option value="hcl_burner">염산 합성 (Cl₂ + H₂ → 2HCl)</option>
+                                <option value="caustic_scrub">폐염소 가성제해 · 차아염소산소다 생성 (Cl₂ + 2NaOH → NaOCl + NaCl + H₂O)</option>
+                                <option value="fecl3_chlorination">1B 에칭폐액 염소화 재생 (2FeCl₂ + Cl₂ → 2FeCl₃)</option>
+                                <option value="gte_hydrochlorination">2순위 ECH 1단계 글리세린 염소화 (Glycerol + 2HCl → DCH + 2H₂O)</option>
+                                <option value="ech_saponification">2순위 ECH 2단계 비누화 고리화 (DCH + NaOH → ECH + NaCl + H₂O)</option>
+                                <option value="brine_electrolysis">염수 전해 총괄반응</option>
+                              </optgroup>
+                            )}
+                          </select>
+                        </div>
+                        {activePublicRxn && (
+                          <div
+                            style={{
+                              padding: '6px 8px',
+                              borderRadius: 5,
+                              background: '#F8FAFC',
+                              border: '1px solid #E2E8F0',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 4,
+                            }}
+                          >
+                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
+                              {activePublicRxn.reactionEq}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateParams({
+                                  reactionPreset: activePublicRxn.id as PublicReactorPresetId,
+                                  operTempC: activePublicRxn.defaultTempC,
+                                  operPressKgcm2g: activePublicRxn.defaultPressKgcm2g,
+                                  conversion: Number((activePublicRxn.defaultConvPct / 100).toFixed(4)),
+                                })
+                              }
+                              style={{
+                                alignSelf: 'flex-start',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                border: '1px solid #1E3A8A',
+                                background: '#EFF6FF',
+                                color: '#1E3A8A',
+                                fontSize: 10.5,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              권장 조건 적용 ({activePublicRxn.defaultTempC}°C · {activePublicRxn.defaultPressKgcm2g} kG · {activePublicRxn.defaultConvPct}%)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div>
                     <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>반응기 해석 방식</label>
                     <select

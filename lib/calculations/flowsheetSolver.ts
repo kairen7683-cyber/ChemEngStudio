@@ -17,6 +17,8 @@ import {
   calcRigorousCellElectrochem,
   calcRigorousThreeZoneHex,
   calcRigorousKremserRemoval,
+  RIGOROUS_CRIT,
+  NON_VOLATILE_RIG_SET,
 } from './rigorousThermo';
 import {
   type DistillColumnParams,
@@ -508,9 +510,214 @@ export function cl2DewPointTempC(P_cl2_kgcm2A: number): number {
   return 861.34 / denom + 27.01 - 273.15;
 }
 
+export type ThermalSpecMode =
+  | 'tp'
+  | 'sat_liq'
+  | 'sat_vap'
+  | 'subcool'
+  | 'superheat'
+  | 'vf';
+
+export const THERMAL_SPEC_MODE_OPTIONS: {
+  id: ThermalSpecMode;
+  labelKo: string;
+  labelEn: string;
+}[] = [
+  { id: 'tp', labelKo: '온도·압력 지정 (T, P)', labelEn: 'Temp & Press (T, P)' },
+  { id: 'sat_liq', labelKo: '포화액 (Bubble Point, VF=0)', labelEn: 'Saturated Liquid (Bubble Pt)' },
+  { id: 'sat_vap', labelKo: '포화증기 (Dew Point, VF=1)', labelEn: 'Saturated Vapor (Dew Pt)' },
+  { id: 'subcool', labelKo: '과냉액 (Bubble - ΔT)', labelEn: 'Subcooled Liquid (Bubble - ΔT)' },
+  { id: 'superheat', labelKo: '과열증기 (Dew + ΔT)', labelEn: 'Superheated Vapor (Dew + ΔT)' },
+  { id: 'vf', labelKo: '목표 기상분율 (VF, P)', labelEn: 'Vapor Fraction (VF, P)' },
+];
+
+export type ElectrolyzerPresetId =
+  | 'nacl_chlor_alkali'
+  | 'kcl_koh'
+  | 'awe_water'
+  | 'pem_water'
+  | 'hcl_electrolysis'
+  | 'naclo3_chlorate';
+
+export interface ElectrolyzerPresetSpec {
+  id: ElectrolyzerPresetId;
+  labelKo: string;
+  labelEn: string;
+  reactionEq: string;
+  defaultVoltageV: number;
+  defaultCurrentKA: number;
+  defaultCells: number;
+  defaultTempC: number;
+  defaultPressKgcm2g: number;
+  defaultEffPct: number;
+  noteKo: string;
+}
+
+export const ELECTROLYZER_PRESET_SPECS: ElectrolyzerPresetSpec[] = [
+  {
+    id: 'nacl_chlor_alkali',
+    labelKo: '염수 전해 (NaCl → NaOH + Cl₂ + H₂)',
+    labelEn: 'Chlor-Alkali (NaCl Brine)',
+    reactionEq: '2NaCl + 2H₂O → 2NaOH + Cl₂ + H₂',
+    defaultVoltageV: 3.05,
+    defaultCurrentKA: 16.2,
+    defaultCells: 190,
+    defaultTempC: 89.0,
+    defaultPressKgcm2g: 0.4,
+    defaultEffPct: 94.0,
+    noteKo: '이온교환막법 가성소다·염소·수소 표준 전해조 (E_rev ≈ 2.19V)',
+  },
+  {
+    id: 'kcl_koh',
+    labelKo: '염화칼륨 전해 (KCl → KOH + Cl₂ + H₂)',
+    labelEn: 'Potassium Hydroxide (KCl → KOH)',
+    reactionEq: '2KCl + 2H₂O → 2KOH + Cl₂ + H₂',
+    defaultVoltageV: 3.10,
+    defaultCurrentKA: 14.0,
+    defaultCells: 160,
+    defaultTempC: 88.0,
+    defaultPressKgcm2g: 0.4,
+    defaultEffPct: 96.0,
+    noteKo: '가성칼리(KOH) 생산 이온교환막 전해조 (E_rev ≈ 2.19V, NaCl 염 대리 유입 지원)',
+  },
+  {
+    id: 'awe_water',
+    labelKo: '알칼라인 수전해 (AWE: 2H₂O → 2H₂ + O₂)',
+    labelEn: 'Alkaline Water Electrolysis (AWE)',
+    reactionEq: '2H₂O → 2H₂ + O₂',
+    defaultVoltageV: 1.90,
+    defaultCurrentKA: 10.0,
+    defaultCells: 200,
+    defaultTempC: 75.0,
+    defaultPressKgcm2g: 10.0,
+    defaultEffPct: 98.0,
+    noteKo: 'KOH 30wt% 순환 알칼라인 수전해 (E_rev ≈ 1.23V, 약 50~52 kWh/kg H₂)',
+  },
+  {
+    id: 'pem_water',
+    labelKo: '고분자전해질 수전해 (PEM: 2H₂O → 2H₂ + O₂)',
+    labelEn: 'PEM Water Electrolysis',
+    reactionEq: '2H₂O → 2H₂ + O₂',
+    defaultVoltageV: 1.95,
+    defaultCurrentKA: 8.0,
+    defaultCells: 150,
+    defaultTempC: 65.0,
+    defaultPressKgcm2g: 30.0,
+    defaultEffPct: 98.5,
+    noteKo: '초순수 직공급 고압 PEM 그린수소 수전해 (30 kG 가압 H₂, 약 52~54 kWh/kg H₂)',
+  },
+  {
+    id: 'hcl_electrolysis',
+    labelKo: '염산 전해 (2HCl → H₂ + Cl₂)',
+    labelEn: 'HCl Electrolysis (Cl₂ Recovery)',
+    reactionEq: '2HCl → H₂ + Cl₂',
+    defaultVoltageV: 1.55,
+    defaultCurrentKA: 12.0,
+    defaultCells: 120,
+    defaultTempC: 70.0,
+    defaultPressKgcm2g: 0.5,
+    defaultEffPct: 97.0,
+    noteKo: '부생 염산 염소 회수 전해조 (E_rev ≈ 1.36V, 저전압 고효율)',
+  },
+  {
+    id: 'naclo3_chlorate',
+    labelKo: '염소산소다 전해 (NaCl + 3H₂O → NaClO₃ + 3H₂)',
+    labelEn: 'Sodium Chlorate Electrolysis',
+    reactionEq: 'NaCl + 3H₂O → NaClO₃ + 3H₂',
+    defaultVoltageV: 3.10,
+    defaultCurrentKA: 15.0,
+    defaultCells: 100,
+    defaultTempC: 80.0,
+    defaultPressKgcm2g: 0.2,
+    defaultEffPct: 94.0,
+    noteKo: '무격막 염소산소다(NaClO₃) 생산 전해조 (6e⁻/mol NaClO₃, 부생 H₂ 회수)',
+  },
+];
+
+export type PublicReactorPresetId =
+  | 'acid_base_neutralization'
+  | 'ncm_precursor_coprecip'
+  | 'li_causticization'
+  | 'smr_reforming'
+  | 'methanol_synthesis'
+  | 'ammonia_synthesis';
+
+export interface PublicReactorPresetSpec {
+  id: PublicReactorPresetId;
+  labelKo: string;
+  labelEn: string;
+  reactionEq: string;
+  defaultTempC: number;
+  defaultPressKgcm2g: number;
+  defaultConvPct: number;
+}
+
+export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
+  {
+    id: 'acid_base_neutralization',
+    labelKo: '산·염기 중화 반응 (HCl/H₂SO₄ + NaOH/KOH)',
+    labelEn: 'Acid-Base Neutralization',
+    reactionEq: 'HCl(H₂SO₄) + NaOH(KOH) → Salt + H₂O (ΔH = -57.3 kJ/mol)',
+    defaultTempC: 45.0,
+    defaultPressKgcm2g: 0.5,
+    defaultConvPct: 99.5,
+  },
+  {
+    id: 'ncm_precursor_coprecip',
+    labelKo: 'NCM 양극재 전구체 공침 반응 (pH 11.2)',
+    labelEn: 'NCM Precursor Co-Precipitation',
+    reactionEq: 'M²⁺ + 2NaOH + NH₄OH(착화제) → M(OH)₂↓ + Na₂SO₄ (pH 11.2)',
+    defaultTempC: 55.0,
+    defaultPressKgcm2g: 0.2,
+    defaultConvPct: 98.0,
+  },
+  {
+    id: 'li_causticization',
+    labelKo: '리튬/탄산염 가성화 전환 반응',
+    labelEn: 'Lithium / Carbonate Causticization',
+    reactionEq: 'Na₂CO₃(Li₂CO₃) + Ca(OH)₂ → 2NaOH(LiOH) + CaCO₃↓',
+    defaultTempC: 85.0,
+    defaultPressKgcm2g: 0.5,
+    defaultConvPct: 92.0,
+  },
+  {
+    id: 'smr_reforming',
+    labelKo: '천연가스 수증기 개질 (SMR)',
+    labelEn: 'Steam Methane Reforming (SMR)',
+    reactionEq: 'CH₄ + H₂O → CO + 3H₂ (ΔH = +206 kJ/mol)',
+    defaultTempC: 850.0,
+    defaultPressKgcm2g: 25.0,
+    defaultConvPct: 82.0,
+  },
+  {
+    id: 'methanol_synthesis',
+    labelKo: '메탄올 촉매 합성 (CO + 2H₂ → MeOH)',
+    labelEn: 'Methanol Synthesis',
+    reactionEq: 'CO + 2H₂ → CH₃OH (ΔH = -90.6 kJ/mol)',
+    defaultTempC: 250.0,
+    defaultPressKgcm2g: 60.0,
+    defaultConvPct: 65.0,
+  },
+  {
+    id: 'ammonia_synthesis',
+    labelKo: '암모니아 합성 (Haber-Bosch)',
+    labelEn: 'Ammonia Synthesis (Haber-Bosch)',
+    reactionEq: 'N₂ + 3H₂ → 2NH₃ (ΔH = -92.4 kJ/mol)',
+    defaultTempC: 450.0,
+    defaultPressKgcm2g: 150.0,
+    defaultConvPct: 28.0,
+  },
+];
+
 export interface FlowUnitParams {
   // 장치별 계산 수준 모드: 'simple'(간편 발란스) | 'rigorous'(정밀 열역학 · 다단/구역 적분)
   calcMode?: UnitCalcMode;
+
+  // 압력 연동 열역학 상태 지정 모드 (Feed / HEX / Cooler / Liquefier / Separator 공통)
+  thermalSpecMode?: ThermalSpecMode;
+  subcoolDeltaC?: number;
+  superheatDeltaC?: number;
+  targetVaporFraction?: number;
 
   // Feed 전용
   feedTempC?: number;
@@ -518,6 +725,7 @@ export interface FlowUnitParams {
   feedFlowsKgH?: Partial<Record<SimCompKey, number>>;
 
   // Electrolyzer 전용
+  electrolyzerPreset?: ElectrolyzerPresetId;
   currentKA?: number;
   cellCount?: number;
   unitCount?: number;
@@ -591,7 +799,13 @@ export interface FlowUnitParams {
     | 'cms_aibn_chlorination'
     | 'mda_condensation'
     | 'phosgene_synthesis'
-    | 'mdi_phosgenation';
+    | 'mdi_phosgenation'
+    | 'acid_base_neutralization'
+    | 'ncm_precursor_coprecip'
+    | 'li_causticization'
+    | 'smr_reforming'
+    | 'methanol_synthesis'
+    | 'ammonia_synthesis';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -1186,6 +1400,231 @@ export function ratioFromSplit(vap: Record<SimCompKey, number>, liq: Record<SimC
     if (t > 0 && v > 0) r[k] = v / t;
   }
   return r;
+}
+
+export interface ThermalSpecResolution {
+  tempC: number;
+  bubbleTempC: number | null;
+  dewTempC: number | null;
+  forcedPhase?: 'L' | 'G' | 'L/G';
+  vapRatio?: VapRatio;
+  resolved: boolean;
+  mode: ThermalSpecMode;
+}
+
+/**
+ * 압력 연동 열역학 상태 지정 모드(Bubble / Dew / Subcool / Superheat / VF) 해석 헬퍼.
+ * - 빈 유량, 비휘발성 단일염, 초임계(P >= Pc) 등 상변화 구간이 없는 경우 NaN 없이 fallbackTempC 안전 반환.
+ */
+export function resolveThermalSpecTempC(
+  flows: Record<SimCompKey, number>,
+  pressKgcm2g: number,
+  fallbackTempC: number,
+  mode?: ThermalSpecMode,
+  params?: Pick<FlowUnitParams, 'subcoolDeltaC' | 'superheatDeltaC' | 'targetVaporFraction'>,
+  propertyMethod: ResolvedPropertyMethod = 'ENRTL'
+): ThermalSpecResolution {
+  const safeFallback = Number.isFinite(fallbackTempC) ? fallbackTempC : 25.0;
+  if (!mode || mode === 'tp') {
+    return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode: 'tp' };
+  }
+
+  let totalMass = 0;
+  let volatileMass = 0;
+  let hasNonVolatile = false;
+  const activeVolatiles: SimCompKey[] = [];
+  for (const k of SIM_COMPS) {
+    const m = Math.max(0, flows[k] || 0);
+    if (m <= 1e-12) continue;
+    totalMass += m;
+    if (NON_VOLATILE_RIG_SET.has(k)) {
+      hasNonVolatile = true;
+    } else {
+      volatileMass += m;
+      activeVolatiles.push(k);
+    }
+  }
+  if (totalMass <= 1e-9 || volatileMass <= 1e-9 || activeVolatiles.length === 0) {
+    return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode };
+  }
+
+  const P_abs_bar = Math.max(0.05, (pressKgcm2g + 1.03323) * 0.980665);
+  if (activeVolatiles.length === 1) {
+    const crit = RIGOROUS_CRIT[activeVolatiles[0]];
+    if (crit && P_abs_bar >= crit.Pc_bar * 0.995) {
+      return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode };
+    }
+  }
+
+  const vfAt = (T_C: number): number => {
+    const fl = solveRigorousFlashVLE(flows, T_C, pressKgcm2g, 1.0, undefined, undefined, propertyMethod);
+    if (!Number.isFinite(fl.betaVapMole)) return 0;
+    return Math.min(1, Math.max(0, fl.betaVapMole));
+  };
+
+  const T_SCAN = [-190, -150, -110, -75, -45, -20, 0, 20, 45, 70, 95, 125, 160, 200, 250, 310, 380, 450];
+  const vfScan = T_SCAN.map(t => vfAt(t));
+  const vMin = vfScan[0];
+  const vMax = vfScan[vfScan.length - 1];
+  if (vMax - vMin < 1e-3) {
+    return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode };
+  }
+
+  // Bubble point bracket & 24-iter bisection
+  const epsB = vMin + 1e-4;
+  let bLo = T_SCAN[0];
+  let bHi = T_SCAN[T_SCAN.length - 1];
+  let foundBubble = false;
+  for (let i = 0; i < T_SCAN.length - 1; i++) {
+    if (vfScan[i] <= epsB && vfScan[i + 1] > epsB) {
+      bLo = T_SCAN[i];
+      bHi = T_SCAN[i + 1];
+      foundBubble = true;
+      break;
+    }
+  }
+  if (!foundBubble) {
+    return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode };
+  }
+  for (let it = 0; it < 24; it++) {
+    const mid = 0.5 * (bLo + bHi);
+    if (vfAt(mid) <= epsB) bLo = mid;
+    else bHi = mid;
+  }
+  const T_bubble = 0.5 * (bLo + bHi);
+
+  // Dew point bracket & 24-iter bisection
+  const epsD = vMax - 1e-4;
+  let dLo = T_SCAN[0];
+  let dHi = T_SCAN[T_SCAN.length - 1];
+  let foundDew = false;
+  for (let i = T_SCAN.length - 2; i >= 0; i--) {
+    if (vfScan[i] < epsD && vfScan[i + 1] >= epsD) {
+      dLo = T_SCAN[i];
+      dHi = T_SCAN[i + 1];
+      foundDew = true;
+      break;
+    }
+  }
+  if (!foundDew) {
+    return { tempC: safeFallback, bubbleTempC: null, dewTempC: null, resolved: false, mode };
+  }
+  for (let it = 0; it < 24; it++) {
+    const mid = 0.5 * (dLo + dHi);
+    if (vfAt(mid) < epsD) dLo = mid;
+    else dHi = mid;
+  }
+  const T_dew = Math.max(T_bubble, 0.5 * (dLo + dHi));
+
+  const buildUniformVolatileRatio = (vfVal: number): VapRatio => {
+    const r: VapRatio = {};
+    for (const k of activeVolatiles) r[k] = vfVal;
+    return r;
+  };
+
+  if (mode === 'sat_liq') {
+    return {
+      tempC: T_bubble,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: 'L',
+      resolved: true,
+      mode,
+    };
+  }
+  if (mode === 'sat_vap') {
+    return {
+      tempC: T_dew,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: hasNonVolatile ? undefined : 'G',
+      vapRatio: hasNonVolatile ? buildUniformVolatileRatio(1.0) : undefined,
+      resolved: true,
+      mode,
+    };
+  }
+  if (mode === 'subcool') {
+    const dT = Math.max(0, Number.isFinite(params?.subcoolDeltaC) ? (params!.subcoolDeltaC as number) : 5);
+    const outT = T_bubble - dT;
+    return {
+      tempC: Number.isFinite(outT) ? outT : safeFallback,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: dT < 1e-4 ? 'L' : undefined,
+      resolved: Number.isFinite(outT),
+      mode,
+    };
+  }
+  if (mode === 'superheat') {
+    const dT = Math.max(0, Number.isFinite(params?.superheatDeltaC) ? (params!.superheatDeltaC as number) : 10);
+    const outT = T_dew + dT;
+    return {
+      tempC: Number.isFinite(outT) ? outT : safeFallback,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: dT < 1e-4 && !hasNonVolatile ? 'G' : undefined,
+      vapRatio: dT < 1e-4 && hasNonVolatile ? buildUniformVolatileRatio(1.0) : undefined,
+      resolved: Number.isFinite(outT),
+      mode,
+    };
+  }
+
+  // mode === 'vf'
+  const targetVf = Math.min(
+    1,
+    Math.max(0, Number.isFinite(params?.targetVaporFraction) ? (params!.targetVaporFraction as number) : 0.5)
+  );
+  if (targetVf <= 1e-5) {
+    return {
+      tempC: T_bubble,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: 'L',
+      resolved: true,
+      mode,
+    };
+  }
+  if (targetVf >= 1 - 1e-5) {
+    return {
+      tempC: T_dew,
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      forcedPhase: hasNonVolatile ? undefined : 'G',
+      vapRatio: hasNonVolatile ? buildUniformVolatileRatio(1.0) : undefined,
+      resolved: true,
+      mode,
+    };
+  }
+  if (T_dew - T_bubble < 1e-2) {
+    // 단일 성분 또는 공비 혼합물: T_bubble에서 지정 기상분율 직접 반영
+    return {
+      tempC: 0.5 * (T_bubble + T_dew),
+      bubbleTempC: T_bubble,
+      dewTempC: T_dew,
+      vapRatio: buildUniformVolatileRatio(targetVf),
+      resolved: true,
+      mode,
+    };
+  }
+
+  const targetScaled = vMin + targetVf * (vMax - vMin);
+  let lo = T_bubble;
+  let hi = T_dew;
+  for (let it = 0; it < 24; it++) {
+    const mid = 0.5 * (lo + hi);
+    if (vfAt(mid) < targetScaled) lo = mid;
+    else hi = mid;
+  }
+  const T_vf = 0.5 * (lo + hi);
+  const flVf = solveRigorousFlashVLE(flows, T_vf, pressKgcm2g, 1.0, undefined, undefined, propertyMethod);
+  return {
+    tempC: Number.isFinite(T_vf) ? T_vf : safeFallback,
+    bubbleTempC: T_bubble,
+    dewTempC: T_dew,
+    vapRatio: ratioFromSplit(flVf.vap, flVf.liq),
+    resolved: Number.isFinite(T_vf),
+    mode,
+  };
 }
 
 /**
@@ -2057,16 +2496,31 @@ export function solveFlowsheet(
       else if (node.unitType === 'feed') {
         const fFlows = emptyFlows();
         for (const k of SIM_COMPS) fFlows[k] = Math.max(0, p.feedFlowsKgH?.[k] ?? 0);
-        const fT = p.feedTempC ?? 25.0;
         const fP = p.feedPressKgcm2g ?? 1.0;
+        let fT = p.feedTempC ?? 25.0;
+        let feedForcedPhase: 'L' | 'G' | 'L/G' | undefined = undefined;
+        let feedVapRatio: VapRatio | undefined = undefined;
+        if (p.thermalSpecMode && p.thermalSpecMode !== 'tp') {
+          const tsRes = resolveThermalSpecTempC(fFlows, fP, fT, p.thermalSpecMode, p, runtimePropertyMethod);
+          fT = tsRes.tempC;
+          feedForcedPhase = tsRes.forcedPhase;
+          feedVapRatio = tsRes.vapRatio;
+          if (tsRes.resolved && tsRes.bubbleTempC !== null && tsRes.dewTempC !== null) {
+            const modeMeta = THERMAL_SPEC_MODE_OPTIONS.find(o => o.id === p.thermalSpecMode);
+            extraMetrics = {
+              '열역학 지정 모드': modeMeta?.labelKo ?? p.thermalSpecMode,
+              '포화 비점 / 이슬점': `${tsRes.bubbleTempC.toFixed(1)}°C / ${tsRes.dewTempC.toFixed(1)}°C @ ${fP.toFixed(2)} kG`,
+            };
+          }
+        }
         const nOut = Math.max(1, outEdges.length);
         for (const oe of outEdges) {
           const splitF = emptyFlows();
           SIM_COMPS.forEach(k => { splitF[k] = fFlows[k] / nOut; });
-          assignEdge(oe, splitF, fT, fP);
+          assignEdge(oe, splitF, fT, fP, feedForcedPhase, feedVapRatio);
         }
         const totOut = sumFlows(fFlows);
-        const props = calcStreamProps(fFlows, fT, fP, undefined, undefined, runtimePropertyMethod);
+        const props = calcStreamProps(fFlows, fT, fP, feedForcedPhase, feedVapRatio, runtimePropertyMethod);
         note = `공급: ${totOut.toFixed(1)} kg/h (${detectKeyConc(fFlows, props.phase)}, ${fT.toFixed(1)}°C, ${fP.toFixed(2)} kG)`;
       }
 
@@ -2086,8 +2540,11 @@ export function solveFlowsheet(
         }
       }
 
-      // ── 3) 이온교환막 전해조 (Electrolyzer — 간편 vs 정밀 Nernst+Tafel+IR) ──
+      // ── 3) 이온교환막 전해조 (Electrolyzer — 6종 화학 프리셋 + 간편/정밀 Nernst+Tafel+IR) ──
       else if (node.unitType === 'electrolyzer') {
+        const elPreset: ElectrolyzerPresetId = p.electrolyzerPreset ?? 'nacl_chlor_alkali';
+
+        if (elPreset === 'nacl_chlor_alkali') {
         const anodeInEdges = inEdges.filter(e => e.targetPort === 'anode_in' || (!e.targetPort || e.targetPort === 'in'));
         const cathodeInEdges = inEdges.filter(e => e.targetPort === 'cathode_in');
 
@@ -2236,6 +2693,335 @@ export function solveFlowsheet(
         note = actualNe > 0
           ? `${isRigorous ? '[정밀] ' : ''}Cl₂ ${cl2ProducedKgH.toFixed(0)} kg/h (${V_cell.toFixed(2)}V) | 브라인 ${anBrineWt.toFixed(1)}% · NaOH ${caNaohWt.toFixed(1)}%`
           : `전해조 대기중 — 양극In(염수) · 음극In(가성소다+순수) 배관을 연결하세요`;
+        } else if (elPreset === 'awe_water' || elPreset === 'pem_water') {
+          // 알칼라인 수전해 (AWE) / 고분자전해질 수전해 (PEM): 2H₂O → 2H₂ + O₂ (4e⁻/mol O₂, 2e⁻/mol H₂)
+          const isPem = elPreset === 'pem_water';
+          const I_kA = Math.max(0.1, p.currentKA ?? (isPem ? 8.0 : 10.0));
+          const nCells = Math.max(1, p.cellCount ?? (isPem ? 150 : 200));
+          const nUnits = Math.max(1, p.unitCount ?? 1);
+          const ce = Math.min(100, Math.max(50, p.currentEffPct ?? (isPem ? 98.5 : 98.0))) / 100;
+          const V_cell = Math.max(1.25, p.cellVoltageV ?? (isPem ? 1.95 : 1.90));
+          const T_el = p.operTempC ?? (isPem ? 65.0 : 75.0);
+          const P_an = p.operPressKgcm2g ?? (isPem ? 30.0 : 10.0);
+          const P_ca = P_an + (p.cathodeDeltaP ?? 0);
+
+          const theoNeKmolH = (I_kA * 1000 * nCells * nUnits * ce) / 26801.48;
+          const availWaterKmol = totalIn.H2O / MW.H2O;
+          const actualNe = totalIn.H2O > 1e-6 ? Math.min(theoNeKmolH, availWaterKmol * 2.0 * 0.98) : 0;
+
+          const h2ProducedKgH = 0.5 * actualNe * MW.H2;
+          const o2ProducedKgH = 0.25 * actualNe * MW.O2;
+          const h2oConsumedKgH = h2ProducedKgH + o2ProducedKgH;
+
+          const h2Out = emptyFlows();
+          h2Out.H2 = (totalIn.H2 || 0) + h2ProducedKgH;
+          const o2Out = emptyFlows();
+          o2Out.O2 = (totalIn.O2 || 0) + o2ProducedKgH;
+          const liqOut = { ...totalIn };
+          liqOut.H2O = Math.max(0, totalIn.H2O - h2oConsumedKgH);
+          liqOut.H2 = 0;
+          liqOut.O2 = 0;
+
+          const vapEdges = outEdges.filter(e => e.sourcePort === 'vapor' || e.sourcePort === 'cathode_out');
+          const sideEdges = outEdges.filter(e => e.sourcePort === 'side_cut' || e.sourcePort === 'anode_out');
+          const liqEdges = outEdges.filter(e => e.sourcePort === 'liquid');
+          const otherEdges = outEdges.filter(
+            e =>
+              e.sourcePort !== 'vapor' &&
+              e.sourcePort !== 'cathode_out' &&
+              e.sourcePort !== 'side_cut' &&
+              e.sourcePort !== 'anode_out' &&
+              e.sourcePort !== 'liquid'
+          );
+
+          if (vapEdges.length > 0 || sideEdges.length > 0 || liqEdges.length > 0) {
+            vapEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = h2Out[k] / vapEdges.length; });
+              assignEdge(e, sf, T_el, P_ca, 'G');
+            });
+            sideEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = o2Out[k] / sideEdges.length; });
+              assignEdge(e, sf, T_el, P_an, 'G');
+            });
+            liqEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = liqOut[k] / liqEdges.length; });
+              assignEdge(e, sf, T_el, P_an, 'L');
+            });
+            otherEdges.forEach(e => {
+              assignEdge(e, liqOut, T_el, P_an, 'L');
+            });
+            if (vapEdges.length === 0) pushUnrouted('vapor', '음극 H₂ 미연결', h2Out, T_el, P_ca, 'G');
+            if (sideEdges.length === 0) pushUnrouted('side_cut', '양극 O₂ 미연결', o2Out, T_el, P_an, 'G');
+            if (liqEdges.length === 0 && otherEdges.length === 0 && sumFlows(liqOut) > 1e-6) {
+              pushUnrouted('liquid', '순환 전해액/미반응수 미연결', liqOut, T_el, P_an, 'L');
+            }
+          } else {
+            if (outEdges[0]) assignEdge(outEdges[0], h2Out, T_el, P_ca, 'G');
+            else pushUnrouted('vapor', '음극 H₂ 미연결', h2Out, T_el, P_ca, 'G');
+            if (outEdges[1]) assignEdge(outEdges[1], o2Out, T_el, P_an, 'G');
+            else pushUnrouted('side_cut', '양극 O₂ 미연결', o2Out, T_el, P_an, 'G');
+            if (outEdges[2]) assignEdge(outEdges[2], liqOut, T_el, P_an, 'L');
+            else if (sumFlows(liqOut) > 1e-6) pushUnrouted('liquid', '순환 전해액/미반응수 미연결', liqOut, T_el, P_an, 'L');
+          }
+
+          const dcPowerKW = I_kA * V_cell * nCells * nUnits;
+          shaftPowerKW = dcPowerKW;
+          heatDutyKcalH = derivedDutyKcalH();
+          dutyFromEnthalpy = true;
+          const kwhPerKgH2 = h2ProducedKgH > 1e-6 ? dcPowerKW / h2ProducedKgH : 0;
+          const kohWt = sumFlows(liqOut) > 1e-6 ? (liqOut.KOH / sumFlows(liqOut)) * 100 : 0;
+
+          extraMetrics = {
+            '전해조 화학 프리셋': isPem ? 'PEM 고분자전해질 수전해 (2H₂O → 2H₂ + O₂)' : 'AWE 알칼라인 수전해 (2H₂O → 2H₂ + O₂)',
+            'DC 소비전력': `${(dcPowerKW / 1000).toFixed(2)} MW (${V_cell.toFixed(2)}V, E_rev 1.23V)`,
+            '수소 전력원단위': h2ProducedKgH > 1e-6 ? `${kwhPerKgH2.toFixed(1)} kWh/kg H₂` : '—',
+            '생성 H₂ / O₂': `${h2ProducedKgH.toFixed(2)} / ${o2ProducedKgH.toFixed(2)} kg/h`,
+            '소비 순수 (H₂O)': `${h2oConsumedKgH.toFixed(1)} kg/h`,
+            ...(kohWt > 0.1 ? { '순환 전해액 KOH': `${kohWt.toFixed(1)} wt% KOH` } : {}),
+            '엔탈피 수지 열부하 Q (ΔH − W)': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
+          };
+          note = actualNe > 0
+            ? `[${isPem ? 'PEM' : 'AWE'}] H₂ ${h2ProducedKgH.toFixed(1)} / O₂ ${o2ProducedKgH.toFixed(1)} kg/h (${kwhPerKgH2.toFixed(1)} kWh/kg H₂ @ ${P_ca.toFixed(1)}kG)`
+            : `수전해조 대기중 — 순수(H₂O${isPem ? '' : '+KOH'}) 유입 배관을 연결하세요`;
+        } else if (elPreset === 'kcl_koh') {
+          // 염화칼륨 전해 (KCl → KOH + ½Cl₂ + ½H₂; NaCl을 염 대리 성분으로 수용)
+          const anodeInEdges = inEdges.filter(e => e.targetPort === 'anode_in' || (!e.targetPort || e.targetPort === 'in'));
+          const cathodeInEdges = inEdges.filter(e => e.targetPort === 'cathode_in');
+          const anGrp = sumEdgeGroup(anodeInEdges.filter(e => {
+            if (e.targetPort === 'anode_in') return true;
+            const f = edgeState.get(e.id)?.flows;
+            return !cathodeInEdges.length && f && (f.KOH + f.NaOH) > f.NaCl && f.NaCl === 0 ? false : true;
+          }));
+          const caGrp = sumEdgeGroup([
+            ...cathodeInEdges,
+            ...inEdges.filter(e => {
+              if (e.targetPort === 'anode_in' || e.targetPort === 'cathode_in') return false;
+              const f = edgeState.get(e.id)?.flows;
+              return f ? (f.KOH + f.NaOH) > f.NaCl && f.NaCl === 0 : false;
+            }),
+          ]);
+
+          const I_kA = Math.max(0.1, p.currentKA ?? 14.0);
+          const nCells = Math.max(1, p.cellCount ?? 160);
+          const nUnits = Math.max(1, p.unitCount ?? 1);
+          const ce = Math.min(100, Math.max(50, p.currentEffPct ?? 96.0)) / 100;
+          const V_cell = Math.max(1.5, p.cellVoltageV ?? 3.10);
+          const T_el = p.operTempC ?? 88.0;
+          const P_an = p.operPressKgcm2g ?? 0.40;
+          const P_ca = P_an + (p.cathodeDeltaP ?? 0.15);
+          const tH2O = Math.max(0, p.waterTransportNumber ?? 3.5);
+
+          const theoNeKmolH = (I_kA * 1000 * nCells * nUnits * ce) / 26801.48;
+          const availSaltKmol = anGrp.flows.NaCl / MW.NaCl;
+          const availWaterKmol = (anGrp.flows.H2O + caGrp.flows.H2O) / MW.H2O;
+          const actualNe = (anGrp.mass > 0 || caGrp.mass > 0)
+            ? Math.min(
+                theoNeKmolH,
+                availSaltKmol > 1e-6 ? availSaltKmol * 0.995 : theoNeKmolH,
+                availWaterKmol * 0.98
+              )
+            : 0;
+
+          const anOut = { ...anGrp.flows };
+          const caOut = { ...caGrp.flows };
+          const cl2ProducedKgH = 0.5 * actualNe * MW.Cl2;
+          const h2ProducedKgH = 0.5 * actualNe * MW.H2;
+          const kohProducedKgH = actualNe * COMP_META.KOH.mw;
+          const saltConsumedKgH = Math.min(anOut.NaCl, actualNe * MW.NaCl);
+          const waterRxnKgH = actualNe * MW.H2O;
+          const waterEoKgH = Math.min(anOut.H2O * 0.85, actualNe * tH2O * MW.H2O);
+
+          anOut.NaCl = Math.max(0, anOut.NaCl - saltConsumedKgH);
+          anOut.H2O = Math.max(0, anOut.H2O - waterEoKgH);
+          anOut.Cl2 += cl2ProducedKgH;
+
+          const caWaterPool = caOut.H2O + waterEoKgH;
+          if (caWaterPool >= waterRxnKgH) {
+            caOut.H2O = Math.max(0, caWaterPool - waterRxnKgH);
+          } else {
+            const shortfall = waterRxnKgH - caWaterPool;
+            caOut.H2O = 0;
+            anOut.H2O = Math.max(0, anOut.H2O - shortfall);
+          }
+          caOut.KOH += kohProducedKgH;
+          caOut.H2 += h2ProducedKgH;
+
+          const anodeOutEdges = outEdges.filter(e => e.sourcePort === 'anode_out');
+          const cathodeOutEdges = outEdges.filter(e => e.sourcePort === 'cathode_out');
+          if (anodeOutEdges.length > 0 || cathodeOutEdges.length > 0) {
+            anodeOutEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = anOut[k] / anodeOutEdges.length; });
+              assignEdge(e, sf, T_el, P_an, 'L/G');
+            });
+            cathodeOutEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = caOut[k] / cathodeOutEdges.length; });
+              assignEdge(e, sf, T_el, P_ca, 'L/G');
+            });
+            if (anodeOutEdges.length === 0) pushUnrouted('anode_out', '양극 출구 미연결', anOut, T_el, P_an, 'L/G');
+            if (cathodeOutEdges.length === 0) pushUnrouted('cathode_out', '음극 출구 미연결', caOut, T_el, P_ca, 'L/G');
+          } else {
+            if (outEdges[0]) assignEdge(outEdges[0], anOut, T_el, P_an, 'L/G');
+            else pushUnrouted('anode_out', '양극 출구 미연결', anOut, T_el, P_an, 'L/G');
+            if (outEdges[1]) assignEdge(outEdges[1], caOut, T_el, P_ca, 'L/G');
+            else pushUnrouted('cathode_out', '음극 출구 미연결', caOut, T_el, P_ca, 'L/G');
+          }
+
+          const dcPowerKW = I_kA * V_cell * nCells * nUnits;
+          shaftPowerKW = dcPowerKW;
+          heatDutyKcalH = derivedDutyKcalH();
+          dutyFromEnthalpy = true;
+          const caLiqMass = caOut.KOH + caOut.H2O;
+          const kohWt = caLiqMass > 0 ? (caOut.KOH / caLiqMass) * 100 : 0;
+
+          extraMetrics = {
+            '전해조 화학 프리셋': 'KCl 가성칼리 전해 (2KCl + 2H₂O → 2KOH + Cl₂ + H₂)',
+            'DC 소비전력': `${(dcPowerKW / 1000).toFixed(2)} MW (${V_cell.toFixed(2)}V, E_rev 2.19V, CE ${(ce * 100).toFixed(1)}%)`,
+            '생성 KOH (100%)': `${kohProducedKgH.toFixed(1)} kg/h (${kohWt.toFixed(1)} wt% KOH)`,
+            '생성 Cl₂ / H₂': `${cl2ProducedKgH.toFixed(1)} / ${h2ProducedKgH.toFixed(1)} kg/h`,
+            '엔탈피 수지 열부하 Q (ΔH − W)': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
+          };
+          note = actualNe > 0
+            ? `[KCl→KOH] KOH ${kohProducedKgH.toFixed(0)} / Cl₂ ${cl2ProducedKgH.toFixed(0)} / H₂ ${h2ProducedKgH.toFixed(1)} kg/h (${V_cell.toFixed(2)}V)`
+            : `KCl 전해조 대기중 — 염수(NaCl 대리)·순수 유입 배관을 연결하세요`;
+        } else if (elPreset === 'hcl_electrolysis') {
+          // 염산 전해: 2HCl → H₂ + Cl₂ (2e⁻/mol Cl₂, E_rev ≈ 1.36V)
+          const I_kA = Math.max(0.1, p.currentKA ?? 12.0);
+          const nCells = Math.max(1, p.cellCount ?? 120);
+          const nUnits = Math.max(1, p.unitCount ?? 1);
+          const ce = Math.min(100, Math.max(50, p.currentEffPct ?? 97.0)) / 100;
+          const V_cell = Math.max(1.30, p.cellVoltageV ?? 1.55);
+          const T_el = p.operTempC ?? 70.0;
+          const P_an = p.operPressKgcm2g ?? 0.50;
+          const P_ca = P_an + (p.cathodeDeltaP ?? 0.10);
+
+          const theoNeKmolH = (I_kA * 1000 * nCells * nUnits * ce) / 26801.48;
+          const availHclKmol = totalIn.HCl / MW.HCl;
+          const actualNe = totalIn.HCl > 1e-6 ? Math.min(theoNeKmolH, availHclKmol * 0.99) : 0;
+
+          const cl2ProducedKgH = 0.5 * actualNe * MW.Cl2;
+          const h2ProducedKgH = 0.5 * actualNe * MW.H2;
+          const hclConsumedKgH = cl2ProducedKgH + h2ProducedKgH;
+
+          const anOut = { ...totalIn };
+          anOut.HCl = Math.max(0, totalIn.HCl - hclConsumedKgH);
+          anOut.Cl2 += cl2ProducedKgH;
+          anOut.H2 = 0;
+
+          const caOut = emptyFlows();
+          caOut.H2 = (totalIn.H2 || 0) + h2ProducedKgH;
+
+          const anodeOutEdges = outEdges.filter(e => e.sourcePort === 'anode_out' || e.sourcePort === 'liquid');
+          const cathodeOutEdges = outEdges.filter(e => e.sourcePort === 'cathode_out' || e.sourcePort === 'vapor');
+          if (anodeOutEdges.length > 0 || cathodeOutEdges.length > 0) {
+            anodeOutEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = anOut[k] / anodeOutEdges.length; });
+              assignEdge(e, sf, T_el, P_an, 'L/G');
+            });
+            cathodeOutEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = caOut[k] / cathodeOutEdges.length; });
+              assignEdge(e, sf, T_el, P_ca, 'G');
+            });
+            if (anodeOutEdges.length === 0) pushUnrouted('anode_out', '양극(Cl₂+희염산) 미연결', anOut, T_el, P_an, 'L/G');
+            if (cathodeOutEdges.length === 0) pushUnrouted('cathode_out', '음극(H₂) 미연결', caOut, T_el, P_ca, 'G');
+          } else {
+            if (outEdges[0]) assignEdge(outEdges[0], anOut, T_el, P_an, 'L/G');
+            else pushUnrouted('anode_out', '양극(Cl₂+희염산) 미연결', anOut, T_el, P_an, 'L/G');
+            if (outEdges[1]) assignEdge(outEdges[1], caOut, T_el, P_ca, 'G');
+            else pushUnrouted('cathode_out', '음극(H₂) 미연결', caOut, T_el, P_ca, 'G');
+          }
+
+          const dcPowerKW = I_kA * V_cell * nCells * nUnits;
+          shaftPowerKW = dcPowerKW;
+          heatDutyKcalH = derivedDutyKcalH();
+          dutyFromEnthalpy = true;
+
+          extraMetrics = {
+            '전해조 화학 프리셋': 'HCl 염산 전해 (2HCl → H₂ + Cl₂)',
+            'DC 소비전력': `${(dcPowerKW / 1000).toFixed(2)} MW (${V_cell.toFixed(2)}V, E_rev 1.36V, CE ${(ce * 100).toFixed(1)}%)`,
+            '생성 Cl₂ / H₂': `${cl2ProducedKgH.toFixed(1)} / ${h2ProducedKgH.toFixed(2)} kg/h`,
+            '소비 HCl': `${hclConsumedKgH.toFixed(1)} kg/h`,
+            '엔탈피 수지 열부하 Q (ΔH − W)': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
+          };
+          note = actualNe > 0
+            ? `[HCl 전해] Cl₂ ${cl2ProducedKgH.toFixed(1)} / H₂ ${h2ProducedKgH.toFixed(1)} kg/h (${V_cell.toFixed(2)}V)`
+            : `HCl 전해조 대기중 — 염산(HCl+H₂O) 유입 배관을 연결하세요`;
+        } else {
+          // 염소산소다 전해 (naclo3_chlorate): NaCl + 3H₂O → NaClO₃ + 3H₂ (6e⁻/mol NaClO₃)
+          const I_kA = Math.max(0.1, p.currentKA ?? 15.0);
+          const nCells = Math.max(1, p.cellCount ?? 100);
+          const nUnits = Math.max(1, p.unitCount ?? 1);
+          const ce = Math.min(100, Math.max(50, p.currentEffPct ?? 94.0)) / 100;
+          const V_cell = Math.max(1.5, p.cellVoltageV ?? 3.10);
+          const T_el = p.operTempC ?? 80.0;
+          const P_el = p.operPressKgcm2g ?? 0.20;
+
+          const theoNeKmolH = (I_kA * 1000 * nCells * nUnits * ce) / 26801.48;
+          const availNaClKmol = totalIn.NaCl / MW.NaCl;
+          const availWaterKmol = totalIn.H2O / MW.H2O;
+          const actualNe = (totalIn.NaCl > 1e-6 && totalIn.H2O > 1e-6)
+            ? Math.min(theoNeKmolH, availNaClKmol * 6.0 * 0.99, availWaterKmol * 2.0 * 0.98)
+            : 0;
+
+          const naclo3ProducedKgH = (actualNe / 6.0) * MW.NaClO3;
+          const h2ProducedKgH = 0.5 * actualNe * MW.H2;
+          const naclConsumedKgH = (actualNe / 6.0) * MW.NaCl;
+          const h2oConsumedKgH = Math.max(0, naclo3ProducedKgH + h2ProducedKgH - naclConsumedKgH);
+
+          const vapOut = emptyFlows();
+          vapOut.H2 = (totalIn.H2 || 0) + h2ProducedKgH;
+          const liqOut = { ...totalIn };
+          liqOut.NaCl = Math.max(0, totalIn.NaCl - naclConsumedKgH);
+          liqOut.H2O = Math.max(0, totalIn.H2O - h2oConsumedKgH);
+          liqOut.NaClO3 += naclo3ProducedKgH;
+          liqOut.H2 = 0;
+
+          const vapEdges = outEdges.filter(e => e.sourcePort === 'vapor' || e.sourcePort === 'cathode_out');
+          const liqEdges = outEdges.filter(e => e.sourcePort === 'liquid' || e.sourcePort === 'anode_out');
+          if (vapEdges.length > 0 || liqEdges.length > 0) {
+            vapEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = vapOut[k] / vapEdges.length; });
+              assignEdge(e, sf, T_el, P_el, 'G');
+            });
+            liqEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = liqOut[k] / liqEdges.length; });
+              assignEdge(e, sf, T_el, P_el, 'L');
+            });
+            if (vapEdges.length === 0) pushUnrouted('vapor', '부생 H₂ 미연결', vapOut, T_el, P_el, 'G');
+            if (liqEdges.length === 0) pushUnrouted('liquid', 'NaClO₃ 전해액 미연결', liqOut, T_el, P_el, 'L');
+          } else {
+            if (outEdges[0]) assignEdge(outEdges[0], vapOut, T_el, P_el, 'G');
+            else pushUnrouted('vapor', '부생 H₂ 미연결', vapOut, T_el, P_el, 'G');
+            if (outEdges[1]) assignEdge(outEdges[1], liqOut, T_el, P_el, 'L');
+            else pushUnrouted('liquid', 'NaClO₃ 전해액 미연결', liqOut, T_el, P_el, 'L');
+          }
+
+          const dcPowerKW = I_kA * V_cell * nCells * nUnits;
+          shaftPowerKW = dcPowerKW;
+          heatDutyKcalH = derivedDutyKcalH();
+          dutyFromEnthalpy = true;
+          const liqTot = sumFlows(liqOut);
+          const chlorateWt = liqTot > 0 ? (liqOut.NaClO3 / liqTot) * 100 : 0;
+
+          extraMetrics = {
+            '전해조 화학 프리셋': '염소산소다 전해 (NaCl + 3H₂O → NaClO₃ + 3H₂)',
+            'DC 소비전력': `${(dcPowerKW / 1000).toFixed(2)} MW (${V_cell.toFixed(2)}V, CE ${(ce * 100).toFixed(1)}%)`,
+            '생성 NaClO₃': `${naclo3ProducedKgH.toFixed(1)} kg/h (${chlorateWt.toFixed(1)} wt%)`,
+            '부생 H₂': `${h2ProducedKgH.toFixed(2)} kg/h`,
+            '엔탈피 수지 열부하 Q (ΔH − W)': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
+          };
+          note = actualNe > 0
+            ? `[NaClO₃ 전해] NaClO₃ ${naclo3ProducedKgH.toFixed(1)} / H₂ ${h2ProducedKgH.toFixed(1)} kg/h (${V_cell.toFixed(2)}V)`
+            : `염소산소다 전해조 대기중 — 염수(NaCl+H₂O) 유입 배관을 연결하세요`;
+        }
       }
 
       // ── 4) 염소/가스 액화기 (Liquefier) & 열교환기 (HEX) ───────────────────
@@ -2265,6 +3051,13 @@ export function solveFlowsheet(
           noteFlash(ph, '공정측 지정열량 PH 플래시 미수렴 (출구온도 탐색 경계 도달)');
           T_proc_out = ph.T_C;
           phSplit = { vap: ph.vap, liq: ph.liq };
+        } else if (p.thermalSpecMode && p.thermalSpecMode !== 'tp' && procIn.mass > 0) {
+          // 압력 연동 열역학 지정 모드 (Bubble / Dew / Subcool / Superheat / VF)
+          const tsRes = resolveThermalSpecTempC(procIn.flows, P_proc_out, T_proc_out, p.thermalSpecMode, p, runtimePropertyMethod);
+          T_proc_out = tsRes.tempC;
+          if (tsRes.forcedPhase || tsRes.vapRatio) {
+            phSplit = phaseSplit(procIn.flows, T_proc_out, P_proc_out, tsRes.forcedPhase, tsRes.vapRatio, runtimePropertyMethod);
+          }
         }
 
         // 정밀 모드 또는 일반 패키지 선택 시 다성분 플래시 실행!
@@ -2450,6 +3243,13 @@ export function solveFlowsheet(
           noteFlash(ph, '단열 PH 플래시 미수렴 (출구온도 탐색 경계 도달)');
           T_out = ph.T_C;
           phSplitSep = { vap: ph.vap, liq: ph.liq };
+        } else if (p.thermalSpecMode && p.thermalSpecMode !== 'tp' && sumMassIn > 0) {
+          // 압력 연동 열역학 지정 모드 (Bubble / Dew / Subcool / Superheat / VF)
+          const tsRes = resolveThermalSpecTempC(totalIn, P_out, T_out, p.thermalSpecMode, p, runtimePropertyMethod);
+          T_out = tsRes.tempC;
+          if (tsRes.forcedPhase || tsRes.vapRatio) {
+            phSplitSep = phaseSplit(totalIn, T_out, P_out, tsRes.forcedPhase, tsRes.vapRatio, runtimePropertyMethod);
+          }
         }
 
         const tpSep = phSplitSep ? null : flashGasLiquid(totalIn, T_out, P_out, isRigorous, runtimePropertyMethod);
@@ -3353,6 +4153,148 @@ export function solveFlowsheet(
           outF.MDI += isoMass * 0.36;
           outF.PMDI += isoMass * 0.64;
           note = `MDI 2단 포스겐화 (${T_out.toFixed(1)}°C): Crude MDI ${isoMass.toFixed(1)} (4,4'-MDI ${(isoMass * 0.36).toFixed(1)} / PMDI ${(isoMass * 0.64).toFixed(1)}) + 부생 HCl ${hclGen.toFixed(1)} kg/h${waterHydroMsg}`;
+        } else if (preset === 'acid_base_neutralization') {
+          // 산·염기 중화 반응: HCl / H₂SO₄ + NaOH / KOH → 염(NaCl 등가) + H₂O (발열 ΔH = -57.3 kJ/mol)
+          let totalEqKmolH = 0;
+          let totalSaltKgH = 0;
+          let totalH2oKgH = 0;
+          // 1) HCl + NaOH → NaCl + H₂O
+          if (outF.HCl > 1e-9 && outF.NaOH > 1e-9) {
+            const ext1 = Math.min(outF.HCl / MW.HCl, outF.NaOH / MW.NaOH) * conv;
+            const hclUse = ext1 * MW.HCl;
+            const naohUse = ext1 * MW.NaOH;
+            const saltGen = ext1 * MW.NaCl;
+            const h2oGen = Math.max(0, hclUse + naohUse - saltGen);
+            outF.HCl = Math.max(0, outF.HCl - hclUse);
+            outF.NaOH = Math.max(0, outF.NaOH - naohUse);
+            outF.NaCl += saltGen;
+            outF.H2O += h2oGen;
+            totalEqKmolH += ext1;
+            totalSaltKgH += saltGen;
+            totalH2oKgH += h2oGen;
+          }
+          // 2) HCl + KOH → Salt(NaCl 등가) + H₂O
+          if (outF.HCl > 1e-9 && outF.KOH > 1e-9) {
+            const ext2 = Math.min(outF.HCl / MW.HCl, outF.KOH / COMP_META.KOH.mw) * conv;
+            const hclUse = ext2 * MW.HCl;
+            const kohUse = ext2 * COMP_META.KOH.mw;
+            const h2oGen = ext2 * MW.H2O;
+            const saltGen = Math.max(0, hclUse + kohUse - h2oGen);
+            outF.HCl = Math.max(0, outF.HCl - hclUse);
+            outF.KOH = Math.max(0, outF.KOH - kohUse);
+            outF.NaCl += saltGen;
+            outF.H2O += h2oGen;
+            totalEqKmolH += ext2;
+            totalSaltKgH += saltGen;
+            totalH2oKgH += h2oGen;
+          }
+          // 3) H₂SO₄ + 2NaOH → Salt(등가) + 2H₂O
+          if (outF.H2SO4 > 1e-9 && outF.NaOH > 1e-9) {
+            const ext3 = Math.min(outF.H2SO4 / MW.H2SO4, outF.NaOH / (2 * MW.NaOH)) * conv;
+            const acidUse = ext3 * MW.H2SO4;
+            const baseUse = 2 * ext3 * MW.NaOH;
+            const h2oGen = 2 * ext3 * MW.H2O;
+            const saltGen = Math.max(0, acidUse + baseUse - h2oGen);
+            outF.H2SO4 = Math.max(0, outF.H2SO4 - acidUse);
+            outF.NaOH = Math.max(0, outF.NaOH - baseUse);
+            outF.NaCl += saltGen;
+            outF.H2O += h2oGen;
+            totalEqKmolH += 2 * ext3;
+            totalSaltKgH += saltGen;
+            totalH2oKgH += h2oGen;
+          }
+          // 4) H₂SO₄ + 2KOH → Salt(등가) + 2H₂O
+          if (outF.H2SO4 > 1e-9 && outF.KOH > 1e-9) {
+            const ext4 = Math.min(outF.H2SO4 / MW.H2SO4, outF.KOH / (2 * COMP_META.KOH.mw)) * conv;
+            const acidUse = ext4 * MW.H2SO4;
+            const baseUse = 2 * ext4 * COMP_META.KOH.mw;
+            const h2oGen = 2 * ext4 * MW.H2O;
+            const saltGen = Math.max(0, acidUse + baseUse - h2oGen);
+            outF.H2SO4 = Math.max(0, outF.H2SO4 - acidUse);
+            outF.KOH = Math.max(0, outF.KOH - baseUse);
+            outF.NaCl += saltGen;
+            outF.H2O += h2oGen;
+            totalEqKmolH += 2 * ext4;
+            totalSaltKgH += saltGen;
+            totalH2oKgH += h2oGen;
+          }
+          const qNeutMcalH = (totalEqKmolH * 57.3 * 1000) / KJ_PER_KCAL / 1000;
+          note = `산·염기 중화 (${T_out.toFixed(1)}°C): ${totalEqKmolH.toFixed(2)} kmol/h 중화 → 염 ${totalSaltKgH.toFixed(1)} / H₂O ${totalH2oKgH.toFixed(1)} kg/h (이론발열 ${qNeutMcalH.toFixed(1)} Mcal/h)`;
+        } else if (preset === 'ncm_precursor_coprecip') {
+          // NCM 양극재 전구체 공침 반응 (NaOH + NH₄OH 착화제, pH 11.2, 55°C)
+          let precMassKgH = 0;
+          if (outF.H2SO4 > 1e-9 && outF.NaOH > 1e-9) {
+            const extAcid = Math.min(outF.H2SO4 / MW.H2SO4, outF.NaOH / (2 * MW.NaOH)) * conv;
+            const acidUse = extAcid * MW.H2SO4;
+            const baseUse = 2 * extAcid * MW.NaOH;
+            const h2oGen = 2 * extAcid * MW.H2O;
+            const saltGen = Math.max(0, acidUse + baseUse - h2oGen);
+            outF.H2SO4 = Math.max(0, outF.H2SO4 - acidUse);
+            outF.NaOH = Math.max(0, outF.NaOH - baseUse);
+            outF.H2O += h2oGen;
+            outF.NaCl += saltGen;
+            precMassKgH += saltGen;
+          }
+          if (outF.NaOH > 1e-9) {
+            const extCo = (outF.NaOH / (2 * MW.NaOH)) * conv * 0.5;
+            const baseUse = 2 * extCo * MW.NaOH;
+            const h2oGen = extCo * MW.H2O;
+            const solidEq = Math.max(0, baseUse - h2oGen);
+            outF.NaOH = Math.max(0, outF.NaOH - baseUse);
+            outF.H2O += h2oGen;
+            outF.NaCl += solidEq;
+            precMassKgH += solidEq;
+          }
+          const nh4Ratio = outF.NH4OH > 1e-6 ? `${outF.NH4OH.toFixed(1)} kg/h NH₄OH 착화` : 'NH₄OH 착화제 미공급';
+          note = `NCM 전구체 공침 (pH 11.2, ${T_out.toFixed(1)}°C): 공침전환 ${precMassKgH.toFixed(1)} kg/h (${nh4Ratio})`;
+        } else if (preset === 'li_causticization') {
+          // 리튬/탄산염 가성화 전환: Na₂CO₃(Li₂CO₃ 등가) + Ca(OH)₂ → 2NaOH(LiOH 등가) + CaCO₃↓ (85°C)
+          const extCaust = Math.min(
+            outF.Na2CO3 / COMP_META.Na2CO3.mw,
+            outF.CaOH2 / COMP_META.CaOH2.mw
+          ) * conv;
+          const carbUse = extCaust * COMP_META.Na2CO3.mw;
+          const limeUse = extCaust * COMP_META.CaOH2.mw;
+          const mUsed = carbUse + limeUse;
+          const naohGen = Math.min(mUsed, 2 * extCaust * MW.NaOH);
+          const cakeEq = Math.max(0, mUsed - naohGen);
+          outF.Na2CO3 = Math.max(0, outF.Na2CO3 - carbUse);
+          outF.CaOH2 = Math.max(0, outF.CaOH2 - limeUse);
+          outF.NaOH += naohGen;
+          outF.NaCl += cakeEq;
+          note = `리튬/탄산염 가성화 (${T_out.toFixed(1)}°C): 가성알칼리 ${naohGen.toFixed(1)} kg/h + 탄산칼슘 케이크(등가) ${cakeEq.toFixed(1)} kg/h (전환율 ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'smr_reforming') {
+          // 천연가스 수증기 개질 (SMR): CH₄ + H₂O → CO + 3H₂ (흡열 ΔH = +206 kJ/mol, 850°C)
+          const extSmr = Math.min(outF.CH4 / COMP_META.CH4.mw, outF.H2O / MW.H2O) * conv;
+          const ch4Use = extSmr * COMP_META.CH4.mw;
+          const h2oUse = extSmr * MW.H2O;
+          const coGen = extSmr * COMP_META.CO.mw;
+          const h2Gen = Math.max(0, ch4Use + h2oUse - coGen);
+          outF.CH4 = Math.max(0, outF.CH4 - ch4Use);
+          outF.H2O = Math.max(0, outF.H2O - h2oUse);
+          outF.CO += coGen;
+          outF.H2 += h2Gen;
+          note = `수증기 개질 SMR (${T_out.toFixed(1)}°C): H₂ ${h2Gen.toFixed(1)} / CO ${coGen.toFixed(1)} kg/h 생성 (CH₄ 전환율 ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'methanol_synthesis') {
+          // 메탄올 촉매 합성: CO + 2H₂ → CH₃OH (발열 ΔH = -90.6 kJ/mol, 250°C)
+          const extMeoh = Math.min(outF.CO / COMP_META.CO.mw, outF.H2 / (2 * MW.H2)) * conv;
+          const coUse = extMeoh * COMP_META.CO.mw;
+          const h2Use = 2 * extMeoh * MW.H2;
+          const meohGen = coUse + h2Use;
+          outF.CO = Math.max(0, outF.CO - coUse);
+          outF.H2 = Math.max(0, outF.H2 - h2Use);
+          outF.MeOH += meohGen;
+          note = `메탄올 합성 (${T_out.toFixed(1)}°C): MeOH ${meohGen.toFixed(1)} kg/h 생성 (전환율 ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'ammonia_synthesis') {
+          // 암모니아 합성 (Haber-Bosch): N₂ + 3H₂ → 2NH₃ (발열 ΔH = -92.4 kJ/mol, 450°C)
+          const extNh3 = Math.min(outF.N2 / MW.N2, outF.H2 / (3 * MW.H2)) * conv;
+          const n2Use = extNh3 * MW.N2;
+          const h2Use = 3 * extNh3 * MW.H2;
+          const nh3Gen = n2Use + h2Use;
+          outF.N2 = Math.max(0, outF.N2 - n2Use);
+          outF.H2 = Math.max(0, outF.H2 - h2Use);
+          outF.NH3 += nh3Gen;
+          note = `암모니아 합성 Haber-Bosch (${T_out.toFixed(1)}°C): NH₃ ${nh3Gen.toFixed(1)} kg/h 생성 (전환율 ${(conv * 100).toFixed(1)}%)`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;

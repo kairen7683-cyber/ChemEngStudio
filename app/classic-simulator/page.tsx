@@ -30,6 +30,12 @@ import {
   emptySimFlows,
   createIdleFlowsheetResult,
   solveFlowsheet,
+  THERMAL_SPEC_MODE_OPTIONS,
+  ELECTROLYZER_PRESET_SPECS,
+  PUBLIC_REACTOR_PRESET_SPECS,
+  type ThermalSpecMode,
+  type ElectrolyzerPresetId,
+  type PublicReactorPresetId,
   type FlowsheetSolveResult,
   type SolvedStream,
   type TearSolverMethod,
@@ -3719,25 +3725,108 @@ export default function ClassicSimulatorPage() {
                 />
 
                 {/* Feed 블록 입력 */}
-                {selectedBlock.unitType === 'feed' && (
+                {selectedBlock.unitType === 'feed' && (() => {
+                  const feedThermalMode: ThermalSpecMode = selectedBlock.params.thermalSpecMode ?? 'tp';
+                  return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Feed Specifications</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      <div style={{ fontSize: 10, color: '#475569' }}>
-                        <div style={{ marginBottom: 2 }}>온도</div>
-                        <UnitNumberInput
-                          quantity="temp"
-                          syncKey={`${selectedBlock.id}:feedTempC`}
-                          value={selectedBlock.params.feedTempC ?? 25}
-                          onValueChange={v =>
+                      <label style={{ fontSize: 10, color: '#475569' }}>
+                        열역학 지정 모드
+                        <select
+                          value={feedThermalMode}
+                          onChange={e =>
                             updateBlockDef(selectedBlock.id, d => ({
                               ...d,
-                              params: { ...d.params, feedTempC: v },
+                              params: { ...d.params, thermalSpecMode: e.target.value as ThermalSpecMode },
                             }))
                           }
-                          inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
-                        />
-                      </div>
+                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 10.5 }}
+                        >
+                          {THERMAL_SPEC_MODE_OPTIONS.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.labelKo}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {feedThermalMode === 'tp' && (
+                        <div style={{ fontSize: 10, color: '#475569' }}>
+                          <div style={{ marginBottom: 2 }}>온도</div>
+                          <UnitNumberInput
+                            quantity="temp"
+                            syncKey={`${selectedBlock.id}:feedTempC`}
+                            value={selectedBlock.params.feedTempC ?? 25}
+                            onValueChange={v =>
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: { ...d.params, feedTempC: v },
+                              }))
+                            }
+                            inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                          />
+                        </div>
+                      )}
+                      {feedThermalMode === 'subcool' && (
+                        <label style={{ fontSize: 10, color: '#475569' }}>
+                          과냉도 ΔT (°C, Bubble - ΔT)
+                          <input
+                            type="number"
+                            step="0.5"
+                            min={0}
+                            value={selectedBlock.params.subcoolDeltaC ?? 5}
+                            onChange={e =>
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: { ...d.params, subcoolDeltaC: Math.max(0, Number(e.target.value)) },
+                              }))
+                            }
+                            style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                          />
+                        </label>
+                      )}
+                      {feedThermalMode === 'superheat' && (
+                        <label style={{ fontSize: 10, color: '#475569' }}>
+                          과열도 ΔT (°C, Dew + ΔT)
+                          <input
+                            type="number"
+                            step="0.5"
+                            min={0}
+                            value={selectedBlock.params.superheatDeltaC ?? 10}
+                            onChange={e =>
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: { ...d.params, superheatDeltaC: Math.max(0, Number(e.target.value)) },
+                              }))
+                            }
+                            style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                          />
+                        </label>
+                      )}
+                      {feedThermalMode === 'vf' && (
+                        <label style={{ fontSize: 10, color: '#475569' }}>
+                          목표 기상분율 VF (0~1)
+                          <input
+                            type="number"
+                            step="0.05"
+                            min={0}
+                            max={1}
+                            value={selectedBlock.params.targetVaporFraction ?? 0.5}
+                            onChange={e =>
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: { ...d.params, targetVaporFraction: Math.min(1, Math.max(0, Number(e.target.value))) },
+                              }))
+                            }
+                            style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                          />
+                        </label>
+                      )}
+                      {(feedThermalMode === 'sat_liq' || feedThermalMode === 'sat_vap') && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: '1px solid #BAE6FD', borderRadius: 4, padding: '4px 6px' }}>
+                          {feedThermalMode === 'sat_liq'
+                            ? '포화액 (Bubble Point): 압력 P 기준 자동 산출'
+                            : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
+                        </div>
+                      )}
                       <div style={{ fontSize: 10, color: '#475569' }}>
                         <div style={{ marginBottom: 2 }}>압력</div>
                         <UnitNumberInput
@@ -3819,30 +3908,122 @@ export default function ClassicSimulatorPage() {
                       })}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Flash2 / Separator / Cooler / HEX */}
                 {(selectedBlock.unitType === 'separator' ||
                   selectedBlock.unitType === 'cooler' ||
                   selectedBlock.unitType === 'hex' ||
-                  selectedBlock.unitType === 'liquefier') && (
+                  selectedBlock.unitType === 'liquefier') && (() => {
+                  const showThermalSpec =
+                    selectedBlock.unitType === 'separator'
+                      ? selectedBlock.params.flashMode !== 'adiabatic'
+                      : selectedBlock.params.hexSpecMode !== 'heat_duty';
+                  const unitThermalMode: ThermalSpecMode = selectedBlock.params.thermalSpecMode ?? 'tp';
+                  return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Operating Specifications</div>
-                    <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>목표 온도</div>
-                      <UnitNumberInput
-                        quantity="temp"
-                        syncKey={`${selectedBlock.id}:operTempC`}
-                        value={selectedBlock.params.operTempC ?? 30}
-                        onValueChange={v =>
-                          updateBlockDef(selectedBlock.id, d => ({
-                            ...d,
-                            params: { ...d.params, operTempC: v },
-                          }))
-                        }
-                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
-                      />
-                    </div>
+                    {showThermalSpec && (
+                      <>
+                        <label style={{ fontSize: 10, color: '#475569' }}>
+                          열역학 지정 모드
+                          <select
+                            value={unitThermalMode}
+                            onChange={e =>
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: { ...d.params, thermalSpecMode: e.target.value as ThermalSpecMode },
+                              }))
+                            }
+                            style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 10.5 }}
+                          >
+                            {THERMAL_SPEC_MODE_OPTIONS.map(opt => (
+                              <option key={opt.id} value={opt.id}>{opt.labelKo}</option>
+                            ))}
+                          </select>
+                        </label>
+                        {unitThermalMode === 'tp' && (
+                          <div style={{ fontSize: 10, color: '#475569' }}>
+                            <div style={{ marginBottom: 2 }}>목표 온도</div>
+                            <UnitNumberInput
+                              quantity="temp"
+                              syncKey={`${selectedBlock.id}:operTempC`}
+                              value={selectedBlock.params.operTempC ?? 30}
+                              onValueChange={v =>
+                                updateBlockDef(selectedBlock.id, d => ({
+                                  ...d,
+                                  params: { ...d.params, operTempC: v },
+                                }))
+                              }
+                              inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                            />
+                          </div>
+                        )}
+                        {unitThermalMode === 'subcool' && (
+                          <label style={{ fontSize: 10, color: '#475569' }}>
+                            과냉도 ΔT (°C, Bubble - ΔT)
+                            <input
+                              type="number"
+                              step="0.5"
+                              min={0}
+                              value={selectedBlock.params.subcoolDeltaC ?? 5}
+                              onChange={e =>
+                                updateBlockDef(selectedBlock.id, d => ({
+                                  ...d,
+                                  params: { ...d.params, subcoolDeltaC: Math.max(0, Number(e.target.value)) },
+                                }))
+                              }
+                              style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                            />
+                          </label>
+                        )}
+                        {unitThermalMode === 'superheat' && (
+                          <label style={{ fontSize: 10, color: '#475569' }}>
+                            과열도 ΔT (°C, Dew + ΔT)
+                            <input
+                              type="number"
+                              step="0.5"
+                              min={0}
+                              value={selectedBlock.params.superheatDeltaC ?? 10}
+                              onChange={e =>
+                                updateBlockDef(selectedBlock.id, d => ({
+                                  ...d,
+                                  params: { ...d.params, superheatDeltaC: Math.max(0, Number(e.target.value)) },
+                                }))
+                              }
+                              style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                            />
+                          </label>
+                        )}
+                        {unitThermalMode === 'vf' && (
+                          <label style={{ fontSize: 10, color: '#475569' }}>
+                            목표 기상분율 VF (0~1)
+                            <input
+                              type="number"
+                              step="0.05"
+                              min={0}
+                              max={1}
+                              value={selectedBlock.params.targetVaporFraction ?? 0.5}
+                              onChange={e =>
+                                updateBlockDef(selectedBlock.id, d => ({
+                                  ...d,
+                                  params: { ...d.params, targetVaporFraction: Math.min(1, Math.max(0, Number(e.target.value))) },
+                                }))
+                              }
+                              style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                            />
+                          </label>
+                        )}
+                        {(unitThermalMode === 'sat_liq' || unitThermalMode === 'sat_vap') && (
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: '1px solid #BAE6FD', borderRadius: 4, padding: '4px 6px' }}>
+                            {unitThermalMode === 'sat_liq'
+                              ? '포화액 (Bubble Point): 압력 P 기준 자동 산출'
+                              : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
+                          </div>
+                        )}
+                      </>
+                    )}
                     {selectedBlock.unitType === 'separator' && (
                       <div style={{ fontSize: 10, color: '#475569' }}>
                         <div style={{ marginBottom: 2 }}>운전 압력</div>
@@ -3884,7 +4065,8 @@ export default function ClassicSimulatorPage() {
                       </button>
                     )}
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Pump / Compressor */}
                 {(selectedBlock.unitType === 'pump' || selectedBlock.unitType === 'compressor') && (
@@ -4006,7 +4188,11 @@ export default function ClassicSimulatorPage() {
                 )}
 
                 {/* Reactor (화학반응기) */}
-                {selectedBlock.unitType === 'reactor' && (
+                {selectedBlock.unitType === 'reactor' && (() => {
+                  const activePublicRx = PUBLIC_REACTOR_PRESET_SPECS.find(
+                    s => s.id === selectedBlock.params.reactionPreset
+                  );
+                  return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#FEF2F2', borderRadius: 6, border: '1px solid #FECACA' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#991B1B' }}>
                       Reactor Specifications
@@ -4037,6 +4223,74 @@ export default function ClassicSimulatorPage() {
                         >
                           프리셋 복귀
                         </button>
+                      </div>
+                    )}
+                    <label style={{ fontSize: 10, color: '#475569' }}>
+                      반응 프리셋
+                      <select
+                        value={selectedBlock.params.reactionPreset ?? 'hcl_burner'}
+                        onChange={e =>
+                          updateBlockDef(selectedBlock.id, d => ({
+                            ...d,
+                            params: {
+                              ...d.params,
+                              reactionPreset: e.target.value as NonNullable<FlowNodeDef['params']['reactionPreset']>,
+                            },
+                          }))
+                        }
+                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #FCA5A5', background: '#FFFFFF', fontSize: 10.5 }}
+                      >
+                        <optgroup label="범용 화학 반응 프리셋 (6종)">
+                          {PUBLIC_REACTOR_PRESET_SPECS.map(spec => (
+                            <option key={spec.id} value={spec.id}>{spec.labelKo}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="기본 공정 반응">
+                          <option value="hcl_burner">염산 합성로 (Cl₂ + H₂ → 2HCl)</option>
+                          <option value="caustic_scrub">가성소다 중화 스크러버</option>
+                          <option value="brine_electrolysis">염수 전해 반응 (NaCl → NaOH+Cl₂+H₂)</option>
+                        </optgroup>
+                      </select>
+                    </label>
+                    {activePublicRx && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, padding: '6px 7px', borderRadius: 5, background: '#FFFFFF', border: '1px solid #FECACA' }}>
+                        <div style={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#7F1D1D', lineHeight: 1.35 }}>
+                          {activePublicRx.reactionEq}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 9.5, color: '#64748B', fontFamily: 'JetBrains Mono, monospace' }}>
+                            {activePublicRx.defaultTempC}°C · {activePublicRx.defaultPressKgcm2g} kG · {activePublicRx.defaultConvPct}%
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const spec = activePublicRx;
+                              updateBlockDef(selectedBlock.id, d => ({
+                                ...d,
+                                params: {
+                                  ...d.params,
+                                  reactionPreset: spec.id as PublicReactorPresetId,
+                                  operTempC: spec.defaultTempC,
+                                  operPressKgcm2g: spec.defaultPressKgcm2g,
+                                  conversion: Number((spec.defaultConvPct / 100).toFixed(4)),
+                                },
+                              }));
+                            }}
+                            style={{
+                              padding: '3px 7px',
+                              fontSize: 9.5,
+                              fontWeight: 800,
+                              borderRadius: 4,
+                              border: '1px solid #DC2626',
+                              background: '#DC2626',
+                              color: '#FFFFFF',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            권장 조건 적용
+                          </button>
+                        </div>
                       </div>
                     )}
                     <button
@@ -4074,6 +4328,21 @@ export default function ClassicSimulatorPage() {
                         inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
                       />
                     </div>
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>운전 압력</div>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        syncKey={`${selectedBlock.id}:reactorOperPress`}
+                        value={selectedBlock.params.operPressKgcm2g ?? 1.0}
+                        onValueChange={v =>
+                          updateBlockDef(selectedBlock.id, d => ({
+                            ...d,
+                            params: { ...d.params, operPressKgcm2g: v },
+                          }))
+                        }
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                      />
+                    </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
                       전환율 (0~1)
                       <input
@@ -4092,7 +4361,185 @@ export default function ClassicSimulatorPage() {
                       />
                     </label>
                   </div>
-                )}
+                  );
+                })()}
+
+                {/* Electrolyzer (전해조 6종 프리셋) */}
+                {selectedBlock.unitType === 'electrolyzer' && (() => {
+                  const presetId: ElectrolyzerPresetId =
+                    selectedBlock.params.electrolyzerPreset ?? 'nacl_chlor_alkali';
+                  const presetSpec =
+                    ELECTROLYZER_PRESET_SPECS.find(s => s.id === presetId) ?? ELECTROLYZER_PRESET_SPECS[0];
+                  return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#EFF6FF', borderRadius: 6, border: '1px solid #BFDBFE' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#1E40AF' }}>
+                      Electrolyzer Specifications
+                    </div>
+                    <label style={{ fontSize: 10, color: '#475569' }}>
+                      전해 공정 프리셋 (6종)
+                      <select
+                        value={presetId}
+                        onChange={e =>
+                          updateBlockDef(selectedBlock.id, d => ({
+                            ...d,
+                            params: {
+                              ...d.params,
+                              electrolyzerPreset: e.target.value as ElectrolyzerPresetId,
+                            },
+                          }))
+                        }
+                        style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #93C5FD', background: '#FFFFFF', fontSize: 10.5 }}
+                      >
+                        {ELECTROLYZER_PRESET_SPECS.map(spec => (
+                          <option key={spec.id} value={spec.id}>{spec.labelKo}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 7px', borderRadius: 5, background: '#FFFFFF', border: '1px solid #BFDBFE' }}>
+                      <div style={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#1E3A8A' }}>
+                        {presetSpec.reactionEq}
+                      </div>
+                      <div style={{ fontSize: 9.5, color: '#475569', lineHeight: 1.35 }}>
+                        {presetSpec.noteKo}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <span style={{ fontSize: 9.5, color: '#64748B', fontFamily: 'JetBrains Mono, monospace' }}>
+                          {presetSpec.defaultVoltageV}V · {presetSpec.defaultCurrentKA}kA · {presetSpec.defaultCells}셀 · {presetSpec.defaultEffPct}%
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateBlockDef(selectedBlock.id, d => ({
+                              ...d,
+                              params: {
+                                ...d.params,
+                                electrolyzerPreset: presetSpec.id,
+                                cellVoltageV: presetSpec.defaultVoltageV,
+                                currentKA: presetSpec.defaultCurrentKA,
+                                cellCount: presetSpec.defaultCells,
+                                operTempC: presetSpec.defaultTempC,
+                                operPressKgcm2g: presetSpec.defaultPressKgcm2g,
+                                currentEffPct: presetSpec.defaultEffPct,
+                              },
+                            }))
+                          }
+                          style={{
+                            padding: '3px 7px',
+                            fontSize: 9.5,
+                            fontWeight: 800,
+                            borderRadius: 4,
+                            border: '1px solid #1D4ED8',
+                            background: '#1D4ED8',
+                            color: '#FFFFFF',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          권장 조건 적용
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <label style={{ fontSize: 10, color: '#475569' }}>
+                        셀 전압 (V)
+                        <input
+                          type="number"
+                          step="0.05"
+                          min={1.0}
+                          max={6.0}
+                          value={selectedBlock.params.cellVoltageV ?? presetSpec.defaultVoltageV}
+                          onChange={e =>
+                            updateBlockDef(selectedBlock.id, d => ({
+                              ...d,
+                              params: { ...d.params, cellVoltageV: Number(e.target.value) },
+                            }))
+                          }
+                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: '#475569' }}>
+                        전류 (kA)
+                        <input
+                          type="number"
+                          step="0.2"
+                          min={0.1}
+                          value={selectedBlock.params.currentKA ?? presetSpec.defaultCurrentKA}
+                          onChange={e =>
+                            updateBlockDef(selectedBlock.id, d => ({
+                              ...d,
+                              params: { ...d.params, currentKA: Math.max(0.1, Number(e.target.value)) },
+                            }))
+                          }
+                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: '#475569' }}>
+                        셀 수 (cells)
+                        <input
+                          type="number"
+                          step="1"
+                          min={1}
+                          value={selectedBlock.params.cellCount ?? presetSpec.defaultCells}
+                          onChange={e =>
+                            updateBlockDef(selectedBlock.id, d => ({
+                              ...d,
+                              params: { ...d.params, cellCount: Math.max(1, Math.round(Number(e.target.value))) },
+                            }))
+                          }
+                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                        />
+                      </label>
+                      <label style={{ fontSize: 10, color: '#475569' }}>
+                        전류 효율 (%)
+                        <input
+                          type="number"
+                          step="0.5"
+                          min={50}
+                          max={100}
+                          value={selectedBlock.params.currentEffPct ?? presetSpec.defaultEffPct}
+                          onChange={e =>
+                            updateBlockDef(selectedBlock.id, d => ({
+                              ...d,
+                              params: { ...d.params, currentEffPct: Math.min(100, Math.max(50, Number(e.target.value))) },
+                            }))
+                          }
+                          style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                        />
+                      </label>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <UnitNumberInput
+                        quantity="temp"
+                        syncKey={`${selectedBlock.id}:elOperTempC`}
+                        value={selectedBlock.params.operTempC ?? presetSpec.defaultTempC}
+                        onValueChange={v =>
+                          updateBlockDef(selectedBlock.id, d => ({
+                            ...d,
+                            params: { ...d.params, operTempC: v },
+                          }))
+                        }
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                      />
+                    </div>
+                    <div style={{ fontSize: 10, color: '#475569' }}>
+                      <div style={{ marginBottom: 2 }}>운전 압력</div>
+                      <UnitNumberInput
+                        quantity="pressG"
+                        syncKey={`${selectedBlock.id}:elOperPress`}
+                        value={selectedBlock.params.operPressKgcm2g ?? presetSpec.defaultPressKgcm2g}
+                        onValueChange={v =>
+                          updateBlockDef(selectedBlock.id, d => ({
+                            ...d,
+                            params: { ...d.params, operPressKgcm2g: v },
+                          }))
+                        }
+                        inputStyle={{ height: 26, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 11 }}
+                      />
+                    </div>
+                  </div>
+                  );
+                })()}
 
                 {/* Absorber (흡수탑 · 스트리퍼) */}
                 {selectedBlock.unitType === 'absorber' && (
