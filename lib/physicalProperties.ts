@@ -7,8 +7,8 @@ import { MW } from './calculations/constants';
 import { COMP_CATALOG_META } from './calculations/componentCatalog';
 import { COMP_META, SIM_COMPS, type SimCompKey } from './calculations/flowsheetSolver';
 import { PSAT_DIPPR101 } from './calculations/data/pureComponentDatabank';
-import { pureDipprOrAntoineBarA, RIGOROUS_CRIT } from './calculations/rigorousThermo';
-import { THERMO_DATA } from './calculations/thermoCore';
+import { NON_VOLATILE_RIG_SET, pureDipprOrAntoineBarA, RIGOROUS_CRIT } from './calculations/rigorousThermo';
+import { heatOfVaporizationKJkmol, THERMO_DATA } from './calculations/thermoCore';
 
 export interface FluidProps {
   key: string;
@@ -109,7 +109,7 @@ export function vaporPressure_kPa(fluid: FluidProps, T_C: number): number {
   if (!fluid.antoine) return fluid.vaporPressure_ref ?? 0;
   const { A, B, C } = fluid.antoine;
   const denom = C + T_C;
-  if (Math.abs(denom) < 1e-3) return fluid.vaporPressure_ref ?? 0;
+  if (denom <= 1e-3) return 0;
   const val = Math.pow(10, A - B / denom);
   return Number.isFinite(val) ? val : (fluid.vaporPressure_ref ?? 0);
 }
@@ -132,7 +132,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 25, density_ref: 1172, viscosity_ref: 1.80,
     Cp: 3.47, k_thermal: 0.59,
     vaporPressure_ref: 2.8,
-    antoine: { A: 8.071, B: 1730.6, C: 233.4 },
+    antoine: { A: 6.8288, B: 1649.03, C: 233.4 },
     dRho_dT: -0.45, dMu_dT: -0.025,
     phase: 'L', MW: 22.8, Tb_C: 108.5, surfaceTension: 72.5,
   },
@@ -408,7 +408,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 25, density_ref: 997, viscosity_ref: 0.89,
     Cp: 4.18, k_thermal: 0.61,
     vaporPressure_ref: 3.17,
-    antoine: { A: 8.0700, B: 1730.6, C: 233.4 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     dRho_dT: -0.33, dMu_dT: -0.020,
     phase: 'L', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 2257, surfaceTension: 72.0,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
@@ -424,7 +424,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 30, density_ref: 995.6, viscosity_ref: 0.80,
     Cp: 4.18, k_thermal: 0.615,
     vaporPressure_ref: 4.24,
-    antoine: { A: 8.0713, B: 1730.63, C: 233.426 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     dRho_dT: -0.33, dMu_dT: -0.018,
     phase: 'L', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 2257, surfaceTension: 71.0,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
@@ -440,7 +440,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 7, density_ref: 999.9, viscosity_ref: 1.43,
     Cp: 4.20, k_thermal: 0.575,
     vaporPressure_ref: 1.00,
-    antoine: { A: 8.0713, B: 1730.63, C: 233.426 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     dRho_dT: -0.10, dMu_dT: -0.035,
     phase: 'L', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 2485, surfaceTension: 74.6,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
@@ -456,7 +456,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 148, density_ref: 2.38, viscosity_ref: 0.0140,
     Cp: 2.28, k_thermal: 0.029,
     vaporPressure_ref: 451.0,
-    antoine: { A: 8.0713, B: 1730.63, C: 233.426 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     phase: 'G', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 2120,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
   },
@@ -471,7 +471,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 184, density_ref: 5.54, viscosity_ref: 0.0153,
     Cp: 2.65, k_thermal: 0.034,
     vaporPressure_ref: 1098.0,
-    antoine: { A: 8.0713, B: 1730.63, C: 233.426 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     phase: 'G', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 2000,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
   },
@@ -486,7 +486,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 235, density_ref: 15.5, viscosity_ref: 0.0172,
     Cp: 3.45, k_thermal: 0.044,
     vaporPressure_ref: 3060.0,
-    antoine: { A: 8.0713, B: 1730.63, C: 233.426 },
+    antoine: { A: 7.1962, B: 1730.63, C: 233.426 },
     phase: 'G', MW: 18.015, Tb_C: 100.0, latentHeat_kJkg: 1790,
     Tc_K: 647.1, Pc_bar: 220.64, omega: 0.344,
   },
@@ -502,7 +502,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: -20, density_ref: 1248, viscosity_ref: 7.20,
     Cp: 2.82, k_thermal: 0.50,
     vaporPressure_ref: 0.10,
-    antoine: { A: 7.75, B: 1780, C: 232 },
+    antoine: { A: 7.0231, B: 1700.9, C: 232 },
     dRho_dT: -0.52, dMu_dT: -0.14,
     phase: 'L', MW: 36.0, Tb_C: 107.0, surfaceTension: 81.5,
   },
@@ -579,7 +579,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1225, viscosity_ref: 0.205,
     Cp: 1.41, k_thermal: 0.083, MW: 102.03,
     Tb_C: -26.1, latentHeat_kJkg: 217.0,
-    antoine: { A: 6.1348, B: 865.0, C: 243.0 },
+    antoine: { A: 6.3196, B: 942.79, C: 244.65 },
     dRho_dT: -3.15, dMu_dT: -0.0028,
     phase: 'G', surfaceTension: 8.7, isRefrigerant: true,
     Tc_K: 374.21, Pc_bar: 40.59, omega: 0.3268,
@@ -595,7 +595,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1066, viscosity_ref: 0.138,
     Cp: 1.54, k_thermal: 0.066, MW: 97.60,
     Tb_C: -46.5, latentHeat_kJkg: 200.0,
-    antoine: { A: 6.1120, B: 778.0, C: 246.0 },
+    antoine: { A: 6.3139, B: 908.01, C: 257.26 },
     dRho_dT: -3.65, dMu_dT: -0.0024,
     phase: 'G', surfaceTension: 5.1, isRefrigerant: true,
     Tc_K: 345.20, Pc_bar: 37.29, omega: 0.286,
@@ -611,7 +611,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1057, viscosity_ref: 0.134,
     Cp: 1.56, k_thermal: 0.065, MW: 98.86,
     Tb_C: -46.7, latentHeat_kJkg: 196.0,
-    antoine: { A: 6.1180, B: 776.5, C: 246.2 },
+    antoine: { A: 6.2446, B: 864.95, C: 250.75 },
     dRho_dT: -3.70, dMu_dT: -0.0024,
     phase: 'G', surfaceTension: 4.9, isRefrigerant: true,
     Tc_K: 343.77, Pc_bar: 37.05, omega: 0.288,
@@ -627,7 +627,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1082, viscosity_ref: 0.130,
     Cp: 1.69, k_thermal: 0.091, MW: 72.58,
     Tb_C: -51.4, latentHeat_kJkg: 272.0,
-    antoine: { A: 6.1050, B: 760.0, C: 246.0 },
+    antoine: { A: 6.5154, B: 936.49, C: 259.06 },
     dRho_dT: -3.55, dMu_dT: -0.0022,
     phase: 'G', surfaceTension: 6.2, isRefrigerant: true,
     Tc_K: 344.50, Pc_bar: 49.01, omega: 0.296,
@@ -643,7 +643,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1213, viscosity_ref: 0.175,
     Cp: 1.24, k_thermal: 0.086, MW: 86.47,
     Tb_C: -40.8, latentHeat_kJkg: 233.7,
-    antoine: { A: 6.1280, B: 815.0, C: 245.5 },
+    antoine: { A: 6.2688, B: 899.86, C: 251.88 },
     dRho_dT: -3.20, dMu_dT: -0.0024,
     phase: 'G', surfaceTension: 8.4, isRefrigerant: true,
     Tc_K: 369.30, Pc_bar: 49.90, omega: 0.2208,
@@ -659,7 +659,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 981, viscosity_ref: 0.122,
     Cp: 1.82, k_thermal: 0.125, MW: 52.02,
     Tb_C: -51.7, latentHeat_kJkg: 381.0,
-    antoine: { A: 6.2280, B: 782.0, C: 246.5 },
+    antoine: { A: 6.5501, B: 947.25, C: 260.15 },
     dRho_dT: -3.40, dMu_dT: -0.0020,
     phase: 'G', surfaceTension: 7.5, isRefrigerant: true,
     Tc_K: 351.26, Pc_bar: 57.82, omega: 0.2769,
@@ -675,7 +675,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1110, viscosity_ref: 0.160,
     Cp: 1.37, k_thermal: 0.067, MW: 114.04,
     Tb_C: -29.5, latentHeat_kJkg: 180.0,
-    antoine: { A: 6.0250, B: 832.0, C: 244.0 },
+    antoine: { A: 6.1984, B: 927.86, C: 250.80 },
     dRho_dT: -3.25, dMu_dT: -0.0023,
     phase: 'G', surfaceTension: 6.8, isRefrigerant: true,
     Tc_K: 367.85, Pc_bar: 33.82, omega: 0.276,
@@ -691,7 +691,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 20, density_ref: 1178, viscosity_ref: 0.195,
     Cp: 1.38, k_thermal: 0.075, MW: 114.04,
     Tb_C: -19.0, latentHeat_kJkg: 195.5,
-    antoine: { A: 6.0950, B: 882.0, C: 242.5 },
+    antoine: { A: 6.2145, B: 941.18, C: 242.62 },
     dRho_dT: -3.10, dMu_dT: -0.0026,
     phase: 'G', surfaceTension: 8.9, isRefrigerant: true,
     Tc_K: 382.52, Pc_bar: 36.36, omega: 0.313,
@@ -755,7 +755,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 0, density_ref: 1068, viscosity_ref: 4.85,
     Cp: 3.42, k_thermal: 0.425,
     vaporPressure_ref: 0.42,
-    antoine: { A: 7.82, B: 1765, C: 231 },
+    antoine: { A: 7.2471, B: 1761.12, C: 231 },
     dRho_dT: -0.58, dMu_dT: -0.085,
     phase: 'L', surfaceTension: 56.0, isRefrigerant: true,
   },
@@ -770,7 +770,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: -10, density_ref: 1246, viscosity_ref: 5.40,
     Cp: 2.85, k_thermal: 0.515,
     vaporPressure_ref: 0.21,
-    antoine: { A: 7.75, B: 1780, C: 232 },
+    antoine: { A: 7.0975, B: 1726.11, C: 232 },
     dRho_dT: -0.52, dMu_dT: -0.095,
     phase: 'L', surfaceTension: 81.0, isRefrigerant: true,
   },
@@ -824,7 +824,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 25, density_ref: 1.49, viscosity_ref: 0.0146,
     Cp: 0.80, k_thermal: 0.0145,
     vaporPressure_ref: 4720.0,
-    antoine: { A: 6.556, B: 745.8, C: 258.8 },
+    antoine: { A: 6.5292, B: 849.1, C: 272.76 },
     phase: 'G', MW: 36.461, Tb_C: -85.05, latentHeat_kJkg: 443.0,
     Tc_K: 324.65, Pc_bar: 83.1, omega: 0.132,
     downstreamGroup: '1A_HCL',
@@ -928,7 +928,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: -20, density_ref: 1005, viscosity_ref: 0.19,
     Cp: 1.62, k_thermal: 0.24,
     vaporPressure_ref: 1480.0,
-    antoine: { A: 6.556, B: 745.8, C: 258.8 },
+    antoine: { A: 6.5292, B: 849.1, C: 272.76 },
     dRho_dT: -2.65, dMu_dT: -0.0025,
     phase: 'L', MW: 36.461, Tb_C: -85.05, latentHeat_kJkg: 443.0, surfaceTension: 16.5,
     downstreamGroup: '1A_HCL',
@@ -1065,7 +1065,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 60, density_ref: 1238, viscosity_ref: 81.0,
     Cp: 2.52, k_thermal: 0.286,
     vaporPressure_ref: 0.002,
-    antoine: { A: 7.482, B: 2690.0, C: 175.0 },
+    antoine: { A: 7.7907, B: 2690.0, C: 175.0 },
     dRho_dT: -0.64, dMu_dT: -1.45,
     phase: 'L', MW: 92.094, Tb_C: 290.0, latentHeat_kJkg: 974.0, surfaceTension: 61.5,
     downstreamGroup: '2_ECH',
@@ -1080,7 +1080,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 50, density_ref: 1302, viscosity_ref: 14.2,
     Cp: 2.08, k_thermal: 0.22,
     vaporPressure_ref: 0.08,
-    antoine: { A: 7.125, B: 2140.0, C: 196.0 },
+    antoine: { A: 7.2380, B: 2140.0, C: 196.0 },
     dRho_dT: -0.82, dMu_dT: -0.25,
     phase: 'L', MW: 110.54, Tb_C: 213.0, latentHeat_kJkg: 465.0, surfaceTension: 46.0,
     downstreamGroup: '2_ECH',
@@ -1095,7 +1095,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 40, density_ref: 1351, viscosity_ref: 4.85,
     Cp: 1.76, k_thermal: 0.165,
     vaporPressure_ref: 0.35,
-    antoine: { A: 6.985, B: 1865.0, C: 204.5 },
+    antoine: { A: 6.9292, B: 1865.0, C: 204.5 },
     dRho_dT: -0.96, dMu_dT: -0.085,
     phase: 'L', MW: 128.985, Tb_C: 174.3, latentHeat_kJkg: 382.0, surfaceTension: 39.5,
     downstreamGroup: '2_ECH',
@@ -1110,7 +1110,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 25, density_ref: 1181, viscosity_ref: 1.03,
     Cp: 1.48, k_thermal: 0.138,
     vaporPressure_ref: 2.25,
-    antoine: { A: 6.329, B: 1482.5, C: 222.4 },
+    antoine: { A: 6.3852, B: 1482.5, C: 222.4 },
     dRho_dT: -1.18, dMu_dT: -0.014,
     phase: 'L', MW: 92.525, Tb_C: 116.1, latentHeat_kJkg: 409.0, surfaceTension: 37.0,
     downstreamGroup: '2_ECH',
@@ -1125,7 +1125,7 @@ const BASE_LEGACY_AND_UTILITY_FLUIDS: Record<string, FluidProps> = {
     T_ref: 25, density_ref: 1156, viscosity_ref: 0.84,
     Cp: 1.32, k_thermal: 0.125,
     vaporPressure_ref: 7.10,
-    antoine: { A: 6.082, B: 1308.0, C: 225.2 },
+    antoine: { A: 6.0729, B: 1308.0, C: 225.2 },
     dRho_dT: -1.24, dMu_dT: -0.011,
     phase: 'L', MW: 112.986, Tb_C: 96.4, latentHeat_kJkg: 318.0, surfaceTension: 29.0,
     downstreamGroup: '2_ECH',
@@ -1290,7 +1290,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     formula: 'C₃H₈O₃',
     T_ref: 60, density_ref: 1238.0, viscosity_ref: 81.0, k_thermal: 0.286, surfaceTension: 61.5,
     dRho_dT: -0.64, dMu_dT: -1.45,
-    antoine: { A: 7.482, B: 2690.0, C: 175.0 },
+    antoine: { A: 7.7907, B: 2690.0, C: 175.0 },
     aliases: ['Glycerol', 'Glycerin', 'C3H8O3', '글리세린', '글리세롤', 'GTE'],
     downstreamGroup: '2_ECH',
   },
@@ -1300,7 +1300,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     formula: 'C₃H₇ClO₂',
     T_ref: 50, density_ref: 1302.0, viscosity_ref: 14.2, k_thermal: 0.220, surfaceTension: 46.0,
     dRho_dT: -0.82, dMu_dT: -0.25,
-    antoine: { A: 7.125, B: 2140.0, C: 196.0 },
+    antoine: { A: 7.2380, B: 2140.0, C: 196.0 },
     aliases: ['MCH', '3-MCH', '3-MCPD', 'Monochlorohydrin', '모노클로로히드린'],
     downstreamGroup: '2_ECH',
   },
@@ -1310,7 +1310,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     formula: 'C₃H₆Cl₂O',
     T_ref: 40, density_ref: 1351.0, viscosity_ref: 4.85, k_thermal: 0.165, surfaceTension: 39.5,
     dRho_dT: -0.96, dMu_dT: -0.085,
-    antoine: { A: 6.985, B: 1865.0, C: 204.5 },
+    antoine: { A: 6.9292, B: 1865.0, C: 204.5 },
     aliases: ['DCH', '1,3-DCH', '2,3-DCH', 'Dichlorohydrin', '디클로로히드린'],
     downstreamGroup: '2_ECH',
   },
@@ -1320,7 +1320,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     formula: 'C₃H₅ClO',
     T_ref: 25, density_ref: 1181.0, viscosity_ref: 1.03, k_thermal: 0.138, surfaceTension: 37.0,
     dRho_dT: -1.18, dMu_dT: -0.014,
-    antoine: { A: 6.329, B: 1482.5, C: 222.4 },
+    antoine: { A: 6.3852, B: 1482.5, C: 222.4 },
     aliases: ['ECH', 'Epichlorohydrin', '에피클로로히드린', 'C3H5ClO'],
     downstreamGroup: '2_ECH',
   },
@@ -1330,7 +1330,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     formula: 'C₃H₆Cl₂',
     T_ref: 25, density_ref: 1156.0, viscosity_ref: 0.84, k_thermal: 0.125, surfaceTension: 29.0,
     dRho_dT: -1.24, dMu_dT: -0.011,
-    antoine: { A: 6.082, B: 1308.0, C: 225.2 },
+    antoine: { A: 6.0729, B: 1308.0, C: 225.2 },
     aliases: ['DCP', '1,2-DCP', '1,2-Dichloropropane', '디클로로프로판'],
     downstreamGroup: '2_ECH',
   },
@@ -1506,14 +1506,14 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     name: 'Hydrogen Sulfide',
     nameKo: '황화수소',
     T_ref: 25, density_ref: 1.393, viscosity_ref: 0.0126, k_thermal: 0.0147,
-    antoine: { A: 6.2280, B: 804.4, C: 249.6 },
+    antoine: { A: 6.2551, B: 804.4, C: 249.6 },
     aliases: ['H2S', 'Hydrogen Sulfide', '황화수소', 'Sour Gas'],
   },
   SO2: {
     name: 'Sulfur Dioxide',
     nameKo: '이산화황',
     T_ref: 25, density_ref: 2.619, viscosity_ref: 0.0128, k_thermal: 0.0096,
-    antoine: { A: 6.4100, B: 1045.0, C: 242.0 },
+    antoine: { A: 6.5100, B: 1045.0, C: 242.0 },
     aliases: ['SO2', 'Sulfur Dioxide', '이산화황', '아황산가스'],
   },
   SO3: {
@@ -1528,7 +1528,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     name: 'Isobutane',
     nameKo: '이소부탄',
     T_ref: 25, density_ref: 2.376, viscosity_ref: 0.0075, k_thermal: 0.0164,
-    antoine: { A: 5.9081, B: 886.42, C: 240.4 },
+    antoine: { A: 5.8816, B: 886.42, C: 240.4 },
     aliases: ['iC4H10', 'i-C4H10', 'Isobutane', '이소부탄'],
   },
   C4H8_1: {
@@ -1583,7 +1583,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '큐멘',
     T_ref: 25, density_ref: 857.0, viscosity_ref: 0.739, k_thermal: 0.125, surfaceTension: 27.7,
     dRho_dT: -0.85, dMu_dT: -0.009,
-    antoine: { A: 6.0790, B: 1460.79, C: 207.78 },
+    antoine: { A: 6.0614, B: 1460.79, C: 207.78 },
     aliases: ['Cumene', 'C9H12', '큐멘'],
   },
   Phenol: {
@@ -1607,7 +1607,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '디메틸포름아미드 (DMF)',
     T_ref: 25, density_ref: 944.0, viscosity_ref: 0.802, k_thermal: 0.184, surfaceTension: 35.2,
     dRho_dT: -0.95, dMu_dT: -0.010,
-    antoine: { A: 6.0935, B: 1400.86, C: 196.43 },
+    antoine: { A: 6.0147, B: 1400.86, C: 196.43 },
     aliases: ['DMF', 'Dimethylformamide', 'C3H7NO', '디메틸포름아미드'],
   },
   DMSO: {
@@ -1615,7 +1615,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '디메틸설폭사이드 (DMSO)',
     T_ref: 25, density_ref: 1096.0, viscosity_ref: 1.99, k_thermal: 0.179, surfaceTension: 43.0,
     dRho_dT: -0.99, dMu_dT: -0.028,
-    antoine: { A: 6.4911, B: 1807.0, C: 210.5 },
+    antoine: { A: 6.5289, B: 1807.0, C: 210.5 },
     aliases: ['DMSO', 'Dimethyl Sulfoxide', 'C2H6OS', '디메틸설폭사이드'],
   },
   MTBE: {
@@ -1623,7 +1623,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: 'MTBE (메틸터셔리부틸에테르)',
     T_ref: 25, density_ref: 735.0, viscosity_ref: 0.343, k_thermal: 0.126, surfaceTension: 18.3,
     dRho_dT: -1.05, dMu_dT: -0.004,
-    antoine: { A: 6.0702, B: 1150.0, C: 226.0 },
+    antoine: { A: 6.0953, B: 1150.0, C: 226.0 },
     aliases: ['MTBE', 'C5H12O', '메틸터셔리부틸에테르'],
   },
   MEK: {
@@ -1631,7 +1631,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '메틸에틸케톤 (MEK)',
     T_ref: 25, density_ref: 800.0, viscosity_ref: 0.405, k_thermal: 0.145, surfaceTension: 24.0,
     dRho_dT: -1.04, dMu_dT: -0.005,
-    antoine: { A: 6.1381, B: 1261.34, C: 221.97 },
+    antoine: { A: 6.1883, B: 1261.34, C: 221.97 },
     aliases: ['MEK', 'Butanone', 'C4H8O', '메틸에틸케톤'],
   },
   DMC: {
@@ -1639,7 +1639,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '디메틸카보네이트 (DMC)',
     T_ref: 25, density_ref: 1063.0, viscosity_ref: 0.585, k_thermal: 0.150, surfaceTension: 31.3,
     dRho_dT: -1.25, dMu_dT: -0.008,
-    antoine: { A: 6.3120, B: 1345.0, C: 219.0 },
+    antoine: { A: 6.3542, B: 1345.0, C: 219.0 },
     aliases: ['DMC', 'Dimethyl Carbonate', 'C3H6O3', '디메틸카보네이트'],
   },
   EG: {
@@ -1647,7 +1647,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '에틸렌글리콜 (EG · MEG)',
     T_ref: 25, density_ref: 1110.0, viscosity_ref: 16.9, k_thermal: 0.256, surfaceTension: 48.0,
     dRho_dT: -0.71, dMu_dT: -0.32,
-    antoine: { A: 6.9701, B: 1914.95, C: 195.0 },
+    antoine: { A: 6.8871, B: 1914.95, C: 195.0 },
     aliases: ['EG', 'MEG', 'Ethylene Glycol', 'C2H6O2', '에틸렌글리콜'],
   },
   MEA: {
@@ -1655,7 +1655,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '모노에탄올아민 (MEA)',
     T_ref: 25, density_ref: 1012.0, viscosity_ref: 19.3, k_thermal: 0.240, surfaceTension: 48.3,
     dRho_dT: -0.79, dMu_dT: -0.38,
-    antoine: { A: 6.9200, B: 1770.0, C: 198.0 },
+    antoine: { A: 6.8103, B: 1770.0, C: 198.0 },
     aliases: ['MEA', 'Monoethanolamine', 'C2H7NO', '모노에탄올아민'],
   },
   MDEA: {
@@ -1663,7 +1663,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '메틸디에탄올아민 (MDEA)',
     T_ref: 25, density_ref: 1038.0, viscosity_ref: 77.0, k_thermal: 0.210, surfaceTension: 42.0,
     dRho_dT: -0.76, dMu_dT: -1.35,
-    antoine: { A: 7.1800, B: 2240.0, C: 190.0 },
+    antoine: { A: 7.1304, B: 2240.0, C: 190.0 },
     aliases: ['MDEA', 'Methyldiethanolamine', 'C5H13NO2', '메틸디에탄올아민'],
   },
   FormicAcid: {
@@ -1671,7 +1671,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '개미산 (포름산)',
     T_ref: 25, density_ref: 1214.0, viscosity_ref: 1.61, k_thermal: 0.268, surfaceTension: 37.1,
     dRho_dT: -1.22, dMu_dT: -0.025,
-    antoine: { A: 6.2190, B: 1295.26, C: 218.0 },
+    antoine: { A: 6.0686, B: 1295.26, C: 218.0 },
     aliases: ['FormicAcid', 'Formic Acid', 'HCOOH', '개미산', '포름산'],
   },
   HNO3: {
@@ -1679,7 +1679,7 @@ const SIM_COMP_TRANSPORT_SPECS: Record<SimCompKey, SimCompTransportSpec> = {
     nameKo: '질산',
     T_ref: 25, density_ref: 1504.0, viscosity_ref: 0.75, k_thermal: 0.310, surfaceTension: 41.2,
     dRho_dT: -1.80, dMu_dT: -0.012,
-    antoine: { A: 6.6850, B: 1486.0, C: 228.0 },
+    antoine: { A: 6.7839, B: 1486.0, C: 228.0 },
     aliases: ['HNO3', 'Nitric Acid', '질산'],
   },
   CH3Cl: {
@@ -1891,10 +1891,16 @@ function buildSimCompFluidEntry(compKey: SimCompKey): FluidProps {
   const cp_kJkgK = phase === 'G'
     ? (meta?.cpGas ?? 0.25) * 4.1868
     : (meta?.cpLiq ?? 0.45) * 4.1868;
-  const latentHeat_kJkg =
-    thermo?.dHvapRef && mw > 0
-      ? Number(((thermo.dHvapRef * 1000) / mw).toFixed(1))
-      : undefined;
+  let latentHeat_kJkg: number | undefined;
+  if (thermo?.dHvapRef && mw > 0 && !NON_VOLATILE_RIG_SET.has(compKey)) {
+    const tbK = cat?.tbC !== undefined ? cat.tbC + 273.15 : undefined;
+    const dHvapAtTbKJkmol =
+      tbK !== undefined && thermo.Tc && tbK < thermo.Tc - 2
+        ? heatOfVaporizationKJkmol(compKey, tbK)
+        : 0;
+    const dHvapKJkmol = dHvapAtTbKJkmol > 0 ? dHvapAtTbKJkmol : thermo.dHvapRef * 1000;
+    latentHeat_kJkg = Number((dHvapKJkmol / mw).toFixed(1));
+  }
 
   const hasDippr = Boolean(PSAT_DIPPR101[compKey]);
   const pBarRef = pureDipprOrAntoineBarA(compKey, T_ref);
@@ -1908,7 +1914,7 @@ function buildSimCompFluidEntry(compKey: SimCompKey): FluidProps {
     cas: cat?.cas,
     aliases: Array.from(new Set([compKey, meta?.formula ?? '', ...spec.aliases].filter(Boolean))),
     simCompKey: compKey,
-    useDippr101: hasDippr && !cat?.isElectrolyte && !cat?.isPermanentGas,
+    useDippr101: hasDippr && !NON_VOLATILE_RIG_SET.has(compKey) && !cat?.isPermanentGas,
     Tc_K: crit?.Tc_K,
     Pc_bar: crit?.Pc_bar,
     omega: crit?.omega,

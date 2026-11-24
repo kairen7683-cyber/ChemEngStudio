@@ -423,7 +423,7 @@ const VOLATILE_KEYS: SimCompKey[] = [
 ];
 const PERMANENT_SUPERCRIT_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const AQUEOUS_HENRY_CONDENSABLE_SET = new Set<SimCompKey>(['Cl2', 'CO2', 'H2S', 'SO2', 'C2H4', 'C2H6', 'C3H6', 'C3H8']);
-const NON_VOLATILE_RIG_SET = new Set<SimCompKey>([
+export const NON_VOLATILE_RIG_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
   'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
 ]);
@@ -544,8 +544,8 @@ function zeroRigRecord(defaultVal = 0): Record<SimCompKey, number> {
  */
 export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
   if (NON_VOLATILE_RIG_SET.has(comp)) return 1e-10;
-  const T = Math.max(-110, Math.min(360, T_C));
-  const Tc = Math.max(-185, Math.min(360, T_C));
+  const T = Math.max(-110, Math.min(500, T_C));
+  const Tc = Math.max(-185, Math.min(500, T_C));
   switch (comp) {
     case 'H2':
       return 1050.0 * Math.exp(0.004 * T);
@@ -606,13 +606,13 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
     case 'Ar':
       return 420.0 * Math.exp(0.0052 * T);
     case 'H2S':
-      return Math.pow(10, 4.228 - 804.4 / Math.max(50, T + 249.6));
+      return Math.pow(10, 4.2551 - 804.4 / Math.max(50, T + 249.6));
     case 'SO2':
-      return Math.pow(10, 4.41 - 1045.0 / Math.max(50, T + 242.0));
+      return Math.pow(10, 4.5100 - 1045.0 / Math.max(50, T + 242.0));
     case 'SO3':
       return Math.pow(10, 6.175 - 1735.0 / Math.max(50, T + 236.0));
     case 'iC4H10':
-      return Math.pow(10, 3.9081 - 886.42 / Math.max(50, T + 240.4));
+      return Math.pow(10, 3.8816 - 886.42 / Math.max(50, T + 240.4));
     case 'C4H8_1':
       return Math.pow(10, 3.9178 - 908.8 / Math.max(50, T + 238.5));
     case 'nC5H12':
@@ -626,31 +626,31 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
     case 'Styrene':
       return Math.pow(10, 4.14 - 1485.0 / Math.max(50, T + 214.0));
     case 'Cumene':
-      return Math.pow(10, 4.079 - 1460.79 / Math.max(50, T + 207.78));
+      return Math.pow(10, 4.0614 - 1460.79 / Math.max(50, T + 207.78));
     case 'Phenol':
       return Math.pow(10, 4.2696 - 1523.42 / Math.max(50, T + 175.4));
     case 'THF':
       return Math.pow(10, 4.1212 - 1202.94 / Math.max(50, T + 226.25));
     case 'DMF':
-      return Math.pow(10, 4.0935 - 1400.86 / Math.max(50, T + 196.43));
+      return Math.pow(10, 4.0147 - 1400.86 / Math.max(50, T + 196.43));
     case 'DMSO':
-      return Math.pow(10, 4.4911 - 1807.0 / Math.max(50, T + 210.5));
+      return Math.pow(10, 4.5289 - 1807.0 / Math.max(50, T + 210.5));
     case 'MTBE':
-      return Math.pow(10, 4.0702 - 1150.0 / Math.max(50, T + 226.0));
+      return Math.pow(10, 4.0953 - 1150.0 / Math.max(50, T + 226.0));
     case 'MEK':
-      return Math.pow(10, 4.1381 - 1261.34 / Math.max(50, T + 221.97));
+      return Math.pow(10, 4.1883 - 1261.34 / Math.max(50, T + 221.97));
     case 'DMC':
-      return Math.pow(10, 4.312 - 1345.0 / Math.max(50, T + 219.0));
+      return Math.pow(10, 4.3542 - 1345.0 / Math.max(50, T + 219.0));
     case 'EG':
-      return Math.pow(10, 4.9701 - 1914.95 / Math.max(50, T + 195.0));
+      return Math.pow(10, 4.8871 - 1914.95 / Math.max(50, T + 195.0));
     case 'MEA':
-      return Math.pow(10, 4.92 - 1770.0 / Math.max(50, T + 198.0));
+      return Math.pow(10, 4.8103 - 1770.0 / Math.max(50, T + 198.0));
     case 'MDEA':
-      return Math.pow(10, 5.18 - 2240.0 / Math.max(50, T + 190.0));
+      return Math.pow(10, 5.1304 - 2240.0 / Math.max(50, T + 190.0));
     case 'FormicAcid':
-      return Math.pow(10, 4.219 - 1295.26 / Math.max(50, T + 218.0));
+      return Math.pow(10, 4.0686 - 1295.26 / Math.max(50, T + 218.0));
     case 'HNO3':
-      return Math.pow(10, 4.685 - 1486.0 / Math.max(50, T + 228.0));
+      return Math.pow(10, 4.7839 - 1486.0 / Math.max(50, T + 228.0));
     case 'COCl2':
       return Math.pow(10, 4.2236 - 1030.0 / Math.max(50, T + 236.0));
     case 'HCHO':
@@ -690,17 +690,17 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
       return Math.pow(10, logP);
     }
     case 'DCP':
-      return Math.pow(10, 4.082 - 1308.0 / Math.max(60, T + 225.2));
+      return Math.pow(10, 4.0729 - 1308.0 / Math.max(60, T + 225.2));
     case 'H2O':
       return Math.pow(10, 5.1156 - 1687.5 / Math.max(60, T + 230.17));
     case 'ECH':
-      return Math.pow(10, 4.329 - 1482.5 / Math.max(60, T + 222.4));
+      return Math.pow(10, 4.3852 - 1482.5 / Math.max(60, T + 222.4));
     case 'DCH':
-      return Math.pow(10, 4.985 - 1865.0 / Math.max(60, T + 204.5));
+      return Math.pow(10, 4.9292 - 1865.0 / Math.max(60, T + 204.5));
     case 'MCH':
-      return Math.pow(10, 5.125 - 2140.0 / Math.max(60, T + 196.0));
+      return Math.pow(10, 5.2380 - 2140.0 / Math.max(60, T + 196.0));
     case 'Glycerol':
-      return Math.pow(10, 5.482 - 2690.0 / Math.max(60, T + 175.0));
+      return Math.pow(10, 5.7907 - 2690.0 / Math.max(60, T + 175.0));
     default:
       return 1e-9;
   }
@@ -1821,7 +1821,7 @@ export function pureSatFugacityCoeffPR(comp: SimCompKey, T_C: number, pSatBar: n
   return Math.max(0.15, Math.min(2.5, Math.exp(Math.max(-40, Math.min(40, lnPhi)))));
 }
 
-export function liquidMolarVolumeLPerMol(comp: SimCompKey): number {
+export function liquidMolarVolumeLPerMol(comp: SimCompKey, T_K = 298.15): number {
   switch (comp) {
     case 'H2O': return 0.01807;
     case 'MeOH': return 0.0407;
@@ -1847,7 +1847,8 @@ export function liquidMolarVolumeLPerMol(comp: SimCompKey): number {
     default: {
       const c = RIGOROUS_CRIT[comp];
       const zra = Math.max(0.20, 0.29056 - 0.08775 * c.omega);
-      return ((R_GAS_BAR * c.Tc_K) / c.Pc_bar) * Math.pow(zra, 1.2);
+      const Tr = Math.min(0.95, T_K / c.Tc_K);
+      return ((R_GAS_BAR * c.Tc_K) / c.Pc_bar) * Math.pow(zra, 1 + Math.pow(Math.max(0.05, 1 - Tr), 2 / 7));
     }
   }
 }

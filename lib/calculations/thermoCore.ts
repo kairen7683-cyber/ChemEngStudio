@@ -168,9 +168,9 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   HCHO:       { mw: MW.HCHO, kind: 'molecular', dHfIg: -108.6, cpIg: [23.48, 0.0315, 2.99e-5, -2.3e-8], Tc: 408.0, TvapRef: 254.05, dHvapRef: 23.3, cpLiq298: 71.0, watsonN: 0.38 },
   MCB:        { mw: MW.MCB, kind: 'molecular', dHfIg: 52.0, cpIg: [-33.89, 0.563, -4.52e-4, 1.42e-7], Tc: 632.4, TvapRef: 404.87, dHvapRef: 35.19, cpLiq298: 150.2, watsonN: 0.38 },
   Aniline:    { mw: MW.Aniline, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-7], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
-  MDA:        { mw: MW.MDA, kind: 'molecular', dHfIg: 148.0, cpIg: [-45.0, 1.12, -7.8e-4, 2.1e-7], Tc: 882.0, TvapRef: 671.15, dHvapRef: 68.5, cpLiq298: 345.0, watsonN: 0.38 },
-  MDI:        { mw: MW.MDI, kind: 'molecular', dHfIg: -152.0, cpIg: [-38.0, 1.18, -8.4e-4, 2.3e-7], Tc: 802.0, TvapRef: 587.15, dHvapRef: 65.0, cpLiq298: 390.0, watsonN: 0.38 },
-  PMDI:       { mw: MW.PMDI, kind: 'molecular', dHfIg: -240.0, cpIg: [-52.0, 1.65, -1.1e-3, 3.0e-7], Tc: 945.0, TvapRef: 708.15, dHvapRef: 78.0, cpLiq298: 580.0, watsonN: 0.38 },
+  MDA:        { mw: MW.MDA, kind: 'molecular', dHfIg: 148.0, cpIg: [-45.0, 1.12, -7.8e-4, 2.1e-7], Tc: 882.0, TvapRef: 671.15, dHvapRef: 68.5, cpLiq298: 345.0 },
+  MDI:        { mw: MW.MDI, kind: 'molecular', dHfIg: -152.0, cpIg: [-38.0, 1.18, -8.4e-4, 2.3e-7], Tc: 802.0, TvapRef: 587.15, dHvapRef: 65.0, cpLiq298: 390.0 },
+  PMDI:       { mw: MW.PMDI, kind: 'molecular', dHfIg: -240.0, cpIg: [-52.0, 1.65, -1.1e-3, 3.0e-7], Tc: 945.0, TvapRef: 708.15, dHvapRef: 78.0, cpLiq298: 580.0 },
   CUSTOM_1: { mw: MW.CUSTOM_1, kind: 'molecular', dHfIg: -274.6, cpIg: [3.266, 0.418, -0.0002242, 4.685e-08], Tc: 563.05, TvapRef: 390.9, dHvapRef: 43.29, watsonN: 0.38 },
   CUSTOM_2: { mw: MW.CUSTOM_2, kind: 'molecular', dHfIg: 87.03, cpIg: [-40.5, 0.638, -0.000513, 1.63e-07], Tc: 699.0, TvapRef: 457.3, dHvapRef: 42.4, watsonN: 0.38 },
   // ── 3차 확장: 국내 중견/중소 전자소재 · 이차전지 · 수처리 핵심 11종 ──
@@ -189,7 +189,7 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   // NMP (N-Methyl-2-pyrrolidone): customComponentEngine.ts 일치 — ΔHf°(g) −196.0, Tc 721.6 K, ΔHvap(Tb) 43.9 kJ/mol
   NMP:      { mw: MW.NMP, kind: 'molecular', dHfIg: -196.0, cpIg: [-26.5, 0.535, -3.12e-4, 6.85e-8], Tc: 721.6, TvapRef: 475.15, dHvapRef: 43.9, cpLiq298: 166.1, watsonN: 0.38 },
   // BCS (2-Butoxyethanol): NIST ΔHf°(g) −460.0, Tc 633.9 K, ΔHvap(Tb) 43.4 kJ/mol, Cp_l(298) 270.6 J/mol·K
-  BCS:      { mw: MW.BCS, kind: 'molecular', dHfIg: -460.0, cpIg: [12.5, 0.585, -3.10e-4, 6.35e-8], Tc: 633.9, TvapRef: 444.35, dHvapRef: 43.4, cpLiq298: 270.6, watsonN: 0.38 },
+  BCS:      { mw: MW.BCS, kind: 'molecular', dHfIg: -460.0, cpIg: [12.5, 0.585, -3.10e-4, 6.35e-8], Tc: 633.9, TvapRef: 444.35, dHvapRef: 43.4, cpLiq298: 270.6 },
   // Na2CO3: NIST ΔHf°(s) −1130.7, ΔHf°(aq,∞) −1157.38
   Na2CO3:   { mw: MW.Na2CO3, kind: 'electrolyte', dHfIg: -740.0, cpIg: [112.3, 0, 0, 0], dHfAq: -1157.38, dHfSolid: -1130.7, cpAqKcalKgK: 0.27 },
   // NaHSO3: NIST ΔHf°(aq,∞) −866.34 (Na⁺ + HSO₃⁻), ΔHf°(s) −853.0

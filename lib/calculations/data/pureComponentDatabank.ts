@@ -57,7 +57,7 @@ export const PSAT_DIPPR101: Partial<Record<SimCompKey, Dippr101Entry>> = {
   CO: { A: 45.698, B: -1076.6, C: -4.8814, D: 7.5673e-5, E: 2, TminK: 68.15, TmaxK: 132.92, source: PERRY },
   Cl2: { A: 71.334, B: -3855.0, C: -8.5171, D: 0.012378, E: 1, TminK: 172.12, TmaxK: 417.15, source: PERRY },
   HCl: { A: 104.27, B: -3731.2, C: -15.047, D: 0.03134, E: 1, TminK: 158.97, TmaxK: 324.65, source: PERRY },
-  Glycerol: { A: 99.986, B: -13808, C: -10.088, D: 3.5712e-19, E: 6, TminK: 291.33, TmaxK: 850.0, source: PERRY },
+  Glycerol: { A: 99.9267, B: -13808, C: -10.088, D: 3.5712e-19, E: 6, TminK: 291.33, TmaxK: 850.0, source: PERRY + ' (A anchored to Tb 290.0°C = 101.325 kPa)' },
   // Enriched 26-species industrial expansion (Ar, acid gases, C4-C8, aromatics, polar aprotic, carbonates, amines, acids, custom slots)
   Ar: { A: 37.86533, B: -1030.692, C: -3.333636, D: 4.8058e-5, E: 2, TminK: 83.81, TmaxK: 150.86, source: LK_ANCHORED },
   H2S: { A: 53.78878, B: -3198.908, C: -5.162856, D: 9.77127e-6, E: 2, TminK: 187.68, TmaxK: 373.53, source: LK_ANCHORED },
@@ -93,7 +93,7 @@ export const PSAT_DIPPR101: Partial<Record<SimCompKey, Dippr101Entry>> = {
   Aniline: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
   MDA: { A: 117.0910, B: -15027.00, C: -13.00000, D: 3.2000e-6, E: 2, TminK: 365.0, TmaxK: 882.0, source: LK_ANCHORED },
   MDI: { A: 114.7560, B: -14550.00, C: -12.50000, D: 3.6000e-6, E: 2, TminK: 311.0, TmaxK: 802.0, source: LK_ANCHORED },
-  PMDI: { A: 122.4000, B: -18250.00, C: -13.20000, D: 2.8000e-6, E: 2, TminK: 320.0, TmaxK: 945.0, source: LK_ANCHORED },
+  PMDI: { A: 118.7030, B: -15546.74, C: -13.20000, D: 2.8000e-6, E: 2, TminK: 320.0, TmaxK: 945.0, source: LK_ANCHORED },
   CUSTOM_1: { A: 130.3499, B: -10136.14, C: -15.8164, D: 9.85969e-6, E: 2, TminK: 183.85, TmaxK: 563.05, source: LK_ANCHORED },
   CUSTOM_2: { A: 100.7895, B: -9749.465, C: -11.25849, D: 4.8758e-6, E: 2, TminK: 267.13, TmaxK: 699.0, source: LK_ANCHORED },
   // 3차 확장: 국내 중견/중소 전자소재 · 이차전지 · 수처리 휘발성 6종

@@ -366,7 +366,7 @@ export const COMP_META: Record<
   Ar: { formula: 'Ar', label: 'Ar (아르곤)', mw: mwOf('Ar', 39.948), isGasAtStd: true, cpLiq: 0.27, cpGas: 0.124, group: 'gas_syngas' },
   H2S: { formula: 'H₂S', label: 'H₂S (황화수소)', mw: mwOf('H2S', 34.081), isGasAtStd: true, cpLiq: 0.48, cpGas: 0.24, group: 'gas_syngas' },
   SO2: { formula: 'SO₂', label: 'SO₂ (이산화황)', mw: mwOf('SO2', 64.064), isGasAtStd: true, cpLiq: 0.32, cpGas: 0.149, group: 'gas_syngas' },
-  SO3: { formula: 'SO₃', label: 'SO₃ (삼산화황)', mw: mwOf('SO3', 80.063), isGasAtStd: false, cpLiq: 0.77, cpGas: 0.151, group: 'gas_syngas' },
+  SO3: { formula: 'SO₃', label: 'SO₃ (삼산화황)', mw: mwOf('SO3', 80.063), isGasAtStd: false, cpLiq: 0.405, cpGas: 0.151, group: 'gas_syngas' },
   iC4H10: { formula: 'i-C₄H₁₀', label: 'i-C₄H₁₀ (이소부탄)', mw: mwOf('iC4H10', 58.123), isGasAtStd: true, cpLiq: 0.58, cpGas: 0.402, group: 'hydrocarbon' },
   C4H8_1: { formula: '1-C₄H₈', label: '1-C₄H₈ (1-부텐)', mw: mwOf('C4H8_1', 56.107), isGasAtStd: true, cpLiq: 0.54, cpGas: 0.366, group: 'hydrocarbon' },
   nC5H12: { formula: 'n-C₅H₁₂', label: 'n-C₅H₁₂ (노르말펜탄)', mw: mwOf('nC5H12', 72.150), isGasAtStd: false, cpLiq: 0.555, cpGas: 0.398, group: 'hydrocarbon' },
