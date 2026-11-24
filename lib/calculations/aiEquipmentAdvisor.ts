@@ -31,6 +31,19 @@ import type {
   SolvedUnitResult,
 } from './flowsheetSolver';
 
+export interface HxAutoFixOption {
+  id: string;
+  labelKo: string;
+  labelEn: string;
+  badgeKo: string;
+  badgeEn: string;
+  cfg: HxDesignParams;
+  params: FlowUnitParams;
+  res: HxDesignSolveResult;
+  estimatedCostUsd: number;
+  allPassed: boolean;
+}
+
 export interface EquipmentAutoFixResult<TPatch, TSolve> {
   improved: boolean;
   resolved: boolean;
@@ -41,6 +54,7 @@ export interface EquipmentAutoFixResult<TPatch, TSolve> {
   headline: string;
   rootCauses: string[];
   actionsTaken: string[];
+  options?: HxAutoFixOption[];
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -73,12 +87,56 @@ function scoreHxResult(r: HxDesignSolveResult): number {
   return pen;
 }
 
+function isHxStrictPass(r: HxDesignSolveResult): boolean {
+  return (
+    r.dpTubeBar <= 0.7 &&
+    r.dpShellBar <= 0.7 &&
+    r.vibRatio < 0.8 &&
+    r.ftFactor >= 0.78 &&
+    r.actualOverdesignPct >= 0 &&
+    r.minPinchDeltaTC >= 3.0
+  );
+}
+
+function estimateHxCostUsd(r: HxDesignSolveResult): number {
+  const area = Math.max(1, r.areaProvM2);
+  if (r.hxKind === 'plate_phe') {
+    return Math.round(6500 + 480 * Math.pow(area, 0.68));
+  }
+  const shells = Math.max(1, r.shellCount);
+  return Math.round(12000 + 850 * Math.pow(area, 0.72) * shells);
+}
+
+interface HxEvalCandidate {
+  cfg: HxDesignParams;
+  params: FlowUnitParams;
+  res: HxDesignSolveResult;
+  allPassed: boolean;
+  estimatedCostUsd: number;
+  score: number;
+}
+
+function hxGeomKey(c: HxEvalCandidate): string {
+  if (c.res.hxKind === 'plate_phe') {
+    return `phe:${c.res.pheGapMm.toFixed(1)}:${c.res.pheChevronDeg}`;
+  }
+  const bRatio = (c.cfg.baffleSpacingRatio ?? c.res.baffleSpacingMm / Math.max(1, c.res.shellIdMm)).toFixed(2);
+  return `st:${c.res.shellCount}:${c.res.tubePasses}:${c.res.tubeOdMm}:${c.res.tubeLengthM.toFixed(2)}:${bRatio}:${c.res.baffleCutPct}:${c.res.pitchAngle}`;
+}
+
+function hxMajorGeomKey(c: HxEvalCandidate): string {
+  if (c.res.hxKind === 'plate_phe') {
+    return `phe:${c.res.pheGapMm.toFixed(1)}:${c.res.pheChevronDeg}`;
+  }
+  return `st:${c.res.shellCount}:${c.res.tubePasses}:${c.res.tubeOdMm}:${c.res.tubeLengthM.toFixed(2)}`;
+}
+
 /**
- * 열교환기 폐루프 AI · 물리 자동 해결기
- * - 튜브 ΔP (>0.7 bar) -> tubePasses 감소 / tubeLengthM 단축 / tubeOdMm 확대 / PHE 판간격 확대
- * - 쉘 ΔP (>0.7 bar) 또는 FIV 진동 (vibRatio>0.8) -> baffleSpacingRatio 증가 / baffleCutPct 확대 / 45°·90° 피치
- * - 온도교차 낮은 Ft (<0.78) -> 직렬 동체(shellCount) 증가 또는 1-패스 순향류 전환
- * - 부식/재질 경고 -> recommendedMaterial 자동 적용
+ * 열교환기 폐루프 AI · 조합 기하 최적화 해결기
+ * - Step 0: 열역학적 핀치(Pinch) 역전 / 온도교차 시 유틸리티 자동 전환
+ * - Step 1: Shell & Tube + Plate PHE 조합 기하 스윕 (~180~280 후보, < 30 ms)
+ * - Step 2: 엄격 통과(ΔP ≤ 0.7 bar, FIV < 80%, Ft ≥ 0.78, 여유율 ≥ 0%, Pinch ≥ 3.0°C) 후보 중
+ *           최저 원가 1번 자동 적용 + 저차압 안전여유안(2번) + 대체 형식(3번) 반환
  */
 export function autoFixHeatExchanger(
   unitType: FlowUnitType,
@@ -139,37 +197,13 @@ export function autoFixHeatExchanger(
   }
 
   let bestParams: FlowUnitParams = { ...params };
-  let bestCfg: HxDesignParams = { ...initialCfg };
-  let bestRes = solvedBefore;
-  let bestScore = scoreHxResult(solvedBefore);
-  const actionsTaken: string[] = [];
-
-  const tryPatch = (patch: Partial<HxDesignParams>, reason: string): boolean => {
-    const nextCfg: HxDesignParams = { ...bestCfg, ...patch };
-    const candidate = solveHeatExchangerDesign(
-      unitType,
-      bestParams,
-      nextCfg,
-      procInStreams,
-      procOutStreams,
-      utilInStreams,
-      utilOutStreams,
-      unitRes
-    );
-    const sc = scoreHxResult(candidate);
-    if (sc < bestScore - 1e-3) {
-      bestCfg = nextCfg;
-      bestRes = candidate;
-      bestScore = sc;
-      actionsTaken.push(reason);
-      return true;
-    }
-    return false;
-  };
+  let step0Res = solvedBefore;
+  let step0Score = scoreHxResult(solvedBefore);
+  const step0Actions: string[] = [];
 
   // ── Step 0: 열역학적 핀치(Pinch) 역전 / 온도교차 유틸리티 자동 해결 ──
-  if (bestRes.minPinchDeltaTC < 3.5) {
-    const isCooling = bestRes.dutyMcalH < 0 || bestRes.processSide.outTempC < bestRes.processSide.inTempC;
+  if (step0Res.minPinchDeltaTC < 3.5) {
+    const isCooling = step0Res.dutyMcalH < 0 || step0Res.processSide.outTempC < step0Res.processSide.inTempC;
     if (utilInStreams.length === 0) {
       const utilityCandidates: Array<{ pPatch: Partial<FlowUnitParams>; label: string }> = isCooling
         ? [
@@ -192,7 +226,7 @@ export function autoFixHeatExchanger(
         const solvedCand = solveHeatExchangerDesign(
           unitType,
           nextParams,
-          bestCfg,
+          initialCfg,
           procInStreams,
           procOutStreams,
           utilInStreams,
@@ -200,11 +234,11 @@ export function autoFixHeatExchanger(
           unitRes
         );
         const sc = scoreHxResult(solvedCand);
-        if (sc < bestScore - 1e-3) {
+        if (sc < step0Score - 1e-3) {
           bestParams = nextParams;
-          bestRes = solvedCand;
-          bestScore = sc;
-          actionsTaken.push(
+          step0Res = solvedCand;
+          step0Score = sc;
+          step0Actions.push(
             `${cand.label} (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${solvedCand.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${solvedCand.areaProvM2.toFixed(1)} m²)`
           );
           if (solvedCand.minPinchDeltaTC >= 5.0) break;
@@ -212,127 +246,377 @@ export function autoFixHeatExchanger(
       }
     } else {
       // PFD에 외부 유틸리티 스트림이 직접 연결된 경우: 필요 최소 유량 정량 계산 안내
-      const absQ = Math.abs(bestRes.dutyMcalH) * 1000;
-      const uCp = Math.max(0.25, bestRes.utilitySide.cpKcalKgC || 1.0);
+      const absQ = Math.abs(step0Res.dutyMcalH) * 1000;
+      const uCp = Math.max(0.25, step0Res.utilitySide.cpKcalKgC || 1.0);
       const targetDt = isCooling ? 8.0 : 15.0;
       const reqFlowKgH = Math.ceil(absQ / (uCp * targetDt));
-      const curFlowKgH = Math.round(bestRes.utilitySide.massFlowKgH);
-      const utilIn = bestRes.utilitySide.inTempC;
-      const procOut = bestRes.processSide.outTempC;
+      const curFlowKgH = Math.round(step0Res.utilitySide.massFlowKgH);
+      const utilIn = step0Res.utilitySide.inTempC;
+      const procOut = step0Res.processSide.outTempC;
       if (isCooling && utilIn >= procOut - 4) {
-        actionsTaken.push(
+        step0Actions.push(
           `외부 연결 냉매 공급온도(${utilIn.toFixed(1)}°C)가 공정 목표온도(${procOut.toFixed(1)}°C)에 너무 가깝습니다. PFD 유틸리티 피드 온도를 칠드워터(7°C) 이하로 낮추고 유량을 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 증대하세요 (현재 ${curFlowKgH.toLocaleString()} kg/h).`
         );
       } else {
-        actionsTaken.push(
-          `외부 연결 유틸리티 스트림 유량이 부족하여 출구온도가 ${bestRes.utilitySide.outTempC.toFixed(1)}°C까지 변했습니다. PFD 유틸리티 피드 유량을 현재 ${curFlowKgH.toLocaleString()} kg/h → 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 늘려주세요.`
+        step0Actions.push(
+          `외부 연결 유틸리티 스트림 유량이 부족하여 출구온도가 ${step0Res.utilitySide.outTempC.toFixed(1)}°C까지 변했습니다. PFD 유틸리티 피드 유량을 현재 ${curFlowKgH.toLocaleString()} kg/h → 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 늘려주세요.`
         );
       }
     }
   }
 
-  // 진단 자체 remedyPatch 우선 시도
-  for (const d of solvedBefore.diagnostics) {
-    if (d.level !== 'ok' && d.remedyPatch) {
-      tryPatch(d.remedyPatch, d.remedyLabel ?? '진단 권장 처방 적용');
+  // ── Step 1: 고속 조합 기하 스윕 (Shell & Tube + Plate PHE) ──
+  const recMat = step0Res.recommendedMaterial;
+  const candidates: HxEvalCandidate[] = [];
+  const seenKeys = new Set<string>();
+
+  const evalCandidate = (cfg: HxDesignParams) => {
+    const res = solveHeatExchangerDesign(
+      unitType,
+      bestParams,
+      cfg,
+      procInStreams,
+      procOutStreams,
+      utilInStreams,
+      utilOutStreams,
+      unitRes
+    );
+    const cand: HxEvalCandidate = {
+      cfg,
+      params: bestParams,
+      res,
+      allPassed: isHxStrictPass(res),
+      estimatedCostUsd: estimateHxCostUsd(res),
+      score: scoreHxResult(res),
+    };
+    const key = hxGeomKey(cand);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      candidates.push(cand);
+    }
+  };
+
+  // 현재 설정(Step 0 반영)도 후보군에 포함
+  evalCandidate({
+    ...initialCfg,
+    material: recMat,
+    designMode: 'design',
+    designMarginPct: 15,
+  });
+
+  // 1-A. Shell & Tube 조합 스윕
+  const tubePassesGrid: Array<1 | 2 | 4> = [1, 2, 4];
+  const tubeOdGrid: Array<19.05 | 25.4> = [19.05, 25.4];
+  const tubeLenGrid: Array<2.44 | 3.05 | 3.66 | 4.88 | 6.1> = [2.44, 3.05, 3.66, 4.88, 6.1];
+  // 배플 조합 (B/Ds ∈ [0.35, 0.55, 0.78], cut ∈ [25, 35]) — 핵심 대표 4조합으로 240개 이내 고속 유지
+  const bafflePairs: Array<[number, number]> = [
+    [0.35, 25],
+    [0.55, 25],
+    [0.55, 35],
+    [0.78, 35],
+  ];
+  const baseTema = initialCfg.temaType ?? 'AES';
+
+  for (const shellCount of [1, 2]) {
+    for (const tubePasses of tubePassesGrid) {
+      const temaType = tubePasses === 1 && baseTema === 'BEU' ? 'BEM' : baseTema;
+      for (const tubeOdMm of tubeOdGrid) {
+        for (const tubeLengthM of tubeLenGrid) {
+          for (const [baffleSpacingRatio, baffleCutPct] of bafflePairs) {
+            evalCandidate({
+              ...initialCfg,
+              hxKind: 'shell_tube',
+              temaType,
+              designMode: 'design',
+              designMarginPct: 15,
+              material: recMat,
+              shellCount,
+              tubePasses,
+              tubeOdMm,
+              tubeLengthM,
+              baffleSpacingRatio,
+              baffleCutPct,
+              pitchAngle: 30,
+            });
+          }
+        }
+      }
     }
   }
 
-  // 폐루프 다중 스텝 최적화 (최대 6회)
-  for (let step = 0; step < 6; step++) {
-    if (bestRes.overallStatus === 'ok' && bestScore <= 1) break;
-    let progressed = false;
-
-    if (bestRes.material.code !== bestRes.recommendedMaterial) {
-      progressed =
-        tryPatch(
-          { material: bestRes.recommendedMaterial },
-          `내식 재질 자동 변경 (${bestRes.material.code} → ${bestRes.recommendedMaterial})`
-        ) || progressed;
-    }
-
-    if (bestRes.hxKind === 'plate_phe') {
-      if (bestRes.dpTubeBar > 0.7 || bestRes.dpShellBar > 0.7) {
-        const curGap = bestCfg.pheGapMm ?? 3.5;
-        if (curGap < 5.0) {
-          const nextGap = Number(Math.min(5.0, curGap + 0.7).toFixed(1));
-          progressed =
-            tryPatch(
-              { pheGapMm: nextGap, pheChevronDeg: 30 },
-              `PHE 판간격 확대 (${curGap}→${nextGap} mm) · 저차압 30° 쉐브론`
-            ) || progressed;
+  // Ft < 0.78 또는 Shell ΔP > 0.7 bar이면 직렬 3쉘 추가 탐색
+  if (step0Res.ftFactor < 0.78 || step0Res.dpShellBar > 0.7) {
+    for (const tubePasses of [1, 2] as const) {
+      const temaType = tubePasses === 1 && baseTema === 'BEU' ? 'BEM' : baseTema;
+      for (const tubeOdMm of tubeOdGrid) {
+        for (const tubeLengthM of [3.05, 3.66, 4.88] as const) {
+          for (const [baffleSpacingRatio, baffleCutPct] of [
+            [0.55, 25],
+            [0.78, 35],
+          ] as Array<[number, number]>) {
+            evalCandidate({
+              ...initialCfg,
+              hxKind: 'shell_tube',
+              temaType,
+              designMode: 'design',
+              designMarginPct: 15,
+              material: recMat,
+              shellCount: 3,
+              tubePasses,
+              tubeOdMm,
+              tubeLengthM,
+              baffleSpacingRatio,
+              baffleCutPct,
+              pitchAngle: 30,
+            });
+          }
         }
-        if (bestRes.dpTubeBar > 0.7 || bestRes.dpShellBar > 0.7) {
-          progressed =
-            tryPatch(
-              { hxKind: 'shell_tube', temaType: 'AES', tubePasses: 2, tubeOdMm: 25.4, tubeLengthM: 3.66 },
-              '고유량·고차압 조건에 맞춰 TEMA 다관원통형(Shell & Tube)으로 전환'
-            ) || progressed;
-        }
-      }
-    } else {
-      // Shell & Tube 규칙 기반 수렴 루프
-      if (bestRes.designMode === 'rating' && bestRes.actualOverdesignPct < 0) {
-        progressed =
-          tryPatch(
-            { designMode: 'design', designMarginPct: 15 },
-            '면적 부족 정격(Rating) 해제 → 요구면적 자동 사이징 전환 (여유율 +15%)'
-          ) || progressed;
-      }
-
-      if (bestRes.ftFactor < 0.78) {
-        const curShells = bestCfg.shellCount ?? bestRes.shellCount ?? 1;
-        if (curShells < 4) {
-          const nextShells = curShells + 1;
-          progressed =
-            tryPatch(
-              { shellCount: nextShells },
-              `직렬 동체(Shell) 증설 (${curShells}→${nextShells}기)로 Ft 향상`
-            ) || progressed;
-        } else if ((bestCfg.tubePasses ?? bestRes.tubePasses) !== 1) {
-          progressed =
-            tryPatch({ tubePasses: 1, temaType: 'BEM' }, '순수 향류 1-Tube Pass 전환 (Ft = 1.0)') || progressed;
-        }
-      }
-
-      if (bestRes.dpTubeBar > 0.7) {
-        const curPass = bestCfg.tubePasses ?? bestRes.tubePasses ?? 2;
-        if (curPass > 2) {
-          const nextPass: 1 | 2 | 4 = curPass === 6 ? 4 : 2;
-          progressed =
-            tryPatch({ tubePasses: nextPass }, `튜브 패스 수 감소 (${curPass}→${nextPass} pass)로 튜브 ΔP 대폭 저감`) ||
-            progressed;
-        } else if ((bestCfg.tubeOdMm ?? bestRes.tubeOdMm) < 25.4) {
-          progressed =
-            tryPatch({ tubeOdMm: 25.4 }, `튜브 외경 확대 (${bestRes.tubeOdMm}→25.4 mm)로 유속·ΔP 완화`) || progressed;
-        } else if ((bestCfg.tubeLengthM ?? bestRes.tubeLengthM) > 3.05) {
-          const nextLen: 2.44 | 3.05 | 3.66 | 4.88 =
-            bestRes.tubeLengthM >= 6.0 ? 4.88 : bestRes.tubeLengthM >= 4.8 ? 3.66 : 3.05;
-          progressed =
-            tryPatch({ tubeLengthM: nextLen }, `튜브 길이 단축 (${bestRes.tubeLengthM}→${nextLen} m)`) || progressed;
-        } else if (curPass === 2) {
-          progressed = tryPatch({ tubePasses: 1 }, '1-Tube Pass 전환으로 튜브측 차압 최소화') || progressed;
-        }
-      }
-
-      if (bestRes.dpShellBar > 0.7 || bestRes.vibRatio > 0.8) {
-        const curRatio = bestCfg.baffleSpacingRatio ?? 0.45;
-        const curCut = bestCfg.baffleCutPct ?? bestRes.baffleCutPct ?? 25;
-        const nextRatio = Number(Math.min(0.85, curRatio + 0.15).toFixed(2));
-        const nextCut = Math.min(40, Math.max(curCut, 32));
-        progressed =
-          tryPatch(
-            {
-              baffleSpacingRatio: nextRatio,
-              baffleCutPct: nextCut,
-              pitchAngle: bestRes.vibRatio > 0.8 ? 90 : bestCfg.pitchAngle ?? 45,
-            },
-            `배플 간격비 확대 (B/Ds=${curRatio.toFixed(2)}→${nextRatio.toFixed(2)}) · 컷 ${nextCut}%로 쉘 ΔP/진동 완화`
-          ) || progressed;
       }
     }
+  }
 
-    if (!progressed) break;
+  // FIV > 0.75 또는 Shell ΔP > 0.6 bar이면 90° 정사각 피치 추가 탐색
+  if (step0Res.vibRatio > 0.75 || step0Res.dpShellBar > 0.6) {
+    for (const shellCount of [1, 2]) {
+      for (const tubePasses of [1, 2] as const) {
+        const temaType = tubePasses === 1 && baseTema === 'BEU' ? 'BEM' : baseTema;
+        for (const tubeOdMm of tubeOdGrid) {
+          for (const tubeLengthM of [2.44, 3.66, 4.88] as const) {
+            for (const [baffleSpacingRatio, baffleCutPct] of [
+              [0.55, 35],
+              [0.78, 35],
+            ] as Array<[number, number]>) {
+              evalCandidate({
+                ...initialCfg,
+                hxKind: 'shell_tube',
+                temaType,
+                designMode: 'design',
+                designMarginPct: 15,
+                material: recMat,
+                shellCount,
+                tubePasses,
+                tubeOdMm,
+                tubeLengthM,
+                baffleSpacingRatio,
+                baffleCutPct,
+                pitchAngle: 90,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 1-B. Plate PHE 조합 스윕 (설계온도 ≤ 160°C, 설계압력 ≤ 16 bar 시 경제적 초소형 대안으로 평가)
+  const designTempC = Math.max(
+    step0Res.processSide.inTempC,
+    step0Res.processSide.outTempC,
+    step0Res.utilitySide.inTempC,
+    step0Res.utilitySide.outTempC
+  );
+  const designPressBar =
+    Math.max(step0Res.processSide.pressKgcm2g, step0Res.utilitySide.pressKgcm2g) * 0.980665;
+  if (designTempC <= 160 && designPressBar <= 16) {
+    for (const pheGapMm of [3.0, 4.0, 5.0]) {
+      for (const pheChevronDeg of [30, 45, 60] as const) {
+        evalCandidate({
+          ...initialCfg,
+          hxKind: 'plate_phe',
+          designMode: 'design',
+          designMarginPct: 15,
+          material: recMat,
+          pheGapMm,
+          pheChevronDeg,
+        });
+      }
+    }
+  }
+
+  // ── Step 2: 후보 랭킹 (통과안 우선 → 최저 원가 순, 미통과안은 최저 페널티 순) ──
+  candidates.sort((a, b) => {
+    if (a.allPassed !== b.allPassed) return a.allPassed ? -1 : 1;
+    if (a.allPassed && b.allPassed) {
+      if (a.estimatedCostUsd !== b.estimatedCostUsd) return a.estimatedCostUsd - b.estimatedCostUsd;
+      const aDp = Math.max(a.res.dpTubeBar, a.res.dpShellBar);
+      const bDp = Math.max(b.res.dpTubeBar, b.res.dpShellBar);
+      return aDp - bDp;
+    }
+    if (Math.abs(a.score - b.score) > 1e-3) return a.score - b.score;
+    return a.estimatedCostUsd - b.estimatedCostUsd;
+  });
+
+  const opt1 = candidates[0];
+  const passingCandidates = candidates.filter((c) => c.allPassed);
+  const poolForOpt2 = passingCandidates.length > 1 ? passingCandidates : candidates;
+
+  // Option 2: 저차압 · 안전여유안 (Option 1과 구별되는 최소 max(dpTube, dpShell) 설계)
+  const opt1Major = hxMajorGeomKey(opt1);
+  const opt1Key = hxGeomKey(opt1);
+  const lowDpSorted = [...poolForOpt2]
+    .filter((c) => hxGeomKey(c) !== opt1Key)
+    .sort((a, b) => {
+      const aDp = Math.max(a.res.dpTubeBar, a.res.dpShellBar);
+      const bDp = Math.max(b.res.dpTubeBar, b.res.dpShellBar);
+      if (Math.abs(aDp - bDp) > 0.015) return aDp - bDp;
+      if (Math.abs(a.res.vibRatio - b.res.vibRatio) > 0.03) return a.res.vibRatio - b.res.vibRatio;
+      return a.estimatedCostUsd - b.estimatedCostUsd;
+    });
+  const opt2 =
+    lowDpSorted.find((c) => hxMajorGeomKey(c) !== opt1Major) ?? lowDpSorted[0] ?? null;
+
+  // Option 3: 대체 형식 (반대 hxKind 통과안 우선, 불가능 시 2순위 별도 통과 Shell & Tube 기하안)
+  const chosenKeys = new Set<string>([opt1Key, ...(opt2 ? [hxGeomKey(opt2)] : [])]);
+  const chosenMajors = new Set<string>([opt1Major, ...(opt2 ? [hxMajorGeomKey(opt2)] : [])]);
+  const oppositeKind = opt1.res.hxKind === 'shell_tube' ? 'plate_phe' : 'shell_tube';
+  const oppCand = candidates.find(
+    (c) =>
+      c.res.hxKind === oppositeKind &&
+      (opt1.allPassed ? c.allPassed : true) &&
+      !chosenKeys.has(hxGeomKey(c))
+  );
+  const altStCand =
+    passingCandidates.find(
+      (c) =>
+        c.res.hxKind === 'shell_tube' &&
+        !chosenKeys.has(hxGeomKey(c)) &&
+        !chosenMajors.has(hxMajorGeomKey(c))
+    ) ??
+    passingCandidates.find(
+      (c) => c.res.hxKind === 'shell_tube' && !chosenKeys.has(hxGeomKey(c))
+    ) ??
+    candidates.find(
+      (c) =>
+        c.res.hxKind === 'shell_tube' &&
+        !chosenKeys.has(hxGeomKey(c)) &&
+        !chosenMajors.has(hxMajorGeomKey(c))
+    ) ??
+    candidates.find((c) => !chosenKeys.has(hxGeomKey(c))) ??
+    null;
+  const opt3 = oppCand ?? altStCand;
+
+  const options: HxAutoFixOption[] = [
+    {
+      id: 'opt-economical',
+      labelKo: 'AI 추천 최적안 (최저 원가)',
+      labelEn: 'AI Recommended · Most Economical',
+      badgeKo: '최저 원가',
+      badgeEn: 'Lowest Cost',
+      cfg: opt1.cfg,
+      params: opt1.params,
+      res: opt1.res,
+      estimatedCostUsd: opt1.estimatedCostUsd,
+      allPassed: opt1.allPassed,
+    },
+  ];
+
+  if (opt2) {
+    options.push({
+      id: 'opt-low-dp',
+      labelKo: '저차압 · 안전여유안',
+      labelEn: 'Low ΔP · High Margin',
+      badgeKo: '저차압·고여유',
+      badgeEn: 'Low ΔP',
+      cfg: opt2.cfg,
+      params: opt2.params,
+      res: opt2.res,
+      estimatedCostUsd: opt2.estimatedCostUsd,
+      allPassed: opt2.allPassed,
+    });
+  }
+
+  if (opt3) {
+    const isOpposite = opt3.res.hxKind !== opt1.res.hxKind;
+    options.push({
+      id: isOpposite ? 'opt-alt-type' : 'opt-alt-geom',
+      labelKo: isOpposite
+        ? opt3.res.hxKind === 'plate_phe'
+          ? '대체 형식 (판형 PHE)'
+          : '대체 형식 (다관원통형 S&T)'
+        : '대체 기하안 (다관원통형)',
+      labelEn: isOpposite
+        ? opt3.res.hxKind === 'plate_phe'
+          ? 'Alternative Type: Plate PHE'
+          : 'Alternative Type: Shell & Tube'
+        : 'Alternative Shell & Tube',
+      badgeKo:
+        opt3.res.hxKind === 'plate_phe' ? '초소형 PHE' : isOpposite ? 'TEMA S&T' : '대체 규격',
+      badgeEn:
+        opt3.res.hxKind === 'plate_phe' ? 'Compact PHE' : isOpposite ? 'TEMA S&T' : 'Alt Spec',
+      cfg: opt3.cfg,
+      params: opt3.params,
+      res: opt3.res,
+      estimatedCostUsd: opt3.estimatedCostUsd,
+      allPassed: opt3.allPassed,
+    });
+  }
+
+  const bestCfg = opt1.cfg;
+  const bestRes = opt1.res;
+  const bestScore = opt1.score;
+
+  // ── 변경 조치 목록 상세 기록 ──
+  const actionsTaken: string[] = [...step0Actions];
+  if (solvedBefore.hxKind !== bestRes.hxKind) {
+    actionsTaken.push(
+      `형식 전환 (${solvedBefore.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA S&T'} → ${
+        bestRes.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA 다관원통형'
+      })`
+    );
+  }
+  if (initialCfg.designMode === 'rating' && bestCfg.designMode === 'design') {
+    actionsTaken.push('정격(Rating) 해제 → 요구면적 자동 사이징 전환 (여유율 +15%)');
+  }
+  if (solvedBefore.material.code !== bestRes.material.code) {
+    actionsTaken.push(`내식 재질 변경 (${solvedBefore.material.code} → ${bestRes.material.code})`);
+  }
+  if (bestRes.hxKind === 'shell_tube') {
+    if (solvedBefore.hxKind === 'shell_tube' && solvedBefore.temaType !== bestRes.temaType) {
+      actionsTaken.push(`TEMA 형식 ${solvedBefore.temaType}→${bestRes.temaType}`);
+    }
+    if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.shellCount !== bestRes.shellCount) {
+      actionsTaken.push(`직렬 쉘 ${solvedBefore.shellCount}→${bestRes.shellCount}기`);
+    }
+    if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.tubePasses !== bestRes.tubePasses) {
+      actionsTaken.push(`패스 수 ${solvedBefore.tubePasses}→${bestRes.tubePasses}`);
+    }
+    if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.tubeOdMm !== bestRes.tubeOdMm) {
+      actionsTaken.push(`관경 ${solvedBefore.tubeOdMm}→${bestRes.tubeOdMm} mm`);
+    }
+    if (
+      solvedBefore.hxKind !== 'shell_tube' ||
+      Math.abs(solvedBefore.tubeLengthM - bestRes.tubeLengthM) > 0.01
+    ) {
+      actionsTaken.push(
+        `관길이 ${solvedBefore.tubeLengthM.toFixed(2)}→${bestRes.tubeLengthM.toFixed(2)} m`
+      );
+    }
+    const oldBRatio =
+      initialCfg.baffleSpacingRatio ??
+      solvedBefore.baffleSpacingMm / Math.max(1, solvedBefore.shellIdMm);
+    const newBRatio =
+      bestCfg.baffleSpacingRatio ?? bestRes.baffleSpacingMm / Math.max(1, bestRes.shellIdMm);
+    if (solvedBefore.hxKind !== 'shell_tube' || Math.abs(oldBRatio - newBRatio) > 0.02) {
+      actionsTaken.push(`배플 간격비 ${oldBRatio.toFixed(2)}→${newBRatio.toFixed(2)}`);
+    }
+    if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.baffleCutPct !== bestRes.baffleCutPct) {
+      actionsTaken.push(`배플 컷 ${solvedBefore.baffleCutPct}→${bestRes.baffleCutPct}%`);
+    }
+    if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.pitchAngle !== bestRes.pitchAngle) {
+      actionsTaken.push(`배열각 ${solvedBefore.pitchAngle}°→${bestRes.pitchAngle}°`);
+    }
+  } else {
+    if (
+      solvedBefore.hxKind !== 'plate_phe' ||
+      Math.abs(solvedBefore.pheGapMm - bestRes.pheGapMm) > 0.05
+    ) {
+      actionsTaken.push(
+        `PHE 판간격 ${solvedBefore.pheGapMm.toFixed(1)}→${bestRes.pheGapMm.toFixed(1)} mm`
+      );
+    }
+    if (solvedBefore.hxKind !== 'plate_phe' || solvedBefore.pheChevronDeg !== bestRes.pheChevronDeg) {
+      actionsTaken.push(`쉐브론 각도 ${solvedBefore.pheChevronDeg}°→${bestRes.pheChevronDeg}°`);
+    }
   }
 
   const patch: Partial<HxDesignParams> = {};
@@ -349,12 +633,18 @@ export function autoFixHeatExchanger(
     }
   });
 
-  const improved = bestScore < scoreHxResult(solvedBefore) - 1e-3;
-  const resolved = bestRes.overallStatus === 'ok';
+  const beforeScore = scoreHxResult(solvedBefore);
+  const beforePassed = isHxStrictPass(solvedBefore);
+  const improved =
+    (opt1.allPassed && !beforePassed) ||
+    bestScore < beforeScore - 1e-3 ||
+    (opt1.allPassed && beforePassed && opt1.estimatedCostUsd < estimateHxCostUsd(solvedBefore));
+  const resolved = opt1.allPassed || bestRes.overallStatus === 'ok';
+  const costK = (opt1.estimatedCostUsd / 1000).toFixed(1);
   const headline = resolved
-    ? `AI 자동 보정 완료: 정상 운전 범위 달성 (Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C, Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, Ft ${bestRes.ftFactor.toFixed(2)}).`
+    ? `AI 자동 보정 완료 (${candidates.length}개 기하 조합 검증 · 최저 원가 1번 Est. $${costK}k 자동 적용): Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, FIV ${(bestRes.vibRatio * 100).toFixed(0)}%, Ft ${bestRes.ftFactor.toFixed(2)}, Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C.`
     : improved
-    ? `AI 부분 개선 완료 (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${bestRes.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${bestRes.areaProvM2.toFixed(1)} m², Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar).`
+    ? `AI 부분 개선 완료 (${candidates.length}개 조합 탐색 · Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${solvedBefore.dpShellBar.toFixed(2)}→${bestRes.dpShellBar.toFixed(2)} bar, 면적 ${bestRes.areaProvM2.toFixed(1)} m²).`
     : bestRes.minPinchDeltaTC <= 0.5 && utilInStreams.length > 0
     ? 'PFD에 직접 연결된 유틸리티 스트림의 유량 부족 또는 온도 역전으로 기하학적 보정만으로는 해결할 수 없습니다 (아래 유량·온도 가이드 적용 필요).'
     : '현재 열부하·상변화 조건에서 기하학적 조정 여지가 제한적입니다 (공정 유량·핀치 온도 점검 필요).';
@@ -368,7 +658,11 @@ export function autoFixHeatExchanger(
     solvedAfter: bestRes,
     headline,
     rootCauses,
-    actionsTaken: actionsTaken.length > 0 ? actionsTaken : ['현재 운전 파라미터가 물리적 최적 상태에 가깝습니다.'],
+    actionsTaken:
+      actionsTaken.length > 0
+        ? actionsTaken
+        : ['현재 운전 파라미터가 물리적 최적 상태에 가깝습니다.'],
+    options,
   };
 }
 
@@ -383,7 +677,7 @@ export async function autoFixHeatExchangerAsync(
   unitRes?: SolvedUnitResult,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<EquipmentAutoFixResult<HxDesignParams, HxDesignSolveResult>> {
-  onProgress?.(1, 2, '열교환기 차압·Ft·유체유발진동(FIV) 원인 분석 중...');
+  onProgress?.(1, 2, '열교환기 조합 기하 스윕(ΔP·Ft·FIV·경제성) 탐색 중...');
   await yieldToBrowser();
   const res = autoFixHeatExchanger(
     unitType,
@@ -395,7 +689,7 @@ export async function autoFixHeatExchangerAsync(
     utilOutStreams,
     unitRes
   );
-  onProgress?.(2, 2, '최적 열교환기 기하 규격 도출 완료');
+  onProgress?.(2, 2, '상위 3개 AI 검증 설계 대안 산출 완료');
   await yieldToBrowser();
   return res;
 }
