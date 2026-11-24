@@ -1049,39 +1049,29 @@ export default function HeatExchangerWorkbenchModal({
 
   const statusTone = isRunningFeedback
     ? {
-        bg: '#EFF6FF',
-        fg: '#1D4ED8',
-        bd: '#93C5FD',
-        text: isEn ? '⏳ Running heat balance & hydraulics...' : '⏳ 열수지·수력학 계산 실행 중...',
+        dot: '#3B82F6',
+        text: isEn ? 'Running heat balance & hydraulics...' : '열수지·수력학 계산 실행 중...',
       }
     : isSimDirty
     ? {
-        bg: '#FFFBEB',
-        fg: '#92400E',
-        bd: '#FCD34D',
+        dot: '#D97706',
         text: isEn ? 'Conditions changed — Click [▶ Run (F5)]' : '운전조건 변경됨 — [▶ RUN] 실행 필요',
       }
     : dRes.overallStatus === 'error'
     ? {
-        bg: '#FEF2F2',
-        fg: '#991B1B',
-        bd: '#FCA5A5',
-        text: isEn ? '✕ Check thermal pinch or metallurgy safety' : '✕ 열역학 핀치 또는 재질 안전 점검 필요',
+        dot: '#DC2626',
+        text: isEn ? 'Check thermal pinch or metallurgy safety' : '열역학 핀치 또는 재질 안전 점검 필요',
       }
     : dRes.overallStatus === 'warning'
     ? {
-        bg: '#FFFBEB',
-        fg: '#92400E',
-        bd: '#FCD34D',
-        text: isEn ? '⚠ Check ΔP & approach temperature limits' : '⚠ 압력손실·접근온도 권장치 점검',
+        dot: '#D97706',
+        text: isEn ? 'Check ΔP & approach temperature limits' : '압력손실·접근온도 권장치 점검',
       }
     : {
-        bg: '#DCFCE7',
-        fg: '#166534',
-        bd: '#86EFAC',
+        dot: '#16A34A',
         text: isEn
-          ? `✓ Thermal, Hydraulics & Material OK (${dRes.hxKind === 'plate_phe' ? 'Plate PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`
-          : `✓ 열수지·수력학·재질 정상 (${dRes.hxKind === 'plate_phe' ? '판형 PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`,
+          ? `Thermal, Hydraulics & Material OK (${dRes.hxKind === 'plate_phe' ? 'Plate PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`
+          : `열수지·수력학·재질 정상 (${dRes.hxKind === 'plate_phe' ? '판형 PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`,
       };
 
   const hysysStatusBar = (() => {
@@ -1131,12 +1121,9 @@ export default function HeatExchangerWorkbenchModal({
       }
       return {
         level: 'red' as const,
-        bg: '#FEF2F2',
-        border: '#FCA5A5',
-        color: '#991B1B',
-        text: isEn
-          ? `🔴 Physical / Hydraulic Error: ${reasons.join(' · ')}`
-          : `🔴 물리적/수력학 오류: ${reasons.join(' · ')}`,
+        dot: '#DC2626',
+        label: isEn ? 'Hydraulic / Thermal Limit Exceeded' : '물리·수력학 제한 초과',
+        detail: reasons.join(' · '),
       };
     }
 
@@ -1173,21 +1160,19 @@ export default function HeatExchangerWorkbenchModal({
       }
       return {
         level: 'amber' as const,
-        bg: '#FFFBEB',
-        border: '#FCD34D',
-        color: '#92400E',
-        text: isEn ? `🟡 Caution: ${warns.join(' · ')}` : `🟡 주의: ${warns.join(' · ')}`,
+        dot: '#D97706',
+        label: isEn ? 'Caution' : '주의',
+        detail: warns.join(' · '),
       };
     }
 
     return {
       level: 'green' as const,
-      bg: '#ECFDF5',
-      border: '#6EE7B7',
-      color: '#065F46',
-      text: isEn
-        ? '🟢 Ready & Verified — Duty, Area, ΔP & Vibration all within limits'
-        : '🟢 설계 조건 완료 — 열부하 · 면적 · ΔP · 진동 모두 정상 범위',
+      dot: '#16A34A',
+      label: isEn ? 'Ready & Verified' : '표준 계산 정상',
+      detail: isEn
+        ? 'Duty, Area, ΔP & Vibration all within limits'
+        : '열부하 · 면적 · ΔP · 진동 모두 정상 범위',
     };
   })();
 
@@ -1669,16 +1654,28 @@ export default function HeatExchangerWorkbenchModal({
                 <span
                   style={{
                     flexShrink: 0,
-                    padding: '2px 8px',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '2px 9px',
                     borderRadius: 999,
-                    background: statusTone.bg,
-                    color: statusTone.fg,
-                    border: `1px solid ${statusTone.bd}`,
+                    background: '#1E293B',
+                    color: '#E2E8F0',
+                    border: '1px solid #334155',
                     fontSize: 10,
-                    fontWeight: 900,
+                    fontWeight: 800,
                     whiteSpace: 'nowrap',
                   }}
                 >
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: statusTone.dot,
+                      flexShrink: 0,
+                    }}
+                  />
                   {statusTone.text}
                 </span>
               </div>
@@ -1732,7 +1729,7 @@ export default function HeatExchangerWorkbenchModal({
             </div>
           </div>
 
-          {/* 우측: TEMA·도구 드롭다운 + AI 자동 해결 + RUN + 닫기(✕) */}
+          {/* 우측: TEMA·도구 드롭다운 + RUN + 닫기(✕) */}
           <div
             style={{
               display: 'flex',
@@ -1767,8 +1764,8 @@ export default function HeatExchangerWorkbenchModal({
                   width: isMobile ? '100%' : undefined,
                   padding: '5px 10px',
                   borderRadius: 6,
-                  border: temaMenuOpen ? '1px solid #38BDF8' : '1px solid #475569',
-                  background: temaMenuOpen ? '#1E3A5F' : '#1E293B',
+                  border: temaMenuOpen ? '1px solid #94A3B8' : '1px solid #475569',
+                  background: temaMenuOpen ? '#334155' : '#1E293B',
                   color: '#E2E8F0',
                   fontSize: 11,
                   fontWeight: 800,
@@ -1813,14 +1810,14 @@ export default function HeatExchangerWorkbenchModal({
                       borderRadius: 5,
                       border: 'none',
                       background: 'transparent',
-                      color: '#ECFDF5',
+                      color: '#F1F5F9',
                       fontSize: 11.5,
                       fontWeight: 800,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#065F46';
+                      e.currentTarget.style.background = '#334155';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'transparent';
@@ -1849,14 +1846,14 @@ export default function HeatExchangerWorkbenchModal({
                       borderRadius: 5,
                       border: 'none',
                       background: 'transparent',
-                      color: '#E0F2FE',
+                      color: '#F1F5F9',
                       fontSize: 11.5,
                       fontWeight: 800,
                       cursor: 'pointer',
                       whiteSpace: 'nowrap',
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#0C4A6E';
+                      e.currentTarget.style.background = '#334155';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'transparent';
@@ -1909,42 +1906,20 @@ export default function HeatExchangerWorkbenchModal({
 
             <button
               type="button"
-              onClick={runAiAutoFixHx}
-              disabled={isAiBusy}
-              style={{
-                flex: isMobile ? '1 1 auto' : undefined,
-                padding: '5px 10px',
-                borderRadius: 6,
-                border: dRes.overallStatus !== 'ok' ? '1.5px solid #C084FC' : '1px solid #64748B',
-                background: dRes.overallStatus !== 'ok' ? '#7C3AED' : '#334155',
-                color: '#FFFFFF',
-                fontSize: 11,
-                fontWeight: 900,
-                cursor: isAiBusy ? 'wait' : 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isAiBusy
-                ? (aiStepLabel || (isEn ? '⏳ Analyzing...' : '⏳ AI 분석 중...'))
-                : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-            </button>
-
-            <button
-              type="button"
               onClick={triggerRun}
               style={{
                 flex: isMobile ? '1 1 auto' : undefined,
                 padding: '5px 11px',
                 borderRadius: 6,
-                border: isSimDirty ? '1.5px solid #FDE047' : '1px solid #60A5FA',
-                background: isSimDirty ? '#D97706' : '#2563EB',
+                border: isSimDirty ? '1.5px solid #D97706' : '1px solid #3B5998',
+                background: '#1E3A8A',
                 color: '#FFFFFF',
                 fontSize: 11,
                 fontWeight: 900,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 boxShadow: isSimDirty
-                  ? '0 0 0 2px rgba(245,158,11,0.28)'
+                  ? '0 0 0 2px rgba(217,119,6,0.32)'
                   : '0 1px 4px rgba(15,23,42,0.25)',
               }}
             >
@@ -2047,26 +2022,36 @@ export default function HeatExchangerWorkbenchModal({
             <span
               title={temaImportNotice.summary}
               style={{
-                padding: '3px 8px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 9px',
                 borderRadius: 6,
                 fontSize: 10.5,
-                fontWeight: 800,
-                background: temaImportNotice.isError ? '#FEF2F2' : '#F0FDF4',
-                color: temaImportNotice.isError ? '#991B1B' : '#166534',
-                border: temaImportNotice.isError
-                  ? '1px solid #FCA5A5'
-                  : '1px solid #86EFAC',
+                fontWeight: 700,
+                background: '#F8FAFC',
+                color: '#0F172A',
+                border: '1px solid #E2E8F0',
                 maxWidth: 280,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }}
             >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: temaImportNotice.isError ? '#DC2626' : '#16A34A',
+                  flexShrink: 0,
+                }}
+              />
               {temaImportNotice.isError
-                ? `⚠ ${temaImportNotice.summary}`
+                ? temaImportNotice.summary
                 : isEn
-                ? `✓ Imported ${temaImportNotice.count} TEMA items`
-                : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
+                ? `Imported ${temaImportNotice.count} TEMA items`
+                : `TEMA 항목 ${temaImportNotice.count}건 불러옴`}
             </span>
           )}
         </div>
@@ -2074,56 +2059,94 @@ export default function HeatExchangerWorkbenchModal({
         {/* HYSYS-스타일 1-Line 신호등 상태 바 (열수지 · 기하설계 공통 상시 표시) */}
         <div
           style={{
-            padding: isMobile ? '6px 10px' : '5px 14px',
-            background: hysysStatusBar.bg,
-            borderBottom: `1.5px solid ${hysysStatusBar.border}`,
-            color: hysysStatusBar.color,
+            padding: isMobile ? '6px 10px' : '6px 14px',
+            background: '#F8FAFC',
+            borderBottom: '1px solid #E2E8F0',
+            color: '#0F172A',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 10,
             flexShrink: 0,
-            minHeight: 30,
+            minHeight: 32,
           }}
         >
           <div
             style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
               fontSize: 11.2,
-              fontWeight: 900,
-              lineHeight: 1.3,
+              lineHeight: 1.35,
               overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: isMobile ? 'normal' : 'nowrap',
               minWidth: 0,
               flex: 1,
             }}
-            title={hysysStatusBar.text}
+            title={`${hysysStatusBar.label}: ${hysysStatusBar.detail}`}
           >
-            {hysysStatusBar.text}
-          </div>
-          {hysysStatusBar.level !== 'green' && (
-            <button
-              type="button"
-              onClick={runAiAutoFixHx}
-              disabled={isAiBusy}
+            <span
               style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: hysysStatusBar.dot,
                 flexShrink: 0,
-                padding: '3px 10px',
-                borderRadius: 6,
-                border: `1px solid ${hysysStatusBar.level === 'red' ? '#DC2626' : '#D97706'}`,
-                background: hysysStatusBar.level === 'red' ? '#7C3AED' : '#B45309',
-                color: '#FFFFFF',
-                fontSize: 10.5,
-                fontWeight: 900,
-                cursor: isAiBusy ? 'wait' : 'pointer',
-                whiteSpace: 'nowrap',
+              }}
+            />
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: isMobile ? 'normal' : 'nowrap',
+                color: '#475569',
+                fontWeight: 600,
               }}
             >
-              {isAiBusy
-                ? (aiStepLabel || (isEn ? '⏳ Fixing...' : '⏳ 해결 중...'))
-                : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-            </button>
-          )}
+              <strong style={{ color: '#0F172A', fontWeight: 800 }}>
+                {hysysStatusBar.label}
+              </strong>
+              {' — '}
+              {hysysStatusBar.detail}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={runAiAutoFixHx}
+            disabled={isAiBusy}
+            style={
+              hysysStatusBar.level !== 'green'
+                ? {
+                    flexShrink: 0,
+                    padding: '4px 11px',
+                    borderRadius: 6,
+                    border: '1px solid #1E3A8A',
+                    background: '#1E3A8A',
+                    color: '#FFFFFF',
+                    fontSize: 10.8,
+                    fontWeight: 800,
+                    cursor: isAiBusy ? 'wait' : 'pointer',
+                    whiteSpace: 'nowrap',
+                  }
+                : {
+                    flexShrink: 0,
+                    padding: '4px 10px',
+                    borderRadius: 6,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#475569',
+                    fontSize: 10.8,
+                    fontWeight: 700,
+                    cursor: isAiBusy ? 'wait' : 'pointer',
+                    whiteSpace: 'nowrap',
+                  }
+            }
+          >
+            {isAiBusy
+              ? (aiStepLabel || (isEn ? '⏳ Optimizing...' : '⏳ 탐색 중...'))
+              : hysysStatusBar.level !== 'green'
+              ? (isEn ? 'AI Auto-Fix' : 'AI 자동 해결')
+              : (isEn ? 'Explore Options' : '경제적 대안 탐색')}
+          </button>
         </div>
 
         {/* 모바일 전용 좌/우 패널 스위치 */}
@@ -2178,23 +2201,9 @@ export default function HeatExchangerWorkbenchModal({
         {(isAiBusy || aiReport) && (
           <div
             style={{
-              padding: '8px 16px',
-              background: isAiBusy
-                ? '#EEF2FF'
-                : aiReport?.result.resolved
-                ? '#F0FDF4'
-                : aiReport?.result.improved
-                ? '#F5F3FF'
-                : '#FEF2F2',
-              borderBottom: `1.5px solid ${
-                isAiBusy
-                  ? '#818CF8'
-                  : aiReport?.result.resolved
-                  ? '#86EFAC'
-                  : aiReport?.result.improved
-                  ? '#C4B5FD'
-                  : '#FCA5A5'
-              }`,
+              padding: '9px 16px',
+              background: '#F8FAFC',
+              borderBottom: '1px solid #E2E8F0',
               flexShrink: 0,
               display: 'flex',
               alignItems: 'flex-start',
@@ -2205,21 +2214,30 @@ export default function HeatExchangerWorkbenchModal({
             }}
           >
             {isAiBusy ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#3730A3' }}>
-                <span style={{ fontWeight: 900 }}>
-                  {isEn ? '⏳ ✨ Running AI Auto-Fix...' : '⏳ ✨ AI 자동 해결 탐색 중...'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#0F172A' }}>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: '#1E3A8A',
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontWeight: 800 }}>
+                  {isEn ? 'Running AI Auto-Fix optimization...' : 'AI 자동 해결 탐색 중...'}
                 </span>
                 {aiStepLabel && (
                   <span
                     style={{
                       fontFamily: MONO,
                       fontSize: 10.5,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       padding: '2px 8px',
                       borderRadius: 999,
                       background: '#FFFFFF',
-                      border: '1px solid #C7D2FE',
-                      color: '#4338CA',
+                      border: '1px solid #CBD5E1',
+                      color: '#1E3A8A',
                     }}
                   >
                     {aiStepLabel}
@@ -2227,18 +2245,30 @@ export default function HeatExchangerWorkbenchModal({
                 )}
               </div>
             ) : aiReport ? (
-              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div
                   style={{
-                    fontWeight: 900,
-                    color: aiReport.result.resolved
-                      ? '#15803D'
-                      : aiReport.result.improved
-                      ? '#6D28D9'
-                      : '#B91C1C',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    fontWeight: 800,
+                    color: '#0F172A',
                   }}
                 >
-                  {aiReport.result.headline}
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: aiReport.result.resolved
+                        ? '#16A34A'
+                        : aiReport.result.improved
+                        ? '#D97706'
+                        : '#DC2626',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span>{aiReport.result.headline}</span>
                 </div>
                 {aiReport.result.rootCauses.length > 0 && (
                   <div style={{ color: '#475569', fontSize: 10.5 }}>
@@ -2246,12 +2276,12 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                 )}
                 {aiReport.result.actionsTaken.length > 0 && (
-                  <div style={{ color: '#1E293B', fontWeight: 700, fontSize: 10.6 }}>
+                  <div style={{ color: '#334155', fontWeight: 700, fontSize: 10.6 }}>
                     {isEn ? 'Actions: ' : '조치: '}{aiReport.result.actionsTaken.join(' · ')}
                   </div>
                 )}
                 {aiReport.geminiNote && (
-                  <div style={{ color: '#4C1D95', fontWeight: 700, fontSize: 10.5 }}>
+                  <div style={{ color: '#475569', fontWeight: 600, fontSize: 10.5 }}>
                     {aiReport.geminiNote}
                   </div>
                 )}
@@ -2260,7 +2290,7 @@ export default function HeatExchangerWorkbenchModal({
                     <div
                       style={{
                         fontSize: 10.5,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         color: '#0F172A',
                         marginBottom: 5,
                         display: 'flex',
@@ -2294,16 +2324,16 @@ export default function HeatExchangerWorkbenchModal({
                           <div
                             key={opt.id}
                             style={{
-                              background: isSelected ? '#FFFFFF' : '#F8FAFC',
-                              border: isSelected ? '1.5px solid #16A34A' : '1px solid #CBD5E1',
+                              background: '#FFFFFF',
+                              border: isSelected ? '1.5px solid #1E3A8A' : '1px solid #E2E8F0',
                               borderRadius: 7,
-                              padding: '7px 9px',
+                              padding: '8px 10px',
                               display: 'flex',
                               flexDirection: 'column',
                               justifyContent: 'space-between',
-                              gap: 4,
+                              gap: 5,
                               boxShadow: isSelected
-                                ? '0 1px 4px rgba(22, 163, 74, 0.14)'
+                                ? '0 1px 4px rgba(30, 58, 138, 0.12)'
                                 : 'none',
                             }}
                           >
@@ -2320,11 +2350,12 @@ export default function HeatExchangerWorkbenchModal({
                                 <span
                                   style={{
                                     fontSize: 9.5,
-                                    fontWeight: 900,
-                                    padding: '1px 6px',
+                                    fontWeight: 800,
+                                    padding: '1.5px 7px',
                                     borderRadius: 999,
-                                    background: isSelected ? '#DCFCE7' : '#E2E8F0',
-                                    color: isSelected ? '#15803D' : '#475569',
+                                    background: isSelected ? '#1E3A8A' : '#F1F5F9',
+                                    color: isSelected ? '#FFFFFF' : '#475569',
+                                    border: isSelected ? '1px solid #1E3A8A' : '1px solid #E2E8F0',
                                   }}
                                 >
                                   {isSelected
@@ -2341,20 +2372,32 @@ export default function HeatExchangerWorkbenchModal({
                                 </span>
                                 <span
                                   style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
                                     fontSize: 9.2,
-                                    fontWeight: 900,
+                                    fontWeight: 800,
                                     fontFamily: MONO,
-                                    padding: '1px 5px',
+                                    padding: '1.5px 6px',
                                     borderRadius: 4,
-                                    background: opt.allPassed ? '#ECFDF5' : '#FEF3C7',
-                                    color: opt.allPassed ? '#047857' : '#B45309',
-                                    border: `1px solid ${opt.allPassed ? '#A7F3D0' : '#FDE68A'}`,
+                                    background: '#F8FAFC',
+                                    color: '#334155',
+                                    border: '1px solid #E2E8F0',
                                   }}
                                 >
+                                  <span
+                                    style={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: '50%',
+                                      background: opt.allPassed ? '#16A34A' : '#D97706',
+                                      flexShrink: 0,
+                                    }}
+                                  />
                                   {opt.allPassed ? 'PASS' : 'CHECK'}
                                 </span>
                               </div>
-                              <div style={{ fontSize: 10.8, fontWeight: 900, color: '#0F172A' }}>
+                              <div style={{ fontSize: 10.8, fontWeight: 800, color: '#0F172A' }}>
                                 {isEn ? opt.labelEn : opt.labelKo}
                               </div>
                               <div
@@ -2362,7 +2405,7 @@ export default function HeatExchangerWorkbenchModal({
                                   fontSize: 10,
                                   fontWeight: 700,
                                   fontFamily: MONO,
-                                  color: '#1E40AF',
+                                  color: '#1E3A8A',
                                 }}
                               >
                                 {specLine}
@@ -2371,7 +2414,7 @@ export default function HeatExchangerWorkbenchModal({
                                 style={{
                                   fontSize: 9.8,
                                   fontFamily: MONO,
-                                  color: '#334155',
+                                  color: '#475569',
                                   lineHeight: 1.35,
                                 }}
                               >
@@ -2391,12 +2434,12 @@ export default function HeatExchangerWorkbenchModal({
                                 padding: '4px 8px',
                                 borderRadius: 5,
                                 border: isSelected
-                                  ? '1px solid #86EFAC'
-                                  : '1px solid #2563EB',
-                                background: isSelected ? '#F0FDF4' : '#2563EB',
-                                color: isSelected ? '#15803D' : '#FFFFFF',
+                                  ? '1px solid #CBD5E1'
+                                  : '1px solid #1E3A8A',
+                                background: isSelected ? '#F1F5F9' : '#1E3A8A',
+                                color: isSelected ? '#1E3A8A' : '#FFFFFF',
                                 fontSize: 10.2,
-                                fontWeight: 900,
+                                fontWeight: 800,
                                 cursor: isSelected ? 'default' : 'pointer',
                               }}
                             >
@@ -2468,22 +2511,18 @@ export default function HeatExchangerWorkbenchModal({
                   style={{
                     padding: '9px 12px',
                     borderRadius: 8,
-                    background:
+                    background: '#FFFFFF',
+                    border: '1px solid #E2E8F0',
+                    borderLeft: `3px solid ${
                       dRes.overallStatus === 'error'
-                        ? '#FEF2F2'
+                        ? '#DC2626'
                         : dRes.overallStatus === 'warning'
-                        ? '#FFFBEB'
-                        : '#F0FDF4',
-                    border: `1px solid ${
-                      dRes.overallStatus === 'error'
-                        ? '#FCA5A5'
-                        : dRes.overallStatus === 'warning'
-                        ? '#FCD34D'
-                        : '#86EFAC'
+                        ? '#D97706'
+                        : '#16A34A'
                     }`,
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: 5,
+                    gap: 6,
                   }}
                 >
                   {dRes.diagnostics.map((dg, idx) => (
@@ -2496,57 +2535,45 @@ export default function HeatExchangerWorkbenchModal({
                         gap: 8,
                         flexWrap: 'wrap',
                         fontSize: 11,
-                        fontWeight: 700,
-                        color:
-                          dg.level === 'error'
-                            ? '#991B1B'
-                            : dg.level === 'warning'
-                            ? '#92400E'
-                            : '#166534',
+                        fontWeight: 600,
+                        color: '#0F172A',
                       }}
                     >
-                      <span>{dg.message}</span>
-                      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                        {dg.remedyPatch && dg.remedyLabel && (
-                          <button
-                            type="button"
-                            onClick={() => patchHxCfg(dg.remedyPatch!)}
-                            style={{
-                              padding: '4px 9px',
-                              borderRadius: 5,
-                              border: '1px solid #2563EB',
-                              background: '#2563EB',
-                              color: '#FFFFFF',
-                              fontSize: 10.5,
-                              fontWeight: 800,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            🔧 {dg.remedyLabel}
-                          </button>
-                        )}
-                        {idx === 0 && dRes.overallStatus !== 'ok' && (
-                          <button
-                            type="button"
-                            onClick={runAiAutoFixHx}
-                            disabled={isAiBusy}
-                            style={{
-                              padding: '4px 9px',
-                              borderRadius: 5,
-                              border: '1px solid #7C3AED',
-                              background: '#7C3AED',
-                              color: '#FFFFFF',
-                              fontSize: 10.5,
-                              fontWeight: 900,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            {isAiBusy
-                              ? (aiStepLabel || (isEn ? '⏳ Analyzing...' : '⏳ 분석중...'))
-                              : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-                          </button>
-                        )}
-                      </div>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background:
+                              dg.level === 'error'
+                                ? '#DC2626'
+                                : dg.level === 'warning'
+                                ? '#D97706'
+                                : '#16A34A',
+                            flexShrink: 0,
+                          }}
+                        />
+                        <span>{dg.message}</span>
+                      </span>
+                      {dg.remedyPatch && dg.remedyLabel && (
+                        <button
+                          type="button"
+                          onClick={() => patchHxCfg(dg.remedyPatch!)}
+                          style={{
+                            padding: '4px 9px',
+                            borderRadius: 5,
+                            border: '1px solid #1E3A8A',
+                            background: '#1E3A8A',
+                            color: '#FFFFFF',
+                            fontSize: 10.5,
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          🔧 {dg.remedyLabel}
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -2569,12 +2596,12 @@ export default function HeatExchangerWorkbenchModal({
                     <span
                       style={{
                         fontSize: 10,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         padding: '2px 8px',
                         borderRadius: 999,
-                        background: '#EFF6FF',
-                        color: '#1D4ED8',
-                        border: '1px solid #BFDBFE',
+                        background: '#F1F5F9',
+                        color: '#334155',
+                        border: '1px solid #E2E8F0',
                       }}
                     >
                       {isEn ? 'Inlet: ' : '유입: '}{dRes.processSide.fluidName} ({formatCanonicalValue('massFlow', dRes.processSide.massFlowKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
@@ -2991,7 +3018,7 @@ export default function HeatExchangerWorkbenchModal({
                   flex: isMobile ? '1 1 100%' : '1 1 460px',
                   minWidth: 0,
                   padding: '12px 14px',
-                  background: '#F6F7F2',
+                  background: '#F8FAFC',
                   overflowY: 'auto',
                   display: 'flex',
                   flexDirection: 'column',
@@ -3010,11 +3037,11 @@ export default function HeatExchangerWorkbenchModal({
                     style={{
                       padding: '4px 10px',
                       borderRadius: 6,
-                      border: '1px solid #2563EB',
-                      background: '#EFF6FF',
-                      color: '#1D4ED8',
+                      border: '1px solid #1E3A8A',
+                      background: '#FFFFFF',
+                      color: '#1E3A8A',
                       fontSize: 10.5,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                     }}
                   >
@@ -3163,77 +3190,68 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                 </div>
 
-                {/* ΔP / Ft / 진동 원인 설명 & AI 자동 해결 카드 */}
+                {/* ΔP / Ft / 진동 원인 설명 카드 */}
                 {dRes.overallStatus !== 'ok' && (
                   <div
                     style={{
                       padding: '9px 11px',
                       borderRadius: 8,
-                      background: dRes.overallStatus === 'error' ? '#FEF2F2' : '#FFFBEB',
-                      border: `1.5px solid ${dRes.overallStatus === 'error' ? '#FCA5A5' : '#FCD34D'}`,
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderLeft: `3px solid ${dRes.overallStatus === 'error' ? '#DC2626' : '#D97706'}`,
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 5,
                       fontSize: 10.6,
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontWeight: 900, color: '#0F172A' }}>
-                        {isEn ? '⚠ ΔP · Vibration · Temp Cross Check' : '⚠ 차압 · 진동 · 온도교차 점검'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={runAiAutoFixHx}
-                        disabled={isAiBusy}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <span
                         style={{
-                          padding: '4px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #7C3AED',
-                          background: '#7C3AED',
-                          color: '#FFFFFF',
-                          fontSize: 10.5,
-                          fontWeight: 900,
-                          cursor: isAiBusy ? 'wait' : 'pointer',
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          background: dRes.overallStatus === 'error' ? '#DC2626' : '#D97706',
+                          flexShrink: 0,
                         }}
-                      >
-                        {isAiBusy
-                          ? (aiStepLabel || (isEn ? '⏳ Optimizing...' : '⏳ 최적화 중...'))
-                          : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-                      </button>
+                      />
+                      <span style={{ fontWeight: 800, color: '#0F172A' }}>
+                        {isEn ? 'ΔP · Vibration · Temp Cross Check' : '차압 · 진동 · 온도교차 점검'}
+                      </span>
                     </div>
                     {dRes.dpTubeBar > 0.7 && (
-                      <div style={{ color: '#991B1B' }}>
+                      <div style={{ color: '#475569' }}>
                         {isEn ? (
-                          <>• Tube ΔP={dRes.dpTubeBar.toFixed(2)} bar exceeded → <b>Reduce passes</b> (4→2→1P) or <b>shorten length / increase OD</b> (ΔP ∝ N³·L)</>
+                          <>• Tube ΔP={dRes.dpTubeBar.toFixed(2)} bar exceeded → <b style={{ color: '#0F172A' }}>Reduce passes</b> (4→2→1P) or <b style={{ color: '#0F172A' }}>shorten length / increase OD</b> (ΔP ∝ N³·L)</>
                         ) : (
-                          <>• 관측 ΔP={dRes.dpTubeBar.toFixed(2)} bar 초과 → <b>패스 수 감소</b>(4→2→1패스) 또는 <b>관길이 단축·외경 확대</b> 필요 (ΔP ∝ N³·L)</>
+                          <>• 관측 ΔP={dRes.dpTubeBar.toFixed(2)} bar 초과 → <b style={{ color: '#0F172A' }}>패스 수 감소</b>(4→2→1패스) 또는 <b style={{ color: '#0F172A' }}>관길이 단축·외경 확대</b> 필요 (ΔP ∝ N³·L)</>
                         )}
                       </div>
                     )}
                     {dRes.dpShellBar > 0.7 && (
-                      <div style={{ color: '#92400E' }}>
+                      <div style={{ color: '#475569' }}>
                         {isEn ? (
-                          <>• Shell ΔP={dRes.dpShellBar.toFixed(2)} bar exceeded → <b>Increase baffle spacing ratio (B/Ds)</b> or <b>increase baffle cut (%)</b></>
+                          <>• Shell ΔP={dRes.dpShellBar.toFixed(2)} bar exceeded → <b style={{ color: '#0F172A' }}>Increase baffle spacing ratio (B/Ds)</b> or <b style={{ color: '#0F172A' }}>increase baffle cut (%)</b></>
                         ) : (
-                          <>• 동체 ΔP={dRes.dpShellBar.toFixed(2)} bar 초과 → <b>배플 간격비(B/Ds) 확대</b> 또는 <b>배플 컷(%) 상향</b> 필요</>
+                          <>• 동체 ΔP={dRes.dpShellBar.toFixed(2)} bar 초과 → <b style={{ color: '#0F172A' }}>배플 간격비(B/Ds) 확대</b> 또는 <b style={{ color: '#0F172A' }}>배플 컷(%) 상향</b> 필요</>
                         )}
                       </div>
                     )}
                     {dRes.ftFactor < 0.78 && (
-                      <div style={{ color: '#991B1B' }}>
+                      <div style={{ color: '#475569' }}>
                         {isEn ? (
-                          <>• Low Ft={dRes.ftFactor.toFixed(2)} → <b>Add shells in series (2+)</b> or switch to <b>1-pass countercurrent</b></>
+                          <>• Low Ft={dRes.ftFactor.toFixed(2)} → <b style={{ color: '#0F172A' }}>Add shells in series (2+)</b> or switch to <b style={{ color: '#0F172A' }}>1-pass countercurrent</b></>
                         ) : (
-                          <>• Ft={dRes.ftFactor.toFixed(2)} 저하 → <b>직렬 동체 수(2기 이상)</b> 증가 또는 <b>1패스 향류</b> 전환</>
+                          <>• Ft={dRes.ftFactor.toFixed(2)} 저하 → <b style={{ color: '#0F172A' }}>직렬 동체 수(2기 이상)</b> 증가 또는 <b style={{ color: '#0F172A' }}>1패스 향류</b> 전환</>
                         )}
                       </div>
                     )}
                     {dRes.vibRatio > 0.8 && (
-                      <div style={{ color: '#92400E' }}>
+                      <div style={{ color: '#475569' }}>
                         {isEn ? (
-                          <>• Vortex FIV ratio {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b>Adjust baffle spacing / tube pitch (45°/90°)</b></>
+                          <>• Vortex FIV ratio {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b style={{ color: '#0F172A' }}>Adjust baffle spacing / tube pitch (45°/90°)</b></>
                         ) : (
-                          <>• 와류진동비 {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b>배플 간격·튜브 피치(45°/90°)</b> 완화</>
+                          <>• 와류진동비 {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b style={{ color: '#0F172A' }}>배플 간격·튜브 피치(45°/90°)</b> 완화</>
                         )}
                       </div>
                     )}
@@ -3264,11 +3282,11 @@ export default function HeatExchangerWorkbenchModal({
                               style={{
                                 padding: '6px 8px',
                                 borderRadius: 6,
-                                border: active ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                background: active ? '#EFF6FF' : '#FFFFFF',
-                                color: active ? '#1E3A8A' : '#334155',
+                                border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                                background: active ? '#1E3A8A' : '#FFFFFF',
+                                color: active ? '#FFFFFF' : '#334155',
                                 fontSize: 11,
-                                fontWeight: 900,
+                                fontWeight: 800,
                                 cursor: 'pointer',
                               }}
                             >
@@ -3285,7 +3303,7 @@ export default function HeatExchangerWorkbenchModal({
                         <label style={{ ...lblStyle, marginBottom: 0 }}>
                           {isEn ? '② Metallurgy' : '② 재질 (Metallurgy)'}
                         </label>
-                        <span style={{ fontSize: 9.5, fontWeight: 800, color: '#1D4ED8' }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 800, color: '#1E3A8A' }}>
                           {isEn ? 'Recommended: ' : '추천: '}
                           {isEn
                             ? HX_MATERIAL_EN[dRes.recommendedMaterial].shortLabel
@@ -3640,8 +3658,8 @@ export default function HeatExchangerWorkbenchModal({
                 <div
                   style={{
                     ...cardBox,
-                    background: '#EFF6FF',
-                    border: '1px solid #93C5FD',
+                    background: '#FFFFFF',
+                    border: '1px solid #CBD5E1',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
@@ -3649,8 +3667,8 @@ export default function HeatExchangerWorkbenchModal({
                     flexWrap: 'wrap',
                   }}
                 >
-                  <div style={{ fontSize: 10.6, color: '#1E3A8A', fontWeight: 700 }}>
-                    U = <b>{formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)}</b> {getUnitLabel('htc', htcUnit)} · ΔP = <b>{formatCanonicalValue('deltaP', dRes.dpProcessKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}</b>
+                  <div style={{ fontSize: 10.6, color: '#0F172A', fontWeight: 700 }}>
+                    U = <b style={{ color: '#1E3A8A' }}>{formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)}</b> {getUnitLabel('htc', htcUnit)} · ΔP = <b>{formatCanonicalValue('deltaP', dRes.dpProcessKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}</b>
                   </div>
                   <button
                     type="button"
@@ -3664,11 +3682,11 @@ export default function HeatExchangerWorkbenchModal({
                     style={{
                       padding: '5px 10px',
                       borderRadius: 6,
-                      border: '1px solid #1D4ED8',
-                      background: '#2563EB',
+                      border: '1px solid #1E3A8A',
+                      background: '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 10.8,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                     }}
                   >
@@ -3685,7 +3703,7 @@ export default function HeatExchangerWorkbenchModal({
                   flex: isMobile ? '1 1 100%' : '1 1 500px',
                   minWidth: 0,
                   padding: '12px 14px',
-                  background: '#F6F7F2',
+                  background: '#F8FAFC',
                   overflowY: 'auto',
                   display: 'flex',
                   flexDirection: 'column',
@@ -3863,14 +3881,14 @@ export default function HeatExchangerWorkbenchModal({
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>({dRes.uCleanWm2K.toFixed(0)} W/m²·K)</div>
                         </div>
-                        <div style={{ background: '#EFF6FF', padding: '8px 10px', borderRadius: 6, border: '1px solid #BFDBFE' }}>
-                          <div style={{ color: '#1E3A8A', fontSize: 10, fontWeight: 800 }}>
+                        <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #CBD5E1', borderLeft: '3px solid #1E3A8A' }}>
+                          <div style={{ color: '#475569', fontSize: 10, fontWeight: 800 }}>
                             {isEn ? 'Fouled Design U_design' : '오염반영 설계 U_design'}
                           </div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A' }}>
                             {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
-                          <div style={{ fontSize: 10, color: '#1D4ED8' }}>({dRes.uCalcWm2K.toFixed(0)} W/m²·K)</div>
+                          <div style={{ fontSize: 10, color: '#475569' }}>({dRes.uCalcWm2K.toFixed(0)} W/m²·K)</div>
                         </div>
                       </div>
                     </div>
@@ -3974,7 +3992,7 @@ export default function HeatExchangerWorkbenchModal({
                                 style={{
                                   width: `${pct}%`,
                                   height: '100%',
-                                  background: danger ? '#DC2626' : over ? '#D97706' : '#2563EB',
+                                  background: danger ? '#DC2626' : over ? '#D97706' : '#1E3A8A',
                                 }}
                               />
                             </div>
@@ -3986,17 +4004,17 @@ export default function HeatExchangerWorkbenchModal({
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, paddingTop: 8, borderTop: '1px solid #E2E8F0' }}>
                         {dRes.hxKind === 'shell_tube' && dRes.vibration && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5, fontFamily: MONO }}>
-                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155', fontWeight: 700 }}>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#475569', fontWeight: 700 }}>
                               Window Span 2·Lb = {(dRes.vibration.windowSpanM * 1000).toFixed(0)} mm
                             </span>
-                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#334155', fontWeight: 700 }}>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#475569', fontWeight: 700 }}>
                               Central Span Lb = {(dRes.vibration.centralSpanM * 1000).toFixed(0)} mm
                             </span>
-                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1E3A8A', fontWeight: 800 }}>
+                            <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#1E3A8A', fontWeight: 800 }}>
                               Effective Span = {(dRes.vibration.effectiveSpanM * 1000).toFixed(0)} mm
                             </span>
                             {dRes.vibration.soundSpeedMs != null && (
-                              <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 800 }}>
+                              <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#334155', fontWeight: 700 }}>
                                 {isEn ? 'Sound Speed' : '음속'} c = {dRes.vibration.soundSpeedMs.toFixed(0)} m/s
                               </span>
                             )}
@@ -4009,23 +4027,27 @@ export default function HeatExchangerWorkbenchModal({
                             const rStatus = dRes.rhoV2Status ?? shIn?.rhoV2Status ?? (dRes.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK');
                             const tone =
                               rStatus === 'OVERSIZE_NOZZLE'
-                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B', lbl: isEn ? 'Oversize Nozzle Req (OVERSIZE)' : '노즐 확관 필요 (OVERSIZE)' }
+                                ? { dot: '#DC2626', lbl: isEn ? 'Oversize Nozzle Req (OVERSIZE)' : '노즐 확관 필요 (OVERSIZE)' }
                                 : rStatus === 'IMPINGEMENT_REQ'
-                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E', lbl: isEn ? 'Impingement Plate Required' : '충돌판 필수 (IMPINGEMENT PLATE REQ)' }
-                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534', lbl: isEn ? 'No Impingement Needed (OK)' : '충돌판 불필요 (OK)' };
+                                ? { dot: '#D97706', lbl: isEn ? 'Impingement Plate Required' : '충돌판 필수 (IMPINGEMENT PLATE REQ)' }
+                                : { dot: '#16A34A', lbl: isEn ? 'No Impingement Needed (OK)' : '충돌판 불필요 (OK)' };
                             return (
                               <span
                                 style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
                                   padding: '4px 8px',
                                   borderRadius: 6,
-                                  background: tone.bg,
-                                  border: `1px solid ${tone.bd}`,
-                                  color: tone.fg,
+                                  background: '#F8FAFC',
+                                  border: '1px solid #E2E8F0',
+                                  color: '#0F172A',
                                   fontSize: 10.5,
-                                  fontWeight: 900,
+                                  fontWeight: 700,
                                   fontFamily: MONO,
                                 }}
                               >
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: tone.dot, flexShrink: 0 }} />
                                 {isEn
                                   ? `TEMA RCB-4.6 Nozzle ρv² = ${shIn?.rhoV2Pa ?? 0} Pa (Limit ${dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · ${tone.lbl}`
                                   : `TEMA RCB-4.6 노즐 ρv² = ${shIn?.rhoV2Pa ?? 0} Pa (기준 ${dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · ${tone.lbl}`}
@@ -4034,25 +4056,29 @@ export default function HeatExchangerWorkbenchModal({
                           })()}
 
                           {dRes.chfCheck && (() => {
-                            const cTone =
+                            const dotColor =
                               dRes.chfCheck.status === 'CRITICAL'
-                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B' }
+                                ? '#DC2626'
                                 : dRes.chfCheck.status === 'WARN'
-                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E' }
-                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534' };
+                                ? '#D97706'
+                                : '#16A34A';
                             return (
                               <span
                                 style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
                                   padding: '4px 8px',
                                   borderRadius: 6,
-                                  background: cTone.bg,
-                                  border: `1px solid ${cTone.bd}`,
-                                  color: cTone.fg,
+                                  background: '#F8FAFC',
+                                  border: '1px solid #E2E8F0',
+                                  color: '#0F172A',
                                   fontSize: 10.5,
-                                  fontWeight: 900,
+                                  fontWeight: 700,
                                   fontFamily: MONO,
                                 }}
                               >
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0 }} />
                                 {isEn
                                   ? `Boiling CHF (Dryout) [${dRes.chfCheck.status}] q"=${(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF=${(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (Ratio ${dRes.chfCheck.chfRatio.toFixed(2)})`
                                   : `비등 CHF(Dryout) [${dRes.chfCheck.status}] q"=${(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF=${(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (비율 ${dRes.chfCheck.chfRatio.toFixed(2)})`}
@@ -4081,11 +4107,11 @@ export default function HeatExchangerWorkbenchModal({
                             style={{
                               padding: '4px 10px',
                               borderRadius: 6,
-                              border: '1px solid #059669',
-                              background: '#ECFDF5',
-                              color: '#065F46',
+                              border: '1px solid #1E3A8A',
+                              background: '#1E3A8A',
+                              color: '#FFFFFF',
                               fontSize: 10.8,
-                              fontWeight: 900,
+                              fontWeight: 800,
                               cursor: 'pointer',
                             }}
                           >
@@ -4099,11 +4125,11 @@ export default function HeatExchangerWorkbenchModal({
                             style={{
                               padding: '4px 10px',
                               borderRadius: 6,
-                              border: '1px solid #0284C7',
-                              background: '#F0F9FF',
-                              color: '#0369A1',
+                              border: '1px solid #CBD5E1',
+                              background: '#FFFFFF',
+                              color: '#334155',
                               fontSize: 10.8,
-                              fontWeight: 900,
+                              fontWeight: 700,
                               cursor: 'pointer',
                             }}
                           >
@@ -4113,22 +4139,32 @@ export default function HeatExchangerWorkbenchModal({
                             <span
                               title={temaImportNotice.summary}
                               style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
                                 padding: '3px 8px',
                                 borderRadius: 6,
                                 fontSize: 10.5,
-                                fontWeight: 800,
-                                background: temaImportNotice.isError ? '#FEF2F2' : '#DCFCE7',
-                                color: temaImportNotice.isError ? '#991B1B' : '#166534',
-                                border: temaImportNotice.isError
-                                  ? '1px solid #FCA5A5'
-                                  : '1px solid #86EFAC',
+                                fontWeight: 700,
+                                background: '#F8FAFC',
+                                color: '#0F172A',
+                                border: '1px solid #E2E8F0',
                               }}
                             >
+                              <span
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: '50%',
+                                  background: temaImportNotice.isError ? '#DC2626' : '#16A34A',
+                                  flexShrink: 0,
+                                }}
+                              />
                               {temaImportNotice.isError
-                                ? `⚠ ${temaImportNotice.summary}`
+                                ? temaImportNotice.summary
                                 : isEn
-                                ? `✓ Imported ${temaImportNotice.count} TEMA items`
-                                : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
+                                ? `Imported ${temaImportNotice.count} TEMA items`
+                                : `TEMA 항목 ${temaImportNotice.count}건 불러옴`}
                             </span>
                           )}
                         </div>
@@ -4159,10 +4195,10 @@ export default function HeatExchangerWorkbenchModal({
                             const nStatus = nz.rhoV2Status ?? (nz.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK');
                             const nBadge =
                               nStatus === 'OVERSIZE_NOZZLE'
-                                ? { bg: '#FEF2F2', fg: '#991B1B', text: 'OVERSIZE' }
+                                ? { dot: '#DC2626', text: 'OVERSIZE' }
                                 : nStatus === 'IMPINGEMENT_REQ'
-                                ? { bg: '#FFFBEB', fg: '#92400E', text: isEn ? 'IMPINGEMENT REQ' : '충돌판 필수' }
-                                : { bg: '#DCFCE7', fg: '#166534', text: 'OK' };
+                                ? { dot: '#D97706', text: isEn ? 'IMPINGEMENT REQ' : '충돌판 필수' }
+                                : { dot: '#16A34A', text: 'OK' };
                             return (
                               <tr key={nz.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                                 <td style={{ padding: '4px 7px', fontWeight: 900, color: '#1E3A8A' }}>{nz.id}</td>
@@ -4173,7 +4209,8 @@ export default function HeatExchangerWorkbenchModal({
                                 <td style={{ padding: '4px 7px', textAlign: 'right' }}>{formatCanonicalValue('velocity', nz.velocityMs, velUnit, 2)}</td>
                                 <td style={{ padding: '4px 7px', textAlign: 'right' }}>{nz.rhoV2Pa}</td>
                                 <td style={{ padding: '4px 7px', textAlign: 'center' }}>
-                                  <span style={{ padding: '1.5px 6px', borderRadius: 4, background: nBadge.bg, color: nBadge.fg, fontSize: 10, fontWeight: 800 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1.5px 7px', borderRadius: 4, background: '#F8FAFC', border: '1px solid #E2E8F0', color: '#0F172A', fontSize: 10, fontWeight: 700 }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: nBadge.dot, flexShrink: 0 }} />
                                     {nBadge.text}
                                   </span>
                                 </td>

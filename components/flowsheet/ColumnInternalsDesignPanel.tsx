@@ -1832,19 +1832,19 @@ export default function ColumnInternalsDesignPanel({
             minWidth: 0,
           }}
         >
-          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#EEF2FF', border: '1px solid #C7D2FE', minWidth: 0 }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9, fontWeight: 800, color: '#4338CA', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isEn ? 'Nominal ID (ØD)' : '공칭 내경 (ØD)'}
               </span>
               <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
             </div>
-            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#1E1B4B', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 12.2, fontWeight: 900, color: '#1E3A8A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isSwaged
                 ? `Ø${formatCanonicalValue('length', designRes.rectifying.selectedNominalDiamM, lenUnit, 2)} / Ø${formatCanonicalValue('length', designRes.stripping.selectedNominalDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`
                 : `Ø${formatCanonicalValue('length', designRes.governingDiamM, lenUnit, 2)} ${getUnitLabel('length', lenUnit)}`}
             </div>
-            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isEn ? 'Min' : '최소'} Ø{formatCanonicalValue('length', Math.max(designRes.rectifying.requiredMinDiamM, designRes.stripping.requiredMinDiamM), lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
           </div>
@@ -1853,12 +1853,21 @@ export default function ColumnInternalsDesignPanel({
             style={{
               padding: '4px 7px',
               borderRadius: 6,
-              background: designRes.maxFloodPct > 85 ? '#FEE2E2' : '#ECFDF5',
-              border: `1px solid ${designRes.maxFloodPct > 85 ? '#FCA5A5' : '#6EE7B7'}`,
+              background: '#F8FAFC',
+              border: '1px solid #E2E8F0',
               minWidth: 0,
             }}
           >
-            <div style={{ fontSize: 9, fontWeight: 800, color: designRes.maxFloodPct > 85 ? '#991B1B' : '#065F46', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: '50%',
+                  background: designRes.maxFloodPct > 85 ? '#DC2626' : designRes.maxFloodPct > 78 ? '#D97706' : '#16A34A',
+                  flexShrink: 0,
+                }}
+              />
               {isEn ? 'Max Flooding (% Flood)' : '최대 범람율 (% Flood)'}
             </div>
             <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1866,16 +1875,16 @@ export default function ColumnInternalsDesignPanel({
                 ? `${designRes.maxFloodPct.toFixed(1)}% (Stg #${designRes.maxFloodStage})`
                 : `${designRes.maxFloodPct.toFixed(1)}% (#${designRes.maxFloodStage}단)`}
             </div>
-            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
                 ? `Jet ${designRes.maxJetFloodPct}% · DC ${designRes.maxDcChokeFloodPct}%`
                 : `GPDC ${Math.max(designRes.rectifying.gpdcFloodMaxPct, designRes.stripping.gpdcFloodMaxPct)}%`}
             </div>
           </div>
 
-          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isEn ? 'Tower Height (T-T/OAL)' : '탑 높이 (T-T/OAL)'}
               </span>
               <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
@@ -1883,7 +1892,7 @@ export default function ColumnInternalsDesignPanel({
             <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {formatCanonicalValue('length', designRes.tangentToTangentHeightM, lenUnit, 2)} / {formatCanonicalValue('length', designRes.totalElevationM, lenUnit, 2)} {getUnitLabel('length', lenUnit)}
             </div>
-            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
                 ? (isEn
                     ? `${designRes.actualTotalTrays} Trays · DC ≥${designRes.minDcResidenceTimeSec}s`
@@ -1894,9 +1903,9 @@ export default function ColumnInternalsDesignPanel({
             </div>
           </div>
 
-          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', minWidth: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 3 }}>
-              <span style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <span style={{ fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {isEn ? 'Total Pressure Drop (ΔP)' : '총 압력손실 (ΔP)'}
               </span>
               <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
@@ -1904,11 +1913,11 @@ export default function ColumnInternalsDesignPanel({
             <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {formatCanonicalValue('deltaP', designRes.totalInternalsDpKgcm2, dpUnit)} {getUnitLabel('deltaP', dpUnit)}
             </div>
-            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{designRes.totalInternalsDpMbar} mbar</div>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{designRes.totalInternalsDpMbar} mbar</div>
           </div>
 
-          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #CBD5E1', minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray ? (isEn ? 'Chan–Fair / Turndown' : 'Chan–Fair / 턴다운') : 'B–S HETP / H_OG'}
             </div>
             <div style={{ fontSize: 12.2, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1916,58 +1925,78 @@ export default function ColumnInternalsDesignPanel({
                 ? `${designRes.avgChanFairEffPct}% · ${designRes.minTurndownRatio}:1`
                 : `${designRes.stripping.hetpAvgM}m / ${designRes.avgPackedHogM}m`}
             </div>
-            <div style={{ fontSize: 8.6, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isTray
                 ? `O'Connell ${designRes.avgOconnellEffPct}% · ${designRes.stripping.flowPasses}-Pass`
                 : `${isEn ? 'Turndown' : '턴다운'} ${designRes.minTurndownRatio}:1`}
             </div>
           </div>
 
-          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#FFFBEB', border: '1px solid #FDE68A', minWidth: 0 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, color: '#92400E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ padding: '4px 7px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', minWidth: 0 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isEn ? 'ASME / Cost (C_BM)' : 'ASME / 설치원가(C_BM)'}
             </div>
-            <div style={{ fontSize: 11.6, fontWeight: 900, color: '#78350F', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 11.6, fontWeight: 900, color: '#0F172A', fontFamily: MONO, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {isEn
                 ? `${mech.selectedShellMm}t · $${cost.bareModuleUsd.toLocaleString()}`
                 : `${mech.selectedShellMm}t · ${formatKrwReadable(cost.bareModuleKrw)}`}
             </div>
-            <div style={{ fontSize: 8.6, color: '#92400E', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <div style={{ fontSize: 8.6, color: '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {designRes.recommendedMaterialCode} · {designRes.estimatedDryWeightTon}t
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, width: isMobile ? '100%' : undefined, flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            disabled={isAiBusy}
-            onClick={runAiInternalsAutoFix}
-            title={
-              isEn
-                ? 'Run AI closed-loop hydraulic & cost optimization for column internals'
-                : '범람·압손·턴다운·원가를 종합 탐색하여 AI 검증 인터널 대안을 자동 산출합니다'
-            }
-            style={{
-              flex: isMobile ? 1 : undefined,
-              flexShrink: 0,
-              padding: isMobile ? '6px 10px' : '7px 10px',
-              borderRadius: 6,
-              border: '1px solid #7C3AED',
-              background: isAiBusy ? '#8B5CF6' : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
-              color: '#FFFFFF',
-              fontSize: 10.5,
-              fontWeight: 900,
-              cursor: isAiBusy ? 'wait' : 'pointer',
-              whiteSpace: 'nowrap',
-              textAlign: 'center',
-              boxShadow: '0 1px 4px rgba(124,58,237,0.25)',
-            }}
-          >
-            {isAiBusy
-              ? (isEn ? '⏳ AI Optimizing...' : '⏳ AI 최적화 중...')
-              : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-          </button>
+          {(() => {
+            const hasHydraulicViolation =
+              designRes.overallStatus === 'critical' ||
+              designRes.overallStatus === 'warning' ||
+              designRes.maxFloodPct > 85 ||
+              designRes.designWarnings.length > 0;
+            return (
+              <button
+                type="button"
+                disabled={isAiBusy}
+                onClick={runAiInternalsAutoFix}
+                title={
+                  hasHydraulicViolation
+                    ? isEn
+                      ? 'Run combinatorial AI search to resolve hydraulic violations (flooding/ΔP/weeping)'
+                      : '범람·압손·위핑 등 수력학 경고를 해결하는 최적 인터널 조합을 자동 탐색합니다'
+                    : isEn
+                    ? 'Explore alternative tray/packing internals options for lower cost or pressure drop'
+                    : '현재 수력학 정상 상태에서 더 낮은 원가·압손 대안 인터널 조합을 탐색합니다'
+                }
+                style={{
+                  flex: isMobile ? 1 : undefined,
+                  flexShrink: 0,
+                  padding: isMobile ? '6px 10px' : '7px 11px',
+                  borderRadius: 6,
+                  border: hasHydraulicViolation ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                  background: hasHydraulicViolation ? '#1E3A8A' : '#FFFFFF',
+                  color: hasHydraulicViolation ? '#FFFFFF' : '#475569',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  cursor: isAiBusy ? 'wait' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  textAlign: 'center',
+                }}
+              >
+                {isAiBusy
+                  ? isEn
+                    ? '⏳ AI Optimizing...'
+                    : '⏳ AI 탐색 중...'
+                  : hasHydraulicViolation
+                  ? isEn
+                    ? 'AI Auto-Fix'
+                    : 'AI 자동 해결'
+                  : isEn
+                  ? 'Explore Options'
+                  : '최적 대안 탐색'}
+              </button>
+            );
+          })()}
           {onApplyHydraulicsToMesh && (
             <button
               type="button"
@@ -1982,18 +2011,17 @@ export default function ColumnInternalsDesignPanel({
                 flexShrink: 0,
                 padding: isMobile ? '6px 10px' : '7px 10px',
                 borderRadius: 6,
-                border: '1px solid #059669',
-                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
-                color: '#FFFFFF',
+                border: '1px solid #CBD5E1',
+                background: '#FFFFFF',
+                color: '#0F172A',
                 fontSize: 10.5,
-                fontWeight: 900,
+                fontWeight: 800,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 textAlign: 'center',
-                boxShadow: '0 1px 4px rgba(5,150,105,0.25)',
               }}
             >
-              {isEn ? '🔄 Apply ΔP & Efficiency to MESH' : '🔄 ΔP·효율 MESH 역반영'}
+              {isEn ? 'Apply ΔP & Eff. to MESH' : 'ΔP·효율 MESH 역반영'}
             </button>
           )}
         </div>
@@ -2004,8 +2032,8 @@ export default function ColumnInternalsDesignPanel({
         <div
           style={{
             padding: isMobile ? '8px 10px' : '9px 14px',
-            background: aiReport?.result.resolved ? '#F0FDF4' : '#F5F3FF',
-            borderBottom: `1.5px solid ${aiReport?.result.resolved ? '#86EFAC' : '#C4B5FD'}`,
+            background: '#F8FAFC',
+            borderBottom: '1px solid #E2E8F0',
             flexShrink: 0,
             display: 'flex',
             flexDirection: 'column',
@@ -2013,7 +2041,7 @@ export default function ColumnInternalsDesignPanel({
           }}
         >
           {isAiBusy ? (
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#5B21B6', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A', display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>⏳</span>
               <span>{aiStepLabel || (isEn ? 'Searching AI-verified column internals options...' : 'AI 검증 컬럼 인터널 대안 탐색 중...')}</span>
             </div>
@@ -2021,8 +2049,17 @@ export default function ColumnInternalsDesignPanel({
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                  <div style={{ fontSize: 11.2, fontWeight: 900, color: aiReport.result.resolved ? '#166534' : '#4C1D95' }}>
-                    {aiReport.result.headline}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.2, fontWeight: 900, color: '#0F172A' }}>
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: aiReport.result.resolved ? '#16A34A' : '#D97706',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span>{aiReport.result.headline}</span>
                   </div>
                   {aiReport.result.actionsTaken.length > 0 && (
                     <div style={{ fontSize: 10, fontWeight: 700, color: '#334155', lineHeight: 1.35 }}>
@@ -2030,7 +2067,7 @@ export default function ColumnInternalsDesignPanel({
                     </div>
                   )}
                   {aiReport.geminiNote && (
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#5B21B6', whiteSpace: 'pre-line', lineHeight: 1.35 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#475569', whiteSpace: 'pre-line', lineHeight: 1.35 }}>
                       {aiReport.geminiNote}
                     </div>
                   )}
@@ -2065,7 +2102,7 @@ export default function ColumnInternalsDesignPanel({
                     style={{
                       fontSize: 10.2,
                       fontWeight: 900,
-                      color: '#1E293B',
+                      color: '#0F172A',
                       display: 'flex',
                       alignItems: 'center',
                       gap: 6,
@@ -2099,17 +2136,14 @@ export default function ColumnInternalsDesignPanel({
                         <div
                           key={opt.id}
                           style={{
-                            background: isSelected ? '#FFFFFF' : '#F8FAFC',
-                            border: isSelected ? '1.5px solid #16A34A' : '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            border: isSelected ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
                             borderRadius: 7,
                             padding: '7px 9px',
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'space-between',
                             gap: 4,
-                            boxShadow: isSelected
-                              ? '0 1px 4px rgba(22, 163, 74, 0.14)'
-                              : 'none',
                           }}
                         >
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -2125,11 +2159,11 @@ export default function ColumnInternalsDesignPanel({
                               <span
                                 style={{
                                   fontSize: 9.5,
-                                  fontWeight: 900,
+                                  fontWeight: 800,
                                   padding: '1px 6px',
                                   borderRadius: 999,
-                                  background: isSelected ? '#DCFCE7' : '#E2E8F0',
-                                  color: isSelected ? '#15803D' : '#475569',
+                                  background: isSelected ? '#1E3A8A' : '#F1F5F9',
+                                  color: isSelected ? '#FFFFFF' : '#475569',
                                 }}
                               >
                                 {isSelected
@@ -2146,16 +2180,28 @@ export default function ColumnInternalsDesignPanel({
                               </span>
                               <span
                                 style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
                                   fontSize: 9.2,
-                                  fontWeight: 900,
+                                  fontWeight: 800,
                                   fontFamily: MONO,
                                   padding: '1px 5px',
                                   borderRadius: 4,
-                                  background: opt.allPassed ? '#ECFDF5' : '#FEF3C7',
-                                  color: opt.allPassed ? '#047857' : '#B45309',
-                                  border: `1px solid ${opt.allPassed ? '#A7F3D0' : '#FDE68A'}`,
+                                  background: '#F8FAFC',
+                                  color: '#334155',
+                                  border: '1px solid #CBD5E1',
                                 }}
                               >
+                                <span
+                                  style={{
+                                    width: 6,
+                                    height: 6,
+                                    borderRadius: '50%',
+                                    background: opt.allPassed ? '#16A34A' : '#D97706',
+                                    display: 'inline-block',
+                                  }}
+                                />
                                 {opt.allPassed ? 'PASS' : 'CHECK'}
                               </span>
                             </div>
@@ -2167,7 +2213,7 @@ export default function ColumnInternalsDesignPanel({
                                 fontSize: 10,
                                 fontWeight: 700,
                                 fontFamily: MONO,
-                                color: '#1E40AF',
+                                color: '#1E3A8A',
                               }}
                             >
                               {specLine}
@@ -2176,7 +2222,7 @@ export default function ColumnInternalsDesignPanel({
                               style={{
                                 fontSize: 9.8,
                                 fontFamily: MONO,
-                                color: '#334155',
+                                color: '#475569',
                                 lineHeight: 1.35,
                               }}
                             >
@@ -2193,12 +2239,12 @@ export default function ColumnInternalsDesignPanel({
                               padding: '4px 8px',
                               borderRadius: 5,
                               border: isSelected
-                                ? '1px solid #86EFAC'
-                                : '1px solid #2563EB',
-                              background: isSelected ? '#F0FDF4' : '#2563EB',
-                              color: isSelected ? '#15803D' : '#FFFFFF',
+                                ? '1px solid #CBD5E1'
+                                : '1px solid #1E3A8A',
+                              background: isSelected ? '#F1F5F9' : '#1E3A8A',
+                              color: isSelected ? '#475569' : '#FFFFFF',
                               fontSize: 10.2,
-                              fontWeight: 900,
+                              fontWeight: 800,
                               cursor: isSelected ? 'default' : 'pointer',
                             }}
                           >
@@ -2316,11 +2362,11 @@ export default function ColumnInternalsDesignPanel({
                     style={{
                       padding: '7px 8px',
                       borderRadius: 6,
-                      border: active ? '2px solid #4F46E5' : '1px solid #CBD5E1',
-                      background: active ? '#EEF2FF' : '#FFFFFF',
-                      color: active ? '#312E81' : '#475569',
+                      border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                      background: active ? '#1E3A8A' : '#FFFFFF',
+                      color: active ? '#FFFFFF' : '#475569',
                       fontSize: 11,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                     }}
                   >
@@ -2347,9 +2393,9 @@ export default function ColumnInternalsDesignPanel({
                     style={{
                       padding: '6px 6px',
                       borderRadius: 6,
-                      border: active ? '1.5px solid #0F766E' : '1px solid #CBD5E1',
-                      background: active ? '#ECFDF5' : '#FFFFFF',
-                      color: active ? '#065F46' : '#475569',
+                      border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                      background: active ? '#1E3A8A' : '#FFFFFF',
+                      color: active ? '#FFFFFF' : '#475569',
                       fontSize: 10.5,
                       fontWeight: 800,
                       cursor: 'pointer',
@@ -2698,15 +2744,15 @@ export default function ColumnInternalsDesignPanel({
                 marginTop: 7,
                 padding: '6px 8px',
                 borderRadius: 6,
-                background: '#FEF3C7',
-                border: '1px solid #FDE68A',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
                 fontSize: 9.8,
                 fontWeight: 700,
-                color: '#78350F',
+                color: '#334155',
                 lineHeight: 1.35,
               }}
             >
-              🔍 <b>{isEn ? 'Selection Basis:' : '선정 근거:'}</b> {designRes.materialReason}
+              <b>{isEn ? 'Selection Basis:' : '선정 근거:'}</b> {designRes.materialReason}
             </div>
           </div>
 
@@ -2716,49 +2762,41 @@ export default function ColumnInternalsDesignPanel({
               style={{
                 padding: '9px 11px',
                 borderRadius: 8,
-                background: designRes.overallStatus === 'critical' ? '#FEF2F2' : '#FFFBEB',
-                border: `1.5px solid ${designRes.overallStatus === 'critical' ? '#FCA5A5' : '#FCD34D'}`,
+                background: '#FFFFFF',
+                border: '1px solid #CBD5E1',
                 fontSize: 10.2,
-                color: designRes.overallStatus === 'critical' ? '#991B1B' : '#92400E',
+                color: '#334155',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 4,
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 900 }}>{isEn ? '⚠ Hydraulics · Mechanical Design Check' : '⚠ 수력학 · 기계 설계 점검'}</span>
-                {simResult && (
-                  <button
-                    type="button"
-                    disabled={isAiBusy}
-                    onClick={runAiInternalsAutoFix}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 900, color: '#0F172A' }}>
+                  <span
                     style={{
-                      padding: '4px 9px',
-                      borderRadius: 5,
-                      border: '1px solid #7C3AED',
-                      background: '#7C3AED',
-                      color: '#FFFFFF',
-                      fontSize: 10.2,
-                      fontWeight: 900,
-                      cursor: isAiBusy ? 'wait' : 'pointer',
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: designRes.overallStatus === 'critical' ? '#DC2626' : '#D97706',
+                      flexShrink: 0,
                     }}
-                  >
-                    {isAiBusy ? (aiStepLabel || (isEn ? '⏳ Optimizing...' : '⏳ 보정 중...')) : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
-                  </button>
-                )}
+                  />
+                  {isEn ? 'Hydraulics · Mechanical Design Check' : '수력학 · 기계 설계 점검'}
+                </span>
               </div>
               {designRes.designWarnings.map((w, idx) => (
-                <div key={idx} style={{ lineHeight: 1.35 }}>
+                <div key={idx} style={{ lineHeight: 1.35, color: '#475569' }}>
                   • {w}
                 </div>
               ))}
               {isAiBusy && aiStepLabel && (
-                <div style={{ marginTop: 3, paddingTop: 4, borderTop: '1px dashed #CBD5E1', color: '#6D28D9', fontWeight: 800 }}>
+                <div style={{ marginTop: 3, paddingTop: 4, borderTop: '1px dashed #CBD5E1', color: '#1E3A8A', fontWeight: 800 }}>
                   ⏳ {aiStepLabel}
                 </div>
               )}
               {aiNote && !isAiBusy && (
-                <div style={{ marginTop: 3, paddingTop: 4, borderTop: '1px dashed #CBD5E1', color: '#5B21B6', fontWeight: 800, whiteSpace: 'pre-line' }}>
+                <div style={{ marginTop: 3, paddingTop: 4, borderTop: '1px dashed #CBD5E1', color: '#334155', fontWeight: 700, whiteSpace: 'pre-line' }}>
                   {aiNote}
                 </div>
               )}
@@ -2824,14 +2862,14 @@ export default function ColumnInternalsDesignPanel({
                       padding: isMobile ? '6px 6px' : '5px 9px',
                       borderRadius: 5,
                       border: active
-                        ? '1px solid #4338CA'
+                        ? '1px solid #1E3A8A'
                         : isMobile
                         ? '1px solid #CBD5E1'
                         : '1px solid transparent',
-                      background: active ? '#4338CA' : isMobile ? '#FFFFFF' : 'transparent',
-                      color: active ? '#FFFFFF' : '#334155',
+                      background: active ? '#1E3A8A' : isMobile ? '#FFFFFF' : 'transparent',
+                      color: active ? '#FFFFFF' : '#475569',
                       fontSize: 10.5,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: 'pointer',
                       textAlign: 'center',
                       whiteSpace: 'nowrap',

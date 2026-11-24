@@ -24,7 +24,6 @@ import {
   type DistillEndpointBasis,
   type DistillFeedInput,
   type DistillReboilerType,
-  type DistillRefluxDesignMode,
   type DistillSideCutConfig,
   type DistillSolveResult,
   type DistillSpecMetric,
@@ -1042,9 +1041,9 @@ export default function DistillationWorkbenchModal({
       <div
         style={{
           ...cardStyle,
-          border: sideCutEnabled ? '1.5px solid #7C3AED' : '1.5px dashed #C4B5FD',
-          background: sideCutEnabled ? '#FFFFFF' : '#FAF8FF',
-          boxShadow: sideCutEnabled ? '0 1px 4px rgba(124,58,237,0.10)' : undefined,
+          border: sideCutEnabled ? '1.5px solid #1E3A8A' : '1.5px dashed #CBD5E1',
+          background: sideCutEnabled ? '#FFFFFF' : '#F8FAFC',
+          boxShadow: sideCutEnabled ? '0 1px 3px rgba(30,58,138,0.08)' : undefined,
         }}
       >
         {/* 카드 헤더 */}
@@ -1061,7 +1060,7 @@ export default function DistillationWorkbenchModal({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 900, color: sideCutEnabled ? '#4C1D95' : '#334155' }}>
+            <span style={{ fontSize: 12, fontWeight: 900, color: sideCutEnabled ? '#0F172A' : '#334155' }}>
               {isEn
                 ? '⑤ Side-Cut Spec (Supports ①+④+⑤ or ②+④+⑤ without ③ Top Purity)'
                 : '⑤ 사이드컷(측류) 조건 · Side-Cut (③ 탑정순도 없이 ①+④+⑤ 또는 ②+④+⑤ 지원)'}
@@ -1077,19 +1076,19 @@ export default function DistillationWorkbenchModal({
                 gap: 5,
                 fontSize: 10.8,
                 fontWeight: 800,
-                color: sideCutEnabled ? '#5B21B6' : '#475569',
+                color: sideCutEnabled ? '#1E3A8A' : '#475569',
                 cursor: 'pointer',
                 padding: '2px 8px',
                 borderRadius: 999,
-                background: sideCutEnabled ? '#EDE9FE' : '#FFFFFF',
-                border: sideCutEnabled ? '1px solid #C4B5FD' : '1px solid #CBD5E1',
+                background: sideCutEnabled ? '#F1F5F9' : '#FFFFFF',
+                border: sideCutEnabled ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
               }}
             >
               <input
                 type="checkbox"
                 checked={sideCutEnabled}
                 onChange={toggleSideCutEnabled}
-                style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
+                style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#1E3A8A' }}
               />
               <span>{isEn ? 'Enable Side-Cut Draw' : '사이드컷(측류, Side-Cut) 인출 활성화'}</span>
             </label>
@@ -1103,15 +1102,15 @@ export default function DistillationWorkbenchModal({
               style={{
                 padding: '7px 9px',
                 borderRadius: 7,
-                background: '#FAF5FF',
-                border: '1px solid #E9D5FF',
+                background: '#F8FAFC',
+                border: '1px solid #E2E8F0',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 5,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>
+                <span style={{ fontSize: 10, fontWeight: 900, color: '#334155' }}>
                   {isEn ? 'Quick Process Presets:' : '빠른 공정 프리셋:'}
                 </span>
                 <button
@@ -1128,15 +1127,15 @@ export default function DistillationWorkbenchModal({
                   style={{
                     padding: '4px 8px',
                     borderRadius: 5,
-                    border: '1px solid #C084FC',
+                    border: '1px solid #CBD5E1',
                     background: '#FFFFFF',
-                    color: '#5B21B6',
+                    color: '#1E3A8A',
                     fontSize: 10.3,
                     fontWeight: 800,
                     cursor: 'pointer',
                   }}
                 >
-                  {isEn ? '🧪 Pasteurization Product Side-Cut (Stage 3 Liq)' : '🧪 파스퇴르 정제품 측류 (상부 3단 액상)'}
+                  {isEn ? 'Pasteurization Product Side-Cut (Stage 3 Liq)' : '파스퇴르 정제품 측류 (상부 3단 액상)'}
                 </button>
                 <button
                   type="button"
@@ -1161,21 +1160,21 @@ export default function DistillationWorkbenchModal({
                   style={{
                     padding: '4px 8px',
                     borderRadius: 5,
-                    border: '1px solid #C084FC',
+                    border: '1px solid #CBD5E1',
                     background: '#FFFFFF',
-                    color: '#5B21B6',
+                    color: '#1E3A8A',
                     fontSize: 10.3,
                     fontWeight: 800,
                     cursor: 'pointer',
                   }}
                 >
-                  {isEn ? '🎯 Mid-Boiler Enriched Side-Cut (AI Auto Stage)' : '🎯 중간비점 농축 측류 (최적단 AI 자동탐색)'}
+                  {isEn ? 'Mid-Boiler Enriched Side-Cut (Auto Stage)' : '중간비점 농축 측류 (최적단 자동탐색)'}
                 </button>
               </div>
-              <div style={{ fontSize: 10, color: '#6B21A8', lineHeight: 1.35 }}>
+              <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.35 }}>
                 {isEn
-                  ? '💡 In pasteurization mode, overhead (D) purges trace light impurities while high-purity main product is drawn from the upper side-cut (S).'
-                  : '💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.'}
+                  ? 'In pasteurization mode, overhead (D) purges trace light impurities while high-purity main product is drawn from the upper side-cut (S).'
+                  : '파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.'}
               </div>
             </div>
 
@@ -1186,8 +1185,8 @@ export default function DistillationWorkbenchModal({
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                   {(
                     [
-                      { id: 'liquid', lbl: isEn ? '💧 Liquid (Chimney Tray)' : '💧 액상 (Liquid — 침니 트레이)' },
-                      { id: 'vapor', lbl: isEn ? '💨 Vapor' : '💨 기상 (Vapor)' },
+                      { id: 'liquid', lbl: isEn ? 'Liquid (Chimney Tray)' : '액상 (Liquid — 침니 트레이)' },
+                      { id: 'vapor', lbl: isEn ? 'Vapor' : '기상 (Vapor)' },
                     ] as { id: SideCutPhase; lbl: string }[]
                   ).map((ph) => {
                     const active = sideCutCfg.phase === ph.id;
@@ -1199,9 +1198,9 @@ export default function DistillationWorkbenchModal({
                         style={{
                           padding: '5px 6px',
                           borderRadius: 6,
-                          border: active ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
-                          background: active ? '#F5F3FF' : '#FFFFFF',
-                          color: active ? '#5B21B6' : '#475569',
+                          border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                          background: active ? '#1E3A8A' : '#FFFFFF',
+                          color: active ? '#FFFFFF' : '#475569',
                           fontSize: 10.2,
                           fontWeight: 800,
                           cursor: 'pointer',
@@ -2047,33 +2046,43 @@ export default function DistillationWorkbenchModal({
                     <span
                       style={{
                         flexShrink: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
                         fontSize: 10,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         padding: '2px 8px',
                         borderRadius: 999,
-                        background: '#2563EB',
-                        color: '#FFFFFF',
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '1px solid rgba(148,163,184,0.35)',
+                        color: '#F8FAFC',
                         fontFamily: MONO,
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {isEn ? '⏳ Converging...' : '⏳ 수렴 계산 중...'}
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#60A5FA', display: 'inline-block' }} />
+                      {isEn ? 'Converging...' : '수렴 계산 중...'}
                     </span>
                   ) : isSimDirty ? (
                     <span
                       style={{
                         flexShrink: 0,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
                         fontSize: 10,
-                        fontWeight: 900,
+                        fontWeight: 800,
                         padding: '2px 8px',
                         borderRadius: 999,
-                        background: '#F59E0B',
-                        color: '#1E293B',
+                        background: 'rgba(255,255,255,0.10)',
+                        border: '1px solid rgba(148,163,184,0.35)',
+                        color: '#F8FAFC',
                         fontFamily: MONO,
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {isEn ? '⏸ Inputs Changed · Run Needed' : '⏸ 입력 변경됨 · RUN 필요'}
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#D97706', display: 'inline-block' }} />
+                      {isEn ? 'Inputs Changed · Run Needed' : '입력 변경됨 · RUN 필요'}
                     </span>
                   ) : (
                     result && (
@@ -2085,26 +2094,35 @@ export default function DistillationWorkbenchModal({
                         }
                         style={{
                           flexShrink: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
                           fontSize: 10,
                           fontWeight: 800,
                           padding: '2px 8px',
                           borderRadius: 999,
-                          background:
-                            result.diagnostics?.level === 'error'
-                              ? '#DC2626'
-                              : result.diagnostics?.level === 'warning'
-                              ? '#D97706'
-                              : '#059669',
-                          color: '#FFFFFF',
+                          background: 'rgba(255,255,255,0.10)',
+                          border: '1px solid rgba(148,163,184,0.35)',
+                          color: '#F8FAFC',
                           fontFamily: MONO,
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {result.diagnostics?.level === 'error'
-                          ? `✕ ${result.diagnostics.badgeText}`
-                          : result.diagnostics?.level === 'warning'
-                          ? `⚠ ${result.diagnostics.badgeText}`
-                          : `✓ ${result.diagnostics?.badgeText ?? (isEn ? 'Converged' : '정상 수렴')}`}
+                        <span
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background:
+                              result.diagnostics?.level === 'error'
+                                ? '#DC2626'
+                                : result.diagnostics?.level === 'warning'
+                                ? '#D97706'
+                                : '#16A34A',
+                            display: 'inline-block',
+                          }}
+                        />
+                        {result.diagnostics?.badgeText ?? (isEn ? 'Converged' : '정상 수렴')}
                       </span>
                     )
                   )}
@@ -2200,8 +2218,8 @@ export default function DistillationWorkbenchModal({
                 style={{
                   padding: isMobile ? '6px 6px' : '5px 9px',
                   borderRadius: 5,
-                  border: workspaceView === 'simulation' ? '1px solid #93C5FD' : '1px solid transparent',
-                  background: workspaceView === 'simulation' ? '#2563EB' : 'transparent',
+                  border: workspaceView === 'simulation' ? '1px solid #3B82F6' : '1px solid transparent',
+                  background: workspaceView === 'simulation' ? '#1E3A8A' : 'transparent',
                   color: workspaceView === 'simulation' ? '#FFFFFF' : '#CBD5E1',
                   fontSize: 11,
                   fontWeight: 900,
@@ -2218,8 +2236,8 @@ export default function DistillationWorkbenchModal({
                 style={{
                   padding: isMobile ? '6px 6px' : '5px 9px',
                   borderRadius: 5,
-                  border: workspaceView === 'internals' ? '1px solid #93C5FD' : '1px solid transparent',
-                  background: workspaceView === 'internals' ? '#2563EB' : 'transparent',
+                  border: workspaceView === 'internals' ? '1px solid #3B82F6' : '1px solid transparent',
+                  background: workspaceView === 'internals' ? '#1E3A8A' : 'transparent',
                   color: workspaceView === 'internals' ? '#FFFFFF' : '#CBD5E1',
                   fontSize: 11,
                   fontWeight: 900,
@@ -2234,33 +2252,6 @@ export default function DistillationWorkbenchModal({
 
             {isMobile ? (
               <div style={{ display: 'flex', gap: 6, width: '100%' }}>
-                <button
-                  type="button"
-                  onClick={runAiAutoFixDistill}
-                  disabled={isAiBusy}
-                  style={{
-                    flex: 1,
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    border:
-                      !result?.converged || result?.diagnostics?.level !== 'ok'
-                        ? '1.5px solid #C084FC'
-                        : '1px solid #64748B',
-                    background:
-                      !result?.converged || result?.diagnostics?.level !== 'ok' ? '#7C3AED' : '#334155',
-                    color: '#FFFFFF',
-                    fontSize: 11,
-                    fontWeight: 900,
-                    cursor: isAiBusy ? 'wait' : 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {isAiBusy
-                    ? aiStepLabel
-                      ? `⏳ ${aiStepLabel}`
-                      : isEn ? '⏳ AI Analyzing...' : '⏳ AI 분석 중...'
-                    : isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결'}
-                </button>
                 {onRunSimulation && (
                   <button
                     type="button"
@@ -2275,12 +2266,8 @@ export default function DistillationWorkbenchModal({
                       flex: 1,
                       padding: '6px 10px',
                       borderRadius: 6,
-                      border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #60A5FA',
-                      background: !dofEvaluation.canRun
-                        ? '#475569'
-                        : isSimDirty
-                        ? '#D97706'
-                        : '#2563EB',
+                      border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #3B82F6',
+                      background: !dofEvaluation.canRun ? '#475569' : '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 11,
                       fontWeight: 900,
@@ -2303,32 +2290,6 @@ export default function DistillationWorkbenchModal({
               </div>
             ) : (
               <>
-                <button
-                  type="button"
-                  onClick={runAiAutoFixDistill}
-                  disabled={isAiBusy}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: 6,
-                    border:
-                      !result?.converged || result?.diagnostics?.level !== 'ok'
-                        ? '1.5px solid #C084FC'
-                        : '1px solid #64748B',
-                    background:
-                      !result?.converged || result?.diagnostics?.level !== 'ok' ? '#7C3AED' : '#334155',
-                    color: '#FFFFFF',
-                    fontSize: 11,
-                    fontWeight: 900,
-                    cursor: isAiBusy ? 'wait' : 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {isAiBusy
-                    ? aiStepLabel
-                      ? `⏳ ${aiStepLabel}`
-                      : isEn ? '⏳ AI Analyzing...' : '⏳ AI 분석 중...'
-                    : isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결'}
-                </button>
                 {onRunSimulation && (
                   <button
                     type="button"
@@ -2340,22 +2301,14 @@ export default function DistillationWorkbenchModal({
                         : isEn ? 'Run multistage MESH simulation (F5)' : '다단 MESH 시뮬레이션 실행 (F5)'
                     }
                     style={{
-                      padding: '5px 11px',
+                      padding: '5px 12px',
                       borderRadius: 6,
                       border: !dofEvaluation.canRun
                         ? '1px solid #64748B'
-                        : isRunningFeedback
-                        ? '1.5px solid #93C5FD'
-                        : isSimDirty
-                        ? '1.5px solid #FDE047'
-                        : '1px solid #60A5FA',
+                        : '1px solid #3B82F6',
                       background: !dofEvaluation.canRun
                         ? '#475569'
-                        : isRunningFeedback
-                        ? '#1D4ED8'
-                        : isSimDirty
-                        ? '#D97706'
-                        : '#2563EB',
+                        : '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 11,
                       fontWeight: 900,
@@ -2366,10 +2319,7 @@ export default function DistillationWorkbenchModal({
                         : 'pointer',
                       opacity: !dofEvaluation.canRun ? 0.65 : 1,
                       whiteSpace: 'nowrap',
-                      boxShadow:
-                        dofEvaluation.canRun && isSimDirty
-                          ? '0 0 0 2px rgba(245,158,11,0.30)'
-                          : '0 1px 4px rgba(15,23,42,0.25)',
+                      boxShadow: '0 1px 3px rgba(15,23,42,0.25)',
                     }}
                   >
                     {isRunningFeedback
@@ -2424,62 +2374,49 @@ export default function DistillationWorkbenchModal({
           const isAmber = !isRed && (isSimDirty || !result || hasSpecWarning);
           const qRebKw = result ? Math.abs(result.reboilerDutyKcalH) / 860 : 0;
 
-          const barBg = isRunningFeedback
-            ? '#EFF6FF'
-            : isRed
-            ? '#FEF2F2'
-            : isAmber
-            ? '#FFFBEB'
-            : '#ECFDF5';
-          const barBorder = isRunningFeedback
-            ? '#93C5FD'
-            : isRed
-            ? '#FCA5A5'
-            : isAmber
-            ? '#FCD34D'
-            : '#6EE7B7';
-          const barText = isRunningFeedback
+          const dotColor = isRunningFeedback
             ? '#1E3A8A'
             : isRed
-            ? '#991B1B'
+            ? '#DC2626'
             : isAmber
-            ? '#92400E'
-            : '#065F46';
+            ? '#D97706'
+            : '#16A34A';
 
           const message = isRunningFeedback
             ? isEn
-              ? '⏳ Running rigorous MESH column solver...'
-              : '⏳ 다단 MESH 증류 수렴 계산 중...'
+              ? 'Running rigorous MESH column solver...'
+              : '다단 MESH 증류 수렴 계산 중...'
             : isRed
             ? !dofEvaluation.canRun
               ? isEn
-                ? `🔴 Input Check Needed: ${dofEvaluation.headline}`
-                : `🔴 입력 확인 필요: ${dofEvaluation.headline}`
+                ? `Input Check Needed: ${dofEvaluation.headline}`
+                : `입력 확인 필요: ${dofEvaluation.headline}`
               : isEn
-              ? '🔴 Not Converged: Adjust stages, reflux ratio, or separation targets'
-              : '🔴 미수렴: 단수·환류비 또는 분리 목표를 조정하세요'
+              ? 'Not Converged: Adjust stages, reflux ratio, or separation targets'
+              : '미수렴: 단수·환류비 또는 분리 목표를 조정하세요'
             : isAmber
             ? isSimDirty || !result
               ? isEn
-                ? '🟡 Inputs Changed — Click ▶ RUN to check convergence'
-                : '🟡 입력 변경됨 — ▶ RUN 버튼을 눌러 수렴을 확인하세요'
+                ? 'Inputs Changed — Click ▶ RUN to check convergence'
+                : '입력 변경됨 — ▶ RUN 버튼을 눌러 수렴을 확인하세요'
               : isEn
-              ? '🟡 Converged (Spec Warning) — Optimize with AI Auto-Fix'
-              : '🟡 수렴 완료 (일부 스펙 경고) — AI 자동 해결로 최적화 가능'
+              ? 'Converged (Spec Warning) — Optimize with AI Auto-Fix'
+              : '수렴 완료 (일부 스펙 경고) — AI 자동 해결로 최적화 가능'
             : isEn
-            ? `🟢 Design Ready · Converged (N=${result!.totalStagesUsed} stg · R=${result!.actualRefluxRatio.toFixed(2)} · Q_reb=${qRebKw.toFixed(0)} kW)`
-            : `🟢 설계 조건 완료 · 정상 수렴 (N=${result!.totalStagesUsed}단 · R=${result!.actualRefluxRatio.toFixed(2)} · Q_reb=${qRebKw.toFixed(0)} kW)`;
+            ? `Design Ready · Converged (N=${result!.totalStagesUsed} stg · R=${result!.actualRefluxRatio.toFixed(2)} · Q_reb=${qRebKw.toFixed(0)} kW)`
+            : `설계 조건 완료 · 정상 수렴 (N=${result!.totalStagesUsed}단 · R=${result!.actualRefluxRatio.toFixed(2)} · Q_reb=${qRebKw.toFixed(0)} kW)`;
 
-          const showAiBtn = !isRunningFeedback && (isRed || (isAmber && !isSimDirty && Boolean(result)));
+          const needsAiFix = isRed || (isAmber && !isSimDirty && Boolean(result));
+          const isHealthy = !isRed && !isAmber && Boolean(result);
           const showRunBtn = !isRunningFeedback && isAmber && (isSimDirty || !result) && Boolean(onRunSimulation);
 
           return (
             <div
               style={{
                 padding: isMobile ? '6px 12px' : '6px 14px',
-                background: barBg,
-                borderBottom: `1.5px solid ${barBorder}`,
-                color: barText,
+                background: '#F8FAFC',
+                borderBottom: '1px solid #E2E8F0',
+                color: '#0F172A',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -2488,21 +2425,40 @@ export default function DistillationWorkbenchModal({
                 flexWrap: isMobile ? 'wrap' : 'nowrap',
               }}
             >
-              <span
+              <div
                 style={{
-                  fontSize: 11.5,
-                  fontWeight: 900,
-                  lineHeight: 1.3,
-                  whiteSpace: isMobile ? 'normal' : 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
                   minWidth: 0,
-                  fontFamily: !isRed && !isAmber && !isRunningFeedback ? MONO : undefined,
                 }}
-                title={message}
               >
-                {message}
-              </span>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: dotColor,
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 800,
+                    color: isRed || isAmber ? '#0F172A' : '#334155',
+                    lineHeight: 1.3,
+                    whiteSpace: isMobile ? 'normal' : 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minWidth: 0,
+                    fontFamily: isHealthy && !isRunningFeedback ? MONO : undefined,
+                  }}
+                  title={message}
+                >
+                  {message}
+                </span>
+              </div>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                 {showRunBtn && (
                   <button
@@ -2512,43 +2468,83 @@ export default function DistillationWorkbenchModal({
                     style={{
                       padding: '3px 10px',
                       borderRadius: 5,
-                      border: '1px solid #B45309',
-                      background: '#D97706',
+                      border: !dofEvaluation.canRun ? '1px solid #94A3B8' : '1px solid #1E3A8A',
+                      background: !dofEvaluation.canRun ? '#94A3B8' : '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 10.8,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: !dofEvaluation.canRun ? 'not-allowed' : 'pointer',
-                      opacity: !dofEvaluation.canRun ? 0.6 : 1,
+                      opacity: !dofEvaluation.canRun ? 0.65 : 1,
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {isEn ? '▶ RUN' : '▶ RUN'}
+                    ▶ RUN
                   </button>
                 )}
-                {showAiBtn && (
+                {!isRunningFeedback && needsAiFix && (
                   <button
                     type="button"
                     onClick={runAiAutoFixDistill}
                     disabled={isAiBusy}
+                    title={
+                      isEn
+                        ? 'Run combinatorial AI search when standard numerical solver fails or needs spec optimization'
+                        : '표준 수치해석이 미수렴하거나 스펙 경고가 있을 때 조합 탐색으로 최적 운전 조건을 자동 도출합니다'
+                    }
                     style={{
-                      padding: '3px 10px',
+                      padding: '3.5px 11px',
                       borderRadius: 5,
-                      border: isRed ? '1px solid #991B1B' : '1px solid #6D28D9',
-                      background: isRed ? '#DC2626' : '#7C3AED',
+                      border: '1px solid #1E3A8A',
+                      background: '#1E3A8A',
                       color: '#FFFFFF',
                       fontSize: 10.8,
-                      fontWeight: 900,
+                      fontWeight: 800,
                       cursor: isAiBusy ? 'wait' : 'pointer',
                       whiteSpace: 'nowrap',
                     }}
                   >
                     {isAiBusy
-                      ? isEn
+                      ? aiStepLabel
+                        ? `⏳ ${aiStepLabel}`
+                        : isEn
                         ? '⏳ AI Fixing...'
                         : '⏳ AI 분석 중...'
                       : isEn
-                      ? '✨ AI Auto-Fix'
-                      : '✨ AI 자동 해결'}
+                      ? 'AI Auto-Fix'
+                      : 'AI 자동 해결'}
+                  </button>
+                )}
+                {!isRunningFeedback && isHealthy && (
+                  <button
+                    type="button"
+                    onClick={runAiAutoFixDistill}
+                    disabled={isAiBusy}
+                    title={
+                      isEn
+                        ? 'Explore alternative stage/reflux combinations for lower TAC or energy duty'
+                        : '현재 수렴 상태에서 더 낮은 에너지·TAC 대안 조합을 탐색합니다'
+                    }
+                    style={{
+                      padding: '3.5px 10px',
+                      borderRadius: 5,
+                      border: '1px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#475569',
+                      fontSize: 10.8,
+                      fontWeight: 700,
+                      cursor: isAiBusy ? 'wait' : 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isAiBusy
+                      ? aiStepLabel
+                        ? `⏳ ${aiStepLabel}`
+                        : isEn
+                        ? '⏳ Exploring...'
+                        : '⏳ 탐색 중...'
+                      : isEn
+                      ? 'Explore Options'
+                      : '최적 대안 탐색'}
                   </button>
                 )}
               </div>
@@ -2561,22 +2557,8 @@ export default function DistillationWorkbenchModal({
           <div
             style={{
               padding: '8px 16px',
-              background: isAiBusy
-                ? '#EEF2FF'
-                : aiReport?.result.resolved
-                ? '#F0FDF4'
-                : aiReport?.result.improved
-                ? '#F5F3FF'
-                : '#FEF2F2',
-              borderBottom: `1.5px solid ${
-                isAiBusy
-                  ? '#818CF8'
-                  : aiReport?.result.resolved
-                  ? '#86EFAC'
-                  : aiReport?.result.improved
-                  ? '#C4B5FD'
-                  : '#FCA5A5'
-              }`,
+              background: '#F8FAFC',
+              borderBottom: '1px solid #E2E8F0',
               flexShrink: 0,
               display: 'flex',
               alignItems: 'flex-start',
@@ -2587,21 +2569,21 @@ export default function DistillationWorkbenchModal({
             }}
           >
             {isAiBusy ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#3730A3' }}>
-                <span style={{ fontWeight: 900 }}>
-                  {isEn ? '⏳ ✨ Running AI Auto-Fix Search...' : '⏳ ✨ AI 자동 해결 탐색 중...'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#1E3A8A' }}>
+                <span style={{ fontWeight: 800 }}>
+                  {isEn ? '⏳ Running AI Auto-Fix Search...' : '⏳ AI 자동 해결 탐색 중...'}
                 </span>
                 {aiStepLabel && (
                   <span
                     style={{
                       fontFamily: MONO,
                       fontSize: 10.6,
-                      fontWeight: 800,
+                      fontWeight: 700,
                       padding: '2px 8px',
                       borderRadius: 999,
                       background: '#FFFFFF',
-                      border: '1px solid #C7D2FE',
-                      color: '#4338CA',
+                      border: '1px solid #CBD5E1',
+                      color: '#334155',
                     }}
                   >
                     {aiStepLabel}
@@ -2612,15 +2594,27 @@ export default function DistillationWorkbenchModal({
               <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <div
                   style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 7,
                     fontWeight: 900,
-                    color: aiReport.result.resolved
-                      ? '#15803D'
-                      : aiReport.result.improved
-                      ? '#6D28D9'
-                      : '#B91C1C',
+                    color: '#0F172A',
                   }}
                 >
-                  {aiReport.result.headline}
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      background: aiReport.result.resolved
+                        ? '#16A34A'
+                        : aiReport.result.improved
+                        ? '#D97706'
+                        : '#DC2626',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span>{aiReport.result.headline}</span>
                 </div>
                 {aiReport.result.rootCauses.length > 0 && (
                   <div style={{ color: '#475569', fontSize: 10.6 }}>
@@ -2635,7 +2629,7 @@ export default function DistillationWorkbenchModal({
                   </div>
                 )}
                 {aiReport.geminiNote && (
-                  <div style={{ color: '#4C1D95', fontWeight: 700, fontSize: 10.6 }}>
+                  <div style={{ color: '#334155', fontWeight: 700, fontSize: 10.6 }}>
                     {aiReport.geminiNote}
                   </div>
                 )}
@@ -2686,17 +2680,14 @@ export default function DistillationWorkbenchModal({
                           <div
                             key={opt.id}
                             style={{
-                              background: isSelected ? '#FFFFFF' : '#F8FAFC',
-                              border: isSelected ? '1.5px solid #16A34A' : '1px solid #CBD5E1',
+                              background: '#FFFFFF',
+                              border: isSelected ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
                               borderRadius: 7,
                               padding: '7px 9px',
                               display: 'flex',
                               flexDirection: 'column',
                               justifyContent: 'space-between',
                               gap: 4,
-                              boxShadow: isSelected
-                                ? '0 1px 4px rgba(22, 163, 74, 0.14)'
-                                : 'none',
                             }}
                           >
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -2712,11 +2703,11 @@ export default function DistillationWorkbenchModal({
                                 <span
                                   style={{
                                     fontSize: 9.5,
-                                    fontWeight: 900,
+                                    fontWeight: 800,
                                     padding: '1px 6px',
                                     borderRadius: 999,
-                                    background: isSelected ? '#DCFCE7' : '#E2E8F0',
-                                    color: isSelected ? '#15803D' : '#475569',
+                                    background: isSelected ? '#1E3A8A' : '#F1F5F9',
+                                    color: isSelected ? '#FFFFFF' : '#475569',
                                   }}
                                 >
                                   {isSelected
@@ -2733,16 +2724,28 @@ export default function DistillationWorkbenchModal({
                                 </span>
                                 <span
                                   style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
                                     fontSize: 9.2,
-                                    fontWeight: 900,
+                                    fontWeight: 800,
                                     fontFamily: MONO,
                                     padding: '1px 5px',
                                     borderRadius: 4,
-                                    background: opt.allPassed ? '#ECFDF5' : '#FEF3C7',
-                                    color: opt.allPassed ? '#047857' : '#B45309',
-                                    border: `1px solid ${opt.allPassed ? '#A7F3D0' : '#FDE68A'}`,
+                                    background: '#F8FAFC',
+                                    color: '#334155',
+                                    border: '1px solid #CBD5E1',
                                   }}
                                 >
+                                  <span
+                                    style={{
+                                      width: 6,
+                                      height: 6,
+                                      borderRadius: '50%',
+                                      background: opt.allPassed ? '#16A34A' : '#D97706',
+                                      display: 'inline-block',
+                                    }}
+                                  />
                                   {opt.allPassed ? 'PASS' : 'CHECK'}
                                 </span>
                               </div>
@@ -2754,7 +2757,7 @@ export default function DistillationWorkbenchModal({
                                   fontSize: 10,
                                   fontWeight: 700,
                                   fontFamily: MONO,
-                                  color: '#1E40AF',
+                                  color: '#1E3A8A',
                                 }}
                               >
                                 {specLine}
@@ -2763,7 +2766,7 @@ export default function DistillationWorkbenchModal({
                                 style={{
                                   fontSize: 9.8,
                                   fontFamily: MONO,
-                                  color: '#334155',
+                                  color: '#475569',
                                   lineHeight: 1.35,
                                 }}
                               >
@@ -2787,12 +2790,12 @@ export default function DistillationWorkbenchModal({
                                 padding: '4px 8px',
                                 borderRadius: 5,
                                 border: isSelected
-                                  ? '1px solid #86EFAC'
-                                  : '1px solid #2563EB',
-                                background: isSelected ? '#F0FDF4' : '#2563EB',
-                                color: isSelected ? '#15803D' : '#FFFFFF',
+                                  ? '1px solid #CBD5E1'
+                                  : '1px solid #1E3A8A',
+                                background: isSelected ? '#F1F5F9' : '#1E3A8A',
+                                color: isSelected ? '#475569' : '#FFFFFF',
                                 fontSize: 10.2,
-                                fontWeight: 900,
+                                fontWeight: 800,
                                 cursor: isSelected ? 'default' : 'pointer',
                               }}
                             >
@@ -2921,8 +2924,8 @@ export default function DistillationWorkbenchModal({
               height: '100%',
               display: 'flex',
               flexDirection: 'column',
-              background: '#FAF9F5',
-              borderRight: isMobile ? 'none' : '1px solid #E5E2DC',
+              background: '#F8FAFC',
+              borderRight: isMobile ? 'none' : '1px solid #E2E8F0',
               overflow: 'hidden',
             }}
           >
@@ -2932,8 +2935,8 @@ export default function DistillationWorkbenchModal({
                 display: 'flex',
                 gap: 5,
                 padding: '8px 14px',
-                background: '#EFECE5',
-                borderBottom: '1px solid #DFDCD4',
+                background: '#F1F5F9',
+                borderBottom: '1px solid #E2E8F0',
                 flexShrink: 0,
                 flexWrap: 'wrap',
               }}
@@ -2971,9 +2974,9 @@ export default function DistillationWorkbenchModal({
                     style={{
                       padding: '6px 11px',
                       borderRadius: 6,
-                      border: active ? '1.5px solid #1A2F44' : '1px solid #CBD5E1',
-                      background: active ? '#1A2F44' : '#FFFFFF',
-                      color: active ? '#FFFFFF' : '#334155',
+                      border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                      background: active ? '#1E3A8A' : '#FFFFFF',
+                      color: active ? '#FFFFFF' : '#475569',
                       fontSize: 11.5,
                       fontWeight: 800,
                       cursor: 'pointer',
@@ -3007,8 +3010,8 @@ export default function DistillationWorkbenchModal({
                       style={{
                         padding: '10px 13px',
                         borderRadius: 8,
-                        background: '#EFF6FF',
-                        border: '1.5px solid #2563EB',
+                        background: '#F8FAFC',
+                        border: '1px solid #CBD5E1',
                         color: '#1E3A8A',
                         fontSize: 11.5,
                         fontWeight: 800,
@@ -3025,10 +3028,10 @@ export default function DistillationWorkbenchModal({
                     {isSimDirty ? (
                       <div
                         style={{
-                          padding: '10px 13px',
+                          padding: '9px 12px',
                           borderRadius: 8,
-                          background: '#FFFBEB',
-                          border: '1.5px solid #D97706',
+                          background: '#F8FAFC',
+                          border: '1px solid #CBD5E1',
                           display: 'flex',
                           justifyContent: 'space-between',
                           alignItems: 'center',
@@ -3036,11 +3039,12 @@ export default function DistillationWorkbenchModal({
                           flexWrap: 'wrap',
                         }}
                       >
-                        <div>
-                          <div style={{ fontSize: 11.5, fontWeight: 900, color: '#92400E' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#D97706', flexShrink: 0 }} />
+                          <div style={{ fontSize: 11.2, fontWeight: 800, color: '#0F172A' }}>
                             {isEn
-                              ? '⏸ Inputs changed — click [▶ Run] to update stage profiles.'
-                              : '⏸ 조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.'}
+                              ? 'Inputs changed — click [▶ Run] to update stage profiles.'
+                              : '조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.'}
                           </div>
                         </div>
                         {onRunSimulation && (
@@ -3050,13 +3054,13 @@ export default function DistillationWorkbenchModal({
                             disabled={!dofEvaluation.canRun}
                             title={!dofEvaluation.canRun ? dofEvaluation.hint : isEn ? 'Run simulation' : '시뮬레이션 실행'}
                             style={{
-                              padding: '6px 12px',
+                              padding: '5px 12px',
                               borderRadius: 6,
-                              border: !dofEvaluation.canRun ? '1px solid #64748B' : '1px solid #B45309',
-                              background: !dofEvaluation.canRun ? '#475569' : '#D97706',
+                              border: !dofEvaluation.canRun ? '1px solid #94A3B8' : '1px solid #1E3A8A',
+                              background: !dofEvaluation.canRun ? '#94A3B8' : '#1E3A8A',
                               color: '#FFFFFF',
                               fontSize: 11,
-                              fontWeight: 900,
+                              fontWeight: 800,
                               cursor: !dofEvaluation.canRun ? 'not-allowed' : 'pointer',
                               opacity: !dofEvaluation.canRun ? 0.65 : 1,
                               whiteSpace: 'nowrap',
@@ -3069,28 +3073,26 @@ export default function DistillationWorkbenchModal({
                     ) : diag ? (() => {
                       const isErr = diag.level === 'error';
                       const isWarn = diag.level === 'warning';
-                      const boxBg = isErr ? '#FEF2F2' : isWarn ? '#FFFBEB' : '#ECFDF5';
-                      const boxBd = isErr ? '#DC2626' : isWarn ? '#D97706' : '#059669';
-                      const titleCol = isErr ? '#991B1B' : isWarn ? '#92400E' : '#065F46';
-                      const icon = isErr ? '✕' : isWarn ? '⚠' : '✓';
+                      const dotCol = isErr ? '#DC2626' : isWarn ? '#D97706' : '#16A34A';
 
                       return (
                         <div
                           style={{
-                            padding: '10px 13px',
+                            padding: '9px 12px',
                             borderRadius: 8,
-                            background: boxBg,
-                            border: `1.5px solid ${boxBd}`,
+                            background: '#FFFFFF',
+                            border: '1px solid #CBD5E1',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 6,
+                            gap: 5,
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 12, fontWeight: 900, color: titleCol }}>
-                              {icon} [{diag.badgeText}] {diag.headline}
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
+                              <span style={{ width: 8, height: 8, borderRadius: '50%', background: dotCol, flexShrink: 0 }} />
+                              [{diag.badgeText}] {diag.headline}
                             </span>
-                            <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', fontFamily: MONO }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#64748B', fontFamily: MONO }}>
                               {result
                                 ? isEn
                                   ? `Inner MESH ${result.innerIterations} iter · Outer ${result.outerIterations} iter`
@@ -3102,7 +3104,7 @@ export default function DistillationWorkbenchModal({
                           {diag.causes.length > 0 && (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                               {diag.causes.map((cText, ci) => (
-                                <div key={ci} style={{ fontSize: 10.8, color: '#1E293B', lineHeight: 1.4 }}>
+                                <div key={ci} style={{ fontSize: 10.6, color: '#475569', lineHeight: 1.4 }}>
                                   • {cText}
                                 </div>
                               ))}
@@ -3279,38 +3281,19 @@ export default function DistillationWorkbenchModal({
                             style={{
                               padding: '10px 12px',
                               borderRadius: 9,
-                              background: '#F5F3FF',
-                              border: '1.5px solid #8B5CF6',
+                              background: '#F8FAFC',
+                              border: '1px solid #CBD5E1',
                               display: 'flex',
                               flexDirection: 'column',
                               gap: 7,
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: 11.8, fontWeight: 900, color: '#4C1D95' }}>
+                              <span style={{ fontSize: 11.4, fontWeight: 900, color: '#0F172A' }}>
                                 {isEn
-                                  ? '💡 Recommended Convergence & Spec Recipes (1-click apply & run)'
-                                  : '💡 수렴·스펙 달성 추천 조합 (클릭 1회로 조건 변경 & 즉시 재실행)'}
+                                  ? 'Recommended Convergence & Spec Recipes (1-click apply & run)'
+                                  : '수렴·스펙 달성 추천 조합 (클릭 1회로 조건 변경 & 즉시 재실행)'}
                               </span>
-                              <button
-                                type="button"
-                                onClick={runAiAutoFixDistill}
-                                disabled={isAiBusy}
-                                style={{
-                                  padding: '4px 10px',
-                                  borderRadius: 6,
-                                  border: '1px solid #6D28D9',
-                                  background: '#6D28D9',
-                                  color: '#FFFFFF',
-                                  fontSize: 10.5,
-                                  fontWeight: 900,
-                                  cursor: isAiBusy ? 'wait' : 'pointer',
-                                }}
-                              >
-                                {isAiBusy
-                                  ? aiStepLabel || (isEn ? '⏳ AI Searching...' : '⏳ AI 해결 탐색 중...')
-                                  : isEn ? '✨ AI Full Auto-Fix' : '✨ AI 전수 자동 해결'}
-                              </button>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                               {recipes.map((rec) => (
@@ -3321,9 +3304,9 @@ export default function DistillationWorkbenchModal({
                                   style={{
                                     padding: '7px 10px',
                                     borderRadius: 7,
-                                    border: '1px solid #C4B5FD',
+                                    border: '1px solid #CBD5E1',
                                     background: '#FFFFFF',
-                                    color: '#1E293B',
+                                    color: '#0F172A',
                                     textAlign: 'left',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -3333,7 +3316,7 @@ export default function DistillationWorkbenchModal({
                                   }}
                                 >
                                   <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontSize: 11, fontWeight: 900, color: '#5B21B6' }}>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: '#1E3A8A' }}>
                                       ▶ {rec.label}
                                     </div>
                                     <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 1 }}>
@@ -3345,10 +3328,11 @@ export default function DistillationWorkbenchModal({
                                       flexShrink: 0,
                                       padding: '2px 7px',
                                       borderRadius: 5,
-                                      background: '#EDE9FE',
-                                      color: '#5B21B6',
+                                      background: '#F1F5F9',
+                                      border: '1px solid #CBD5E1',
+                                      color: '#1E3A8A',
                                       fontSize: 9.8,
-                                      fontWeight: 900,
+                                      fontWeight: 800,
                                     }}
                                   >
                                     {isEn ? 'Apply & Run' : '즉시 적용·실행'}
@@ -3371,20 +3355,20 @@ export default function DistillationWorkbenchModal({
                       style={{
                         padding: '8px 11px',
                         borderRadius: 7,
-                        background: '#EFF6FF',
-                        border: '1px solid #93C5FD',
+                        background: '#F8FAFC',
+                        border: '1px solid #CBD5E1',
                         fontSize: 11,
                         fontWeight: 700,
-                        color: '#1E3A8A',
+                        color: '#334155',
                       }}
                     >
                       {isEn ? (
                         <>
-                          ✨ Currently in <b>AI Optimal Stages &amp; Feed Stage Auto-Search Mode</b> (⓪ unchecked). To fix stages (N) and feed stage (Nf) manually, check <b>⓪ Fixed Stages</b> in the [① Operating &amp; Design Specs] tab.
+                          Currently auto-sizing stages (N) and feed stage (Nf) from separation targets. To specify N and Nf manually, check <b>Specify Stages (N · Feed Nf)</b> in the [① Operating &amp; Design Specs] tab.
                         </>
                       ) : (
                         <>
-                          ✨ 현재 <b>AI 최적 단수·피드단 자동 탐색 모드</b> (⓪ 해제)입니다. 단수(N)·피드단(Nf)을 직접 고정하려면 [① 운전·설계 변수] 탭에서 <b>⓪ 고정 단수 지정</b>을 체크하세요.
+                          현재 분리 목표 기준으로 단수(N)·피드단(Nf)을 자동 산출 중입니다. 단수(N)·피드단(Nf)을 직접 지정하려면 [① 운전·설계 변수] 탭에서 <b>단수 (N · 피드단 Nf) 직접 지정</b>을 체크하세요.
                         </>
                       )}
                     </div>
@@ -3506,8 +3490,8 @@ export default function DistillationWorkbenchModal({
                     style={{
                       ...cardStyle,
                       padding: '9px 12px',
-                      border: sideCutEnabled ? '1.5px solid #7C3AED' : '1px solid #CBD5E1',
-                      background: sideCutEnabled ? '#FAF5FF' : '#FFFFFF',
+                      border: sideCutEnabled ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                      background: sideCutEnabled ? '#FFFFFF' : '#F8FAFC',
                     }}
                   >
                     <div
@@ -3527,14 +3511,14 @@ export default function DistillationWorkbenchModal({
                           cursor: 'pointer',
                           fontSize: 11.5,
                           fontWeight: 900,
-                          color: sideCutEnabled ? '#4C1D95' : '#334155',
+                          color: sideCutEnabled ? '#0F172A' : '#334155',
                         }}
                       >
                         <input
                           type="checkbox"
                           checked={sideCutEnabled}
                           onChange={toggleSideCutEnabled}
-                          style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
+                          style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#1E3A8A' }}
                         />
                         <span>{isEn ? 'Side-Cut Draw Stage Location' : '사이드컷 (측류 인출 · Side-Cut) 단 위치'}</span>
                       </label>
@@ -3546,8 +3530,9 @@ export default function DistillationWorkbenchModal({
                               fontWeight: 800,
                               padding: '1px 7px',
                               borderRadius: 999,
-                              background: '#EDE9FE',
-                              color: '#5B21B6',
+                              background: '#F1F5F9',
+                              color: '#1E3A8A',
+                              border: '1px solid #CBD5E1',
                               fontFamily: MONO,
                             }}
                           >
@@ -3562,9 +3547,9 @@ export default function DistillationWorkbenchModal({
                           style={{
                             padding: '2px 8px',
                             borderRadius: 5,
-                            border: '1px solid #C4B5FD',
+                            border: '1px solid #CBD5E1',
                             background: '#FFFFFF',
-                            color: '#6D28D9',
+                            color: '#1E3A8A',
                             fontSize: 10,
                             fontWeight: 800,
                             cursor: 'pointer',
@@ -3862,10 +3847,10 @@ export default function DistillationWorkbenchModal({
                           style={{
                             padding: '2px 8px',
                             borderRadius: 999,
-                            background: '#2563EB',
+                            background: '#1E3A8A',
                             color: '#FFFFFF',
                             fontSize: 10,
-                            fontWeight: 900,
+                            fontWeight: 800,
                           }}
                         >
                           {isEn ? '✓ Selected (click to clear)' : '✓ 선택됨 (클릭 시 해제)'}
@@ -3875,11 +3860,11 @@ export default function DistillationWorkbenchModal({
                           style={{
                             padding: '2px 9px',
                             borderRadius: 999,
-                            background: '#EFF6FF',
-                            color: '#1D4ED8',
-                            border: '1px solid #93C5FD',
+                            background: '#F8FAFC',
+                            color: '#1E3A8A',
+                            border: '1px solid #CBD5E1',
                             fontSize: 10.5,
-                            fontWeight: 900,
+                            fontWeight: 800,
                           }}
                         >
                           {isEn ? '+ Click to select' : '+ 클릭하여 선택'}
@@ -3889,7 +3874,7 @@ export default function DistillationWorkbenchModal({
                           style={{
                             padding: '2px 8px',
                             borderRadius: 999,
-                            background: '#E2E8F0',
+                            background: '#F1F5F9',
                             color: '#475569',
                             fontSize: 10,
                             fontWeight: 800,
@@ -3914,15 +3899,15 @@ export default function DistillationWorkbenchModal({
                   if (isSel) {
                     return {
                       ...cardStyle,
-                      border: '1.5px solid #2563EB',
+                      border: '1.5px solid #1E3A8A',
                       background: '#FFFFFF',
-                      boxShadow: '0 1px 4px rgba(37,99,235,0.08)',
+                      boxShadow: '0 1px 3px rgba(30,58,138,0.08)',
                     };
                   }
                   if (canAdd) {
                     return {
                       ...cardStyle,
-                      border: '1.5px dashed #93C5FD',
+                      border: '1.5px dashed #CBD5E1',
                       background: '#F8FAFC',
                     };
                   }
@@ -3936,303 +3921,72 @@ export default function DistillationWorkbenchModal({
 
                 const dofBannerColors =
                   dofEvaluation.statusLevel === 'ok'
-                    ? { bg: '#F0FDF4', bd: '#86EFAC', fg: '#166534' }
+                    ? { bg: '#F8FAFC', bd: '#CBD5E1', fg: '#0F172A', dot: '#16A34A' }
                     : dofEvaluation.statusLevel === 'error'
-                    ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B' }
-                    : { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E' };
-
-                const effRMode: DistillRefluxDesignMode =
-                  config.designRefluxMode ??
-                  (typeof config.designRefluxMult === 'number' ? 'r_mult' : 'auto_opt');
+                    ? { bg: '#F8FAFC', bd: '#CBD5E1', fg: '#0F172A', dot: '#DC2626' }
+                    : { bg: '#F8FAFC', bd: '#CBD5E1', fg: '#0F172A', dot: '#D97706' };
 
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {/* ── 3-Step 핵심 입력 전면 카드 (① 단수 모드 · ② 탑 운전 압력 · ③ 분리 목표 안내) ── */}
+                    {/* ── 탑 운전 압력 (Tab 1 인라인 입력) ── */}
                     <div
                       style={{
                         ...cardStyle,
-                        border: '1.5px solid #CBD5E1',
+                        border: '1px solid #CBD5E1',
                         background: '#FFFFFF',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 10,
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr',
+                        gap: 8,
+                        alignItems: 'center',
                       }}
                     >
-                      {/* Step ①: 단수 모드 (2-버튼 필 토글 + 고정 시 인라인 N · Nf) */}
                       <div>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 8,
-                            flexWrap: 'wrap',
-                            marginBottom: 6,
-                          }}
-                        >
-                          <span style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
-                            {isEn ? '① Stage Mode' : '① 단수 모드'}
-                          </span>
-                          <div
-                            style={{
-                              display: 'inline-flex',
-                              padding: 2,
-                              borderRadius: 999,
-                              background: '#F1F5F9',
-                              border: '1px solid #CBD5E1',
-                              gap: 2,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleFixedStages(false)}
-                              style={{
-                                padding: '4px 11px',
-                                borderRadius: 999,
-                                border: !isFixedStages ? '1px solid #059669' : '1px solid transparent',
-                                background: !isFixedStages ? '#059669' : 'transparent',
-                                color: !isFixedStages ? '#FFFFFF' : '#475569',
-                                fontSize: 10.8,
-                                fontWeight: 900,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {isEn ? '✨ AI Auto Optimal Stages' : '✨ AI 자동 최적단수'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => toggleFixedStages(true)}
-                              style={{
-                                padding: '4px 11px',
-                                borderRadius: 999,
-                                border: isFixedStages ? '1px solid #1E3A8A' : '1px solid transparent',
-                                background: isFixedStages ? '#1E3A8A' : 'transparent',
-                                color: isFixedStages ? '#FFFFFF' : '#475569',
-                                fontSize: 10.8,
-                                fontWeight: 900,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {isEn ? 'Fixed Stages (N · Nf)' : '고정 단수 지정 (N · Nf)'}
-                            </button>
-                          </div>
+                        <div style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
+                          {isEn ? 'Column Operating Pressure (Top)' : '탑 운전 압력 (탑정 압력)'}
                         </div>
-
-                        {isFixedStages ? (
-                          <div
+                        <div style={{ fontSize: 10.2, color: '#64748B', marginTop: 2, fontFamily: MONO }}>
+                          = {topBarA.toFixed(3)} barA ({topTorr.toFixed(0)} Torr) ·{' '}
+                          <button
+                            type="button"
+                            onClick={() => setLeftTab('pressure')}
                             style={{
-                              display: 'grid',
-                              gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-                              gap: 8,
-                              padding: '8px 10px',
-                              borderRadius: 7,
-                              background: '#F8FAFC',
-                              border: '1px solid #E2E8F0',
+                              border: 'none',
+                              background: 'transparent',
+                              padding: 0,
+                              color: '#1E3A8A',
+                              fontSize: 10.2,
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              textDecoration: 'underline',
                             }}
                           >
-                            <div>
-                              <label style={labelStyle}>
-                                {isActualMurphreeUi
-                                  ? isEn ? 'Total Actual Stages N (1=Cond, N=Reb)' : '총 실제단수 N (1=응축, N=리보일러)'
-                                  : isEn ? 'Total Theoretical Stages N (1=Cond, N=Reb)' : '총 이론단수 N (1=응축, N=리보일러)'}
-                              </label>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-nstages-spec`}
-                                min={4}
-                                max={200}
-                                step={1}
-                                value={N}
-                                onValueChange={(rawN) => {
-                                  const nextN = Math.max(4, Math.min(200, Math.round(rawN || 24)));
-                                  applyUnifiedConfigChange({
-                                    totalStages: nextN,
-                                    feedStage: Math.min(nextN - 1, Math.max(2, primaryFeedStage)),
-                                    ...(config.sideCut
-                                      ? {
-                                          sideCut: {
-                                            ...config.sideCut,
-                                            stage: Math.max(2, Math.min(nextN - 1, config.sideCut.stage)),
-                                          },
-                                        }
-                                      : {}),
-                                  });
-                                }}
-                                onEnterRun={() => {
-                                  if (dofEvaluation.canRun) triggerRunSimulation();
-                                }}
-                                style={inputBaseStyle}
-                              />
-                            </div>
-                            <div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                                <label style={{ ...labelStyle, marginBottom: 0 }}>
-                                  {isEn ? `Feed Stage Nf (2 ~ ${N - 1})` : `피드 공급단 Nf (2 ~ ${N - 1}단)`}
-                                </label>
-                                {recFeedStage !== primaryFeedStage && (
-                                  <button
-                                    type="button"
-                                    onClick={() => applyUnifiedConfigChange({ feedStage: recFeedStage })}
-                                    style={{
-                                      padding: '1px 6px',
-                                      borderRadius: 4,
-                                      border: '1px solid #2563EB',
-                                      background: '#EFF6FF',
-                                      color: '#1D4ED8',
-                                      fontSize: 9.8,
-                                      fontWeight: 800,
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    {isEn ? `Opt. ${recFeedStage}` : `최적 ${recFeedStage}단`}
-                                  </button>
-                                )}
-                              </div>
-                              <BufferedNumberInput
-                                syncKey={`${unitTag}-pfeed-spec`}
-                                min={2}
-                                max={N - 1}
-                                step={1}
-                                value={primaryFeedStage}
-                                onValueChange={(rawF) =>
-                                  applyUnifiedConfigChange({
-                                    feedStage: Math.max(2, Math.min(N - 1, Math.round(rawF || 10))),
-                                  })
-                                }
-                                onEnterRun={() => {
-                                  if (dofEvaluation.canRun) triggerRunSimulation();
-                                }}
-                                style={inputBaseStyle}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          <div
-                            style={{
-                              padding: '7px 10px',
-                              borderRadius: 7,
-                              background: '#F0FDF4',
-                              border: '1px solid #BBF7D0',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 6,
-                            }}
-                          >
-                            <div style={{ fontSize: 10.5, color: '#166534', fontWeight: 700, lineHeight: 1.35 }}>
-                              {isEn
-                                ? `✨ Auto-searches optimal N & Nf minimizing TAC for your separation targets${!isRrSel ? ' (R also auto-optimized)' : ''}.`
-                                : `✨ 분리 목표를 만족하는 최적 단수(N)·피드단(Nf)을 TAC 최소 기준으로 자동 탐색합니다${!isRrSel ? ' (환류비 R 자동 최적화 포함)' : ''}.`}
-                            </div>
-                            {!isRrSel && (
-                              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.45fr 0.75fr', gap: 8, alignItems: 'end' }}>
-                                <div>
-                                  <label style={labelStyle}>
-                                    {isEn ? 'Auto Reflux Ratio (R) Basis' : '자동 환류비(R) 탐색 기준'}
-                                  </label>
-                                  <select
-                                    value={effRMode === 'fixed_rr' ? 'auto_opt' : effRMode}
-                                    onChange={(e) =>
-                                      applyUnifiedConfigChange({
-                                        designRefluxMode: e.target.value as DistillRefluxDesignMode,
-                                      })
-                                    }
-                                    style={selectBaseStyle}
-                                  >
-                                    <option value="auto_opt">
-                                      {isEn
-                                        ? '✨ AI Multi-Candidate Min-TAC (1.15~1.80 × R_min)'
-                                        : '✨ AI 다중후보 TAC 최소 최적화 (1.15~1.80 × R_min)'}
-                                    </option>
-                                    <option value="r_mult">
-                                      {isEn
-                                        ? 'Specify R_min Multiplier (R = mult × R_min)'
-                                        : '최소환류비 배수 지정 (R = 배수 × R_min)'}
-                                    </option>
-                                  </select>
-                                </div>
-                                {effRMode === 'r_mult' && (
-                                  <div>
-                                    <label style={labelStyle}>{isEn ? 'R / R_min Mult.' : 'R / R_min 배수'}</label>
-                                    <BufferedNumberInput
-                                      syncKey={`${unitTag}-rmult`}
-                                      min={1.05}
-                                      max={5.0}
-                                      step={0.05}
-                                      value={config.designRefluxMult ?? 1.25}
-                                      onValueChange={(v) => applyUnifiedConfigChange({ designRefluxMult: v })}
-                                      onEnterRun={() => {
-                                        if (dofEvaluation.canRun) triggerRunSimulation();
-                                      }}
-                                      style={inputBaseStyle}
-                                    />
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                            {isEn ? 'ΔP / Thermo →' : 'ΔP·열역학 →'}
+                          </button>
+                        </div>
                       </div>
-
-                      {/* Step ②: 탑 운전 압력 (Tab 1 인라인 입력) */}
-                      <div
-                        style={{
-                          paddingTop: 9,
-                          borderTop: '1px solid #E2E8F0',
-                          display: 'grid',
-                          gridTemplateColumns: isMobile ? '1fr' : '1.1fr 1fr',
-                          gap: 8,
-                          alignItems: 'center',
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
-                            {isEn ? '② Column Operating Pressure (Top)' : '② 탑 운전 압력 (탑정 압력)'}
-                          </div>
-                          <div style={{ fontSize: 10.2, color: '#64748B', marginTop: 2, fontFamily: MONO }}>
-                            = {topBarA.toFixed(3)} barA ({topTorr.toFixed(0)} Torr) ·{' '}
-                            <button
-                              type="button"
-                              onClick={() => setLeftTab('pressure')}
-                              style={{
-                                border: 'none',
-                                background: 'transparent',
-                                padding: 0,
-                                color: '#2563EB',
-                                fontSize: 10.2,
-                                fontWeight: 800,
-                                cursor: 'pointer',
-                                textDecoration: 'underline',
-                              }}
-                            >
-                              {isEn ? 'ΔP / Thermo →' : 'ΔP·열역학 →'}
-                            </button>
-                          </div>
-                        </div>
-                        <div>
-                          <UnitNumberInput
-                            quantity="pressG"
-                            unitId={pressUnit}
-                            onUnitChange={setPressUnit}
-                            syncKey={`${unitTag}-press-spec`}
-                            minCanonical={-0.99}
-                            maxCanonical={35}
-                            value={topPress}
-                            onValueChange={(v) =>
-                              onChangeConfig({
-                                topPressKgcm2g: Math.max(-0.99, Math.min(35, v)),
-                              })
-                            }
-                            onEnterRun={() => {
-                              if (dofEvaluation.canRun) triggerRunSimulation();
-                            }}
-                            inputStyle={inputBaseStyle}
-                          />
-                        </div>
+                      <div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          unitId={pressUnit}
+                          onUnitChange={setPressUnit}
+                          syncKey={`${unitTag}-press-spec`}
+                          minCanonical={-0.99}
+                          maxCanonical={35}
+                          value={topPress}
+                          onValueChange={(v) =>
+                            onChangeConfig({
+                              topPressKgcm2g: Math.max(-0.99, Math.min(35, v)),
+                            })
+                          }
+                          onEnterRun={() => {
+                            if (dofEvaluation.canRun) triggerRunSimulation();
+                          }}
+                          inputStyle={inputBaseStyle}
+                        />
                       </div>
                     </div>
 
-                    {/* Step ③: 분리 목표 (탑정 · 탑저 순도) 헤더 + DOF 배지 & 초기화 */}
+                    {/* 설계·운전 변수 선택 헤더 + DOF 배지 & 초기화 */}
                     <div
                       style={{
                         display: 'flex',
@@ -4245,20 +3999,32 @@ export default function DistillationWorkbenchModal({
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
-                          {isEn ? '③ Separation Targets (Top & Bottoms Purity)' : '③ 분리 목표 (탑정 · 탑저 순도)'}
+                          {isEn ? 'Design & Operating Specs' : '설계 · 운전 변수 선택'}
                         </span>
                         <span
                           style={{
-                            padding: '1.5px 7px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            padding: '1.5px 8px',
                             borderRadius: 999,
                             background: dofBannerColors.bg,
                             border: `1px solid ${dofBannerColors.bd}`,
                             color: dofBannerColors.fg,
                             fontSize: 10,
-                            fontWeight: 900,
+                            fontWeight: 800,
                             fontFamily: MONO,
                           }}
                         >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              background: dofBannerColors.dot,
+                              display: 'inline-block',
+                            }}
+                          />
                           {isEn
                             ? `DOF ${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount}`
                             : `자유도 ${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount}`}
@@ -4272,7 +4038,7 @@ export default function DistillationWorkbenchModal({
                           borderRadius: 5,
                           border: '1px solid #CBD5E1',
                           background: '#FFFFFF',
-                          color: '#334155',
+                          color: '#475569',
                           fontSize: 10.2,
                           fontWeight: 800,
                           cursor: 'pointer',
@@ -4288,18 +4054,185 @@ export default function DistillationWorkbenchModal({
                         style={{
                           padding: '8px 11px',
                           borderRadius: 8,
-                          background: dofBannerColors.bg,
-                          border: `1.5px solid ${dofBannerColors.bd}`,
+                          background: '#F8FAFC',
+                          border: '1px solid #CBD5E1',
                           fontSize: 10.8,
                           fontWeight: 700,
-                          color: dofBannerColors.fg,
+                          color: '#0F172A',
                           lineHeight: 1.4,
                         }}
                       >
-                        <div style={{ fontWeight: 900, marginBottom: 2 }}>{dofEvaluation.headline}</div>
-                        <div style={{ color: '#1E293B' }}>{dofEvaluation.hint}</div>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 900, marginBottom: 2 }}>
+                          <span
+                            style={{
+                              width: 7,
+                              height: 7,
+                              borderRadius: '50%',
+                              background: dofBannerColors.dot,
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>{dofEvaluation.headline}</span>
+                        </div>
+                        <div style={{ color: '#475569' }}>{dofEvaluation.hint}</div>
                       </div>
                     )}
+
+                    {/* 선택 옵션 카드: 단수 (N · 피드단 Nf) 직접 지정 (미체크 시 자동 산출) */}
+                    <div
+                      style={{
+                        ...cardStyle,
+                        border: isFixedStages ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                        background: isFixedStages ? '#FFFFFF' : '#F8FAFC',
+                      }}
+                    >
+                      <div
+                        onClick={() => toggleFixedStages(!isFixedStages)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                          cursor: 'pointer',
+                          marginBottom: isFixedStages ? 9 : 0,
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input
+                            type="checkbox"
+                            checked={isFixedStages}
+                            onChange={(e) => toggleFixedStages(e.target.checked)}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E3A8A' }}
+                          />
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 900,
+                              color: isFixedStages ? '#0F172A' : '#334155',
+                            }}
+                          >
+                            {isEn ? 'Specify Stages (N · Feed Nf)' : '단수 (N · 피드단 Nf) 직접 지정'}
+                          </span>
+                        </div>
+                        {isFixedStages ? (
+                          <span
+                            style={{
+                              padding: '2px 8px',
+                              borderRadius: 999,
+                              background: '#1E3A8A',
+                              color: '#FFFFFF',
+                              fontSize: 10,
+                              fontWeight: 800,
+                            }}
+                          >
+                            {isEn ? '✓ Fixed' : '✓ 직접 지정'}
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: '#64748B',
+                            }}
+                          >
+                            {isEn
+                              ? 'Auto-sized from purity targets when unchecked'
+                              : '미체크 시 분리 목표 기준 자동 산출'}
+                          </span>
+                        )}
+                      </div>
+
+                      {isFixedStages && (
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
+                            gap: 8,
+                            padding: '8px 10px',
+                            borderRadius: 7,
+                            background: '#F8FAFC',
+                            border: '1px solid #E2E8F0',
+                          }}
+                        >
+                          <div>
+                            <label style={labelStyle}>
+                              {isActualMurphreeUi
+                                ? isEn ? 'Total Actual Stages (N)' : '총 실제단수 (N)'
+                                : isEn ? 'Total Theoretical Stages (N)' : '총 이론단수 (N)'}
+                            </label>
+                            <BufferedNumberInput
+                              syncKey={`${unitTag}-nstages-spec`}
+                              min={4}
+                              max={200}
+                              step={1}
+                              value={N}
+                              onValueChange={(rawN) => {
+                                const nextN = Math.max(4, Math.min(200, Math.round(rawN || 24)));
+                                applyUnifiedConfigChange({
+                                  totalStages: nextN,
+                                  feedStage: Math.min(nextN - 1, Math.max(2, primaryFeedStage)),
+                                  ...(config.sideCut
+                                    ? {
+                                        sideCut: {
+                                          ...config.sideCut,
+                                          stage: Math.max(2, Math.min(nextN - 1, config.sideCut.stage)),
+                                        },
+                                      }
+                                    : {}),
+                                });
+                              }}
+                              onEnterRun={() => {
+                                if (dofEvaluation.canRun) triggerRunSimulation();
+                              }}
+                              style={inputBaseStyle}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                              <label style={{ ...labelStyle, marginBottom: 0 }}>
+                                {isEn ? `Feed Stage (Nf · 2~${N - 1})` : `피드 투입단 (Nf · 2~${N - 1})`}
+                              </label>
+                              {recFeedStage !== primaryFeedStage && (
+                                <button
+                                  type="button"
+                                  onClick={() => applyUnifiedConfigChange({ feedStage: recFeedStage })}
+                                  style={{
+                                    padding: '1px 6px',
+                                    borderRadius: 4,
+                                    border: '1px solid #CBD5E1',
+                                    background: '#FFFFFF',
+                                    color: '#1E3A8A',
+                                    fontSize: 9.8,
+                                    fontWeight: 800,
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  {isEn ? `Opt. ${recFeedStage}` : `최적 ${recFeedStage}단`}
+                                </button>
+                              )}
+                            </div>
+                            <BufferedNumberInput
+                              syncKey={`${unitTag}-pfeed-spec`}
+                              min={2}
+                              max={N - 1}
+                              step={1}
+                              value={primaryFeedStage}
+                              onValueChange={(rawF) =>
+                                applyUnifiedConfigChange({
+                                  feedStage: Math.max(2, Math.min(N - 1, Math.round(rawF || 10))),
+                                })
+                              }
+                              onEnterRun={() => {
+                                if (dofEvaluation.canRun) triggerRunSimulation();
+                              }}
+                              style={inputBaseStyle}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
                     {/* 후보 ③: 탑정 제품 순도·회수율 */}
                     <div style={slotCardBoxStyle(isTopSel, 'top_spec')}>
@@ -4343,9 +4276,9 @@ export default function DistillationWorkbenchModal({
                                   style={{
                                     padding: '5px 6px',
                                     borderRadius: 6,
-                                    border: uiTopMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                    background: uiTopMetric === m.id ? '#EFF6FF' : '#FFFFFF',
-                                    color: uiTopMetric === m.id ? '#1D4ED8' : '#475569',
+                                    border: uiTopMetric === m.id ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                                    background: uiTopMetric === m.id ? '#1E3A8A' : '#FFFFFF',
+                                    color: uiTopMetric === m.id ? '#FFFFFF' : '#475569',
                                     fontSize: 10.5,
                                     fontWeight: 800,
                                     cursor: 'pointer',
@@ -4465,9 +4398,9 @@ export default function DistillationWorkbenchModal({
                                   style={{
                                     padding: '5px 6px',
                                     borderRadius: 6,
-                                    border: uiBotMetric === m.id ? '1.5px solid #2563EB' : '1px solid #CBD5E1',
-                                    background: uiBotMetric === m.id ? '#EFF6FF' : '#FFFFFF',
-                                    color: uiBotMetric === m.id ? '#1D4ED8' : '#475569',
+                                    border: uiBotMetric === m.id ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                                    background: uiBotMetric === m.id ? '#1E3A8A' : '#FFFFFF',
+                                    color: uiBotMetric === m.id ? '#FFFFFF' : '#475569',
                                     fontSize: 10.5,
                                     fontWeight: 800,
                                     cursor: 'pointer',
@@ -5638,16 +5571,10 @@ export default function DistillationWorkbenchModal({
                   borderRadius: 7,
                   border: !dofEvaluation.canRun
                     ? '1px solid #64748B'
-                    : isSimDirty
-                    ? '1.5px solid #FDE047'
-                    : '1px solid #60A5FA',
+                    : '1px solid #3B82F6',
                   background: !dofEvaluation.canRun
                     ? '#475569'
-                    : isRunningFeedback
-                    ? '#1D4ED8'
-                    : isSimDirty
-                    ? '#D97706'
-                    : '#2563EB',
+                    : '#1E3A8A',
                   color: '#FFFFFF',
                   fontSize: 12,
                   fontWeight: 900,
