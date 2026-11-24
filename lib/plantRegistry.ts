@@ -187,11 +187,25 @@ export function isSimulatorOnlyUser(
   );
 }
 
+/**
+ * 실공정 또는 실공정 장치가 일부 포함된 공장 ID는 대표(관리자) 계정 전용으로 영구 잠금.
+ * - clorsim / clorsim_sim (PLANT 01 전해 통합공정)
+ * - cms_plant (PLANT 04 클로로메탄 CMS)
+ */
+export const OWNER_ONLY_PLANTS = new Set<string>([
+  'clorsim',
+  'clorsim_sim',
+  'cms_plant',
+]);
+
 export function isPlantAllowed(
   plantId: string,
   user?: { role?: string; allowed_plants?: string[] | null } | null
 ): boolean {
   if (plantId === 'new_builder' || plantId === 'classic_sim') return true;
+  if (OWNER_ONLY_PLANTS.has(plantId)) {
+    return user?.role === 'admin';
+  }
   if (!user) return true;
   if (user.role === 'admin') return true;
   if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return true;

@@ -58,6 +58,7 @@ import {
   getClassicPlantPresetOptions,
   getPlantSheetsByGroup,
 } from '@/lib/classicPlantPresets';
+import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
 import {
   SaveArchiveIcon,
   FolderOpenIcon,
@@ -921,10 +922,22 @@ export default function ClassicSimulatorPage() {
   const [activeMdiKey, setActiveMdiKey] = useState<string>('pfd');
   const plantPresets = useMemo(
     () =>
-      getClassicPlantPresetOptions().filter(opt =>
-        isPlantAllowed(PLANT_GROUP_TO_ID[opt.plantGroup], user)
-      ),
-    [user]
+      getClassicPlantPresetOptions()
+        .filter(opt =>
+          opt.plantGroup === 'public_mini'
+            ? true
+            : isPlantAllowed(PLANT_GROUP_TO_ID[opt.plantGroup], user)
+        )
+        .map(opt =>
+          isEn && (opt.plantLabelEn || opt.titleEn)
+            ? {
+                ...opt,
+                plantLabel: opt.plantLabelEn || opt.plantLabel,
+                title: opt.titleEn || opt.title,
+              }
+            : opt
+        ),
+    [user, isEn]
   );
 
   const [isSimRunning, setIsSimRunning] = useState<boolean>(false);
@@ -1390,6 +1403,40 @@ export default function ClassicSimulatorPage() {
   const handleLoadPlantPreset = useCallback(
     async (presetKey: string) => {
       const [groupRaw, sheetId] = presetKey.split(':');
+      if (groupRaw === 'public_mini') {
+        const ex = PUBLIC_MINI_EXAMPLES.find(p => p.id === sheetId);
+        if (!ex) return;
+        const nextDefs: FlowNodeDef[] = ex.nodes.map(({ position: _pos, ...rest }) => ({
+          ...rest,
+          params: { ...rest.params },
+        }));
+        const nextEdges: FlowEdgeDef[] = ex.edges.map(e => ({ ...e }));
+        const nextComps = mergeFeedComponents(nextDefs, []);
+        const nextMethod: SimPropertyMethod = ex.recommendedMethod ?? 'AUTO';
+        skipDirtyRef.current = true;
+        setSimDefs(nextDefs);
+        setFlowEdges(nextEdges);
+        setActiveComponents(nextComps);
+        if (nextMethod !== thermoMethod) {
+          setThermoMethod(nextMethod);
+        }
+        setRfNodes(
+          ex.nodes.map((n, idx) => ({
+            id: n.id,
+            type: 'classicBlock',
+            position: n.position ?? { x: 80 + idx * 170, y: 140 },
+            data: { tag: n.tag, modelName: getModelName(n.unitType), unitType: n.unitType },
+          }))
+        );
+        runSimulation(nextDefs, nextEdges, nextMethod, nextComps, tearMethod);
+        setActiveMdiKey('pfd');
+        setBottomView('pfd');
+        setSelectedKind('block');
+        setSelectedId(nextDefs[0]?.id ?? null);
+        setActiveCaseTitle(null, 'classic_sim');
+        setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
+        return;
+      }
       const group = (
         groupRaw === 'hcl1A' || groupRaw === 'ech' || groupRaw === 'cms' || groupRaw === 'mdi'
           ? groupRaw

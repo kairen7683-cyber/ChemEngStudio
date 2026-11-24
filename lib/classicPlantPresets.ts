@@ -10,6 +10,7 @@ import { createInitialEchHierarchySheets } from '@/lib/calculations/echPlantHier
 import { createInitialCmsHierarchySheets } from '@/lib/calculations/cmsPlantHierarchy';
 import { createInitialMdiHierarchySheets } from '@/lib/calculations/mdiPlantHierarchy';
 import type { FlowsheetSolveResult } from '@/lib/calculations/flowsheetSolver';
+import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
 
 export interface BaselineEntryPayload {
   simDefs: FlowNodeDef[];
@@ -32,10 +33,12 @@ export interface ConvergedBaselineBundle {
 
 export interface ClassicPlantPresetOption {
   presetKey: string;
-  plantGroup: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi';
+  plantGroup: 'public_mini' | 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi';
   plantLabel: string;
+  plantLabelEn?: string;
   sheetId: string;
   title: string;
+  titleEn?: string;
 }
 
 let cachedBundle: ConvergedBaselineBundle | null = null;
@@ -81,6 +84,17 @@ export function getClassicPlantPresetOptions(): ClassicPlantPresetOption[] {
     { group: 'mdi', plantLabel: 'PLANT 05 · MDI 통합 공정' },
   ];
   const out: ClassicPlantPresetOption[] = [];
+  for (const ex of PUBLIC_MINI_EXAMPLES) {
+    out.push({
+      presetKey: `public_mini:${ex.id}`,
+      plantGroup: 'public_mini',
+      plantLabel: '공개 미니 예제 (교과서 표준)',
+      plantLabelEn: 'Public Mini Examples (Textbook)',
+      sheetId: ex.id,
+      title: ex.btnLabel,
+      titleEn: ex.btnLabelEn,
+    });
+  }
   for (const g of groups) {
     const sheets = getPlantSheetsByGroup(g.group);
     for (const [sid, sh] of Object.entries(sheets)) {
