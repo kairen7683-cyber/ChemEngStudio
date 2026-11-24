@@ -9235,66 +9235,51 @@ export function FlowsheetWorkspace({
                 selectedDef.unitType !== 'feed' &&
                 selectedDef.unitType !== 'product' &&
                 selectedDef.unitType !== 'mixer' &&
-                selectedDef.unitType !== 'splitter' && (
-                  <div
-                    style={{
-                      padding: '8px 9px',
-                      borderRadius: 6,
-                      background: '#F8FAFC',
-                      border: '1px solid #E2E8F0',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 6,
-                    }}
-                  >
-                    <div style={{ fontSize: 10, fontWeight: 900, color: '#0F172A' }}>
-                      {isEn ? 'Calculation Fidelity Mode (Per Unit)' : '해석 정밀도 모드 (장치별 독립 전환)'}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-                      <button
-                        type="button"
-                        onClick={() => updateParam('calcMode', 'simple')}
+                selectedDef.unitType !== 'splitter' && (() => {
+                  const isRig = (selectedDef.params.calcMode ?? 'simple') === 'rigorous';
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => updateParam('calcMode', isRig ? 'simple' : 'rigorous')}
+                      title={
+                        isEn
+                          ? 'Toggle Rigorous Thermodynamics (PR-EOS, Pitzer, 3-Zone phase change, Kremser) vs. Fast Balance'
+                          : '정밀 열역학(PR-EOS · Pitzer · 3-Zone 상변화 · Kremser) / 기본 발란스 전환'
+                      }
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        border: isRig ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                        background: isRig ? '#EFF6FF' : '#F8FAFC',
+                        color: isRig ? '#1E3A8A' : '#334155',
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                      }}
+                    >
+                      <span>
+                        {isEn ? 'Rigorous Thermodynamics' : '정밀 열역학 해석'}
+                      </span>
+                      <span
                         style={{
-                          padding: '6px 6px',
-                          borderRadius: 5,
-                          fontSize: 11,
+                          padding: '1.5px 7px',
+                          borderRadius: 999,
+                          fontSize: 9.8,
                           fontWeight: 800,
-                          cursor: 'pointer',
-                          border: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
-                          background: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#1E3A8A' : '#FFFFFF',
-                          color: (selectedDef.params.calcMode ?? 'simple') === 'simple' ? '#FFFFFF' : '#1E293B',
+                          background: isRig ? '#1E3A8A' : '#E2E8F0',
+                          color: isRig ? '#FFFFFF' : '#475569',
                         }}
                       >
-                        {isEn ? 'Simple Balance' : '간편 발란스'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateParam('calcMode', 'rigorous')}
-                        style={{
-                          padding: '6px 6px',
-                          borderRadius: 5,
-                          fontSize: 11,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          border: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
-                          background: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#1E3A8A' : '#FFFFFF',
-                          color: (selectedDef.params.calcMode ?? 'simple') === 'rigorous' ? '#FFFFFF' : '#1E293B',
-                        }}
-                      >
-                        {isEn ? 'Rigorous Thermo' : '정밀 열역학'}
-                      </button>
-                    </div>
-                    <div style={{ fontSize: 10, color: '#475569', lineHeight: 1.35 }}>
-                      {(selectedDef.params.calcMode ?? 'simple') === 'rigorous'
-                        ? (isEn
-                          ? 'Applies PR-EOS real gas, Pitzer electrolyte activity, Nernst-Tafel cell voltage, 3-Zone phase change, and Kremser multi-stage equilibrium.'
-                          : 'PR-EOS 실재기체 · Pitzer 전해질 활동도 · Nernst-Tafel 셀전압 · 3-Zone 상변화 · Kremser 다단 평형이 반영됩니다.')
-                        : (isEn
-                          ? 'Fast mass & heat balance mode suitable for conceptual design.'
-                          : '빠른 기본 물질·열수지 모드로 직관적인 개념 설계에 적합합니다.')}
-                    </div>
-                  </div>
-                )}
+                        {isRig ? (isEn ? 'ON' : '적용 중') : (isEn ? 'Basic' : '기본')}
+                      </span>
+                    </button>
+                  );
+                })()}
 
               {/* ── 0) 도면 전용 장치 ── */}
               {isVisualOnlyUnit(selectedDef.unitType) && (
@@ -9676,9 +9661,6 @@ export function FlowsheetWorkspace({
                       gap: 5,
                     }}
                   >
-                    <div style={{ fontSize: 9.8, fontWeight: 800, color: '#475569' }}>
-                      {isEn ? 'Heat Exchanger Workbench (T-Q Pinch · TEMA / Plate · Drawing)' : '내장 열교환기 워크벤치 (T-Q 핀치 · TEMA 다관형 / 쉐브론 판형 · 도면)'}
-                    </div>
                     <button
                       type="button"
                       onClick={() => {
@@ -9687,37 +9669,22 @@ export function FlowsheetWorkspace({
                       }}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
+                        padding: '8px 10px',
                         borderRadius: 6,
                         border: '1px solid #1E3A8A',
                         background: '#1E3A8A',
                         color: '#FFFFFF',
-                        fontSize: 11,
+                        fontSize: 11.2,
                         fontWeight: 800,
                         cursor: 'pointer',
                       }}
                     >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><HexCircleIcon size={12} /> {isEn ? '① Heat Balance & T-Q Profile →' : '① 열수지 · 상변화 T-Q 프로파일 열기 →'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHxModalInitialView('mechanical');
-                        setHxModalNodeId(selectedDef.id);
-                      }}
-                      style={{
-                        width: '100%',
-                        padding: '7px 10px',
-                        borderRadius: 6,
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#1E293B',
-                        fontSize: 11,
-                        fontWeight: 800,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><PfdSchematicIcon size={12} /> {isEn ? '② TEMA / Plate Sizing & Hydraulics →' : '② TEMA/판형 사이징 · 수력학 · 도면 설계 →'}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <HexCircleIcon size={12} />{' '}
+                        {isEn
+                          ? 'Heat Exchanger Design · T-Q · TEMA →'
+                          : '열교환기 상세 설계 · T-Q · TEMA 도면 →'}
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -10006,51 +9973,33 @@ export function FlowsheetWorkspace({
                       )}
                     </div>
 
-                    {/* 통합 2-탭 워크벤치 실행 버튼 (사이드패널 내 중복 버튼 없음) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDistillModalInitialView('simulation');
-                          setDistillModalNodeId(selectedDef.id);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '8px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #1E3A8A',
-                          background: '#1E3A8A',
-                          color: '#FFFFFF',
-                          fontSize: 11,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><SlidersParamIcon size={12} /> {isEn ? '① Simulation & Profiles →' : '① 시뮬레이션 · 프로파일 설정 →'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDistillModalInitialView('internals');
-                          setDistillModalNodeId(selectedDef.id);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '8px 10px',
-                          borderRadius: 6,
-                          border: '1px solid #CBD5E1',
-                          background: '#FFFFFF',
-                          color: '#1E293B',
-                          fontSize: 11,
-                          fontWeight: 800,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}><ColumnInternalIcon size={12} /> {isEn ? '② Column Sizing & Internals →' : '② 컬럼 사이징 · 인터널 설계 →'}</span>
-                      </button>
-                    </div>
+                    {/* 통합 워크벤치 단일 실행 버튼 */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDistillModalInitialView('simulation');
+                        setDistillModalNodeId(selectedDef.id);
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '8px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #1E3A8A',
+                        background: '#1E3A8A',
+                        color: '#FFFFFF',
+                        fontSize: 11.2,
+                        fontWeight: 800,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                        <ColumnInternalIcon size={12} />{' '}
+                        {isEn
+                          ? 'Distillation Design · Profiles · Internals →'
+                          : '증류탑 상세 설계 · 프로파일 · 인터널 도면 →'}
+                      </span>
+                    </button>
                   </div>
                 );
               })()}
