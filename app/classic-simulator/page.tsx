@@ -1407,8 +1407,9 @@ export default function ClassicSimulatorPage() {
       if (groupRaw === 'public_mini') {
         const ex = PUBLIC_MINI_EXAMPLES.find(p => p.id === sheetId);
         if (!ex) return;
-        const nextDefs: FlowNodeDef[] = ex.nodes.map(({ position: _pos, ...rest }) => ({
+        const nextDefs: FlowNodeDef[] = ex.nodes.map(({ position: _pos, nameEn, ...rest }) => ({
           ...rest,
+          name: isEn ? (nameEn || rest.name) : rest.name,
           params: { ...rest.params },
         }));
         const nextEdges: FlowEdgeDef[] = ex.edges.map(e => ({ ...e }));

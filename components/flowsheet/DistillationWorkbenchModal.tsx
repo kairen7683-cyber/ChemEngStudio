@@ -37,9 +37,11 @@ import {
 import {
   COMP_META,
   SIM_COMPS,
+  getCompLabel,
   type SimCompKey,
 } from '@/lib/calculations/flowsheetSolver';
 import { COMP_CATALOG_META } from '@/lib/calculations/componentCatalog';
+import type { AppLang } from '@/lib/i18n/uiText';
 import {
   autoFixDistillationSimulationAsync,
   fetchOptionalGeminiAdvice,
@@ -47,9 +49,9 @@ import {
   type EquipmentAutoFixResult,
 } from '@/lib/calculations/aiEquipmentAdvisor';
 
-function formatCompOption(ck: SimCompKey): string {
+function formatCompOption(ck: SimCompKey, lang: AppLang = 'ko'): string {
   const formula = COMP_META[ck]?.formula ?? ck;
-  const rawLabel = COMP_META[ck]?.label ?? ck;
+  const rawLabel = getCompLabel(ck, lang);
   if (rawLabel.startsWith(`${formula} (`) && rawLabel.endsWith(')')) {
     const inner = rawLabel.slice(formula.length + 2, -1);
     return `${formula} · ${inner}`;
@@ -57,8 +59,8 @@ function formatCompOption(ck: SimCompKey): string {
   return rawLabel === formula ? formula : `${formula} · ${rawLabel}`;
 }
 
-function formatCompOptionWithBp(ck: SimCompKey): string {
-  const base = formatCompOption(ck);
+function formatCompOptionWithBp(ck: SimCompKey, lang: AppLang = 'ko'): string {
+  const base = formatCompOption(ck, lang);
   const tb = COMP_CATALOG_META[ck]?.tbC;
   return typeof tb === 'number' && Number.isFinite(tb) ? `${base} (${tb.toFixed(1)}°C)` : base;
 }
@@ -324,14 +326,21 @@ export default function DistillationWorkbenchModal({
     setAiReport(null);
     setSelectedAiOptionId(null);
     try {
-      const fix = await autoFixDistillationSimulationAsync(feeds, config, (step, total, label) => {
-        setAiStepLabel(`(${step}/${total}) ${label}`);
-      });
+      const fix = await autoFixDistillationSimulationAsync(
+        feeds,
+        config,
+        (step, total, label) => {
+          setAiStepLabel(`(${step}/${total}) ${label}`);
+        },
+        isEn ? 'en' : 'ko'
+      );
       if (Object.keys(fix.patch).length > 0) {
         onChangeConfig(fix.patch);
       }
-      const prompt = `[증류탑 ${unitTag}] N=${fix.solvedAfter.totalStagesUsed}단, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, 상태=${fix.solvedAfter.diagnostics.badgeText}. 조치: ${fix.actionsTaken.join(', ')}`;
-      const geminiNote = await fetchOptionalGeminiAdvice(prompt);
+      const prompt = isEn
+        ? `[Distillation Column ${unitTag}] N=${fix.solvedAfter.totalStagesUsed} stages, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, Status=${fix.solvedAfter.diagnostics.badgeText}. Actions: ${fix.actionsTaken.join(', ')}. Respond concisely in English.`
+        : `[증류탑 ${unitTag}] N=${fix.solvedAfter.totalStagesUsed}단, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, 상태=${fix.solvedAfter.diagnostics.badgeText}. 조치: ${fix.actionsTaken.join(', ')}`;
+      const geminiNote = await fetchOptionalGeminiAdvice(prompt, isEn ? 'en' : 'ko');
       setAiReport({ result: fix, geminiNote });
       setSelectedAiOptionId(fix.distillOptions?.[0]?.id ?? null);
       if (Object.keys(fix.patch).length > 0 && onRunSimRef.current) {
@@ -973,7 +982,7 @@ export default function DistillationWorkbenchModal({
     return {
       id: 'SC-1',
       enabled,
-      label: '사이드컷 S',
+      label: isEn ? 'Side-Cut S' : '사이드컷 S',
       stage: Math.max(2, Math.min(rawTotal - 2, Math.round(rawTotal * 0.3))),
       autoOptimizeStage: false,
       phase: 'liquid',
@@ -1007,7 +1016,7 @@ export default function DistillationWorkbenchModal({
         <optgroup label={isEn ? 'Feed Components (by BP)' : '현재 유입 성분 (비점 순)'}>
           {feedSortedComps.map((ck) => (
             <option key={ck} value={ck}>
-              {formatCompOptionWithBp(ck)}
+              {formatCompOptionWithBp(ck, lang)}
             </option>
           ))}
         </optgroup>
@@ -1015,7 +1024,7 @@ export default function DistillationWorkbenchModal({
       <optgroup label={isEn ? 'Other Simulation Components' : '기타 시뮬레이션 성분'}>
         {otherSortedComps.map((ck) => (
           <option key={ck} value={ck}>
-            {formatCompOptionWithBp(ck)}
+            {formatCompOptionWithBp(ck, lang)}
           </option>
         ))}
       </optgroup>

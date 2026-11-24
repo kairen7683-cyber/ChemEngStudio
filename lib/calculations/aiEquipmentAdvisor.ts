@@ -175,8 +175,10 @@ export function autoFixHeatExchanger(
   procOutStreams: SolvedStream[],
   utilInStreams: SolvedStream[],
   utilOutStreams: SolvedStream[],
-  unitRes?: SolvedUnitResult
+  unitRes?: SolvedUnitResult,
+  lang: 'ko' | 'en' = 'ko'
 ): EquipmentAutoFixResult<HxDesignParams, HxDesignSolveResult> {
+  const isEn = lang === 'en';
   const solvedBefore = solveHeatExchangerDesign(
     unitType,
     params,
@@ -191,32 +193,44 @@ export function autoFixHeatExchanger(
   const rootCauses: string[] = [];
   if (solvedBefore.dpTubeBar > 0.7) {
     rootCauses.push(
-      `튜브측 차압 과다 (${solvedBefore.dpTubeBar.toFixed(2)} bar > 0.70 bar): ΔP는 (패스 수)³·(관길이)에 비례하므로 튜브 패스 수 감소·관길이 단축·관경(OD) 상향이 핵심입니다.`
+      isEn
+        ? `Excessive tube-side ΔP (${solvedBefore.dpTubeBar.toFixed(2)} bar > 0.70 bar): ΔP scales with (passes)³·(tube length); reducing tube passes, shortening tubes, or increasing OD is key.`
+        : `튜브측 차압 과다 (${solvedBefore.dpTubeBar.toFixed(2)} bar > 0.70 bar): ΔP는 (패스 수)³·(관길이)에 비례하므로 튜브 패스 수 감소·관길이 단축·관경(OD) 상향이 핵심입니다.`
     );
   }
   if (solvedBefore.dpShellBar > 0.7) {
     rootCauses.push(
-      `쉘측 차압 과다 (${solvedBefore.dpShellBar.toFixed(2)} bar > 0.70 bar): 배플 간격비(B/Ds)와 배플 컷(%)이 좁아 교차류 저항이 증가했습니다.`
+      isEn
+        ? `Excessive shell-side ΔP (${solvedBefore.dpShellBar.toFixed(2)} bar > 0.70 bar): tight baffle spacing ratio (B/Ds) and baffle cut (%) increased crossflow resistance.`
+        : `쉘측 차압 과다 (${solvedBefore.dpShellBar.toFixed(2)} bar > 0.70 bar): 배플 간격비(B/Ds)와 배플 컷(%)이 좁아 교차류 저항이 증가했습니다.`
     );
   }
   if (solvedBefore.vibRatio > 0.8) {
     rootCauses.push(
-      `유체유발 진동(FIV) 위험 (${(solvedBefore.vibRatio * 100).toFixed(0)}% ≥ 80%): 배플 스팬 유속이 과도하므로 배플 간격·유로 각도 조정이 필요합니다.`
+      isEn
+        ? `Flow-induced vibration (FIV) risk (${(solvedBefore.vibRatio * 100).toFixed(0)}% ≥ 80%): excessive baffle-span velocity requires adjusting baffle spacing and pitch angle.`
+        : `유체유발 진동(FIV) 위험 (${(solvedBefore.vibRatio * 100).toFixed(0)}% ≥ 80%): 배플 스팬 유속이 과도하므로 배플 간격·유로 각도 조정이 필요합니다.`
     );
   }
   if (solvedBefore.ftFactor < 0.78) {
     rootCauses.push(
-      `LMTD 보정계수 저하 (Ft=${solvedBefore.ftFactor.toFixed(3)} < 0.78): 온도 교차(Temperature Cross)가 발생해 직렬 쉘 수 증가 또는 1-패스 전환이 필요합니다.`
+      isEn
+        ? `Low LMTD correction factor (Ft=${solvedBefore.ftFactor.toFixed(3)} < 0.78): temperature cross occurred; add shells in series or switch to 1-pass.`
+        : `LMTD 보정계수 저하 (Ft=${solvedBefore.ftFactor.toFixed(3)} < 0.78): 온도 교차(Temperature Cross)가 발생해 직렬 쉘 수 증가 또는 1-패스 전환이 필요합니다.`
     );
   }
   if (solvedBefore.actualOverdesignPct < 0) {
     rootCauses.push(
-      `전열면적 부족 (여유율 ${solvedBefore.actualOverdesignPct.toFixed(1)}% < 0%): 정격(Rating) 기하 면적이 요구 부하보다 작습니다.`
+      isEn
+        ? `Insufficient heat transfer area (margin ${solvedBefore.actualOverdesignPct.toFixed(1)}% < 0%): rated geometry area is smaller than required duty.`
+        : `전열면적 부족 (여유율 ${solvedBefore.actualOverdesignPct.toFixed(1)}% < 0%): 정격(Rating) 기하 면적이 요구 부하보다 작습니다.`
     );
   }
   if (solvedBefore.material.code !== solvedBefore.recommendedMaterial) {
     rootCauses.push(
-      `유체 부식성 대비 재질 미스매치 (${solvedBefore.material.code} → 권장 ${solvedBefore.recommendedMaterial}).`
+      isEn
+        ? `Material mismatch for fluid corrosivity (${solvedBefore.material.code} → recommended ${solvedBefore.recommendedMaterial}).`
+        : `유체 부식성 대비 재질 미스매치 (${solvedBefore.material.code} → 권장 ${solvedBefore.recommendedMaterial}).`
     );
   }
   if (rootCauses.length === 0 && solvedBefore.diagnostics.length > 0) {
@@ -236,18 +250,18 @@ export function autoFixHeatExchanger(
     if (utilInStreams.length === 0) {
       const utilityCandidates: Array<{ pPatch: Partial<FlowUnitParams>; label: string }> = isCooling
         ? [
-            { pPatch: { refrigerantPreset: 'cw' }, label: '냉각수(CW 28→36°C)로 유틸리티 전환' },
-            { pPatch: { refrigerantPreset: 'chw' }, label: '칠드워터(CHW 7→12°C)로 냉매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'meg_brine' }, label: '글리콜 브라인(-15→-8°C)으로 냉매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'brine_m20' }, label: '심냉 브라인(-25→-18°C)으로 냉매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'r404a_m32' }, label: 'R-404A 증발냉매(-35→-30°C)로 냉매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'freon_m35' }, label: 'R-507A 저온 증발냉매(-38→-33°C)로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'cw' }, label: isEn ? 'Switched utility to Cooling Water (CW 28→36°C)' : '냉각수(CW 28→36°C)로 유틸리티 전환' },
+            { pPatch: { refrigerantPreset: 'chw' }, label: isEn ? 'Auto-switched refrigerant to Chilled Water (CHW 7→12°C)' : '칠드워터(CHW 7→12°C)로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'meg_brine' }, label: isEn ? 'Auto-switched refrigerant to Glycol Brine (-15→-8°C)' : '글리콜 브라인(-15→-8°C)으로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'brine_m20' }, label: isEn ? 'Auto-switched refrigerant to Low-Temp Brine (-25→-18°C)' : '심냉 브라인(-25→-18°C)으로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'r404a_m32' }, label: isEn ? 'Auto-switched refrigerant to R-404A (-35→-30°C)' : 'R-404A 증발냉매(-35→-30°C)로 냉매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'freon_m35' }, label: isEn ? 'Auto-switched refrigerant to R-507A (-38→-33°C)' : 'R-507A 저온 증발냉매(-38→-33°C)로 냉매 자동 전환' },
           ]
         : [
-            { pPatch: { refrigerantPreset: 'steam_lp' }, label: '저압 스팀(LP Steam 145°C)으로 열매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 185, utilOutTempC: 184, utilCp: 1.0 }, label: '중압 스팀(MP Steam 185°C)으로 열매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 235, utilOutTempC: 234, utilCp: 1.0 }, label: '고압 스팀(HP Steam 235°C)으로 열매 자동 전환' },
-            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 290, utilOutTempC: 260, utilCp: 0.56 }, label: '고온 열매체유(Therminol 66, 290→260°C)로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'steam_lp' }, label: isEn ? 'Auto-switched heating medium to LP Steam (145°C)' : '저압 스팀(LP Steam 145°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 185, utilOutTempC: 184, utilCp: 1.0 }, label: isEn ? 'Auto-switched heating medium to MP Steam (185°C)' : '중압 스팀(MP Steam 185°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 235, utilOutTempC: 234, utilCp: 1.0 }, label: isEn ? 'Auto-switched heating medium to HP Steam (235°C)' : '고압 스팀(HP Steam 235°C)으로 열매 자동 전환' },
+            { pPatch: { refrigerantPreset: 'custom', utilInTempC: 290, utilOutTempC: 260, utilCp: 0.56 }, label: isEn ? 'Auto-switched heating medium to Thermal Oil (Therminol 66, 290→260°C)' : '고온 열매체유(Therminol 66, 290→260°C)로 열매 자동 전환' },
           ];
 
       for (const cand of utilityCandidates) {
@@ -268,7 +282,9 @@ export function autoFixHeatExchanger(
           step0Res = solvedCand;
           step0Score = sc;
           step0Actions.push(
-            `${cand.label} (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${solvedCand.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${solvedCand.areaProvM2.toFixed(1)} m²)`
+            isEn
+              ? `${cand.label} (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${solvedCand.minPinchDeltaTC.toFixed(1)}°C, Area ${solvedBefore.areaProvM2.toFixed(0)}→${solvedCand.areaProvM2.toFixed(1)} m²)`
+              : `${cand.label} (Pinch ΔT ${solvedBefore.minPinchDeltaTC.toFixed(1)}→${solvedCand.minPinchDeltaTC.toFixed(1)}°C, 면적 ${solvedBefore.areaProvM2.toFixed(0)}→${solvedCand.areaProvM2.toFixed(1)} m²)`
           );
           if (solvedCand.minPinchDeltaTC >= 5.0) break;
         }
@@ -284,11 +300,15 @@ export function autoFixHeatExchanger(
       const procOut = step0Res.processSide.outTempC;
       if (isCooling && utilIn >= procOut - 4) {
         step0Actions.push(
-          `외부 연결 냉매 공급온도(${utilIn.toFixed(1)}°C)가 공정 목표온도(${procOut.toFixed(1)}°C)에 너무 가깝습니다. PFD 유틸리티 피드 온도를 칠드워터(7°C) 이하로 낮추고 유량을 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 증대하세요 (현재 ${curFlowKgH.toLocaleString()} kg/h).`
+          isEn
+            ? `External coolant supply temp (${utilIn.toFixed(1)}°C) is too close to process target (${procOut.toFixed(1)}°C). Lower PFD utility feed temp to CHW (≤7°C) and increase flow to ≥ ${reqFlowKgH.toLocaleString()} kg/h (current: ${curFlowKgH.toLocaleString()} kg/h).`
+            : `외부 연결 냉매 공급온도(${utilIn.toFixed(1)}°C)가 공정 목표온도(${procOut.toFixed(1)}°C)에 너무 가깝습니다. PFD 유틸리티 피드 온도를 칠드워터(7°C) 이하로 낮추고 유량을 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 증대하세요 (현재 ${curFlowKgH.toLocaleString()} kg/h).`
         );
       } else {
         step0Actions.push(
-          `외부 연결 유틸리티 스트림 유량이 부족하여 출구온도가 ${step0Res.utilitySide.outTempC.toFixed(1)}°C까지 변했습니다. PFD 유틸리티 피드 유량을 현재 ${curFlowKgH.toLocaleString()} kg/h → 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 늘려주세요.`
+          isEn
+            ? `External utility stream flow is insufficient (outlet reached ${step0Res.utilitySide.outTempC.toFixed(1)}°C). Increase PFD utility feed flow from ${curFlowKgH.toLocaleString()} kg/h to ≥ ${reqFlowKgH.toLocaleString()} kg/h.`
+            : `외부 연결 유틸리티 스트림 유량이 부족하여 출구온도가 ${step0Res.utilitySide.outTempC.toFixed(1)}°C까지 변했습니다. PFD 유틸리티 피드 유량을 현재 ${curFlowKgH.toLocaleString()} kg/h → 최소 ${reqFlowKgH.toLocaleString()} kg/h 이상으로 늘려주세요.`
         );
       }
     }
@@ -588,36 +608,66 @@ export function autoFixHeatExchanger(
   const actionsTaken: string[] = [...step0Actions];
   if (solvedBefore.hxKind !== bestRes.hxKind) {
     actionsTaken.push(
-      `형식 전환 (${solvedBefore.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA S&T'} → ${
-        bestRes.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA 다관원통형'
-      })`
+      isEn
+        ? `Type switch (${solvedBefore.hxKind === 'plate_phe' ? 'Plate PHE' : 'TEMA S&T'} → ${
+            bestRes.hxKind === 'plate_phe' ? 'Plate PHE' : 'TEMA Shell & Tube'
+          })`
+        : `형식 전환 (${solvedBefore.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA S&T'} → ${
+            bestRes.hxKind === 'plate_phe' ? '판형 PHE' : 'TEMA 다관원통형'
+          })`
     );
   }
   if (initialCfg.designMode === 'rating' && bestCfg.designMode === 'design') {
-    actionsTaken.push('정격(Rating) 해제 → 요구면적 자동 사이징 전환 (여유율 +15%)');
+    actionsTaken.push(
+      isEn
+        ? 'Released Rating mode → Auto-sizing for required area (+15% margin)'
+        : '정격(Rating) 해제 → 요구면적 자동 사이징 전환 (여유율 +15%)'
+    );
   }
   if (solvedBefore.material.code !== bestRes.material.code) {
-    actionsTaken.push(`내식 재질 변경 (${solvedBefore.material.code} → ${bestRes.material.code})`);
+    actionsTaken.push(
+      isEn
+        ? `Corrosion-resistant material (${solvedBefore.material.code} → ${bestRes.material.code})`
+        : `내식 재질 변경 (${solvedBefore.material.code} → ${bestRes.material.code})`
+    );
   }
   if (bestRes.hxKind === 'shell_tube') {
     if (solvedBefore.hxKind === 'shell_tube' && solvedBefore.temaType !== bestRes.temaType) {
-      actionsTaken.push(`TEMA 형식 ${solvedBefore.temaType}→${bestRes.temaType}`);
+      actionsTaken.push(
+        isEn
+          ? `TEMA type ${solvedBefore.temaType}→${bestRes.temaType}`
+          : `TEMA 형식 ${solvedBefore.temaType}→${bestRes.temaType}`
+      );
     }
     if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.shellCount !== bestRes.shellCount) {
-      actionsTaken.push(`직렬 쉘 ${solvedBefore.shellCount}→${bestRes.shellCount}기`);
+      actionsTaken.push(
+        isEn
+          ? `Shells in series ${solvedBefore.shellCount}→${bestRes.shellCount}`
+          : `직렬 쉘 ${solvedBefore.shellCount}→${bestRes.shellCount}기`
+      );
     }
     if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.tubePasses !== bestRes.tubePasses) {
-      actionsTaken.push(`패스 수 ${solvedBefore.tubePasses}→${bestRes.tubePasses}`);
+      actionsTaken.push(
+        isEn
+          ? `Tube passes ${solvedBefore.tubePasses}→${bestRes.tubePasses}`
+          : `패스 수 ${solvedBefore.tubePasses}→${bestRes.tubePasses}`
+      );
     }
     if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.tubeOdMm !== bestRes.tubeOdMm) {
-      actionsTaken.push(`관경 ${solvedBefore.tubeOdMm}→${bestRes.tubeOdMm} mm`);
+      actionsTaken.push(
+        isEn
+          ? `Tube OD ${solvedBefore.tubeOdMm}→${bestRes.tubeOdMm} mm`
+          : `관경 ${solvedBefore.tubeOdMm}→${bestRes.tubeOdMm} mm`
+      );
     }
     if (
       solvedBefore.hxKind !== 'shell_tube' ||
       Math.abs(solvedBefore.tubeLengthM - bestRes.tubeLengthM) > 0.01
     ) {
       actionsTaken.push(
-        `관길이 ${solvedBefore.tubeLengthM.toFixed(2)}→${bestRes.tubeLengthM.toFixed(2)} m`
+        isEn
+          ? `Tube length ${solvedBefore.tubeLengthM.toFixed(2)}→${bestRes.tubeLengthM.toFixed(2)} m`
+          : `관길이 ${solvedBefore.tubeLengthM.toFixed(2)}→${bestRes.tubeLengthM.toFixed(2)} m`
       );
     }
     const oldBRatio =
@@ -626,13 +676,25 @@ export function autoFixHeatExchanger(
     const newBRatio =
       bestCfg.baffleSpacingRatio ?? bestRes.baffleSpacingMm / Math.max(1, bestRes.shellIdMm);
     if (solvedBefore.hxKind !== 'shell_tube' || Math.abs(oldBRatio - newBRatio) > 0.02) {
-      actionsTaken.push(`배플 간격비 ${oldBRatio.toFixed(2)}→${newBRatio.toFixed(2)}`);
+      actionsTaken.push(
+        isEn
+          ? `Baffle spacing ratio ${oldBRatio.toFixed(2)}→${newBRatio.toFixed(2)}`
+          : `배플 간격비 ${oldBRatio.toFixed(2)}→${newBRatio.toFixed(2)}`
+      );
     }
     if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.baffleCutPct !== bestRes.baffleCutPct) {
-      actionsTaken.push(`배플 컷 ${solvedBefore.baffleCutPct}→${bestRes.baffleCutPct}%`);
+      actionsTaken.push(
+        isEn
+          ? `Baffle cut ${solvedBefore.baffleCutPct}→${bestRes.baffleCutPct}%`
+          : `배플 컷 ${solvedBefore.baffleCutPct}→${bestRes.baffleCutPct}%`
+      );
     }
     if (solvedBefore.hxKind !== 'shell_tube' || solvedBefore.pitchAngle !== bestRes.pitchAngle) {
-      actionsTaken.push(`배열각 ${solvedBefore.pitchAngle}°→${bestRes.pitchAngle}°`);
+      actionsTaken.push(
+        isEn
+          ? `Pitch angle ${solvedBefore.pitchAngle}°→${bestRes.pitchAngle}°`
+          : `배열각 ${solvedBefore.pitchAngle}°→${bestRes.pitchAngle}°`
+      );
     }
   } else {
     if (
@@ -640,11 +702,17 @@ export function autoFixHeatExchanger(
       Math.abs(solvedBefore.pheGapMm - bestRes.pheGapMm) > 0.05
     ) {
       actionsTaken.push(
-        `PHE 판간격 ${solvedBefore.pheGapMm.toFixed(1)}→${bestRes.pheGapMm.toFixed(1)} mm`
+        isEn
+          ? `PHE plate gap ${solvedBefore.pheGapMm.toFixed(1)}→${bestRes.pheGapMm.toFixed(1)} mm`
+          : `PHE 판간격 ${solvedBefore.pheGapMm.toFixed(1)}→${bestRes.pheGapMm.toFixed(1)} mm`
       );
     }
     if (solvedBefore.hxKind !== 'plate_phe' || solvedBefore.pheChevronDeg !== bestRes.pheChevronDeg) {
-      actionsTaken.push(`쉐브론 각도 ${solvedBefore.pheChevronDeg}°→${bestRes.pheChevronDeg}°`);
+      actionsTaken.push(
+        isEn
+          ? `Chevron angle ${solvedBefore.pheChevronDeg}°→${bestRes.pheChevronDeg}°`
+          : `쉐브론 각도 ${solvedBefore.pheChevronDeg}°→${bestRes.pheChevronDeg}°`
+      );
     }
   }
 
@@ -671,11 +739,19 @@ export function autoFixHeatExchanger(
   const resolved = opt1.allPassed || bestRes.overallStatus === 'ok';
   const costK = (opt1.estimatedCostUsd / 1000).toFixed(1);
   const headline = resolved
-    ? `AI 자동 보정 완료 (${candidates.length}개 기하 조합 검증 · 최저 원가 1번 Est. $${costK}k 자동 적용): Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, FIV ${(bestRes.vibRatio * 100).toFixed(0)}%, Ft ${bestRes.ftFactor.toFixed(2)}, Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C.`
+    ? isEn
+      ? `AI Auto-Fix complete (${candidates.length} geometry combos verified · Lowest Cost #1 Est. $${costK}k applied): Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, FIV ${(bestRes.vibRatio * 100).toFixed(0)}%, Ft ${bestRes.ftFactor.toFixed(2)}, Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C.`
+      : `AI 자동 보정 완료 (${candidates.length}개 기하 조합 검증 · 최저 원가 1번 Est. $${costK}k 자동 적용): Tube ΔP ${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${bestRes.dpShellBar.toFixed(2)} bar, FIV ${(bestRes.vibRatio * 100).toFixed(0)}%, Ft ${bestRes.ftFactor.toFixed(2)}, Pinch ΔT ${bestRes.minPinchDeltaTC.toFixed(1)}°C.`
     : improved
-    ? `AI 부분 개선 완료 (${candidates.length}개 조합 탐색 · Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${solvedBefore.dpShellBar.toFixed(2)}→${bestRes.dpShellBar.toFixed(2)} bar, 면적 ${bestRes.areaProvM2.toFixed(1)} m²).`
+    ? isEn
+      ? `AI partial improvement complete (${candidates.length} combos searched · Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${solvedBefore.dpShellBar.toFixed(2)}→${bestRes.dpShellBar.toFixed(2)} bar, Area ${bestRes.areaProvM2.toFixed(1)} m²).`
+      : `AI 부분 개선 완료 (${candidates.length}개 조합 탐색 · Tube ΔP ${solvedBefore.dpTubeBar.toFixed(2)}→${bestRes.dpTubeBar.toFixed(2)} bar, Shell ΔP ${solvedBefore.dpShellBar.toFixed(2)}→${bestRes.dpShellBar.toFixed(2)} bar, 면적 ${bestRes.areaProvM2.toFixed(1)} m²).`
     : bestRes.minPinchDeltaTC <= 0.5 && utilInStreams.length > 0
-    ? 'PFD에 직접 연결된 유틸리티 스트림의 유량 부족 또는 온도 역전으로 기하학적 보정만으로는 해결할 수 없습니다 (아래 유량·온도 가이드 적용 필요).'
+    ? isEn
+      ? 'Cannot resolve via geometry alone due to insufficient flow or temperature cross on the externally connected PFD utility stream (apply flow/temperature guidance below).'
+      : 'PFD에 직접 연결된 유틸리티 스트림의 유량 부족 또는 온도 역전으로 기하학적 보정만으로는 해결할 수 없습니다 (아래 유량·온도 가이드 적용 필요).'
+    : isEn
+    ? 'Limited geometric adjustment margin under current thermal duty and phase-change conditions (check process flow and pinch temperature).'
     : '현재 열부하·상변화 조건에서 기하학적 조정 여지가 제한적입니다 (공정 유량·핀치 온도 점검 필요).';
 
   return {
@@ -690,7 +766,11 @@ export function autoFixHeatExchanger(
     actionsTaken:
       actionsTaken.length > 0
         ? actionsTaken
-        : ['현재 운전 파라미터가 물리적 최적 상태에 가깝습니다.'],
+        : [
+            isEn
+              ? 'Current operating parameters are near physical optimum.'
+              : '현재 운전 파라미터가 물리적 최적 상태에 가깝습니다.',
+          ],
     options,
   };
 }
@@ -704,9 +784,17 @@ export async function autoFixHeatExchangerAsync(
   utilInStreams: SolvedStream[],
   utilOutStreams: SolvedStream[],
   unitRes?: SolvedUnitResult,
-  onProgress?: (step: number, total: number, label: string) => void
+  onProgress?: (step: number, total: number, label: string) => void,
+  lang: 'ko' | 'en' = 'ko'
 ): Promise<EquipmentAutoFixResult<HxDesignParams, HxDesignSolveResult>> {
-  onProgress?.(1, 2, '열교환기 조합 기하 스윕(ΔP·Ft·FIV·경제성) 탐색 중...');
+  const isEn = lang === 'en';
+  onProgress?.(
+    1,
+    2,
+    isEn
+      ? 'Sweeping HX geometry combinations (ΔP · Ft · FIV · Cost)...'
+      : '열교환기 조합 기하 스윕(ΔP·Ft·FIV·경제성) 탐색 중...'
+  );
   await yieldToBrowser();
   const res = autoFixHeatExchanger(
     unitType,
@@ -716,9 +804,16 @@ export async function autoFixHeatExchangerAsync(
     procOutStreams,
     utilInStreams,
     utilOutStreams,
-    unitRes
+    unitRes,
+    lang
   );
-  onProgress?.(2, 2, '상위 3개 AI 검증 설계 대안 산출 완료');
+  onProgress?.(
+    2,
+    2,
+    isEn
+      ? 'Generated top 3 AI-verified HX design alternatives'
+      : '상위 3개 AI 검증 설계 대안 산출 완료'
+  );
   await yieldToBrowser();
   return res;
 }
@@ -792,8 +887,10 @@ interface DistillCandidateStep {
 function prepareDistillFixContext(
   feedsInput: DistillFeedInput[],
   initialParams: DistillColumnParams,
-  solvedBefore: DistillSolveResult
+  solvedBefore: DistillSolveResult,
+  lang: 'ko' | 'en' = 'ko'
 ) {
+  const isEn = lang === 'en';
   const feedTotals = {} as Record<SimCompKey, number>;
   let totalFeedKgH = 0;
   for (const f of feedsInput) {
@@ -840,7 +937,11 @@ function prepareDistillFixContext(
   const rootCauses: string[] = [...solvedBefore.diagnostics.causes];
   const revCount = countProfileSawtoothReversals(solvedBefore);
   if (revCount > 0) {
-    rootCauses.push(`단별 조성·온도 프로파일에 교번 톱니 진동(${revCount}개소) 감지: 고환류·수분 트랩 또는 미수렴 MESH 상태.`);
+    rootCauses.push(
+      isEn
+        ? `Alternating sawtooth oscillation detected in stage composition/temperature profile (${revCount} points): high reflux, water trap, or unconverged MESH state.`
+        : `단별 조성·온도 프로파일에 교번 톱니 진동(${revCount}개소) 감지: 고환류·수분 트랩 또는 미수렴 MESH 상태.`
+    );
   }
   const initSlots = resolveEffectiveDofSlots(initialParams);
   const isDualQualitySpec =
@@ -852,8 +953,12 @@ function prepareDistillFixContext(
   // 0-sc) 사이드컷 목표 품질 미달 시 최적 인출단 자동탐색 활성화
   if (initialParams.sideCut?.enabled && solvedBefore.sideCutSpecStatus && !solvedBefore.sideCutSpecStatus.met) {
     steps.push({
-      label: '사이드컷(측류) 최적 인출단 자동탐색으로 측류 목표 품질 달성',
-      progressText: '사이드컷 피크 순도 인출단 자동탐색 중...',
+      label: isEn
+        ? 'Enable auto-search for optimal side-cut draw stage to meet side-cut quality target'
+        : '사이드컷(측류) 최적 인출단 자동탐색으로 측류 목표 품질 달성',
+      progressText: isEn
+        ? 'Searching optimal side-cut peak purity draw stage...'
+        : '사이드컷 피크 순도 인출단 자동탐색 중...',
       buildPatch: (curP) => ({
         sideCut: curP.sideCut ? { ...curP.sideCut, autoOptimizeStage: true } : curP.sideCut,
       }),
@@ -863,8 +968,12 @@ function prepareDistillFixContext(
   // 0) 2개 품질 스펙(탑정+탑저) 동시 지정 시 단수(N)·공급단(Nf)·환류비·유량 AI 다중후보 자동최적화 최우선 활성화
   if (isDualQualitySpec) {
     steps.push({
-      label: 'AI 다중후보 (단수·공급단·환류비·탑정유량) 동시 자동최적화 및 TAC 최소점 선정',
-      progressText: '목표 순도 달성 가능한 다중후보(N·Nf·RR·D/F) 동시 최적화 중...',
+      label: isEn
+        ? 'AI multi-candidate simultaneous optimization (N, Nf, RR, D/F) & minimum TAC selection'
+        : 'AI 다중후보 (단수·공급단·환류비·탑정유량) 동시 자동최적화 및 TAC 최소점 선정',
+      progressText: isEn
+        ? 'Optimizing multi-candidate (N · Nf · RR · D/F) for target purities...'
+        : '목표 순도 달성 가능한 다중후보(N·Nf·RR·D/F) 동시 최적화 중...',
       buildPatch: (curP) => ({
         ...(hasWater && hasHydroOrg ? { condenserType: 'decanter_ech', thermoModel: 'NRTL' } : {}),
         activeDofSlots: ['top_spec', 'bot_spec'] as DistillColumnParams['activeDofSlots'],
@@ -877,8 +986,12 @@ function prepareDistillFixContext(
   // 1) 수분-유기물 불균일 공비계 최우선 처방: 디캔터(decanter_ech) + NRTL + 폭주 단수/환류 초기화
   if (hasWater && hasHydroOrg) {
     steps.push({
-      label: '수분-유기물 불균일 공비 분리용 디캔터(decanter_ech) · NRTL 및 안정 조건 적용',
-      progressText: '공비 유수분리 디캔터(decanter_ech) · NRTL 수렴 탐색 중...',
+      label: isEn
+        ? 'Apply heterogeneous water-organic azeotrope decanter (decanter_ech), NRTL & stable settings'
+        : '수분-유기물 불균일 공비 분리용 디캔터(decanter_ech) · NRTL 및 안정 조건 적용',
+      progressText: isEn
+        ? 'Searching convergence with azeotropic decanter (decanter_ech) & NRTL...'
+        : '공비 유수분리 디캔터(decanter_ech) · NRTL 수렴 탐색 중...',
       buildPatch: (curP, curS) => {
         const modeNow = curP.columnCalcMode ?? 'rigorous_mesh';
         const needsDesignReset =
@@ -916,7 +1029,9 @@ function prepareDistillFixContext(
     if (rem.patch.columnCalcMode === 'design_stages') continue;
     steps.push({
       label: rem.label,
-      progressText: `진단 처방 검증 중: ${rem.label}`,
+      progressText: isEn
+        ? `Verifying diagnostic remedy: ${rem.label}`
+        : `진단 처방 검증 중: ${rem.label}`,
       buildPatch: () => rem.patch,
     });
   }
@@ -924,8 +1039,12 @@ function prepareDistillFixContext(
   // 3) design_stages 모드: AI 다중후보 자동최적화('auto_opt') 전환 및 과잉 회수율(≥99.2%) 현실화
   if ((initialParams.columnCalcMode ?? 'rigorous_mesh') === 'design_stages') {
     steps.push({
-      label: 'AI 다중후보(1.15~1.80×R_min) 자동최적화로 최소 TAC 단수·환류비 산출',
-      progressText: 'AI 다중후보 (N·Nf·RR·D/F) TAC 최적 설계 탐색 중...',
+      label: isEn
+        ? 'AI multi-candidate (1.15~1.80×R_min) auto-optimization for minimum TAC stages & RR'
+        : 'AI 다중후보(1.15~1.80×R_min) 자동최적화로 최소 TAC 단수·환류비 산출',
+      progressText: isEn
+        ? 'Searching AI multi-candidate (N · Nf · RR · D/F) optimal TAC design...'
+        : 'AI 다중후보 (N·Nf·RR·D/F) TAC 최적 설계 탐색 중...',
       buildPatch: (curP) => ({
         condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
         thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
@@ -935,8 +1054,12 @@ function prepareDistillFixContext(
 
     if ((initialParams.designTopRecoveryPct ?? 99) > 99.0 || (initialParams.designBotRecoveryPct ?? 99) > 99.2) {
       steps.push({
-        label: '공비·다성분 핀치 구간 회피를 위해 탑정/탑저 회수율 목표 99.0% 최적화',
-        progressText: '공비 핀치 회피용 현실 회수율(99.0%) 탐색 중...',
+        label: isEn
+          ? 'Optimize top/bottom recovery targets to 99.0% to avoid azeotropic/multicomponent pinch'
+          : '공비·다성분 핀치 구간 회피를 위해 탑정/탑저 회수율 목표 99.0% 최적화',
+        progressText: isEn
+          ? 'Evaluating realistic 99.0% recovery to avoid azeotropic pinch...'
+          : '공비 핀치 회피용 현실 회수율(99.0%) 탐색 중...',
         buildPatch: (curP) => ({
           condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
           thermoModel: hasWater && hasHydroOrg ? 'NRTL' : curP.thermoModel ?? 'NRTL',
@@ -956,8 +1079,12 @@ function prepareDistillFixContext(
     ] as const) {
       const fOpt = Math.round(nCand * 0.5);
       steps.push({
-        label: `안정화 정밀모사 적용 (${nCand}단 · 공급단 ${fOpt}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})`,
-        progressText: `정밀모사 안정화 탐색 (${nCand}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})...`,
+        label: isEn
+          ? `Apply stabilized rigorous MESH (${nCand} stages · Feed ${fOpt} · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})`
+          : `안정화 정밀모사 적용 (${nCand}단 · 공급단 ${fOpt}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})`,
+        progressText: isEn
+          ? `Exploring stabilized rigorous MESH (${nCand} stages · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})...`
+          : `정밀모사 안정화 탐색 (${nCand}단 · RR=${rrCand} · D/F=${estDfMass.toFixed(3)})...`,
         buildPatch: (curP) => ({
           columnCalcMode: 'rigorous_mesh',
           condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : curP.condenserType ?? 'total',
@@ -983,8 +1110,12 @@ function prepareDistillFixContext(
     const mappedLk = topMet === 'impurity_wt_ppm' ? (activeComps[0] ?? topKey) : topKey;
     const mappedHk = botMet === 'impurity_wt_ppm' ? (activeComps[activeComps.length - 1] ?? botKey) : botKey;
     steps.push({
-      label: '목표순도 기반 AI 다중후보(단수·공급단·환류비·유량) 자동설계 모드로 전환',
-      progressText: 'AI 다중후보 자동단수·TAC 최적설계 전환 검증 중...',
+      label: isEn
+        ? 'Switch to target-purity AI multi-candidate (N · Nf · RR · D/F) auto-design mode'
+        : '목표순도 기반 AI 다중후보(단수·공급단·환류비·유량) 자동설계 모드로 전환',
+      progressText: isEn
+        ? 'Verifying transition to AI multi-candidate auto-stage & TAC design...'
+        : 'AI 다중후보 자동단수·TAC 최적설계 전환 검증 중...',
       buildPatch: () => ({
         columnCalcMode: 'design_stages',
         condenserType: hasWater && hasHydroOrg ? 'decanter_ech' : initialParams.condenserType ?? 'total',
@@ -1018,11 +1149,17 @@ function prepareDistillFixContext(
     );
     if (heavierMass > 0.05) {
       rootCauses.push(
-        `원료에 [${botKey}]보다 비점이 높은 성분(${heavierMass.toFixed(1)} kg/h)이 포함되어 탑저 [${botKey}] 순도(wt%)가 물리적으로 제한됩니다.`
+        isEn
+          ? `Feed contains heavier components (${heavierMass.toFixed(1)} kg/h) boiling above [${botKey}], physically limiting bottom [${botKey}] purity (wt%).`
+          : `원료에 [${botKey}]보다 비점이 높은 성분(${heavierMass.toFixed(1)} kg/h)이 포함되어 탑저 [${botKey}] 순도(wt%)가 물리적으로 제한됩니다.`
       );
       steps.push({
-        label: `탑저 [${botKey}] 스펙을 '회수율 99.0%' 기준으로 현실화 (고비점 성분 공존 반영)`,
-        progressText: `고비점 공존 반영 [${botKey}] 회수율 99.0% 기준 평가 중...`,
+        label: isEn
+          ? `Adjust bottom [${botKey}] spec to '99.0% Recovery' (accounting for heavy co-boilers)`
+          : `탑저 [${botKey}] 스펙을 '회수율 99.0%' 기준으로 현실화 (고비점 성분 공존 반영)`,
+        progressText: isEn
+          ? `Evaluating [${botKey}] 99.0% recovery basis with heavy components...`
+          : `고비점 공존 반영 [${botKey}] 회수율 99.0% 기준 평가 중...`,
         buildPatch: () => ({
           designBotBasis: 'recovery_pct',
           designBotRecoveryPct: 99.0,
@@ -1071,8 +1208,10 @@ function distillCandKey(p: DistillColumnParams, r: DistillSolveResult): string {
 function buildDistillGuidedGrid(
   baseParams: DistillColumnParams,
   baseSol: DistillSolveResult,
-  initialParams: DistillColumnParams
+  initialParams: DistillColumnParams,
+  lang: 'ko' | 'en' = 'ko'
 ): Array<{ label: string; params: DistillColumnParams }> {
+  const isEn = lang === 'en';
   const grid: Array<{ label: string; params: DistillColumnParams }> = [];
   const seenCfg = new Set<string>();
   const mode = baseParams.columnCalcMode ?? 'rigorous_mesh';
@@ -1102,7 +1241,9 @@ function buildDistillGuidedGrid(
       if (seenCfg.has(key)) continue;
       seenCfg.add(key);
       grid.push({
-        label: `자동설계 환류배수 R/Rmin=${rMult.toFixed(2)} 탐색`,
+        label: isEn
+          ? `Auto-design reflux multiplier R/Rmin=${rMult.toFixed(2)} search`
+          : `자동설계 환류배수 R/Rmin=${rMult.toFixed(2)} 탐색`,
         params: {
           ...baseParams,
           columnCalcMode: 'design_stages',
@@ -1134,7 +1275,9 @@ function buildDistillGuidedGrid(
           if (seenCfg.has(key)) continue;
           seenCfg.add(key);
           grid.push({
-            label: `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단 · RR=${rr.toFixed(1)})`,
+            label: isEn
+              ? `Guided grid search (${n} stages · Feed ${fs} · RR=${rr.toFixed(1)})`
+              : `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단 · RR=${rr.toFixed(1)})`,
             params: {
               ...baseParams,
               columnCalcMode: 'rigorous_mesh',
@@ -1160,7 +1303,9 @@ function buildDistillGuidedGrid(
         if (seenCfg.has(key)) continue;
         seenCfg.add(key);
         grid.push({
-          label: `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단)`,
+          label: isEn
+            ? `Guided grid search (${n} stages · Feed ${fs})`
+            : `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단)`,
           params: {
             ...baseParams,
             columnCalcMode: 'rigorous_mesh',
@@ -1182,8 +1327,10 @@ function finalizeDistillFixResult(
   solvedBefore: DistillSolveResult,
   evaluated: DistillEvalCandidate[],
   rootCauses: string[],
-  baseActions: string[]
+  baseActions: string[],
+  lang: 'ko' | 'en' = 'ko'
 ): EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult> {
+  const isEn = lang === 'en';
   const ranked = [...evaluated].sort((a, b) => {
     if (a.allPassed !== b.allPassed) return a.allPassed ? -1 : 1;
     if (a.res.converged !== b.res.converged) return a.res.converged ? -1 : 1;
@@ -1302,14 +1449,24 @@ function finalizeDistillFixResult(
     actionsTaken.push(opt1.actionLabel);
   }
   if (solvedBefore.totalStagesUsed !== bestSol.totalStagesUsed) {
-    actionsTaken.push(`이론단수 ${solvedBefore.totalStagesUsed}→${bestSol.totalStagesUsed}단`);
+    actionsTaken.push(
+      isEn
+        ? `Theoretical stages ${solvedBefore.totalStagesUsed}→${bestSol.totalStagesUsed}`
+        : `이론단수 ${solvedBefore.totalStagesUsed}→${bestSol.totalStagesUsed}단`
+    );
   }
   if (solvedBefore.feedStageUsed !== bestSol.feedStageUsed) {
-    actionsTaken.push(`공급단 ${solvedBefore.feedStageUsed}→${bestSol.feedStageUsed}단`);
+    actionsTaken.push(
+      isEn
+        ? `Feed stage ${solvedBefore.feedStageUsed}→${bestSol.feedStageUsed}`
+        : `공급단 ${solvedBefore.feedStageUsed}→${bestSol.feedStageUsed}단`
+    );
   }
   if (Math.abs(solvedBefore.actualRefluxRatio - bestSol.actualRefluxRatio) > 0.05) {
     actionsTaken.push(
-      `환류비 RR ${solvedBefore.actualRefluxRatio.toFixed(2)}→${bestSol.actualRefluxRatio.toFixed(2)}`
+      isEn
+        ? `Reflux ratio RR ${solvedBefore.actualRefluxRatio.toFixed(2)}→${bestSol.actualRefluxRatio.toFixed(2)}`
+        : `환류비 RR ${solvedBefore.actualRefluxRatio.toFixed(2)}→${bestSol.actualRefluxRatio.toFixed(2)}`
     );
   }
 
@@ -1323,9 +1480,15 @@ function finalizeDistillFixResult(
   const resolved = opt1.allPassed;
   const qRebMcalH = (Math.abs(bestSol.reboilerDutyKcalH) / 1000).toFixed(0);
   const headline = resolved
-    ? `AI 자동 최적화 완료 (${evaluated.length}개 후보 검증 · 최저 TAC 1번 자동 적용): ${bestSol.totalStagesUsed}단(공급 ${bestSol.feedStageUsed}단) · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} · Q_reb=${qRebMcalH} Mcal/h (TAC ${opt1.tacScore.toFixed(1)}).`
+    ? isEn
+      ? `AI Auto-Optimization complete (${evaluated.length} candidates verified · Lowest TAC #1 applied): ${bestSol.totalStagesUsed} stages (Feed ${bestSol.feedStageUsed}) · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} · Q_reb=${qRebMcalH} Mcal/h (TAC ${opt1.tacScore.toFixed(1)}).`
+      : `AI 자동 최적화 완료 (${evaluated.length}개 후보 검증 · 최저 TAC 1번 자동 적용): ${bestSol.totalStagesUsed}단(공급 ${bestSol.feedStageUsed}단) · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} · Q_reb=${qRebMcalH} Mcal/h (TAC ${opt1.tacScore.toFixed(1)}).`
     : improved
-    ? `AI 조건 개선 완료 (${evaluated.length}개 후보 탐색 · ${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)}): ${bestSol.diagnostics.headline}`
+    ? isEn
+      ? `AI conditions improved (${evaluated.length} candidates searched · ${bestSol.totalStagesUsed} stages · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)}): ${bestSol.diagnostics.headline}`
+      : `AI 조건 개선 완료 (${evaluated.length}개 후보 탐색 · ${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)}): ${bestSol.diagnostics.headline}`
+    : isEn
+    ? `Could not find an auto-converged operating point under current settings — verify physical feasibility of feed composition & target specs (azeotropes / non-key heavy components).`
     : `현재 설정에서 자동 수렴 조건을 찾지 못했습니다 — 원료 조성·목표 스펙의 물리적 실현 가능성(공비/비핵심 고비점 유분)을 확인하세요.`;
 
   return {
@@ -1336,7 +1499,14 @@ function finalizeDistillFixResult(
     solvedAfter: bestSol,
     headline,
     rootCauses: Array.from(new Set(rootCauses)),
-    actionsTaken: actionsTaken.length > 0 ? actionsTaken : ['단수·공급단·환류비 가이드 격자 탐색 완료'],
+    actionsTaken:
+      actionsTaken.length > 0
+        ? actionsTaken
+        : [
+            isEn
+              ? 'Guided grid search (stages · feed stage · reflux ratio) completed'
+              : '단수·공급단·환류비 가이드 격자 탐색 완료',
+          ],
     distillOptions,
   };
 }
@@ -1346,14 +1516,15 @@ function finalizeDistillFixResult(
  */
 export function autoFixDistillationSimulation(
   feedsInput: DistillFeedInput[],
-  initialParams: DistillColumnParams
+  initialParams: DistillColumnParams,
+  lang: 'ko' | 'en' = 'ko'
 ): EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult> {
   const fixStartMs = Date.now();
   const HARD_BUDGET_MS = 850;
   const REMEDY_BUDGET_MS = 450;
 
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
-  const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore);
+  const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore, lang);
 
   const evaluated: DistillEvalCandidate[] = [];
   const seenKeys = new Set<string>();
@@ -1404,14 +1575,14 @@ export function autoFixDistillationSimulation(
   }
 
   // ── Phase 2: 스마트 가이드 격자 탐색 (단수 × 환류비 × 공급단, <= 850 ms 하드 스톱) ──
-  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams);
+  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams, lang);
   for (const item of grid) {
     if (Date.now() - fixStartMs > HARD_BUDGET_MS) break;
     const candRes = solveRigorousDistillation(feedsInput, item.params);
     recordCand(item.params, candRes, item.label);
   }
 
-  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions);
+  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions, lang);
 }
 
 /**
@@ -1421,17 +1592,25 @@ export function autoFixDistillationSimulation(
 export async function autoFixDistillationSimulationAsync(
   feedsInput: DistillFeedInput[],
   initialParams: DistillColumnParams,
-  onProgress?: (step: number, total: number, label: string) => void
+  onProgress?: (step: number, total: number, label: string) => void,
+  lang: 'ko' | 'en' = 'ko'
 ): Promise<EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult>> {
+  const isEn = lang === 'en';
   const fixStartMs = Date.now();
   const HARD_BUDGET_MS = 850;
   const REMEDY_BUDGET_MS = 450;
 
-  onProgress?.(1, 6, '현재 운전점 및 미수렴·순도 미달 원인 정밀 진단 중...');
+  onProgress?.(
+    1,
+    6,
+    isEn
+      ? 'Diagnosing current operating point, convergence & purity gaps...'
+      : '현재 운전점 및 미수렴·순도 미달 원인 정밀 진단 중...'
+  );
   await yieldToBrowser();
 
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
-  const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore);
+  const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore, lang);
 
   const evaluated: DistillEvalCandidate[] = [];
   const seenKeys = new Set<string>();
@@ -1486,8 +1665,14 @@ export async function autoFixDistillationSimulationAsync(
   }
 
   // Phase 2: 가이드 격자 탐색
-  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams);
-  onProgress?.(4, 6, `단수·환류비·공급단 가이드 격자(${grid.length}개 후보) TAC 최적화 탐색 중...`);
+  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams, lang);
+  onProgress?.(
+    4,
+    6,
+    isEn
+      ? `Running guided grid TAC optimization (${grid.length} stage · RR · feed candidates)...`
+      : `단수·환류비·공급단 가이드 격자(${grid.length}개 후보) TAC 최적화 탐색 중...`
+  );
   await yieldToBrowser();
 
   let gridDone = 0;
@@ -1497,13 +1682,25 @@ export async function autoFixDistillationSimulationAsync(
     recordCand(item.params, candRes, item.label);
     gridDone++;
     if (gridDone % 6 === 0 && Date.now() - fixStartMs < HARD_BUDGET_MS - 60) {
-      onProgress?.(5, 6, `가이드 격자 탐색 중 (${gridDone}/${grid.length})...`);
+      onProgress?.(
+        5,
+        6,
+        isEn
+          ? `Searching guided grid (${gridDone}/${grid.length})...`
+          : `가이드 격자 탐색 중 (${gridDone}/${grid.length})...`
+      );
       await yieldToBrowser();
     }
   }
 
-  onProgress?.(6, 6, '상위 3개 AI 검증 증류탑 설계 대안 산출 완료');
-  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions);
+  onProgress?.(
+    6,
+    6,
+    isEn
+      ? 'Generated top 3 AI-verified distillation design alternatives'
+      : '상위 3개 AI 검증 증류탑 설계 대안 산출 완료'
+  );
+  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions, lang);
 }
 
 function scoreInternalsResult(r: ColumnInternalsSolveResult): number {
@@ -1572,17 +1769,25 @@ function internalsMajorKey(c: InternalsEvalCandidate): string {
 export function autoFixColumnInternals(
   colParams: DistillColumnParams,
   feeds: DistillFeedInput[],
-  simResult: DistillSolveResult
+  simResult: DistillSolveResult,
+  lang: 'ko' | 'en' = 'ko'
 ): EquipmentAutoFixResult<ColumnInternalsParams, ColumnInternalsSolveResult> {
+  const isEn = lang === 'en';
   const initialIc: ColumnInternalsParams = { ...(colParams.internalsConfig || {}) };
   const solvedBefore = solveColumnInternalsDesign(colParams, feeds, simResult);
   const rootCauses: string[] = [...solvedBefore.designWarnings];
   if (rootCauses.length === 0 && solvedBefore.maxFloodPct > 82) {
-    rootCauses.push(`최대 범람율(${solvedBefore.maxFloodPct.toFixed(1)}%)이 안전 상한(82%)을 초과합니다.`);
+    rootCauses.push(
+      isEn
+        ? `Max flooding (${solvedBefore.maxFloodPct.toFixed(1)}%) exceeds safe upper limit (82%).`
+        : `최대 범람율(${solvedBefore.maxFloodPct.toFixed(1)}%)이 안전 상한(82%)을 초과합니다.`
+    );
   }
   if (solvedBefore.internalsKind === 'tray' && solvedBefore.maxDcChokeFloodPct > 80) {
     rootCauses.push(
-      `다운코머 초크 범람율(${solvedBefore.maxDcChokeFloodPct.toFixed(1)}%)이 권장 상한(80%)을 초과합니다.`
+      isEn
+        ? `Downcomer choke flooding (${solvedBefore.maxDcChokeFloodPct.toFixed(1)}%) exceeds recommended limit (80%).`
+        : `다운코머 초크 범람율(${solvedBefore.maxDcChokeFloodPct.toFixed(1)}%)이 권장 상한(80%)을 초과합니다.`
     );
   }
 
@@ -1798,27 +2003,47 @@ export function autoFixColumnInternals(
   const actionsTaken: string[] = [];
   if (solvedBefore.internalsKind !== bestRes.internalsKind) {
     actionsTaken.push(
-      `인터널 형식 전환 (${solvedBefore.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'} → ${
-        bestRes.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'
-      })`
+      isEn
+        ? `Internals switch (${solvedBefore.internalsKind === 'tray' ? 'Tray' : 'Packed'} → ${
+            bestRes.internalsKind === 'tray' ? 'Tray' : 'Packed'
+          })`
+        : `인터널 형식 전환 (${solvedBefore.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'} → ${
+            bestRes.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'
+          })`
     );
   }
   if (initialIc.manualRectDiamM || initialIc.manualStripDiamM) {
-    actionsTaken.push('수동 내경 고정 해제 → 수력학 기반 표준 탑경 자동 사이징 전환');
+    actionsTaken.push(
+      isEn
+        ? 'Released manual diameter lock → Hydraulic standard diameter auto-sizing'
+        : '수동 내경 고정 해제 → 수력학 기반 표준 탑경 자동 사이징 전환'
+    );
   }
   if (solvedBefore.shellSectionMode !== bestRes.shellSectionMode) {
     actionsTaken.push(
-      `동체 직경 구성 변경 (${solvedBefore.shellSectionMode === 'swaged' ? '이단 직경' : '단일 직경'} → ${
-        bestRes.shellSectionMode === 'swaged' ? '이단 직경(Swaged)' : '단일 직경(Uniform)'
-      })`
+      isEn
+        ? `Shell diameter mode (${solvedBefore.shellSectionMode === 'swaged' ? 'Swaged' : 'Uniform'} → ${
+            bestRes.shellSectionMode === 'swaged' ? 'Swaged' : 'Uniform'
+          })`
+        : `동체 직경 구성 변경 (${solvedBefore.shellSectionMode === 'swaged' ? '이단 직경' : '단일 직경'} → ${
+            bestRes.shellSectionMode === 'swaged' ? '이단 직경(Swaged)' : '단일 직경(Uniform)'
+          })`
     );
   }
   if (bestRes.internalsKind === 'tray') {
     if (solvedBefore.internalsKind !== 'tray' || solvedBefore.trayType !== bestRes.trayType) {
-      actionsTaken.push(`트레이 형식 ${solvedBefore.trayType}→${bestRes.trayType} (${bestRes.trayTypeLabel})`);
+      actionsTaken.push(
+        isEn
+          ? `Tray type ${solvedBefore.trayType}→${bestRes.trayType}`
+          : `트레이 형식 ${solvedBefore.trayType}→${bestRes.trayType} (${bestRes.trayTypeLabel})`
+      );
     }
     if (solvedBefore.internalsKind !== 'tray' || solvedBefore.traySpacingMm !== bestRes.traySpacingMm) {
-      actionsTaken.push(`단간격 ${solvedBefore.traySpacingMm}→${bestRes.traySpacingMm} mm`);
+      actionsTaken.push(
+        isEn
+          ? `Tray spacing ${solvedBefore.traySpacingMm}→${bestRes.traySpacingMm} mm`
+          : `단간격 ${solvedBefore.traySpacingMm}→${bestRes.traySpacingMm} mm`
+      );
     }
     if (
       solvedBefore.internalsKind !== 'tray' ||
@@ -1826,7 +2051,9 @@ export function autoFixColumnInternals(
       solvedBefore.stripping.flowPasses !== bestRes.stripping.flowPasses
     ) {
       actionsTaken.push(
-        `유로 패스 수 ${bestRes.rectifying.flowPasses}-Pass(정류)/${bestRes.stripping.flowPasses}-Pass(회수) 적용`
+        isEn
+          ? `Flow passes ${bestRes.rectifying.flowPasses}-Pass (Rectifying) / ${bestRes.stripping.flowPasses}-Pass (Stripping)`
+          : `유로 패스 수 ${bestRes.rectifying.flowPasses}-Pass(정류)/${bestRes.stripping.flowPasses}-Pass(회수) 적용`
       );
     }
   } else {
@@ -1834,18 +2061,28 @@ export function autoFixColumnInternals(
       solvedBefore.internalsKind !== 'packed' ||
       solvedBefore.packingSpec.key !== bestRes.packingSpec.key
     ) {
-      actionsTaken.push(`충진물 규격 ${bestRes.packingSpec.name} 적용`);
+      actionsTaken.push(
+        isEn
+          ? `Applied packing ${bestRes.packingSpec.name}`
+          : `충진물 규격 ${bestRes.packingSpec.name} 적용`
+      );
     }
   }
   if (
     bestIc.designFloodTargetPct !== undefined &&
     bestIc.designFloodTargetPct !== initialIc.designFloodTargetPct
   ) {
-    actionsTaken.push(`설계 범람율 목표 ${bestIc.designFloodTargetPct}% 적용`);
+    actionsTaken.push(
+      isEn
+        ? `Design flood target ${bestIc.designFloodTargetPct}% applied`
+        : `설계 범람율 목표 ${bestIc.designFloodTargetPct}% 적용`
+    );
   }
   if (Math.abs(solvedBefore.governingDiamM - bestRes.governingDiamM) > 0.01) {
     actionsTaken.push(
-      `표준 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m`
+      isEn
+        ? `Standard ID ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m`
+        : `표준 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m`
     );
   }
 
@@ -1867,7 +2104,11 @@ export function autoFixColumnInternals(
   const costBeforeK = (beforeCost / 1000).toFixed(1);
   const costAfterK = (opt1.costUsd / 1000).toFixed(1);
   const headline = resolved
-    ? `AI 인터널 최적화 완료 (${candidates.length}개 조합 검증 · 최저 원가 1번 $${costAfterK}k 자동 적용): 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m (원가 $${costBeforeK}k→$${costAfterK}k).`
+    ? isEn
+      ? `AI Internals Optimization complete (${candidates.length} combos verified · Lowest Cost #1 $${costAfterK}k applied): Flood ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · ID ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m (Cost $${costBeforeK}k→$${costAfterK}k).`
+      : `AI 인터널 최적화 완료 (${candidates.length}개 조합 검증 · 최저 원가 1번 $${costAfterK}k 자동 적용): 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m (원가 $${costBeforeK}k→$${costAfterK}k).`
+    : isEn
+    ? `Internals adjustment complete (${candidates.length} combos searched): Flood ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · ID ${bestRes.governingDiamM.toFixed(2)} m ($${costAfterK}k).`
     : `인터널 보정 완료 (${candidates.length}개 조합 탐색): 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · 내경 ${bestRes.governingDiamM.toFixed(2)} m ($${costAfterK}k).`;
 
   return {
@@ -1879,7 +2120,13 @@ export function autoFixColumnInternals(
     headline,
     rootCauses,
     actionsTaken:
-      actionsTaken.length > 0 ? actionsTaken : ['현재 인터널 수력학 조건이 최적 범위입니다.'],
+      actionsTaken.length > 0
+        ? actionsTaken
+        : [
+            isEn
+              ? 'Current internals hydraulics are already within the optimal range.'
+              : '현재 인터널 수력학 조건이 최적 범위입니다.',
+          ],
     internalsOptions,
   };
 }
@@ -1888,12 +2135,26 @@ export async function autoFixColumnInternalsAsync(
   colParams: DistillColumnParams,
   feeds: DistillFeedInput[],
   simResult: DistillSolveResult,
-  onProgress?: (step: number, total: number, label: string) => void
+  onProgress?: (step: number, total: number, label: string) => void,
+  lang: 'ko' | 'en' = 'ko'
 ): Promise<EquipmentAutoFixResult<ColumnInternalsParams, ColumnInternalsSolveResult>> {
-  onProgress?.(1, 2, '트레이/충진물 조합 격자 스윕(범람·ΔP·턴다운·원가) 탐색 중...');
+  const isEn = lang === 'en';
+  onProgress?.(
+    1,
+    2,
+    isEn
+      ? 'Sweeping tray/packing grid (Flood · ΔP · Turndown · Cost)...'
+      : '트레이/충진물 조합 격자 스윕(범람·ΔP·턴다운·원가) 탐색 중...'
+  );
   await yieldToBrowser();
-  const res = autoFixColumnInternals(colParams, feeds, simResult);
-  onProgress?.(2, 2, '상위 3개 AI 검증 인터널 설계 대안 산출 완료');
+  const res = autoFixColumnInternals(colParams, feeds, simResult, lang);
+  onProgress?.(
+    2,
+    2,
+    isEn
+      ? 'Generated top 3 AI-verified internals design alternatives'
+      : '상위 3개 AI 검증 인터널 설계 대안 산출 완료'
+  );
   await yieldToBrowser();
   return res;
 }
@@ -1903,7 +2164,11 @@ export async function autoFixColumnInternalsAsync(
  * - 1순위: 서버 프록시 (/api/ai/advise) — API 키 미노출 및 일일 한도 제어
  * - 2순위: 브라우저 localStorage('CHEMPRO_GEMINI_KEY') 직접 호출 (로컬 개발 폴백)
  */
-export async function fetchOptionalGeminiAdvice(contextPrompt: string): Promise<string | null> {
+export async function fetchOptionalGeminiAdvice(
+  contextPrompt: string,
+  lang: 'ko' | 'en' = 'ko'
+): Promise<string | null> {
+  const isEn = lang === 'en';
   try {
     if (typeof window === 'undefined') return null;
 
@@ -1943,7 +2208,9 @@ export async function fetchOptionalGeminiAdvice(contextPrompt: string): Promise<
             {
               parts: [
                 {
-                  text: `당신은 화학공정 장치설계 수석 엔지니어입니다. 아래 장치 해석 요약을 보고 실무 핵심 코멘트 2줄만 한국어로 간결히 작성하세요.\n\n${contextPrompt}`,
+                  text: isEn
+                    ? `You are a Principal Chemical Process Equipment Engineer. Based on the equipment analysis summary below, write 2 concise, practical engineering comments in English.\n\n${contextPrompt}`
+                    : `당신은 화학공정 장치설계 수석 엔지니어입니다. 아래 장치 해석 요약을 보고 실무 핵심 코멘트 2줄만 한국어로 간결히 작성하세요.\n\n${contextPrompt}`,
                 },
               ],
             },

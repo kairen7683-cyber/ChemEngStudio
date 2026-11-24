@@ -221,7 +221,8 @@ export default function ColumnInternalsDesignPanel({
         simResult,
         (step, total, label) => {
           setAiStepLabel(`(${step}/${total}) ${label}`);
-        }
+        },
+        isEn ? 'en' : 'ko'
       );
       if (fix.internalsOptions && fix.internalsOptions.length > 0) {
         onChangeConfig({
@@ -233,9 +234,10 @@ export default function ColumnInternalsDesignPanel({
         patchInternals(fix.patch);
       }
       setSelectedAiOptionId(fix.internalsOptions?.[0]?.id ?? null);
-      const gNote = await fetchOptionalGeminiAdvice(
-        `[컬럼 인터널 ${unitTag}] 범람율=${fix.solvedAfter.maxFloodPct.toFixed(1)}%, 압손=${fix.solvedAfter.totalInternalsDpMbar.toFixed(1)} mbar, 조치=${fix.actionsTaken.join(', ')}`
-      );
+      const prompt = isEn
+        ? `[Column Internals ${unitTag}] Flooding=${fix.solvedAfter.maxFloodPct.toFixed(1)}%, ΔP=${fix.solvedAfter.totalInternalsDpMbar.toFixed(1)} mbar, Actions: ${fix.actionsTaken.join(', ')}. Respond concisely in English.`
+        : `[컬럼 인터널 ${unitTag}] 범람율=${fix.solvedAfter.maxFloodPct.toFixed(1)}%, 압손=${fix.solvedAfter.totalInternalsDpMbar.toFixed(1)} mbar, 조치=${fix.actionsTaken.join(', ')}`;
+      const gNote = await fetchOptionalGeminiAdvice(prompt, isEn ? 'en' : 'ko');
       setAiReport({ result: fix, geminiNote: gNote });
       setAiNote(
         `${fix.headline}${fix.actionsTaken.length > 0 ? ` (${fix.actionsTaken.join(' · ')})` : ''}${gNote ? `\n${gNote}` : ''}`

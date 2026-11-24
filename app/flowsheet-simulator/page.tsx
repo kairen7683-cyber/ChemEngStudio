@@ -1137,7 +1137,7 @@ interface PresetScenario {
   btnLabelEn?: string;
   title: string;
   titleEn?: string;
-  nodes: Array<FlowNodeDef & { position: { x: number; y: number } }>;
+  nodes: Array<FlowNodeDef & { nameEn?: string; position: { x: number; y: number } }>;
   edges: FlowEdgeDef[];
 }
 
@@ -4664,7 +4664,11 @@ export function FlowsheetWorkspace({
 
   // 단위 예제 프리셋 로드
   const loadPreset = (p: PresetScenario) => {
-    const nextDefs = p.nodes.map(({ position: _pos, ...def }) => ({ ...def, params: { ...def.params } }));
+    const nextDefs = p.nodes.map(({ position: _pos, nameEn, ...def }) => ({
+      ...def,
+      name: isEn ? (nameEn || def.name) : def.name,
+      params: { ...def.params },
+    }));
     const nextEdges = p.edges.map(e => ({ ...e }));
     const nextPositions: Record<string, { x: number; y: number }> = {};
     p.nodes.forEach(n => {

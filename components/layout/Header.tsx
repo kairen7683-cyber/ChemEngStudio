@@ -374,9 +374,13 @@ export default function Header() {
     const alreadyOnTarget = pathname.startsWith(targetHref);
     const caseName = lang === 'en' ? ex.btnLabelEn : ex.btnLabel;
     const positions: Record<string, { x: number; y: number }> = {};
-    const simDefs = ex.nodes.map(({ position, ...rest }) => {
+    const simDefs = ex.nodes.map(({ position, nameEn, ...rest }) => {
       positions[rest.id] = { ...position };
-      return { ...rest, params: { ...rest.params } };
+      return {
+        ...rest,
+        name: lang === 'en' ? (nameEn || rest.name) : rest.name,
+        params: { ...rest.params },
+      };
     });
     const flowEdges = ex.edges.map(e => ({ ...e }));
     const compSet = new Set<string>();
