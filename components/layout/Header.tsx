@@ -287,6 +287,8 @@ export default function Header() {
 
   const handleStartNewBlankCase = () => {
     const targetPlantId: PlantId = simUiMode === 'classic' ? 'classic_sim' : 'new_builder';
+    const targetHref = simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator';
+    const alreadyOnTarget = pathname.startsWith(targetHref);
     setCaseMenuOpen(false);
     setToolsMenuOpen(false);
     setSettingsMenuOpen(false);
@@ -297,10 +299,13 @@ export default function Header() {
       uiMode: simUiMode,
     });
     setActivePlantId(targetPlantId);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+    if (alreadyOnTarget) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+      }
+    } else {
+      router.push(targetHref);
     }
-    router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
   };
 
   const handleTriggerSaveCase = (mode: 'quick_save' | 'save_as') => {
@@ -323,6 +328,13 @@ export default function Header() {
   };
 
   const handleOpenSavedCase = (item: UnifiedSavedCaseEntry) => {
+    const targetHref =
+      item.uiMode === 'classic'
+        ? '/classic-simulator'
+        : item.targetPlantId === 'new_builder'
+          ? '/flowsheet-simulator'
+          : '/material-balance';
+    const alreadyOnTarget = pathname.startsWith(targetHref);
     setCaseMenuOpen(false);
     setActiveCaseTitle(item.name, item.targetPlantId);
     stagePendingCaseLoad({
@@ -333,16 +345,13 @@ export default function Header() {
       rawProject: item.rawProject,
     });
     setActivePlantId(item.targetPlantId);
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+    if (alreadyOnTarget) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+      }
+    } else {
+      router.push(targetHref);
     }
-    router.push(
-      item.uiMode === 'classic'
-        ? '/classic-simulator'
-        : item.targetPlantId === 'new_builder'
-          ? '/flowsheet-simulator'
-          : '/material-balance'
-    );
   };
 
   const handleSelectExamplePlant = (plantId: PlantId) => {

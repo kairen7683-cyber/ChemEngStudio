@@ -1932,6 +1932,7 @@ interface SavedFlowsheetState {
   boundarySyncEnabled?: boolean;
   activeComponents?: SimCompKey[];
   propertyMethod?: SimPropertyMethod;
+  unitPrefs?: Partial<Record<string, string>>;
   isSimDirty?: boolean;
   lastSolvedMeta?: {
     result: FlowsheetSolveResult;
@@ -3243,15 +3244,28 @@ export function FlowsheetWorkspace({
               }))
             );
             setFlowEdges(parsed.flowEdges);
+            if (parsed.unitPrefs) {
+              useUnitStore.getState().setUnits(parsed.unitPrefs);
+            }
 
+            const pEdgeIds = new Set(parsed.flowEdges.map(e => e.id));
+            const pNodeIds = new Set(parsed.simDefs.map(d => d.id));
             const savedMetaCandidate =
+              !parsed.isSimDirty &&
               parsed.lastSolvedMeta?.result &&
               Array.isArray(parsed.lastSolvedMeta.result.streams) &&
               (!parsed.lastSolvedMeta.solvedSheetId || parsed.lastSolvedMeta.solvedSheetId === restoredSheetId)
                 ? parsed.lastSolvedMeta
-                : parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta;
+                : !parsed.isSimDirty
+                  ? parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta
+                  : undefined;
+            const savedMetaMatches =
+              !!savedMetaCandidate?.result &&
+              !savedMetaCandidate.result.convergence?.isIdle &&
+              savedMetaCandidate.result.streams.every(s => pEdgeIds.has(s.edgeId)) &&
+              Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => pNodeIds.has(uid));
 
-            if (savedMetaCandidate?.result && !savedMetaCandidate.result.convergence?.isIdle) {
+            if (savedMetaMatches && savedMetaCandidate) {
               hadSavedSolved = true;
               setSolvedMeta({
                 result: savedMetaCandidate.result,
@@ -3259,7 +3273,7 @@ export function FlowsheetWorkspace({
                 runCount: Math.max(1, savedMetaCandidate.runCount ?? 1),
                 lastRunTime: savedMetaCandidate.lastRunTime || parsed.savedAt || '저장 케이스 복원',
               });
-              setIsSimDirty(Boolean(parsed.isSimDirty));
+              setIsSimDirty(false);
             } else {
               setSolvedMeta({
                 result: createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
@@ -3399,15 +3413,28 @@ export function FlowsheetWorkspace({
               }))
             );
             setFlowEdges(parsed.flowEdges);
+            if (parsed.unitPrefs) {
+              useUnitStore.getState().setUnits(parsed.unitPrefs);
+            }
 
+            const aEdgeIds = new Set(parsed.flowEdges.map(e => e.id));
+            const aNodeIds = new Set(parsed.simDefs.map(d => d.id));
             const savedMetaCandidate =
+              !parsed.isSimDirty &&
               parsed.lastSolvedMeta?.result &&
               Array.isArray(parsed.lastSolvedMeta.result.streams) &&
               (!parsed.lastSolvedMeta.solvedSheetId || parsed.lastSolvedMeta.solvedSheetId === restoredSheetId)
                 ? parsed.lastSolvedMeta
-                : parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta;
+                : !parsed.isSimDirty
+                  ? parsed.hierarchySheets?.[restoredSheetId]?.cachedSolvedMeta
+                  : undefined;
+            const savedMetaMatches =
+              !!savedMetaCandidate?.result &&
+              !savedMetaCandidate.result.convergence?.isIdle &&
+              savedMetaCandidate.result.streams.every(s => aEdgeIds.has(s.edgeId)) &&
+              Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => aNodeIds.has(uid));
 
-            if (savedMetaCandidate?.result && !savedMetaCandidate.result.convergence?.isIdle) {
+            if (savedMetaMatches && savedMetaCandidate) {
               hadSavedSolved = true;
               setSolvedMeta({
                 result: savedMetaCandidate.result,
@@ -3415,7 +3442,7 @@ export function FlowsheetWorkspace({
                 runCount: Math.max(1, savedMetaCandidate.runCount ?? 1),
                 lastRunTime: savedMetaCandidate.lastRunTime || parsed.savedAt || '저장본 복원',
               });
-              setIsSimDirty(Boolean(parsed.isSimDirty));
+              setIsSimDirty(false);
             } else {
               setSolvedMeta({
                 result: createIdleFlowsheetResult(parsed.simDefs, parsed.flowEdges, {
@@ -4230,8 +4257,8 @@ export function FlowsheetWorkspace({
               lastRunTime: solvedMeta.lastRunTime,
               runCount: solvedMeta.runCount,
             }
-          : hierarchySheets[activeSheetId]?.cachedSolvedMeta;
-      const syncedSheets: Record<string, SheetRuntimeData> | undefined = isMultiSheetMode
+          : undefined;
+      const syncedSheets: Record<string, SheetRuntimeData> = isMultiSheetMode
         ? {
             ...hierarchySheets,
             [activeSheetId]: {
@@ -4242,7 +4269,15 @@ export function FlowsheetWorkspace({
               cachedSolvedMeta: activeCached,
             },
           }
-        : hierarchySheets;
+        : {
+            [activeSheetId]: {
+              ...(hierarchySheets[activeSheetId] ?? initialSheets.master),
+              simDefs,
+              positions,
+              flowEdges,
+              cachedSolvedMeta: activeCached,
+            },
+          };
       const nowStr = new Date().toLocaleTimeString('ko-KR', { hour12: false });
       const payload: SavedFlowsheetState = {
         version: 5,
@@ -4256,16 +4291,18 @@ export function FlowsheetWorkspace({
         boundarySyncEnabled,
         activeComponents,
         propertyMethod,
+        unitPrefs: { ...useUnitStore.getState().units },
         isSimDirty,
-        lastSolvedMeta: !solvedMeta.result.convergence.isIdle
-          ? {
-              result: solvedMeta.result,
-              elapsedMs: solvedMeta.elapsedMs,
-              runCount: solvedMeta.runCount,
-              lastRunTime: solvedMeta.lastRunTime,
-              solvedSheetId: activeSheetId,
-            }
-          : undefined,
+        lastSolvedMeta:
+          !isSimDirty && !solvedMeta.result.convergence.isIdle
+            ? {
+                result: solvedMeta.result,
+                elapsedMs: solvedMeta.elapsedMs,
+                runCount: solvedMeta.runCount,
+                lastRunTime: solvedMeta.lastRunTime,
+                solvedSheetId: activeSheetId,
+              }
+            : undefined,
       };
       try {
         localStorage.setItem(AUTO_SAVE_KEY, JSON.stringify(payload));
@@ -4337,7 +4374,7 @@ export function FlowsheetWorkspace({
             lastRunTime: solvedMeta.lastRunTime,
             runCount: solvedMeta.runCount,
           }
-        : hierarchySheets[activeSheetId]?.cachedSolvedMeta;
+        : undefined;
     const syncedSheets = isMultiSheetMode
       ? {
           ...hierarchySheets,
@@ -4349,7 +4386,15 @@ export function FlowsheetWorkspace({
             cachedSolvedMeta: activeCached,
           },
         }
-      : hierarchySheets;
+      : {
+          [activeSheetId]: {
+            ...(hierarchySheets[activeSheetId] ?? initialSheets.master),
+            simDefs,
+            positions,
+            flowEdges,
+            cachedSolvedMeta: activeCached,
+          },
+        };
     return {
       version: 5,
       savedAt: nowStr,
@@ -4362,9 +4407,10 @@ export function FlowsheetWorkspace({
       boundarySyncEnabled,
       activeComponents,
       propertyMethod,
+      unitPrefs: { ...useUnitStore.getState().units },
       isSimDirty,
       lastSolvedMeta:
-        !solvedMeta.result.convergence.isIdle
+        !isSimDirty && !solvedMeta.result.convergence.isIdle
           ? {
               result: solvedMeta.result,
               elapsedMs: solvedMeta.elapsedMs,
@@ -4379,15 +4425,16 @@ export function FlowsheetWorkspace({
   const saveNamedProject = () => {
     const trimmed = projectNameInput.trim() || `시뮬레이션_${new Date().toLocaleTimeString('ko-KR', { hour12: false })}`;
     const nowStr = new Date().toLocaleString('ko-KR', { hour12: false });
+    const existing = namedProjects.find(p => p.name === trimmed);
     const item: NamedProjectItem = {
-      id: `proj_${Date.now()}`,
+      id: existing ? existing.id : `proj_${Date.now()}`,
       name: trimmed,
       savedAt: nowStr,
       nodeCount: simDefs.length,
       edgeCount: flowEdges.length,
       state: buildCurrentSavedState(nowStr),
     };
-    const next = [item, ...namedProjects];
+    const next = [item, ...namedProjects.filter(p => p.id !== item.id)];
     setNamedProjects(next);
     setProjectNameInput('');
     try {
@@ -4427,6 +4474,10 @@ export function FlowsheetWorkspace({
 
   const loadFromStateObject = (st: SavedFlowsheetState) => {
     skipNextDirtyRef.current = true;
+    pendingSaveRef.current = false;
+    if (st.unitPrefs) {
+      useUnitStore.getState().setUnits(st.unitPrefs);
+    }
     const nextMethod: SimPropertyMethod =
       st.propertyMethod === 'ENRTL' ||
       st.propertyMethod === 'NRTL' ||
@@ -4443,19 +4494,30 @@ export function FlowsheetWorkspace({
     setPropertyMethod(nextMethod);
     setActiveComponents(nextComps);
     setPresetId(st.presetId || 'custom');
-    if (st.hierarchySheets && Object.keys(st.hierarchySheets).length > 0) {
-      setHierarchySheets(st.hierarchySheets);
-    } else if (!isPlantSimMode) {
+    const targetId = st.activeSheetId || 'master';
+    if (st.hierarchySheets && Object.keys(st.hierarchySheets).length > 1) {
       setHierarchySheets({
-        master: {
-          ...initialSheets.master,
+        ...st.hierarchySheets,
+        [targetId]: {
+          ...(st.hierarchySheets[targetId] ?? initialSheets.master),
           simDefs: st.simDefs,
           positions: st.positions ?? {},
           flowEdges: st.flowEdges,
         },
       });
+    } else if (!isPlantSimMode) {
+      setHierarchySheets({
+        [targetId]: {
+          ...(st.hierarchySheets?.[targetId] ?? initialSheets.master),
+          simDefs: st.simDefs,
+          positions: st.positions ?? {},
+          flowEdges: st.flowEdges,
+        },
+      });
+    } else if (st.hierarchySheets && Object.keys(st.hierarchySheets).length > 0) {
+      setHierarchySheets(st.hierarchySheets);
     }
-    setActiveSheetId(st.activeSheetId || 'master');
+    setActiveSheetId(targetId);
     if (typeof st.boundarySyncEnabled === 'boolean') {
       setBoundarySyncEnabled(st.boundarySyncEnabled);
     }
@@ -4470,21 +4532,30 @@ export function FlowsheetWorkspace({
       }))
     );
     setFlowEdges(st.flowEdges);
-    const targetId = st.activeSheetId || 'master';
-    const candidate =
+    const edgeIdSet = new Set(st.flowEdges.map(e => e.id));
+    const nodeIdSet = new Set(st.simDefs.map(d => d.id));
+    const rawCandidate =
+      !st.isSimDirty &&
       st.lastSolvedMeta?.result &&
       Array.isArray(st.lastSolvedMeta.result.streams) &&
       (!st.lastSolvedMeta.solvedSheetId || st.lastSolvedMeta.solvedSheetId === targetId)
         ? st.lastSolvedMeta
-        : st.hierarchySheets?.[targetId]?.cachedSolvedMeta;
-    if (candidate?.result && !candidate.result.convergence?.isIdle) {
+        : !st.isSimDirty
+          ? st.hierarchySheets?.[targetId]?.cachedSolvedMeta
+          : undefined;
+    const candidateMatchesGraph =
+      !!rawCandidate?.result &&
+      !rawCandidate.result.convergence?.isIdle &&
+      rawCandidate.result.streams.every(s => edgeIdSet.has(s.edgeId)) &&
+      Object.keys(rawCandidate.result.units ?? {}).every(uid => nodeIdSet.has(uid));
+    if (candidateMatchesGraph && rawCandidate) {
       setSolvedMeta({
-        result: candidate.result,
-        elapsedMs: candidate.elapsedMs ?? 1,
-        runCount: Math.max(1, candidate.runCount ?? 1),
-        lastRunTime: candidate.lastRunTime || st.savedAt || '저장본 복원',
+        result: rawCandidate.result,
+        elapsedMs: rawCandidate.elapsedMs ?? 1,
+        runCount: Math.max(1, rawCandidate.runCount ?? 1),
+        lastRunTime: rawCandidate.lastRunTime || st.savedAt || '저장본 복원',
       });
-      setIsSimDirty(Boolean(st.isSimDirty));
+      setIsSimDirty(false);
     } else {
       setSolvedMeta({
         result: createIdleFlowsheetResult(st.simDefs, st.flowEdges, {

@@ -84,6 +84,9 @@ const TRACKED_PREFIXES = [
   'electro-pfd-',
   'chempro_sim_handoff_',
   'CHEMPRO_GEMINI_KEY',
+  'chemeng_unit_prefs_',
+  'chemeng_tag_standard_',
+  'chemeng_lang_',
 ];
 
 export function isTrackedWorkspaceKey(key: string): boolean {

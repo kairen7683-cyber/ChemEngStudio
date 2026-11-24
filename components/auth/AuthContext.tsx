@@ -23,6 +23,7 @@ import {
 } from '@/lib/auth/authClient';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
 import { usePFDStore } from '@/lib/stores/pfdStore';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import {
   PLANT_REGISTRY,
   getPlantRegistryItem,
@@ -94,6 +95,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         try {
           useBalanceStore.getState().hydrateActivePlant();
+        } catch {
+          // ignore
+        }
+        try {
+          useUnitStore.getState().hydrate(true);
         } catch {
           // ignore
         }

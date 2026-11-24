@@ -49,6 +49,9 @@ export function useLocalUnit(
 
   const setUnitId = (nextUnitId: string) => {
     setOverride({ rev: revision, id: nextUnitId });
+    if (controlledUnitId === undefined) {
+      useUnitStore.getState().setUnit(quantity, nextUnitId);
+    }
   };
 
   return [activeId, setUnitId];

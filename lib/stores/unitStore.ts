@@ -97,8 +97,9 @@ interface UnitStoreState {
   lang: AppLang;
   hydrated: boolean;
   revision: number;
-  hydrate: () => void;
+  hydrate: (force?: boolean) => void;
   setUnit: (quantity: UnitQuantity, unitId: string) => void;
+  setUnits: (partial: Partial<UnitPreferences>) => void;
   applyPreset: (presetId: Exclude<UnitPresetId, 'CUSTOM'>) => void;
   setTagStandard: (std: TagStandardId) => void;
   setLang: (lang: AppLang) => void;
@@ -113,21 +114,22 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
   hydrated: false,
   revision: 0,
 
-  hydrate: () => {
-    if (get().hydrated) return;
+  hydrate: (force = false) => {
+    if (get().hydrated && !force) return;
     const loaded = loadInitialUnits();
     const loadedTagStd = loadInitialTagStandard();
     const loadedLang = loadInitialLang();
     if (typeof document !== 'undefined' && document.documentElement) {
       document.documentElement.lang = loadedLang;
     }
-    set({
+    set(s => ({
       units: loaded,
       presetId: detectPresetId(loaded),
       tagStandard: loadedTagStd,
       lang: loadedLang,
       hydrated: true,
-    });
+      revision: force ? s.revision + 1 : s.revision,
+    }));
   },
 
   setTagStandard: std => {
@@ -144,6 +146,30 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
     const valid = UNIT_QUANTITIES[quantity].options.some(o => o.id === unitId);
     if (!valid) return;
     const next: UnitPreferences = { ...get().units, [quantity]: unitId };
+    saveUnits(next);
+    set(s => ({
+      units: next,
+      presetId: detectPresetId(next),
+      revision: s.revision + 1,
+    }));
+  },
+
+  setUnits: partial => {
+    if (!partial || typeof partial !== 'object') return;
+    const next: UnitPreferences = { ...get().units };
+    let changed = false;
+    (Object.keys(UNIT_QUANTITIES) as UnitQuantity[]).forEach(q => {
+      const candidate = partial[q];
+      if (
+        typeof candidate === 'string' &&
+        UNIT_QUANTITIES[q].options.some(o => o.id === candidate) &&
+        next[q] !== candidate
+      ) {
+        next[q] = candidate;
+        changed = true;
+      }
+    });
+    if (!changed) return;
     saveUnits(next);
     set(s => ({
       units: next,
