@@ -3328,7 +3328,9 @@ export function FlowsheetWorkspace({
               !!savedMetaCandidate?.result &&
               !savedMetaCandidate.result.convergence?.isIdle &&
               savedMetaCandidate.result.streams.every(s => pEdgeIds.has(s.edgeId)) &&
-              Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => pNodeIds.has(uid));
+              (Array.isArray(savedMetaCandidate.result.units)
+                ? savedMetaCandidate.result.units.every(u => pNodeIds.has(u.nodeId))
+                : Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => pNodeIds.has(uid)));
 
             if (savedMetaMatches && savedMetaCandidate) {
               hadSavedSolved = true;
@@ -3497,7 +3499,9 @@ export function FlowsheetWorkspace({
               !!savedMetaCandidate?.result &&
               !savedMetaCandidate.result.convergence?.isIdle &&
               savedMetaCandidate.result.streams.every(s => aEdgeIds.has(s.edgeId)) &&
-              Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => aNodeIds.has(uid));
+              (Array.isArray(savedMetaCandidate.result.units)
+                ? savedMetaCandidate.result.units.every(u => aNodeIds.has(u.nodeId))
+                : Object.keys(savedMetaCandidate.result.units ?? {}).every(uid => aNodeIds.has(uid)));
 
             if (savedMetaMatches && savedMetaCandidate) {
               hadSavedSolved = true;
@@ -4612,7 +4616,9 @@ export function FlowsheetWorkspace({
       !!rawCandidate?.result &&
       !rawCandidate.result.convergence?.isIdle &&
       rawCandidate.result.streams.every(s => edgeIdSet.has(s.edgeId)) &&
-      Object.keys(rawCandidate.result.units ?? {}).every(uid => nodeIdSet.has(uid));
+      (Array.isArray(rawCandidate.result.units)
+        ? rawCandidate.result.units.every(u => nodeIdSet.has(u.nodeId))
+        : Object.keys(rawCandidate.result.units ?? {}).every(uid => nodeIdSet.has(uid)));
     if (candidateMatchesGraph && rawCandidate) {
       setSolvedMeta({
         result: rawCandidate.result,

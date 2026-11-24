@@ -175,17 +175,20 @@ export default function Header() {
   }, [hydrateActivePlant, hydrateUnits]);
 
   // URL로 직접 /flowsheet-simulator 또는 /classic-simulator 진입 시 컨텍스트 동기화
+  // 주의: activePlantId를 의존성 배열에 넣으면 시뮬레이터 화면에서 예제 공장 클릭 시
+  // pathname 전환 완료 전에 activePlantId가 다시 new_builder/classic_sim으로 덮어쓰이는 버그 발생!
   useEffect(() => {
+    const currentPlantId = useBalanceStore.getState().activePlantId;
     if (pathname.startsWith('/flowsheet-simulator')) {
-      if (activePlantId !== 'new_builder') setActivePlantId('new_builder');
+      if (currentPlantId !== 'new_builder') setActivePlantId('new_builder');
       setSimUiMode('modern');
       setPreferredSimUiMode('modern');
     } else if (pathname.startsWith('/classic-simulator')) {
-      if (activePlantId !== 'classic_sim') setActivePlantId('classic_sim');
+      if (currentPlantId !== 'classic_sim') setActivePlantId('classic_sim');
       setSimUiMode('classic');
       setPreferredSimUiMode('classic');
     }
-  }, [pathname, activePlantId, setActivePlantId]);
+  }, [pathname, setActivePlantId]);
 
   const allowedCommercialPlants = simOnly
     ? []
