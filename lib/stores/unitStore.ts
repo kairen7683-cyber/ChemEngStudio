@@ -17,15 +17,21 @@ const STORAGE_KEY = 'chemeng_unit_prefs_v1';
 const TAG_STD_STORAGE_KEY = 'chemeng_tag_standard_v1';
 const LANG_STORAGE_KEY = 'chemeng_lang_v1';
 
+function detectBrowserLang(): AppLang {
+  if (typeof window === 'undefined') return 'en';
+  const navLang = (window.navigator?.language || '').toLowerCase();
+  const firstLang = (window.navigator?.languages?.[0] || '').toLowerCase();
+  return navLang.startsWith('ko') || firstLang.startsWith('ko') ? 'ko' : 'en';
+}
+
 function loadInitialLang(): AppLang {
-  if (typeof window === 'undefined') return 'ko';
+  if (typeof window === 'undefined') return 'en';
   try {
     const raw = window.localStorage.getItem(LANG_STORAGE_KEY);
     if (raw === 'ko' || raw === 'en') return raw;
-    const browserLang = (window.navigator?.language || '').toLowerCase();
-    return browserLang.startsWith('ko') ? 'ko' : 'en';
+    return detectBrowserLang();
   } catch {
-    return 'ko';
+    return detectBrowserLang();
   }
 }
 
@@ -110,7 +116,7 @@ export const useUnitStore = create<UnitStoreState>((set, get) => ({
   units: { ...DEFAULT_UNIT_PREFS },
   presetId: 'METRIC_ENG',
   tagStandard: DEFAULT_TAG_STANDARD,
-  lang: 'ko',
+  lang: 'en',
   hydrated: false,
   revision: 0,
 

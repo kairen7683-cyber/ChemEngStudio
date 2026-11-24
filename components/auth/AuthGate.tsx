@@ -9,14 +9,17 @@ import {
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import LandingPage from '@/components/landing/LandingPage';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import { useAuth } from './AuthContext';
 
 function RememberMeOption({
   checked,
   onChange,
+  isEn,
 }: {
   checked: boolean;
   onChange: (next: boolean) => void;
+  isEn: boolean;
 }) {
   return (
     <label
@@ -40,10 +43,18 @@ function RememberMeOption({
           onChange={e => onChange(e.target.checked)}
           style={{ width: 15, height: 15, accentColor: '#1D4ED8', cursor: 'pointer', margin: 0 }}
         />
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>로그인 상태 유지</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>
+          {isEn ? 'Keep me signed in' : '로그인 상태 유지'}
+        </span>
       </span>
       <span style={{ fontSize: 10.5, fontWeight: 600, color: checked ? '#1D4ED8' : '#64748B' }}>
-        {checked ? '14일간 자동 로그인' : '창·앱 닫으면 로그아웃'}
+        {checked
+          ? isEn
+            ? 'Stay signed in for 14 days'
+            : '14일간 자동 로그인'
+          : isEn
+            ? 'Sign out when closed'
+            : '창·앱 닫으면 로그아웃'}
       </span>
     </label>
   );
@@ -58,9 +69,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     refreshAuthAndHydrate,
     handleLoginSuccess,
   } = useAuth();
+  const lang = useUnitStore(s => s.lang);
+  const hydrateUnits = useUnitStore(s => s.hydrate);
+  const isEn = lang === 'en';
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [showLandingPreview, setShowLandingPreview] = useState(false);
+
+  useEffect(() => {
+    hydrateUnits();
+  }, [hydrateUnits]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -173,7 +191,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             ChemPlant Studio
           </div>
           <div style={{ fontSize: 12.5, color: '#94A3B8' }}>
-            개인 워크스페이스 보안 연결 및 데이터 동기화 중...
+            {isEn ? 'Connecting to your workspace...' : '개인 워크스페이스 보안 연결 및 데이터 동기화 중...'}
           </div>
         </div>
       </div>
@@ -200,7 +218,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     setFormError(null);
     setFormSuccess(null);
     if (!username.trim() || !password) {
-      setFormError('이메일(또는 아이디)과 비밀번호를 입력하세요.');
+      setFormError(
+        isEn
+          ? 'Please enter your email (or username) and password.'
+          : '이메일(또는 아이디)과 비밀번호를 입력하세요.'
+      );
       return;
     }
     setSubmitting(true);
@@ -208,7 +230,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       await loginWithPassword(username.trim(), password, rememberMe);
       await handleLoginSuccess();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : isEn
+            ? 'Sign in failed.'
+            : '로그인에 실패했습니다.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -221,23 +249,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     const trimmedEmail = email.trim();
     const normalizedEmail = trimmedEmail.toLowerCase();
     if (!trimmedEmail || !password) {
-      setFormError('이메일 주소와 비밀번호를 입력하세요.');
+      setFormError(
+        isEn
+          ? 'Please enter your email address and password.'
+          : '이메일 주소와 비밀번호를 입력하세요.'
+      );
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setFormError('올바른 이메일 주소를 입력하세요.');
+      setFormError(
+        isEn ? 'Please enter a valid email address.' : '올바른 이메일 주소를 입력하세요.'
+      );
       return;
     }
     if (password.length < 8) {
-      setFormError('비밀번호는 8자 이상으로 설정하세요.');
+      setFormError(
+        isEn ? 'Password must be at least 8 characters.' : '비밀번호는 8자 이상으로 설정하세요.'
+      );
       return;
     }
     if (!plantProduct.trim()) {
-      setFormError('담당 업무 또는 관심 공정을 입력해 주세요.');
+      setFormError(
+        isEn
+          ? 'Please enter your industry or process field.'
+          : '담당 업무 또는 관심 공정을 입력해 주세요.'
+      );
       return;
     }
     if (registrationMode === 'invite_only' && !inviteCode.trim()) {
-      setFormError('폐쇄형 테스트 기간입니다. 발급받은 초대코드를 입력하세요.');
+      setFormError(
+        isEn
+          ? 'Invite-only beta is active. Please enter your invite code.'
+          : '폐쇄형 테스트 기간입니다. 발급받은 초대코드를 입력하세요.'
+      );
       return;
     }
     setSubmitting(true);
@@ -252,19 +296,31 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         remember_me: rememberMe,
       });
       if (res.status === 'active') {
-        setFormSuccess(res.message || '가입이 완료되었습니다. 자동 로그인 중...');
+        setFormSuccess(
+          res.message ||
+            (isEn ? 'Account created. Signing you in...' : '가입이 완료되었습니다. 자동 로그인 중...')
+        );
         await loginWithPassword(normalizedEmail, password, rememberMe);
         await handleLoginSuccess();
       } else {
         setFormSuccess(
-          res.message || '가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.'
+          res.message ||
+            (isEn
+              ? 'Registration submitted. You can sign in once an admin approves your account.'
+              : '가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.')
         );
         setUsername(normalizedEmail);
         setTab('login');
         setPassword('');
       }
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : '회원가입 요청에 실패했습니다.');
+      setFormError(
+        err instanceof Error
+          ? err.message
+          : isEn
+            ? 'Registration failed.'
+            : '회원가입 요청에 실패했습니다.'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -272,10 +328,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   const modeNotice =
     registrationMode === 'invite_only'
-      ? '초대코드 전용 (폐쇄형 테스트)'
+      ? isEn
+        ? 'Invite-Only Beta'
+        : '초대코드 전용 (폐쇄형 테스트)'
       : registrationMode === 'approval'
-        ? '가입 후 관리자 승인제'
-        : '자유 회원가입';
+        ? isEn
+          ? 'Admin Approval'
+          : '가입 후 관리자 승인제'
+        : isEn
+          ? 'Open Registration'
+          : '자유 회원가입';
 
   return (
     <>
@@ -345,7 +407,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                       ChemPlant Studio
                     </div>
                     <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>
-                      화학공정 설계 · 열역학 시뮬레이션 플랫폼
+                      {isEn
+                        ? 'Chemical Process Design & Simulation Platform'
+                        : '화학공정 설계 · 열역학 시뮬레이션 플랫폼'}
                     </div>
                   </div>
                 </div>
@@ -366,7 +430,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   </span>
                   <button
                     type="button"
-                    aria-label="닫기"
+                    aria-label={isEn ? 'Close' : '닫기'}
                     onClick={() => setAuthModalOpen(false)}
                     style={{
                       width: 28,
@@ -410,7 +474,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               cursor: 'pointer',
             }}
           >
-            로그인
+            {isEn ? 'Sign In' : '로그인'}
           </button>
           <button
             type="button"
@@ -430,7 +494,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               cursor: 'pointer',
             }}
           >
-            {registrationMode === 'invite_only' ? '초대코드 가입' : '회원가입'}
+            {registrationMode === 'invite_only'
+              ? isEn
+                ? 'Invite Sign Up'
+                : '초대코드 가입'
+              : isEn
+                ? 'Create Account'
+                : '회원가입'}
           </button>
         </div>
 
@@ -468,7 +538,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   flexShrink: 0,
                 }}
               >
-                재연결
+                {isEn ? 'Retry' : '재연결'}
               </button>
             </div>
           )}
@@ -511,14 +581,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             <form onSubmit={handleSubmitLogin} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 5 }}>
-                  이메일 또는 아이디
+                  {isEn ? 'Email or Username' : '이메일 또는 아이디'}
                 </label>
                 <input
                   type="text"
                   autoComplete="username"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
-                  placeholder="name@company.com 또는 아이디"
+                  placeholder={isEn ? 'name@company.com or username' : 'name@company.com 또는 아이디'}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -533,14 +603,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 5 }}>
-                  비밀번호
+                  {isEn ? 'Password' : '비밀번호'}
                 </label>
                 <input
                   type="password"
                   autoComplete="current-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="비밀번호 입력"
+                  placeholder={isEn ? 'Enter your password' : '비밀번호 입력'}
                   style={{
                     width: '100%',
                     padding: '9px 12px',
@@ -553,7 +623,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 />
               </div>
 
-              <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} />
+              <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} isEn={isEn} />
 
               <button
                 type="submit"
@@ -570,7 +640,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   cursor: submitting ? 'wait' : 'pointer',
                 }}
               >
-                {submitting ? '로그인 및 개인 환경 불러오는 중...' : '로그인'}
+                {submitting
+                  ? isEn
+                    ? 'Signing in and loading workspace...'
+                    : '로그인 및 개인 환경 불러오는 중...'
+                  : isEn
+                    ? 'Sign In'
+                    : '로그인'}
               </button>
             </form>
           ) : (
@@ -587,22 +663,28 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 }}
               >
                 {registrationMode === 'invite_only'
-                  ? '지정된 초청 코드 보유자 전용 폐쇄형 테스트 운영 중'
+                  ? isEn
+                    ? 'Invite-Only Beta — an invite code is required to register.'
+                    : '지정된 초청 코드 보유자 전용 폐쇄형 테스트 운영 중'
                   : registrationMode === 'approval'
-                    ? '가입 신청 후 관리자 승인 시 접속 가능'
-                    : '자유 회원가입 오픈 중 — 즉시 계정이 활성화됩니다'}
+                    ? isEn
+                      ? 'Admin Approval — your account will be activated after review.'
+                      : '가입 신청 후 관리자 승인 시 접속 가능'
+                    : isEn
+                      ? 'Open Registration — your workspace activates immediately.'
+                      : '자유 회원가입 오픈 중 — 즉시 계정이 활성화됩니다'}
               </div>
 
               {registrationMode === 'invite_only' && (
                 <div>
                   <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                    초대코드 (필수)
+                    {isEn ? 'Invite Code (Required)' : '초대코드 (필수)'}
                   </label>
                   <input
                     type="text"
                     value={inviteCode}
                     onChange={e => setInviteCode(e.target.value)}
-                    placeholder="예: CHEM-INVITE-01"
+                    placeholder={isEn ? 'e.g. CHEM-INVITE-01' : '예: CHEM-INVITE-01'}
                     style={{
                       width: '100%',
                       padding: '8px 11px',
@@ -618,7 +700,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  이메일 주소 (Email)
+                  {isEn ? 'Email' : '이메일 주소 (Email)'}
                 </label>
                 <input
                   type="email"
@@ -640,7 +722,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  담당 업무 · 관심 공정 <span style={{ color: '#DC2626' }}>*</span>
+                  {isEn ? 'Industry / Process Field' : '담당 업무 · 관심 공정'}{' '}
+                  <span style={{ color: '#DC2626' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -648,7 +731,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   maxLength={120}
                   value={plantProduct}
                   onChange={e => setPlantProduct(e.target.value)}
-                  placeholder="예: EPC 공정설계, 증류탑·열교환기, 정밀화학, 2차전지 소재 등"
+                  placeholder={
+                    isEn
+                      ? 'e.g. EPC process design, distillation/HEX, fine chemicals, battery materials'
+                      : '예: EPC 공정설계, 증류탑·열교환기, 정밀화학, 2차전지 소재 등'
+                  }
                   style={{
                     width: '100%',
                     padding: '8px 11px',
@@ -659,7 +746,26 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   }}
                 />
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
-                  {['석유화학·정유', '정밀화학', '전해·무기화학', '반도체·특수가스', '2차전지 소재', 'EPC·설비설계', '연구소·학계'].map(tag => (
+                  {(isEn
+                    ? [
+                        'Petrochem / Refining',
+                        'Fine Chemicals',
+                        'Chlor-Alkali / Inorganic',
+                        'Semiconductor / Gas',
+                        'Battery Materials',
+                        'EPC / Equipment',
+                        'R&D / Academia',
+                      ]
+                    : [
+                        '석유화학·정유',
+                        '정밀화학',
+                        '전해·무기화학',
+                        '반도체·특수가스',
+                        '2차전지 소재',
+                        'EPC·설비설계',
+                        '연구소·학계',
+                      ]
+                  ).map(tag => (
                     <button
                       key={tag}
                       type="button"
@@ -683,7 +789,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
               <div>
                 <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#334155', marginBottom: 4 }}>
-                  비밀번호 (8자 이상)
+                  {isEn ? 'Password (8+ characters)' : '비밀번호 (8자 이상)'}
                 </label>
                 <input
                   type="password"
@@ -691,7 +797,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                   autoComplete="new-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="8자 이상 비밀번호 설정"
+                  placeholder={isEn ? 'At least 8 characters' : '8자 이상 비밀번호 설정'}
                   style={{
                     width: '100%',
                     padding: '8px 11px',
@@ -704,7 +810,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               </div>
 
               {registrationMode !== 'approval' && (
-                <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} />
+                <RememberMeOption checked={rememberMe} onChange={handleToggleRememberMe} isEn={isEn} />
               )}
 
               <button
@@ -723,10 +829,16 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 }}
               >
                 {submitting
-                  ? '계정 등록 처리 중...'
+                  ? isEn
+                    ? 'Creating account...'
+                    : '계정 등록 처리 중...'
                   : registrationMode === 'approval'
-                    ? '가입 승인 신청'
-                    : '계정 등록 및 시작'}
+                    ? isEn
+                      ? 'Request Access'
+                      : '가입 승인 신청'
+                    : isEn
+                      ? 'Create Account & Launch'
+                      : '계정 등록 및 시작'}
               </button>
             </form>
           )}
@@ -743,7 +855,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 lineHeight: 1.45,
               }}
             >
-              계정당 PC 1대 + 모바일 1대 동시 로그인 지원 (초과 시 기존 동일 기기 자동 로그아웃)
+              {isEn
+                ? 'Supports 1 desktop + 1 mobile active session per account (older sessions on the same device type sign out automatically).'
+                : '계정당 PC 1대 + 모바일 1대 동시 로그인 지원 (초과 시 기존 동일 기기 자동 로그아웃)'}
             </div>
             <PwaInstallButton variant="login" />
             <div
@@ -757,7 +871,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                 lineHeight: 1.5,
               }}
             >
-              각 사용자의 플로우시트·장치 설계·시뮬레이션 케이스는 개인 계정에만 독립 저장되며 타인에게 노출되지 않습니다.
+              {isEn
+                ? 'All flowsheets, equipment designs, and simulation cases are stored privately in your isolated workspace.'
+                : '각 사용자의 플로우시트·장치 설계·시뮬레이션 케이스는 개인 계정에만 독립 저장되며 타인에게 노출되지 않습니다.'}
             </div>
           </div>
         </div>

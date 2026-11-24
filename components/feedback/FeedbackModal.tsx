@@ -12,10 +12,10 @@ interface FeedbackModalProps {
 }
 
 const CATEGORIES: Array<{ id: FeedbackCategory; ko: string; en: string }> = [
-  { id: 'bug', ko: '버그 신고', en: 'Bug' },
-  { id: 'calc', ko: '계산·수식', en: 'Calculation' },
-  { id: 'feature', ko: '기능 제안', en: 'Feature' },
-  { id: 'ux', ko: 'UI·사용성', en: 'UX' },
+  { id: 'bug', ko: '버그 신고', en: 'Bug Report' },
+  { id: 'calc', ko: '계산·수식', en: 'Property / Calc Issue' },
+  { id: 'feature', ko: '기능 제안', en: 'Feature Request' },
+  { id: 'ux', ko: 'UI·사용성', en: 'UI / UX & Other' },
 ];
 
 export default function FeedbackModal({ open, onClose }: FeedbackModalProps) {

@@ -23,7 +23,7 @@ import 'reactflow/dist/style.css';
 
 import {
   SIM_COMPS,
-  COMP_META,
+  getCompLabel,
   SimCompKey,
   FlowUnitType,
   FlowNodeDef,
@@ -9375,7 +9375,7 @@ export function FlowsheetWorkspace({
                       return (
                         <div key={comp} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
                           <span style={{ fontSize: 11, fontWeight: val > 0 ? 800 : 600, color: val > 0 ? '#0F172A' : '#475569', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {COMP_META[comp].label}
+                            {getCompLabel(comp, lang)}
                           </span>
                           <UnitNumberInput
                             quantity="massFlow"
@@ -10439,7 +10439,7 @@ export function FlowsheetWorkspace({
                       >
                         {activeComponents.map(c => (
                           <option key={c} value={c}>
-                            {c} ({COMP_META[c]?.label ?? c})
+                            {c} ({getCompLabel(c, lang)})
                           </option>
                         ))}
                       </select>
