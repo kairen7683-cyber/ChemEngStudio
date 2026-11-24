@@ -26,6 +26,7 @@ import {
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import { PLANT_REGISTRY, isSimulatorOnlyUser } from '@/lib/plantRegistry';
 import { UserOutlineIcon } from '@/components/ui/EngIcons';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import { useAuth } from './AuthContext';
 
 const SELECTABLE_PLANTS = PLANT_REGISTRY.filter(p => !p.hiddenFromSelector && !p.isSandbox);
@@ -227,20 +228,23 @@ export function HeaderUserControls() {
     handleLogout,
     forceSyncNow,
   } = useAuth();
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
 
   if (!user) return null;
 
+  const isAdmin = user.role === 'admin';
   const syncBadge = (() => {
     if (localDevBypass) {
-      return { text: '로컬 개발', dot: '#64748B' };
+      return { text: isEn ? 'Local' : '로컬 개발', dot: '#64748B' };
     }
     if (syncStatus === 'saving') {
-      return { text: '동기화중', dot: '#60A5FA' };
+      return { text: isEn ? 'Syncing' : '동기화중', dot: '#60A5FA' };
     }
     if (syncStatus === 'error') {
-      return { text: '동기화 재시도', dot: '#EF4444' };
+      return { text: isEn ? 'Retry Sync' : '동기화 재시도', dot: '#EF4444' };
     }
-    return { text: '동기화', dot: '#10B981' };
+    return { text: isEn ? 'Synced' : '동기화', dot: '#10B981' };
   })();
 
   return (
@@ -249,7 +253,15 @@ export function HeaderUserControls() {
       <button
         type="button"
         onClick={() => void forceSyncNow()}
-        title={syncError ? `동기화 오류: ${syncError}` : '클라우드 자동 동기화 상태 (클릭 시 즉시 동기화)'}
+        title={
+          syncError
+            ? isEn
+              ? `Sync error: ${syncError}`
+              : `동기화 오류: ${syncError}`
+            : isEn
+              ? 'Cloud auto-sync status (click to sync now)'
+              : '클라우드 자동 동기화 상태 (클릭 시 즉시 동기화)'
+        }
         style={{
           padding: '3px 8px',
           borderRadius: 6,
@@ -279,8 +291,16 @@ export function HeaderUserControls() {
 
       <button
         type="button"
-        onClick={() => openAccountModal('profile')}
-        title="내 계정 정보 및 비밀번호 변경"
+        onClick={() => openAccountModal(isAdmin ? 'admin' : 'profile')}
+        title={
+          isAdmin
+            ? isEn
+              ? 'Admin Console & Account Settings'
+              : '관리자 콘솔 · 계정 관리 · 내 계정 설정'
+            : isEn
+              ? 'Account & Password Settings'
+              : '내 계정 정보 및 비밀번호 변경'
+        }
         style={{
           padding: '3px 8px',
           borderRadius: 6,
@@ -297,35 +317,24 @@ export function HeaderUserControls() {
         }}
       >
         <UserOutlineIcon size={12} />
-        <span>{user.display_name || user.username}</span>
+        <span>
+          {isAdmin
+            ? isEn
+              ? 'Admin'
+              : '관리자'
+            : user.display_name || user.username}
+        </span>
       </button>
-
-      {user.role === 'admin' && (
-        <button
-          type="button"
-          onClick={() => openAccountModal('admin')}
-          title="관리자 콘솔 (회원가입 모드·초대코드·계정 관리)"
-          style={{
-            padding: '3px 8px',
-            borderRadius: 6,
-            border: '1px solid #334155',
-            background: '#1E293B',
-            color: '#E2E8F0',
-            fontSize: 10.5,
-            fontWeight: 700,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          계정관리
-        </button>
-      )}
 
       {!localDevBypass && (
         <button
           type="button"
           onClick={() => void handleLogout()}
-          title="안전하게 로그아웃하고 로컬 캐시를 비웁니다"
+          title={
+            isEn
+              ? 'Sign out and clear local session cache'
+              : '안전하게 로그아웃하고 로컬 캐시를 비웁니다'
+          }
           style={{
             padding: '3px 7px',
             borderRadius: 6,
@@ -338,7 +347,7 @@ export function HeaderUserControls() {
             whiteSpace: 'nowrap',
           }}
         >
-          로그아웃
+          {isEn ? 'Sign Out' : '로그아웃'}
         </button>
       )}
     </div>
