@@ -43,6 +43,7 @@ import { reportInteropGaps } from '@/lib/auth/authClient';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
+import { PUBLIC_MINI_EXAMPLES, type PublicMiniExample } from '@/lib/publicMiniExamples';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import {
   CalcShortcutIcon,
@@ -364,6 +365,56 @@ export default function Header() {
     setActiveCaseTitle(null, plantId);
     setActivePlantId(plantId);
     router.push('/material-balance');
+  };
+
+  const handleOpenPublicMiniExample = (ex: PublicMiniExample) => {
+    const isClassic = pathname.startsWith('/classic-simulator') || simUiMode === 'classic';
+    const targetPlantId: PlantId = isClassic ? 'classic_sim' : 'new_builder';
+    const targetHref = isClassic ? '/classic-simulator' : '/flowsheet-simulator';
+    const alreadyOnTarget = pathname.startsWith(targetHref);
+    const caseName = lang === 'en' ? ex.btnLabelEn : ex.btnLabel;
+    const positions: Record<string, { x: number; y: number }> = {};
+    const simDefs = ex.nodes.map(({ position, ...rest }) => {
+      positions[rest.id] = { ...position };
+      return { ...rest, params: { ...rest.params } };
+    });
+    const flowEdges = ex.edges.map(e => ({ ...e }));
+    const compSet = new Set<string>();
+    simDefs.forEach(d => {
+      Object.entries(d.params?.feedFlowsKgH ?? {}).forEach(([k, v]) => {
+        if (typeof v === 'number' && v > 0) compSet.add(k);
+      });
+    });
+    const actualState = {
+      simDefs,
+      flowEdges,
+      positions,
+      propertyMethod: ex.recommendedMethod ?? 'AUTO',
+      activeComponents: Array.from(compSet),
+      isSimDirty: true,
+    };
+    setCaseMenuOpen(false);
+    setActiveCaseTitle(caseName, targetPlantId);
+    stagePendingCaseLoad({
+      action: 'load_project',
+      targetPlantId,
+      uiMode: isClassic ? 'classic' : 'modern',
+      caseName,
+      rawProject: {
+        id: `public_mini_${ex.id}`,
+        name: caseName,
+        savedAt: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'ko-KR', { hour12: false }),
+        state: actualState,
+      },
+    });
+    setActivePlantId(targetPlantId);
+    if (alreadyOnTarget) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent(LOAD_SAVED_CASE_EVENT));
+      }
+    } else {
+      router.push(targetHref);
+    }
   };
 
   const importJsonFile = (file: File) => {
@@ -1018,6 +1069,90 @@ export default function Header() {
                     {t(lang, 'header_case_empty')}
                   </div>
                 )}
+
+                <div style={{ height: 1, background: '#E2E8F0', margin: '4px 0' }} />
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    color: '#0F766E',
+                    padding: '2px 6px',
+                    letterSpacing: '0.2px',
+                  }}
+                >
+                  {lang === 'en'
+                    ? `Public Mini Examples (${PUBLIC_MINI_EXAMPLES.length})`
+                    : `공개 미니 예제 · 교과서 표준 (${PUBLIC_MINI_EXAMPLES.length})`}
+                </div>
+                {PUBLIC_MINI_EXAMPLES.map((ex, idx) => (
+                  <button
+                    key={ex.id}
+                    type="button"
+                    onClick={() => handleOpenPublicMiniExample(ex)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 9px',
+                      borderRadius: 7,
+                      border: '1px solid transparent',
+                      background: '#FFFFFF',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = '#F0FDFA';
+                      e.currentTarget.style.borderColor = '#99F6E4';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = '#FFFFFF';
+                      e.currentTarget.style.borderColor = 'transparent';
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: 9.5,
+                        fontWeight: 800,
+                        padding: '2px 6px',
+                        borderRadius: 5,
+                        background: '#0F766E',
+                        color: '#FFFFFF',
+                        flexShrink: 0,
+                        letterSpacing: '0.2px',
+                      }}
+                    >
+                      MINI 0{idx + 1}
+                    </span>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          color: '#0F172A',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {(lang === 'en' ? ex.btnLabelEn : ex.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '')}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: '#64748B',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {lang === 'en'
+                          ? `${ex.nodes.length} blocks · ${ex.recommendedMethod ?? 'AUTO'}`
+                          : `장치 ${ex.nodes.length}개 · ${ex.recommendedMethod ?? 'AUTO'}`}
+                      </div>
+                    </div>
+                  </button>
+                ))}
 
                 {!simOnly && allowedCommercialPlants.length > 0 && (
                   <>

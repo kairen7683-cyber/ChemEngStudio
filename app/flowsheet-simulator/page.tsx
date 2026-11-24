@@ -21,6 +21,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
+import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
 
 import {
   SIM_COMPS,
@@ -5972,6 +5973,17 @@ export function FlowsheetWorkspace({
     );
   };
 
+  const replaceFeedFlows = (nextFlows: Partial<Record<SimCompKey, number>>) => {
+    if (!selectedNodeId) return;
+    recordParamEditSnapshot();
+    setSimDefs(prev =>
+      prev.map(d => {
+        if (d.id !== selectedNodeId) return d;
+        return { ...d, params: { ...d.params, feedFlowsKgH: nextFlows } };
+      })
+    );
+  };
+
   // 냉매 프리셋 선택 시 운전 온도 및 총괄열전달계수도 함께 추천 세팅
   const applyRefrigerantPreset = (presetKey: RefrigerantPresetKey) => {
     if (!selectedDef) return;
@@ -9247,74 +9259,19 @@ export function FlowsheetWorkspace({
                       />
                     </div>
                   </div>
-                  <div style={{ background: '#F8FAFC', padding: 9, borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 6, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>{isEn ? 'Component Mass Flows' : '성분별 질량유량'}</span>
-                        <UnitSelect quantity="massFlow" value={feedFlowUnit} onChange={setFeedFlowUnit} size="xs" />
-                        <button
-                          type="button"
-                          onClick={() => setCompSetupModalOpen(true)}
-                          style={{
-                            padding: '2px 7px',
-                            fontSize: 9.5,
-                            fontWeight: 700,
-                            borderRadius: 4,
-                            border: '1px solid #CBD5E1',
-                            background: '#FFFFFF',
-                            color: '#1E293B',
-                            cursor: 'pointer',
-                          }}
-                        >
-                          {isEn ? `+ Components (${activeComponents.length})` : `+ 성분 설정 (${activeComponents.length}종)`}
-                        </button>
-                      </div>
-                      <span style={{ fontSize: 10.5, fontWeight: 900, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}>
-                        {isEn ? 'Total' : '합계'}{' '}
-                        {formatCanonicalValue(
-                          'massFlow',
-                          Object.values(selectedDef.params.feedFlowsKgH ?? {}).reduce((a, b) => a + (Number(b) || 0), 0),
-                          feedFlowUnit
-                        )}{' '}
-                        {getUnitLabel('massFlow', feedFlowUnit)}
-                      </span>
-                    </div>
-                    {SIM_COMPS.filter(
-                      comp => activeComponents.includes(comp) || (selectedDef.params.feedFlowsKgH?.[comp] ?? 0) > 0
-                    ).map(comp => {
-                      const val = selectedDef.params.feedFlowsKgH?.[comp] ?? 0;
-                      return (
-                        <div key={comp} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 4 }}>
-                          <span style={{ fontSize: 11, fontWeight: val > 0 ? 800 : 600, color: val > 0 ? '#0F172A' : '#475569', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {getCompLabel(comp, lang)}
-                          </span>
-                          <UnitNumberInput
-                            quantity="massFlow"
-                            unitId={feedFlowUnit}
-                            onUnitChange={setFeedFlowUnit}
-                            syncKey={`${selectedDef.id}-fc-${comp}`}
-                            minCanonical={0}
-                            value={val}
-                            onValueChange={v => updateFeedComp(comp, Math.max(0, v))}
-                            onEnterRun={() => runSimulationNow()}
-                            containerStyle={{ width: 132, flexShrink: 0 }}
-                            inputStyle={{
-                              padding: '3px 6px',
-                              textAlign: 'right',
-                              border: val > 0 ? '1px solid #64748B' : '1px solid #CBD5E1',
-                              background: '#FFFFFF',
-                              color: '#0F172A',
-                              borderRadius: 4,
-                              fontSize: 11.5,
-                              fontWeight: val > 0 ? 800 : 600,
-                              fontFamily: 'JetBrains Mono, monospace',
-                            }}
-                            selectStyle={{ minWidth: 46, fontSize: 9.5 }}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <FeedCompositionEditor
+                    nodeId={selectedDef.id}
+                    flowsKgH={selectedDef.params.feedFlowsKgH ?? {}}
+                    activeComponents={activeComponents}
+                    feedFlowUnit={feedFlowUnit}
+                    onFeedFlowUnitChange={setFeedFlowUnit}
+                    onReplaceFlows={replaceFeedFlows}
+                    onUpdateSingleComp={updateFeedComp}
+                    onOpenCompSetup={() => setCompSetupModalOpen(true)}
+                    onEnterRun={() => runSimulationNow()}
+                    lang={lang}
+                    variant="modern"
+                  />
                 </>
               )}
 

@@ -59,6 +59,7 @@ import {
   getPlantSheetsByGroup,
 } from '@/lib/classicPlantPresets';
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
+import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
 import {
   SaveArchiveIcon,
   FolderOpenIcon,
@@ -4041,70 +4042,31 @@ export default function ClassicSimulatorPage() {
                         />
                       </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#334155' }}>
-                        {isEn ? 'Component Mass Flows' : '성분별 질량유량'}
-                        <UnitSelect quantity="massFlow" value={feedFlowUnit} onChange={setFeedFlowUnit} size="xs" />
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setCompModalOpen(true)}
-                        style={{
-                          padding: '2px 7px',
-                          fontSize: 9.5,
-                          fontWeight: 800,
-                          borderRadius: 4,
-                          border: '1px solid #93C5FD',
-                          background: '#EFF6FF',
-                          color: '#1D4ED8',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {isEn ? `+ Add/Setup Components (${activeComponents.length})` : `+ 성분 추가/설정 (${activeComponents.length}종)`}
-                      </button>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto' }}>
-                      {SIM_COMPS.filter(
-                        comp => activeComponents.includes(comp) || (selectedBlock.params.feedFlowsKgH?.[comp] ?? 0) > 0
-                      ).map(comp => {
-                        const val = selectedBlock.params.feedFlowsKgH?.[comp] ?? 0;
-                        return (
-                          <div key={comp} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#475569' }} title={isEn ? COMP_META[comp].formula : COMP_META[comp].label}>
-                            <span style={{ width: 64, flexShrink: 0, fontWeight: 700, color: val > 0 ? '#0F172A' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {comp}
-                            </span>
-                            <UnitNumberInput
-                              quantity="massFlow"
-                              syncKey={`${selectedBlock.id}:feedFlow:${comp}`}
-                              value={val}
-                              unitId={feedFlowUnit}
-                              onUnitChange={setFeedFlowUnit}
-                              minCanonical={0}
-                              placeholder="0"
-                              onValueChange={num => {
-                                updateBlockDef(selectedBlock.id, d => ({
-                                  ...d,
-                                  params: {
-                                    ...d.params,
-                                    feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), [comp]: Math.max(0, num) },
-                                  },
-                                }));
-                              }}
-                              inputStyle={{
-                                height: 24,
-                                padding: '0 5px',
-                                borderRadius: 4,
-                                border: val > 0 ? '1px solid #1D4ED8' : '1px solid #CBD5E1',
-                                background: '#FFFFFF',
-                                fontFamily: 'JetBrains Mono, monospace',
-                                fontSize: 11,
-                              }}
-                              selectStyle={{ minWidth: 50, fontSize: 9.5 }}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <FeedCompositionEditor
+                      nodeId={selectedBlock.id}
+                      flowsKgH={selectedBlock.params.feedFlowsKgH ?? {}}
+                      activeComponents={activeComponents}
+                      feedFlowUnit={feedFlowUnit}
+                      onFeedFlowUnitChange={setFeedFlowUnit}
+                      onReplaceFlows={nextFlows => {
+                        updateBlockDef(selectedBlock.id, d => ({
+                          ...d,
+                          params: { ...d.params, feedFlowsKgH: nextFlows },
+                        }));
+                      }}
+                      onUpdateSingleComp={(comp, num) => {
+                        updateBlockDef(selectedBlock.id, d => ({
+                          ...d,
+                          params: {
+                            ...d.params,
+                            feedFlowsKgH: { ...(d.params.feedFlowsKgH ?? {}), [comp]: Math.max(0, num) },
+                          },
+                        }));
+                      }}
+                      onOpenCompSetup={() => setCompModalOpen(true)}
+                      lang={lang}
+                      variant="classic"
+                    />
                   </div>
                   );
                 })()}
