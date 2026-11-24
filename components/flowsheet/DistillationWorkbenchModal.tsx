@@ -44,6 +44,7 @@ import { COMP_CATALOG_META } from '@/lib/calculations/componentCatalog';
 import {
   autoFixDistillationSimulationAsync,
   fetchOptionalGeminiAdvice,
+  type DistillationAutoFixOption,
   type EquipmentAutoFixResult,
 } from '@/lib/calculations/aiEquipmentAdvisor';
 
@@ -301,19 +302,28 @@ export default function DistillationWorkbenchModal({
     result: EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult>;
     geminiNote: string | null;
   } | null>(null);
+  const [selectedAiOptionId, setSelectedAiOptionId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
       setWorkspaceView(initialView);
       setAiReport(null);
+      setSelectedAiOptionId(null);
       setAiStepLabel('');
     }
   }, [open, initialView, unitTag]);
+
+  const applyAiDistillOption = (opt: DistillationAutoFixOption) => {
+    pendingAutoRunRef.current = true;
+    onChangeConfig(opt.params);
+    setSelectedAiOptionId(opt.id);
+  };
 
   const runAiAutoFixDistill = async () => {
     setIsAiBusy(true);
     setAiStepLabel(isEn ? 'Analyzing candidates and root causes...' : '후보 조합 및 원인 분석 중...');
     setAiReport(null);
+    setSelectedAiOptionId(null);
     try {
       const fix = await autoFixDistillationSimulationAsync(feeds, config, (step, total, label) => {
         setAiStepLabel(`(${step}/${total}) ${label}`);
@@ -324,6 +334,7 @@ export default function DistillationWorkbenchModal({
       const prompt = `[증류탑 ${unitTag}] N=${fix.solvedAfter.totalStagesUsed}단, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, 상태=${fix.solvedAfter.diagnostics.badgeText}. 조치: ${fix.actionsTaken.join(', ')}`;
       const geminiNote = await fetchOptionalGeminiAdvice(prompt);
       setAiReport({ result: fix, geminiNote });
+      setSelectedAiOptionId(fix.distillOptions?.[0]?.id ?? null);
       if (Object.keys(fix.patch).length > 0 && onRunSimRef.current) {
         window.setTimeout(() => triggerRunSimulation(), 50);
       }
@@ -2467,6 +2478,177 @@ export default function DistillationWorkbenchModal({
                 {aiReport.geminiNote && (
                   <div style={{ color: '#4C1D95', fontWeight: 700, fontSize: 10.6 }}>
                     {aiReport.geminiNote}
+                  </div>
+                )}
+                {aiReport.result.distillOptions && aiReport.result.distillOptions.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      paddingTop: 6,
+                      borderTop: '1px dashed #CBD5E1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 10.4,
+                        fontWeight: 900,
+                        color: '#0F172A',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <span>
+                        {isEn
+                          ? 'AI-Verified Column Options (#1 Lowest TAC Auto-Applied)'
+                          : 'AI 검증 증류 설계 대안 (최저 TAC 1번 자동 적용됨)'}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+                        gap: 8,
+                      }}
+                    >
+                      {aiReport.result.distillOptions.map((opt, idx) => {
+                        const isSelected =
+                          selectedAiOptionId === opt.id ||
+                          (!selectedAiOptionId && idx === 0);
+                        const stagesN = opt.params.totalStages ?? opt.res.totalStagesUsed;
+                        const feedNf = opt.params.feedStage ?? opt.res.feedStageUsed;
+                        const qRebKw = Math.abs(opt.res.reboilerDutyKcalH) / 860;
+                        const qCondKw = Math.abs(opt.res.condenserDutyKcalH) / 860;
+                        const specLine = `N=${stagesN} · Nf=${feedNf} · R=${opt.res.actualRefluxRatio.toFixed(2)}`;
+                        return (
+                          <div
+                            key={opt.id}
+                            style={{
+                              background: isSelected ? '#FFFFFF' : '#F8FAFC',
+                              border: isSelected ? '1.5px solid #16A34A' : '1px solid #CBD5E1',
+                              borderRadius: 7,
+                              padding: '7px 9px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: 4,
+                              boxShadow: isSelected
+                                ? '0 1px 4px rgba(22, 163, 74, 0.14)'
+                                : 'none',
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 4,
+                                  flexWrap: 'wrap',
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 9.5,
+                                    fontWeight: 900,
+                                    padding: '1px 6px',
+                                    borderRadius: 999,
+                                    background: isSelected ? '#DCFCE7' : '#E2E8F0',
+                                    color: isSelected ? '#15803D' : '#475569',
+                                  }}
+                                >
+                                  {isSelected
+                                    ? idx === 0
+                                      ? isEn
+                                        ? '✓ AI Auto-Applied'
+                                        : '✓ AI 자동 선택'
+                                      : isEn
+                                      ? '✓ Applied'
+                                      : '✓ 적용됨'
+                                    : isEn
+                                    ? `Option ${idx + 1} · ${opt.badgeEn}`
+                                    : `대안 ${idx + 1} · ${opt.badgeKo}`}
+                                </span>
+                                <span
+                                  style={{
+                                    fontSize: 9.2,
+                                    fontWeight: 900,
+                                    fontFamily: MONO,
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    background: opt.allPassed ? '#ECFDF5' : '#FEF3C7',
+                                    color: opt.allPassed ? '#047857' : '#B45309',
+                                    border: `1px solid ${opt.allPassed ? '#A7F3D0' : '#FDE68A'}`,
+                                  }}
+                                >
+                                  {opt.allPassed ? 'PASS' : 'CHECK'}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 10.8, fontWeight: 900, color: '#0F172A' }}>
+                                {isEn ? opt.labelEn : opt.labelKo}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  fontFamily: MONO,
+                                  color: '#1E40AF',
+                                }}
+                              >
+                                {specLine}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 9.8,
+                                  fontFamily: MONO,
+                                  color: '#334155',
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                Q_reb {qRebKw.toFixed(1)} kW · Q_cond {qCondKw.toFixed(1)} kW ·{' '}
+                                {opt.res.converged
+                                  ? isEn
+                                    ? 'Converged'
+                                    : '수렴'
+                                  : isEn
+                                  ? 'Unconverged'
+                                  : '미수렴'}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => applyAiDistillOption(opt)}
+                              disabled={isSelected}
+                              style={{
+                                marginTop: 2,
+                                width: '100%',
+                                padding: '4px 8px',
+                                borderRadius: 5,
+                                border: isSelected
+                                  ? '1px solid #86EFAC'
+                                  : '1px solid #2563EB',
+                                background: isSelected ? '#F0FDF4' : '#2563EB',
+                                color: isSelected ? '#15803D' : '#FFFFFF',
+                                fontSize: 10.2,
+                                fontWeight: 900,
+                                cursor: isSelected ? 'default' : 'pointer',
+                              }}
+                            >
+                              {isSelected
+                                ? isEn
+                                  ? '✓ Currently Applied'
+                                  : '✓ 현재 적용됨'
+                                : isEn
+                                ? 'Apply Option'
+                                : '이 옵션 적용'}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

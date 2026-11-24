@@ -17,6 +17,7 @@ import {
   solveColumnInternalsDesign,
   type ColumnInternalsKind,
   type ColumnInternalsParams,
+  type ColumnInternalsSolveResult,
   type PackingKey,
   type ShellMaterialCode,
   type ShellSectionMode,
@@ -33,6 +34,8 @@ import type {
 import {
   autoFixColumnInternalsAsync,
   fetchOptionalGeminiAdvice,
+  type ColumnInternalsAutoFixOption,
+  type EquipmentAutoFixResult,
 } from '@/lib/calculations/aiEquipmentAdvisor';
 import { downloadColumnCadDxf } from '@/lib/cad/columnDxfExport';
 import { downloadColumnEpcDatasheet } from '@/lib/excel/datasheetExport';
@@ -145,6 +148,11 @@ export default function ColumnInternalsDesignPanel({
   const isEn = lang === 'en';
   const [visualTab, setVisualTab] = useState<RightVisualTab>('drawing');
   const [aiNote, setAiNote] = useState<string | null>(null);
+  const [aiReport, setAiReport] = useState<{
+    result: EquipmentAutoFixResult<ColumnInternalsParams, ColumnInternalsSolveResult>;
+    geminiNote?: string | null;
+  } | null>(null);
+  const [selectedAiOptionId, setSelectedAiOptionId] = useState<string | null>(null);
   const [isAiBusy, setIsAiBusy] = useState(false);
   const [aiStepLabel, setAiStepLabel] = useState('');
   const [isMobileState, setIsMobileState] = useState<boolean>(() =>
@@ -191,6 +199,55 @@ export default function ColumnInternalsDesignPanel({
         ...patch,
       },
     });
+  };
+
+  const applyAiInternalsOption = (opt: ColumnInternalsAutoFixOption) => {
+    onChangeConfig({
+      internalsConfig: {
+        ...opt.cfg,
+      },
+    });
+    setSelectedAiOptionId(opt.id);
+  };
+
+  const runAiInternalsAutoFix = async () => {
+    if (!simResult || isAiBusy) return;
+    setIsAiBusy(true);
+    setAiStepLabel(isEn ? 'Searching flood & ΔP combinations...' : '범람·압손 조합 탐색 중...');
+    try {
+      const fix = await autoFixColumnInternalsAsync(
+        config,
+        feeds,
+        simResult,
+        (step, total, label) => {
+          setAiStepLabel(`(${step}/${total}) ${label}`);
+        }
+      );
+      if (fix.internalsOptions && fix.internalsOptions.length > 0) {
+        onChangeConfig({
+          internalsConfig: {
+            ...fix.internalsOptions[0].cfg,
+          },
+        });
+      } else if (Object.keys(fix.patch).length > 0) {
+        patchInternals(fix.patch);
+      }
+      setSelectedAiOptionId(fix.internalsOptions?.[0]?.id ?? null);
+      const gNote = await fetchOptionalGeminiAdvice(
+        `[컬럼 인터널 ${unitTag}] 범람율=${fix.solvedAfter.maxFloodPct.toFixed(1)}%, 압손=${fix.solvedAfter.totalInternalsDpMbar.toFixed(1)} mbar, 조치=${fix.actionsTaken.join(', ')}`
+      );
+      setAiReport({ result: fix, geminiNote: gNote });
+      setAiNote(
+        `${fix.headline}${fix.actionsTaken.length > 0 ? ` (${fix.actionsTaken.join(' · ')})` : ''}${gNote ? `\n${gNote}` : ''}`
+      );
+    } catch (err) {
+      setAiNote(
+        `${isEn ? '⚠ AI Auto-Fix Error:' : '⚠ AI 보정 오류:'} ${err instanceof Error ? err.message : String(err)}`
+      );
+    } finally {
+      setIsAiBusy(false);
+      setAiStepLabel('');
+    }
   };
 
   const designRes = useMemo(() => {
@@ -1881,35 +1938,288 @@ export default function ColumnInternalsDesignPanel({
           </div>
         </div>
 
-        {onApplyHydraulicsToMesh && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, width: isMobile ? '100%' : undefined, flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={() => onApplyHydraulicsToMesh(designRes.avgStageDpKgcm2, designRes.predictedOverallEffPct)}
+            disabled={isAiBusy}
+            onClick={runAiInternalsAutoFix}
             title={
               isEn
-                ? 'Apply calculated stage ΔP and Chan–Fair predicted efficiency back to the multi-stage MESH simulation'
-                : '산출된 단당 압손(ΔP)과 Chan–Fair 예측 단효율을 다단 MESH 시뮬레이션 파라미터에 반영합니다'
+                ? 'Run AI closed-loop hydraulic & cost optimization for column internals'
+                : '범람·압손·턴다운·원가를 종합 탐색하여 AI 검증 인터널 대안을 자동 산출합니다'
             }
             style={{
-              width: isMobile ? '100%' : undefined,
+              flex: isMobile ? 1 : undefined,
               flexShrink: 0,
               padding: isMobile ? '6px 10px' : '7px 10px',
               borderRadius: 6,
-              border: '1px solid #059669',
-              background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+              border: '1px solid #7C3AED',
+              background: isAiBusy ? '#8B5CF6' : 'linear-gradient(135deg, #7C3AED 0%, #6D28D9 100%)',
               color: '#FFFFFF',
               fontSize: 10.5,
               fontWeight: 900,
-              cursor: 'pointer',
+              cursor: isAiBusy ? 'wait' : 'pointer',
               whiteSpace: 'nowrap',
               textAlign: 'center',
-              boxShadow: '0 1px 4px rgba(5,150,105,0.25)',
+              boxShadow: '0 1px 4px rgba(124,58,237,0.25)',
             }}
           >
-            {isEn ? '🔄 Apply ΔP & Efficiency to MESH' : '🔄 ΔP·효율 MESH 역반영'}
+            {isAiBusy
+              ? (isEn ? '⏳ AI Optimizing...' : '⏳ AI 최적화 중...')
+              : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
           </button>
-        )}
+          {onApplyHydraulicsToMesh && (
+            <button
+              type="button"
+              onClick={() => onApplyHydraulicsToMesh(designRes.avgStageDpKgcm2, designRes.predictedOverallEffPct)}
+              title={
+                isEn
+                  ? 'Apply calculated stage ΔP and Chan–Fair predicted efficiency back to the multi-stage MESH simulation'
+                  : '산출된 단당 압손(ΔP)과 Chan–Fair 예측 단효율을 다단 MESH 시뮬레이션 파라미터에 반영합니다'
+              }
+              style={{
+                flex: isMobile ? 1 : undefined,
+                flexShrink: 0,
+                padding: isMobile ? '6px 10px' : '7px 10px',
+                borderRadius: 6,
+                border: '1px solid #059669',
+                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                color: '#FFFFFF',
+                fontSize: 10.5,
+                fontWeight: 900,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                textAlign: 'center',
+                boxShadow: '0 1px 4px rgba(5,150,105,0.25)',
+              }}
+            >
+              {isEn ? '🔄 Apply ΔP & Efficiency to MESH' : '🔄 ΔP·효율 MESH 역반영'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* ── AI 자동 해결 진행 상태 / 결과 리포트 + 상위 3개 AI 검증 인터널 대안 카드 ── */}
+      {(isAiBusy || aiReport) && (
+        <div
+          style={{
+            padding: isMobile ? '8px 10px' : '9px 14px',
+            background: aiReport?.result.resolved ? '#F0FDF4' : '#F5F3FF',
+            borderBottom: `1.5px solid ${aiReport?.result.resolved ? '#86EFAC' : '#C4B5FD'}`,
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 7,
+          }}
+        >
+          {isAiBusy ? (
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#5B21B6', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>⏳</span>
+              <span>{aiStepLabel || (isEn ? 'Searching AI-verified column internals options...' : 'AI 검증 컬럼 인터널 대안 탐색 중...')}</span>
+            </div>
+          ) : aiReport ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+                  <div style={{ fontSize: 11.2, fontWeight: 900, color: aiReport.result.resolved ? '#166534' : '#4C1D95' }}>
+                    {aiReport.result.headline}
+                  </div>
+                  {aiReport.result.actionsTaken.length > 0 && (
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#334155', lineHeight: 1.35 }}>
+                      {aiReport.result.actionsTaken.join(' · ')}
+                    </div>
+                  )}
+                  {aiReport.geminiNote && (
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#5B21B6', whiteSpace: 'pre-line', lineHeight: 1.35 }}>
+                      {aiReport.geminiNote}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAiReport(null);
+                    setAiNote(null);
+                    setSelectedAiOptionId(null);
+                  }}
+                  title={isEn ? 'Close AI report' : 'AI 리포트 닫기'}
+                  style={{
+                    flexShrink: 0,
+                    padding: '2px 7px',
+                    borderRadius: 5,
+                    border: '1px solid #CBD5E1',
+                    background: '#FFFFFF',
+                    color: '#475569',
+                    fontSize: 10.5,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {aiReport.result.internalsOptions && aiReport.result.internalsOptions.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div
+                    style={{
+                      fontSize: 10.2,
+                      fontWeight: 900,
+                      color: '#1E293B',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span>
+                      {isEn
+                        ? 'AI-Verified Internals Options (#1 Lowest Cost Auto-Applied)'
+                        : 'AI 검증 인터널 대안 (최저 원가 1번 자동 적용됨)'}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+                      gap: 8,
+                    }}
+                  >
+                    {aiReport.result.internalsOptions.map((opt, idx) => {
+                      const isSelected =
+                        selectedAiOptionId === opt.id ||
+                        (!selectedAiOptionId && idx === 0);
+                      const kindSpec =
+                        opt.res.internalsKind === 'tray'
+                          ? `Tray (${opt.res.trayType === 'sieve' ? 'Sieve' : opt.res.trayType === 'valve' ? 'Valve' : 'Bubble'}, ${opt.res.traySpacingMm}mm)`
+                          : `Packed (${opt.res.packingSpec.name})`;
+                      const specLine = `${kindSpec} · Ø${opt.res.governingDiamM.toFixed(2)}m · ${opt.res.totalElevationM.toFixed(1)}m`;
+                      const totalDpBar = (opt.res.totalInternalsDpMbar / 1000).toFixed(3);
+                      const costK = (opt.costUsd / 1000).toFixed(0);
+                      return (
+                        <div
+                          key={opt.id}
+                          style={{
+                            background: isSelected ? '#FFFFFF' : '#F8FAFC',
+                            border: isSelected ? '1.5px solid #16A34A' : '1px solid #CBD5E1',
+                            borderRadius: 7,
+                            padding: '7px 9px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            justifyContent: 'space-between',
+                            gap: 4,
+                            boxShadow: isSelected
+                              ? '0 1px 4px rgba(22, 163, 74, 0.14)'
+                              : 'none',
+                          }}
+                        >
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 4,
+                                flexWrap: 'wrap',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 9.5,
+                                  fontWeight: 900,
+                                  padding: '1px 6px',
+                                  borderRadius: 999,
+                                  background: isSelected ? '#DCFCE7' : '#E2E8F0',
+                                  color: isSelected ? '#15803D' : '#475569',
+                                }}
+                              >
+                                {isSelected
+                                  ? idx === 0
+                                    ? isEn
+                                      ? '✓ AI Auto-Applied'
+                                      : '✓ AI 자동 선택'
+                                    : isEn
+                                    ? '✓ Applied'
+                                    : '✓ 적용됨'
+                                  : isEn
+                                  ? `Option ${idx + 1} · ${opt.badgeEn}`
+                                  : `대안 ${idx + 1} · ${opt.badgeKo}`}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 9.2,
+                                  fontWeight: 900,
+                                  fontFamily: MONO,
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  background: opt.allPassed ? '#ECFDF5' : '#FEF3C7',
+                                  color: opt.allPassed ? '#047857' : '#B45309',
+                                  border: `1px solid ${opt.allPassed ? '#A7F3D0' : '#FDE68A'}`,
+                                }}
+                              >
+                                {opt.allPassed ? 'PASS' : 'CHECK'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 10.8, fontWeight: 900, color: '#0F172A' }}>
+                              {isEn ? opt.labelEn : opt.labelKo}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                fontFamily: MONO,
+                                color: '#1E40AF',
+                              }}
+                            >
+                              {specLine}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 9.8,
+                                fontFamily: MONO,
+                                color: '#334155',
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              Flood {opt.res.maxFloodPct.toFixed(1)}% · ΔP {totalDpBar} bar · Est. ${costK}k
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => applyAiInternalsOption(opt)}
+                            disabled={isSelected}
+                            style={{
+                              marginTop: 2,
+                              width: '100%',
+                              padding: '4px 8px',
+                              borderRadius: 5,
+                              border: isSelected
+                                ? '1px solid #86EFAC'
+                                : '1px solid #2563EB',
+                              background: isSelected ? '#F0FDF4' : '#2563EB',
+                              color: isSelected ? '#15803D' : '#FFFFFF',
+                              fontSize: 10.2,
+                              fontWeight: 900,
+                              cursor: isSelected ? 'default' : 'pointer',
+                            }}
+                          >
+                            {isSelected
+                              ? isEn
+                                ? '✓ Currently Applied'
+                                : '✓ 현재 적용됨'
+                              : isEn
+                              ? 'Apply Option'
+                              : '이 옵션 적용'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
 
       {/* ── 모바일 전용 좌/우 패널 전환 바 ── */}
       {isMobile && (
@@ -2421,36 +2731,7 @@ export default function ColumnInternalsDesignPanel({
                   <button
                     type="button"
                     disabled={isAiBusy}
-                    onClick={async () => {
-                      setIsAiBusy(true);
-                      setAiStepLabel(isEn ? 'Searching flood & ΔP combinations...' : '범람·압손 조합 탐색 중...');
-                      try {
-                        const fix = await autoFixColumnInternalsAsync(
-                          config,
-                          feeds,
-                          simResult,
-                          (step, total, label) => {
-                            setAiStepLabel(`(${step}/${total}) ${label}`);
-                          }
-                        );
-                        if (Object.keys(fix.patch).length > 0) {
-                          patchInternals(fix.patch);
-                        }
-                        const gNote = await fetchOptionalGeminiAdvice(
-                          `[컬럼 인터널 ${unitTag}] 범람율=${fix.solvedAfter.maxFloodPct.toFixed(1)}%, 압손=${fix.solvedAfter.totalInternalsDpMbar.toFixed(1)} mbar, 조치=${fix.actionsTaken.join(', ')}`
-                        );
-                        setAiNote(
-                          `${fix.headline}${fix.actionsTaken.length > 0 ? ` (${fix.actionsTaken.join(' · ')})` : ''}${gNote ? `\n${gNote}` : ''}`
-                        );
-                      } catch (err) {
-                        setAiNote(
-                          `${isEn ? '⚠ AI Auto-Fix Error:' : '⚠ AI 보정 오류:'} ${err instanceof Error ? err.message : String(err)}`
-                        );
-                      } finally {
-                        setIsAiBusy(false);
-                        setAiStepLabel('');
-                      }
-                    }}
+                    onClick={runAiInternalsAutoFix}
                     style={{
                       padding: '4px 9px',
                       borderRadius: 5,

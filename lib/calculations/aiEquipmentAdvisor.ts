@@ -22,6 +22,9 @@ import {
   solveColumnInternalsDesign,
   type ColumnInternalsParams,
   type ColumnInternalsSolveResult,
+  type PackingKey,
+  type ShellSectionMode,
+  type TrayDeckType,
 } from './columnInternalsDesign';
 import type {
   FlowUnitParams,
@@ -44,6 +47,30 @@ export interface HxAutoFixOption {
   allPassed: boolean;
 }
 
+export interface ColumnInternalsAutoFixOption {
+  id: string;
+  labelKo: string;
+  labelEn: string;
+  badgeKo: string;
+  badgeEn: string;
+  cfg: ColumnInternalsParams;
+  res: ColumnInternalsSolveResult;
+  costUsd: number;
+  allPassed: boolean;
+}
+
+export interface DistillationAutoFixOption {
+  id: string;
+  labelKo: string;
+  labelEn: string;
+  badgeKo: string;
+  badgeEn: string;
+  params: DistillColumnParams;
+  res: DistillSolveResult;
+  tacScore: number;
+  allPassed: boolean;
+}
+
 export interface EquipmentAutoFixResult<TPatch, TSolve> {
   improved: boolean;
   resolved: boolean;
@@ -55,6 +82,8 @@ export interface EquipmentAutoFixResult<TPatch, TSolve> {
   rootCauses: string[];
   actionsTaken: string[];
   options?: HxAutoFixOption[];
+  internalsOptions?: ColumnInternalsAutoFixOption[];
+  distillOptions?: DistillationAutoFixOption[];
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -1008,15 +1037,251 @@ function prepareDistillFixContext(
   return { rootCauses, steps };
 }
 
+interface DistillEvalCandidate {
+  params: DistillColumnParams;
+  res: DistillSolveResult;
+  score: number;
+  tacScore: number;
+  allPassed: boolean;
+  actionLabel?: string;
+}
+
+function computeDistillTacScore(r: DistillSolveResult): number {
+  const reboilerDutyMW = Math.abs(r.reboilerDutyKcalH) / 859845.2;
+  const numStages = Math.max(1, r.totalStagesUsed);
+  return Number((reboilerDutyMW * 180 + numStages * 4.5).toFixed(2));
+}
+
+function isDistillStrictPass(r: DistillSolveResult): boolean {
+  if (!r.converged || !r.dofValid) return false;
+  if (r.diagnostics.level === 'error') return false;
+  if (r.spec1Status?.enabled && !r.spec1Status.met) return false;
+  if (r.spec2Status?.enabled && !r.spec2Status.met) return false;
+  if (r.sideCutSpecStatus && !r.sideCutSpecStatus.met) return false;
+  if (r.shortcutDesign && !r.shortcutDesign.designMet) return false;
+  if (countProfileSawtoothReversals(r) > 0) return false;
+  if (r.actualRefluxRatio > 45 || r.totalStagesUsed > 195) return false;
+  return true;
+}
+
+function distillCandKey(p: DistillColumnParams, r: DistillSolveResult): string {
+  return `${p.columnCalcMode ?? 'rigorous_mesh'}:${r.totalStagesUsed}:${r.feedStageUsed}:${r.actualRefluxRatio.toFixed(2)}:${r.actualDOverFMass.toFixed(3)}`;
+}
+
+function buildDistillGuidedGrid(
+  baseParams: DistillColumnParams,
+  baseSol: DistillSolveResult,
+  initialParams: DistillColumnParams
+): Array<{ label: string; params: DistillColumnParams }> {
+  const grid: Array<{ label: string; params: DistillColumnParams }> = [];
+  const seenCfg = new Set<string>();
+  const mode = baseParams.columnCalcMode ?? 'rigorous_mesh';
+
+  const curN = clamp(
+    Math.round(baseSol.totalStagesUsed || baseParams.totalStages || initialParams.totalStages || 24),
+    6,
+    120
+  );
+  const fenskeN = baseSol.shortcutDesign?.solvedStagesN
+    ? clamp(Math.round(baseSol.shortcutDesign.solvedStagesN), 8, 90)
+    : null;
+  const compactN = curN >= 14 ? Math.max(10, Math.round(curN * 0.8)) : null;
+
+  const rawStages = [
+    curN,
+    Math.max(10, Math.round(curN * 1.35)),
+    Math.min(80, curN + 14),
+    ...(fenskeN ? [fenskeN] : []),
+    ...(compactN ? [compactN] : []),
+  ];
+  const stageList = Array.from(new Set(rawStages)).slice(0, 4);
+
+  if (mode === 'design_stages') {
+    for (const rMult of [1.15, 1.3, 1.5, 1.8, 2.2]) {
+      const key = `ds:${rMult}`;
+      if (seenCfg.has(key)) continue;
+      seenCfg.add(key);
+      grid.push({
+        label: `자동설계 환류배수 R/Rmin=${rMult.toFixed(2)} 탐색`,
+        params: {
+          ...baseParams,
+          columnCalcMode: 'design_stages',
+          designRefluxMode: 'r_mult',
+          designRefluxMult: rMult,
+        },
+      });
+    }
+    return grid;
+  }
+
+  const slots = resolveEffectiveDofSlots(baseParams);
+  const isDualSpec = slots.includes('top_spec') && slots.includes('bot_spec');
+  const refluxAdjustable =
+    !isDualSpec &&
+    slots.includes('rr') &&
+    (baseParams.topSpecType ?? 'reflux_ratio') === 'reflux_ratio';
+
+  if (refluxAdjustable) {
+    const rrList = [1.2, 1.8, 2.5, 3.5];
+    const feedFracs = [0.45, 0.55];
+    // 단수와 환류비를 교차 배치하여 시간 예산(850ms) 내에서도 넓은 설계 공간을 고르게 커버
+    for (const fFrac of feedFracs) {
+      for (const rr of rrList) {
+        for (const n of stageList) {
+          if (grid.length >= 18) break;
+          const fs = clamp(Math.round(n * fFrac), 2, n - 1);
+          const key = `mesh:${n}:${fs}:${rr.toFixed(2)}`;
+          if (seenCfg.has(key)) continue;
+          seenCfg.add(key);
+          grid.push({
+            label: `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단 · RR=${rr.toFixed(1)})`,
+            params: {
+              ...baseParams,
+              columnCalcMode: 'rigorous_mesh',
+              totalStages: n,
+              feedStage: fs,
+              topSpecType: 'reflux_ratio',
+              topSpecValue: rr,
+            },
+          });
+        }
+        if (grid.length >= 18) break;
+      }
+      if (grid.length >= 18) break;
+    }
+  } else {
+    // 이중 품질스펙 또는 환류비 고정 외 모드: 단수 × 공급단 비율 격자 탐색
+    const feedFracs = [0.45, 0.55, 0.38, 0.62];
+    for (const fFrac of feedFracs) {
+      for (const n of stageList) {
+        if (grid.length >= 14) break;
+        const fs = clamp(Math.round(n * fFrac), 2, n - 1);
+        const key = `dual:${n}:${fs}`;
+        if (seenCfg.has(key)) continue;
+        seenCfg.add(key);
+        grid.push({
+          label: `가이드 격자 탐색 (${n}단 · 공급단 ${fs}단)`,
+          params: {
+            ...baseParams,
+            columnCalcMode: 'rigorous_mesh',
+            totalStages: n,
+            feedStage: fs,
+            ...(isDualSpec ? { autoOptimizeStagesOnDualSpec: false } : {}),
+          },
+        });
+      }
+      if (grid.length >= 14) break;
+    }
+  }
+
+  return grid;
+}
+
 function finalizeDistillFixResult(
   initialParams: DistillColumnParams,
   solvedBefore: DistillSolveResult,
-  bestParams: DistillColumnParams,
-  bestSol: DistillSolveResult,
-  bestScore: number,
+  evaluated: DistillEvalCandidate[],
   rootCauses: string[],
-  actionsTaken: string[]
+  baseActions: string[]
 ): EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult> {
+  const ranked = [...evaluated].sort((a, b) => {
+    if (a.allPassed !== b.allPassed) return a.allPassed ? -1 : 1;
+    if (a.res.converged !== b.res.converged) return a.res.converged ? -1 : 1;
+    if (a.allPassed && b.allPassed) {
+      if (Math.abs(a.tacScore - b.tacScore) > 0.05) return a.tacScore - b.tacScore;
+      return Math.abs(a.res.reboilerDutyKcalH) - Math.abs(b.res.reboilerDutyKcalH);
+    }
+    if (a.res.converged && b.res.converged) {
+      if (Math.abs(a.score - b.score) > 10) return a.score - b.score;
+      return a.tacScore - b.tacScore;
+    }
+    return a.score - b.score;
+  });
+
+  const opt1 = ranked[0];
+  const bestParams = opt1.params;
+  const bestSol = opt1.res;
+  const bestScore = opt1.score;
+
+  // 상위 3개 구별되는 수렴 설계안 (distillOptions) 구성
+  const passedPool = ranked.filter((c) => c.allPassed);
+  const convergedPool = ranked.filter((c) => c.res.converged);
+  const optPool = passedPool.length > 0 ? passedPool : convergedPool;
+  const distillOptions: DistillationAutoFixOption[] = [];
+
+  if (optPool.length > 0) {
+    const primary = optPool[0];
+    const primaryKey = distillCandKey(primary.params, primary.res);
+    distillOptions.push({
+      id: 'opt-tac',
+      labelKo: 'AI 추천 최적안 (최저 TAC)',
+      labelEn: 'AI Recommended · Lowest TAC',
+      badgeKo: '최저 TAC',
+      badgeEn: 'Lowest TAC',
+      params: primary.params,
+      res: primary.res,
+      tacScore: primary.tacScore,
+      allPassed: primary.allPassed,
+    });
+
+    const chosenKeys = new Set<string>([primaryKey]);
+
+    // Option 2: 저에너지 · 최소 리보일러안
+    const energyPool = (passedPool.length > 1 ? passedPool : convergedPool).filter(
+      (c) => !chosenKeys.has(distillCandKey(c.params, c.res))
+    );
+    const opt2 = [...energyPool].sort((a, b) => {
+      const qa = Math.abs(a.res.reboilerDutyKcalH);
+      const qb = Math.abs(b.res.reboilerDutyKcalH);
+      if (Math.abs(qa - qb) > 100) return qa - qb;
+      return a.tacScore - b.tacScore;
+    })[0];
+
+    if (opt2) {
+      chosenKeys.add(distillCandKey(opt2.params, opt2.res));
+      distillOptions.push({
+        id: 'opt-low-energy',
+        labelKo: '저에너지 · 최소 리보일러안',
+        labelEn: 'Low Energy · Min Reboiler Q',
+        badgeKo: '저에너지',
+        badgeEn: 'Low Energy',
+        params: opt2.params,
+        res: opt2.res,
+        tacScore: opt2.tacScore,
+        allPassed: opt2.allPassed,
+      });
+    }
+
+    // Option 3: 최소 변경 · 컴팩트 단수안
+    const initN = initialParams.totalStages ?? solvedBefore.totalStagesUsed ?? 24;
+    const compactPool = (passedPool.length > 2 ? passedPool : convergedPool).filter(
+      (c) => !chosenKeys.has(distillCandKey(c.params, c.res))
+    );
+    const opt3 = [...compactPool].sort((a, b) => {
+      if (a.res.totalStagesUsed !== b.res.totalStagesUsed) {
+        return a.res.totalStagesUsed - b.res.totalStagesUsed;
+      }
+      const dA = Math.abs(a.res.totalStagesUsed - initN);
+      const dB = Math.abs(b.res.totalStagesUsed - initN);
+      if (dA !== dB) return dA - dB;
+      return a.tacScore - b.tacScore;
+    })[0];
+
+    if (opt3) {
+      distillOptions.push({
+        id: 'opt-compact',
+        labelKo: '최소 변경 · 컴팩트 단수안',
+        labelEn: 'Minimal Change / Compact N',
+        badgeKo: '최소 단수',
+        badgeEn: 'Compact N',
+        params: opt3.params,
+        res: opt3.res,
+        tacScore: opt3.tacScore,
+        allPassed: opt3.allPassed,
+      });
+    }
+  }
+
   const patch: Partial<DistillColumnParams> = {};
   (Object.keys(bestParams) as Array<keyof DistillColumnParams>).forEach((k) => {
     if (bestParams[k] !== initialParams[k]) {
@@ -1032,17 +1297,35 @@ function finalizeDistillFixResult(
     }
   }
 
-  const improved = bestScore < scoreDistillResult(solvedBefore) - 1e-3;
-  const resolved =
-    bestSol.converged &&
-    bestSol.diagnostics.level === 'ok' &&
-    countProfileSawtoothReversals(bestSol) === 0 &&
-    bestSol.actualRefluxRatio <= 45 &&
-    bestSol.totalStagesUsed <= 195;
+  const actionsTaken: string[] = [...baseActions];
+  if (opt1.actionLabel && !actionsTaken.includes(opt1.actionLabel)) {
+    actionsTaken.push(opt1.actionLabel);
+  }
+  if (solvedBefore.totalStagesUsed !== bestSol.totalStagesUsed) {
+    actionsTaken.push(`이론단수 ${solvedBefore.totalStagesUsed}→${bestSol.totalStagesUsed}단`);
+  }
+  if (solvedBefore.feedStageUsed !== bestSol.feedStageUsed) {
+    actionsTaken.push(`공급단 ${solvedBefore.feedStageUsed}→${bestSol.feedStageUsed}단`);
+  }
+  if (Math.abs(solvedBefore.actualRefluxRatio - bestSol.actualRefluxRatio) > 0.05) {
+    actionsTaken.push(
+      `환류비 RR ${solvedBefore.actualRefluxRatio.toFixed(2)}→${bestSol.actualRefluxRatio.toFixed(2)}`
+    );
+  }
+
+  const beforeScore = scoreDistillResult(solvedBefore);
+  const beforeTac = computeDistillTacScore(solvedBefore);
+  const beforePassed = isDistillStrictPass(solvedBefore);
+  const improved =
+    (opt1.allPassed && !beforePassed) ||
+    bestScore < beforeScore - 1e-3 ||
+    (opt1.allPassed && beforePassed && opt1.tacScore < beforeTac - 0.1);
+  const resolved = opt1.allPassed;
+  const qRebMcalH = (Math.abs(bestSol.reboilerDutyKcalH) / 1000).toFixed(0);
   const headline = resolved
-    ? `AI 자동 해결 완료: ${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} 조건에서 수렴 및 스펙 달성.`
+    ? `AI 자동 최적화 완료 (${evaluated.length}개 후보 검증 · 최저 TAC 1번 자동 적용): ${bestSol.totalStagesUsed}단(공급 ${bestSol.feedStageUsed}단) · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)} · Q_reb=${qRebMcalH} Mcal/h (TAC ${opt1.tacScore.toFixed(1)}).`
     : improved
-    ? `AI 조건 개선 완료 (${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)}): ${bestSol.diagnostics.headline}`
+    ? `AI 조건 개선 완료 (${evaluated.length}개 후보 탐색 · ${bestSol.totalStagesUsed}단 · RR=${bestSol.actualRefluxRatio.toFixed(2)} · D/F=${bestSol.actualDOverFMass.toFixed(3)}): ${bestSol.diagnostics.headline}`
     : `현재 설정에서 자동 수렴 조건을 찾지 못했습니다 — 원료 조성·목표 스펙의 물리적 실현 가능성(공비/비핵심 고비점 유분)을 확인하세요.`;
 
   return {
@@ -1053,60 +1336,86 @@ function finalizeDistillFixResult(
     solvedAfter: bestSol,
     headline,
     rootCauses: Array.from(new Set(rootCauses)),
-    actionsTaken: actionsTaken.length > 0 ? actionsTaken : ['단수·환류·D/F 조합 탐색 완료'],
+    actionsTaken: actionsTaken.length > 0 ? actionsTaken : ['단수·공급단·환류비 가이드 격자 탐색 완료'],
+    distillOptions,
   };
 }
 
 /**
- * 다단 증류탑 폐루프 AI · 물리 자동 해결기 (동기 버전)
+ * 다단 증류탑 폐루프 AI · 가이드 격자 최적화 해결기 (동기 버전, <= 900 ms 예산)
  */
 export function autoFixDistillationSimulation(
   feedsInput: DistillFeedInput[],
   initialParams: DistillColumnParams
 ): EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult> {
   const fixStartMs = Date.now();
+  const HARD_BUDGET_MS = 850;
+  const REMEDY_BUDGET_MS = 450;
+
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
   const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore);
 
-  let bestParams: DistillColumnParams = { ...initialParams };
-  let bestSol = solvedBefore;
-  let bestScore = scoreDistillResult(solvedBefore);
-  const actionsTaken: string[] = [];
-  let evals = 1;
-  const loopStartMs = Date.now();
-
-  for (const st of steps) {
-    if (
-      bestScore <= 1 ||
-      (bestSol.converged &&
-        bestSol.diagnostics.level === 'ok' &&
-        bestSol.totalStagesUsed <= 165 &&
-        bestSol.actualRefluxRatio <= 35 &&
-        countProfileSawtoothReversals(bestSol) === 0) ||
-      evals >= 8 ||
-      (evals >= 2 && (Date.now() - fixStartMs > 4200 || Date.now() - loopStartMs > 3600))
-    ) {
-      break;
+  const evaluated: DistillEvalCandidate[] = [];
+  const seenKeys = new Set<string>();
+  const recordCand = (
+    params: DistillColumnParams,
+    res: DistillSolveResult,
+    actionLabel?: string
+  ): DistillEvalCandidate => {
+    const cand: DistillEvalCandidate = {
+      params,
+      res,
+      score: scoreDistillResult(res),
+      tacScore: computeDistillTacScore(res),
+      allPassed: isDistillStrictPass(res),
+      actionLabel,
+    };
+    const key = distillCandKey(params, res);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      evaluated.push(cand);
     }
-    const patch = st.buildPatch(bestParams, bestSol);
+    return cand;
+  };
+
+  const beforeCand = recordCand({ ...initialParams }, solvedBefore);
+  let baseParams: DistillColumnParams = beforeCand.params;
+  let baseSol = beforeCand.res;
+  let baseScore = beforeCand.score;
+  const baseActions: string[] = [];
+
+  // ── Phase 1: 기존 고속 수렴 처방 (진단 처방 / 디캔터·NRTL / 이중스펙 등) ──
+  let remedyEvals = 0;
+  for (const st of steps) {
+    if (remedyEvals >= 6 || Date.now() - fixStartMs > REMEDY_BUDGET_MS) break;
+    if (isDistillStrictPass(baseSol) && remedyEvals >= 1) break;
+    const patch = st.buildPatch(baseParams, baseSol);
     if (!patch) continue;
-    const nextParams: DistillColumnParams = { ...bestParams, ...patch };
-    const cand = solveRigorousDistillation(feedsInput, nextParams);
-    evals++;
-    const sc = scoreDistillResult(cand);
-    if (sc < bestScore - 1e-3) {
-      bestParams = nextParams;
-      bestSol = cand;
-      bestScore = sc;
-      actionsTaken.push(st.label);
+    const nextParams: DistillColumnParams = { ...baseParams, ...patch };
+    const candRes = solveRigorousDistillation(feedsInput, nextParams);
+    remedyEvals++;
+    const cand = recordCand(nextParams, candRes, st.label);
+    if (cand.score < baseScore - 1e-3 || (cand.allPassed && !isDistillStrictPass(baseSol))) {
+      baseParams = nextParams;
+      baseSol = candRes;
+      baseScore = cand.score;
+      baseActions.push(st.label);
     }
   }
 
-  return finalizeDistillFixResult(initialParams, solvedBefore, bestParams, bestSol, bestScore, rootCauses, actionsTaken);
+  // ── Phase 2: 스마트 가이드 격자 탐색 (단수 × 환류비 × 공급단, <= 850 ms 하드 스톱) ──
+  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams);
+  for (const item of grid) {
+    if (Date.now() - fixStartMs > HARD_BUDGET_MS) break;
+    const candRes = solveRigorousDistillation(feedsInput, item.params);
+    recordCand(item.params, candRes, item.label);
+  }
+
+  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions);
 }
 
 /**
- * 다단 증류탑 비동기 단계별 AI · 물리 자동 해결기
+ * 다단 증류탑 비동기 단계별 AI · 가이드 격자 최적화 해결기
  * - 첫 MESH 해석 전과 각 후보 탐색 사이에 브라우저 페인트를 양보하여 UI 멈춤 없이 진행률 표시
  */
 export async function autoFixDistillationSimulationAsync(
@@ -1115,54 +1424,86 @@ export async function autoFixDistillationSimulationAsync(
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<EquipmentAutoFixResult<DistillColumnParams, DistillSolveResult>> {
   const fixStartMs = Date.now();
+  const HARD_BUDGET_MS = 850;
+  const REMEDY_BUDGET_MS = 450;
+
   onProgress?.(1, 6, '현재 운전점 및 미수렴·순도 미달 원인 정밀 진단 중...');
   await yieldToBrowser();
 
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
   const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore);
 
-  let bestParams: DistillColumnParams = { ...initialParams };
-  let bestSol = solvedBefore;
-  let bestScore = scoreDistillResult(solvedBefore);
-  const actionsTaken: string[] = [];
-  let evals = 1;
-  const loopStartMs = Date.now();
-  const maxSteps = Math.min(7, steps.length);
-  const totalDisplay = maxSteps + 1;
-
-  for (let i = 0; i < steps.length; i++) {
-    if (
-      bestScore <= 1 ||
-      (bestSol.converged &&
-        bestSol.diagnostics.level === 'ok' &&
-        bestSol.totalStagesUsed <= 165 &&
-        bestSol.actualRefluxRatio <= 35 &&
-        countProfileSawtoothReversals(bestSol) === 0) ||
-      evals >= 8 ||
-      (evals >= 2 && (Date.now() - fixStartMs > 4200 || Date.now() - loopStartMs > 3600))
-    ) {
-      break;
+  const evaluated: DistillEvalCandidate[] = [];
+  const seenKeys = new Set<string>();
+  const recordCand = (
+    params: DistillColumnParams,
+    res: DistillSolveResult,
+    actionLabel?: string
+  ): DistillEvalCandidate => {
+    const cand: DistillEvalCandidate = {
+      params,
+      res,
+      score: scoreDistillResult(res),
+      tacScore: computeDistillTacScore(res),
+      allPassed: isDistillStrictPass(res),
+      actionLabel,
+    };
+    const key = distillCandKey(params, res);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      evaluated.push(cand);
     }
+    return cand;
+  };
+
+  const beforeCand = recordCand({ ...initialParams }, solvedBefore);
+  let baseParams: DistillColumnParams = beforeCand.params;
+  let baseSol = beforeCand.res;
+  let baseScore = beforeCand.score;
+  const baseActions: string[] = [];
+
+  // Phase 1: 고속 수렴 처방
+  let remedyEvals = 0;
+  for (let i = 0; i < steps.length; i++) {
+    if (remedyEvals >= 6 || Date.now() - fixStartMs > REMEDY_BUDGET_MS) break;
+    if (isDistillStrictPass(baseSol) && remedyEvals >= 1) break;
     const st = steps[i];
-    onProgress?.(Math.min(totalDisplay, i + 2), totalDisplay, st.progressText);
+    onProgress?.(2, 6, st.progressText);
     await yieldToBrowser();
 
-    const patch = st.buildPatch(bestParams, bestSol);
+    const patch = st.buildPatch(baseParams, baseSol);
     if (!patch) continue;
-    const nextParams: DistillColumnParams = { ...bestParams, ...patch };
-    const cand = solveRigorousDistillation(feedsInput, nextParams);
-    evals++;
-    const sc = scoreDistillResult(cand);
-    if (sc < bestScore - 1e-3) {
-      bestParams = nextParams;
-      bestSol = cand;
-      bestScore = sc;
-      actionsTaken.push(st.label);
+    const nextParams: DistillColumnParams = { ...baseParams, ...patch };
+    const candRes = solveRigorousDistillation(feedsInput, nextParams);
+    remedyEvals++;
+    const cand = recordCand(nextParams, candRes, st.label);
+    if (cand.score < baseScore - 1e-3 || (cand.allPassed && !isDistillStrictPass(baseSol))) {
+      baseParams = nextParams;
+      baseSol = candRes;
+      baseScore = cand.score;
+      baseActions.push(st.label);
     }
   }
 
-  onProgress?.(totalDisplay, totalDisplay, '최적 운전조건 반영 및 검증 완료');
-  return finalizeDistillFixResult(initialParams, solvedBefore, bestParams, bestSol, bestScore, rootCauses, actionsTaken);
+  // Phase 2: 가이드 격자 탐색
+  const grid = buildDistillGuidedGrid(baseParams, baseSol, initialParams);
+  onProgress?.(4, 6, `단수·환류비·공급단 가이드 격자(${grid.length}개 후보) TAC 최적화 탐색 중...`);
+  await yieldToBrowser();
+
+  let gridDone = 0;
+  for (const item of grid) {
+    if (Date.now() - fixStartMs > HARD_BUDGET_MS) break;
+    const candRes = solveRigorousDistillation(feedsInput, item.params);
+    recordCand(item.params, candRes, item.label);
+    gridDone++;
+    if (gridDone % 6 === 0 && Date.now() - fixStartMs < HARD_BUDGET_MS - 60) {
+      onProgress?.(5, 6, `가이드 격자 탐색 중 (${gridDone}/${grid.length})...`);
+      await yieldToBrowser();
+    }
+  }
+
+  onProgress?.(6, 6, '상위 3개 AI 검증 증류탑 설계 대안 산출 완료');
+  return finalizeDistillFixResult(initialParams, solvedBefore, evaluated, rootCauses, baseActions);
 }
 
 function scoreInternalsResult(r: ColumnInternalsSolveResult): number {
@@ -1176,8 +1517,57 @@ function scoreInternalsResult(r: ColumnInternalsSolveResult): number {
   return pen;
 }
 
+function isInternalsStrictPass(r: ColumnInternalsSolveResult): boolean {
+  if (r.overallStatus === 'critical') return false;
+  if (r.maxFloodPct > 82) return false;
+  if (r.internalsKind === 'tray' && r.maxDcChokeFloodPct > 80) return false;
+  if (r.stageRows.some((s) => s.status === 'flooding' || s.status === 'weeping')) return false;
+  if (
+    r.designWarnings.some(
+      (w) => w.includes('설계 상한') || w.includes('위핑') || w.includes('초크')
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function getInternalsInstalledCostUsd(r: ColumnInternalsSolveResult): number {
+  return Math.round(
+    r.costEstimate?.totalModuleUsd ??
+      r.costEstimate?.bareModuleUsd ??
+      r.costEstimate?.totalPurchaseUsd ??
+      0
+  );
+}
+
+interface InternalsEvalCandidate {
+  cfg: ColumnInternalsParams;
+  res: ColumnInternalsSolveResult;
+  costUsd: number;
+  allPassed: boolean;
+  score: number;
+}
+
+function internalsGeomKey(c: InternalsEvalCandidate): string {
+  if (c.res.internalsKind === 'packed') {
+    return `packed:${c.res.packingSpec.key}:${c.res.shellSectionMode}:${c.res.governingDiamM.toFixed(2)}:${c.res.totalPackedHeightM.toFixed(2)}`;
+  }
+  return `tray:${c.res.trayType}:${c.res.traySpacingMm}:${c.res.shellSectionMode}:${c.res.rectifying.flowPasses}:${c.res.stripping.flowPasses}:${c.res.governingDiamM.toFixed(2)}`;
+}
+
+function internalsMajorKey(c: InternalsEvalCandidate): string {
+  if (c.res.internalsKind === 'packed') {
+    return `packed:${c.res.packingSpec.key}:${c.res.shellSectionMode}`;
+  }
+  return `tray:${c.res.trayType}:${c.res.traySpacingMm}:${c.res.shellSectionMode}`;
+}
+
 /**
- * 컬럼 인터널(트레이/패킹 · 범람 · 압력손실) AI 자동 해결기
+ * 컬럼 인터널(트레이/패킹 · 범람 · 압력손실 · 경제성) AI 조합 격자 최적화 해결기 (< 50 ms)
+ * - 트레이 격자(<=60 조합) + 충진물 격자(16 조합) 고속 조합 스윕
+ * - 엄격 통과(범람 ≤ 82%, 위핑/초크 없음) 중 최저 설치원가 1번 자동 적용 +
+ *   저차압·고턴다운 여유안(2번) + 대체 인터널(충진탑 ↔ 단탑, 3번) 반환
  */
 export function autoFixColumnInternals(
   colParams: DistillColumnParams,
@@ -1187,61 +1577,276 @@ export function autoFixColumnInternals(
   const initialIc: ColumnInternalsParams = { ...(colParams.internalsConfig || {}) };
   const solvedBefore = solveColumnInternalsDesign(colParams, feeds, simResult);
   const rootCauses: string[] = [...solvedBefore.designWarnings];
-  const actionsTaken: string[] = [];
+  if (rootCauses.length === 0 && solvedBefore.maxFloodPct > 82) {
+    rootCauses.push(`최대 범람율(${solvedBefore.maxFloodPct.toFixed(1)}%)이 안전 상한(82%)을 초과합니다.`);
+  }
+  if (solvedBefore.internalsKind === 'tray' && solvedBefore.maxDcChokeFloodPct > 80) {
+    rootCauses.push(
+      `다운코머 초크 범람율(${solvedBefore.maxDcChokeFloodPct.toFixed(1)}%)이 권장 상한(80%)을 초과합니다.`
+    );
+  }
 
-  let bestIc: ColumnInternalsParams = { ...initialIc };
-  let bestRes = solvedBefore;
-  let bestScore = scoreInternalsResult(solvedBefore);
+  const candidates: InternalsEvalCandidate[] = [];
+  const seenKeys = new Set<string>();
 
-  const tryPatch = (patch: Partial<ColumnInternalsParams>, label: string): boolean => {
-    const nextIc: ColumnInternalsParams = { ...bestIc, ...patch };
-    const cand = solveColumnInternalsDesign({ ...colParams, internalsConfig: nextIc }, feeds, simResult);
-    const sc = scoreInternalsResult(cand);
-    if (sc < bestScore - 1e-3) {
-      bestIc = nextIc;
-      bestRes = cand;
-      bestScore = sc;
-      actionsTaken.push(label);
-      return true;
+  const evalCandidate = (cfg: ColumnInternalsParams, preSolved?: ColumnInternalsSolveResult) => {
+    const res =
+      preSolved ?? solveColumnInternalsDesign({ ...colParams, internalsConfig: cfg }, feeds, simResult);
+    const cand: InternalsEvalCandidate = {
+      cfg,
+      res,
+      costUsd: getInternalsInstalledCostUsd(res),
+      allPassed: isInternalsStrictPass(res),
+      score: scoreInternalsResult(res),
+    };
+    const key = internalsGeomKey(cand);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      candidates.push(cand);
     }
-    return false;
   };
 
-  if (bestRes.maxFloodPct > 82 || bestRes.maxDcChokeFloodPct > 80 || bestRes.overallStatus !== 'ok') {
-    tryPatch(
-      {
-        designFloodTargetPct: 70,
-        manualRectDiamM: undefined,
-        manualStripDiamM: undefined,
-        traySpacingMm: 600,
-        flowPasses: 2,
-        downcomerAreaPct: 16,
-      },
-      '설계 범람율 목표 70% · 단간격 600mm · 2-Pass 다운코머 16%로 수력학 여유 확보'
-    );
+  // 현재 설정 포함
+  evalCandidate(initialIc, solvedBefore);
+
+  // ── 1-A. Tray 조합 격자 스윕 (<= 60 조합) ──
+  const trayTypes: TrayDeckType[] = ['sieve', 'valve'];
+  const traySpacingsMm = [450, 500, 600];
+  const shellModes: ShellSectionMode[] = ['uniform', 'swaged'];
+  const trayFloodTargets = [72, 78];
+  const dcBoostPct =
+    solvedBefore.maxDcChokeFloodPct > 78
+      ? Math.max(15, initialIc.downcomerAreaPct ?? 12)
+      : initialIc.downcomerAreaPct;
+
+  for (const trayType of trayTypes) {
+    for (const traySpacingMm of traySpacingsMm) {
+      for (const shellSectionMode of shellModes) {
+        const passGrid: Array<'auto' | 1 | 2> =
+          shellSectionMode === 'uniform' ? ['auto', 1, 2] : ['auto', 2];
+        for (const designFloodTargetPct of trayFloodTargets) {
+          for (const flowPasses of passGrid) {
+            evalCandidate({
+              ...initialIc,
+              internalsKind: 'tray',
+              trayType,
+              traySpacingMm,
+              shellSectionMode,
+              designFloodTargetPct,
+              flowPasses,
+              ...(dcBoostPct !== undefined ? { downcomerAreaPct: dcBoostPct } : {}),
+              manualRectDiamM: undefined,
+              manualStripDiamM: undefined,
+            });
+          }
+        }
+      }
+    }
   }
 
-  // 진공 탑 + 높은 ΔP인 경우 규칙 충진물(Mellapak 250Y)로 자동 전환 시도
+  // ── 1-B. Packed 조합 격자 스윕 (16 조합: 규칙 2종 + 불규칙 2종) ──
+  const packingKeys: PackingKey[] = [
+    'mellapak_250y',
+    'mellapak_350y',
+    'imtp_40_metal',
+    'pall_ring_38_ss',
+  ];
+  const packedFloodTargets = [70, 76];
+
+  for (const packingKey of packingKeys) {
+    for (const shellSectionMode of shellModes) {
+      for (const designFloodTargetPct of packedFloodTargets) {
+        evalCandidate({
+          ...initialIc,
+          internalsKind: 'packed',
+          packingKey,
+          shellSectionMode,
+          designFloodTargetPct,
+          manualRectDiamM: undefined,
+          manualStripDiamM: undefined,
+        });
+      }
+    }
+  }
+
+  // ── 2. 후보 랭킹 (통과안 우선 → 최저 설치원가 순, 미통과안은 최저 페널티 순) ──
+  candidates.sort((a, b) => {
+    if (a.allPassed !== b.allPassed) return a.allPassed ? -1 : 1;
+    if (a.allPassed && b.allPassed) {
+      if (a.costUsd !== b.costUsd) return a.costUsd - b.costUsd;
+      if ((a.res.overallStatus === 'ok') !== (b.res.overallStatus === 'ok')) {
+        return a.res.overallStatus === 'ok' ? -1 : 1;
+      }
+      return a.res.totalInternalsDpMbar - b.res.totalInternalsDpMbar;
+    }
+    if (Math.abs(a.score - b.score) > 1e-3) return a.score - b.score;
+    return a.costUsd - b.costUsd;
+  });
+
+  const opt1 = candidates[0];
+  const passingCandidates = candidates.filter((c) => c.allPassed);
+  const poolForOpt2 = passingCandidates.length > 1 ? passingCandidates : candidates;
+
+  const opt1Key = internalsGeomKey(opt1);
+  const opt1Major = internalsMajorKey(opt1);
+
+  // Option 2: 저차압 · 고턴다운 여유안
+  const lowDpSorted = [...poolForOpt2]
+    .filter((c) => internalsGeomKey(c) !== opt1Key)
+    .sort((a, b) => {
+      if (Math.abs(a.res.totalInternalsDpMbar - b.res.totalInternalsDpMbar) > 2.0) {
+        return a.res.totalInternalsDpMbar - b.res.totalInternalsDpMbar;
+      }
+      if (Math.abs(a.res.minTurndownRatio - b.res.minTurndownRatio) > 0.15) {
+        return b.res.minTurndownRatio - a.res.minTurndownRatio;
+      }
+      return a.costUsd - b.costUsd;
+    });
+  const opt2 =
+    lowDpSorted.find((c) => internalsMajorKey(c) !== opt1Major) ?? lowDpSorted[0] ?? null;
+
+  // Option 3: 대체 인터널 (충진탑 ↔ 단탑) 또는 2순위 별도 기하안
+  const chosenKeys = new Set<string>([opt1Key, ...(opt2 ? [internalsGeomKey(opt2)] : [])]);
+  const chosenMajors = new Set<string>([opt1Major, ...(opt2 ? [internalsMajorKey(opt2)] : [])]);
+  const oppositeKind = opt1.res.internalsKind === 'tray' ? 'packed' : 'tray';
+  const oppCand =
+    passingCandidates.find(
+      (c) => c.res.internalsKind === oppositeKind && !chosenKeys.has(internalsGeomKey(c))
+    ) ??
+    candidates.find(
+      (c) =>
+        c.res.internalsKind === oppositeKind &&
+        (opt1.allPassed ? c.allPassed : true) &&
+        !chosenKeys.has(internalsGeomKey(c))
+    ) ??
+    candidates.find(
+      (c) => c.res.internalsKind === oppositeKind && !chosenKeys.has(internalsGeomKey(c))
+    );
+  const altGeomCand =
+    passingCandidates.find(
+      (c) => !chosenKeys.has(internalsGeomKey(c)) && !chosenMajors.has(internalsMajorKey(c))
+    ) ??
+    passingCandidates.find((c) => !chosenKeys.has(internalsGeomKey(c))) ??
+    candidates.find((c) => !chosenKeys.has(internalsGeomKey(c))) ??
+    null;
+  const opt3 = oppCand ?? altGeomCand;
+
+  const internalsOptions: ColumnInternalsAutoFixOption[] = [
+    {
+      id: 'opt-economical',
+      labelKo: 'AI 추천 최적안 (최저 원가)',
+      labelEn: 'AI Recommended · Lowest Cost',
+      badgeKo: '최저 원가',
+      badgeEn: 'Lowest Cost',
+      cfg: opt1.cfg,
+      res: opt1.res,
+      costUsd: opt1.costUsd,
+      allPassed: opt1.allPassed,
+    },
+  ];
+
+  if (opt2) {
+    internalsOptions.push({
+      id: 'opt-low-dp',
+      labelKo: '저차압 · 고턴다운 여유안',
+      labelEn: 'Low ΔP · High Turndown',
+      badgeKo: '저차압·고턴다운',
+      badgeEn: 'Low ΔP',
+      cfg: opt2.cfg,
+      res: opt2.res,
+      costUsd: opt2.costUsd,
+      allPassed: opt2.allPassed,
+    });
+  }
+
+  if (opt3) {
+    const isOpposite = opt3.res.internalsKind !== opt1.res.internalsKind;
+    internalsOptions.push({
+      id: isOpposite ? 'opt-alt-kind' : 'opt-alt-geom',
+      labelKo: isOpposite
+        ? opt3.res.internalsKind === 'packed'
+          ? '대체 인터널 (충진탑 전환)'
+          : '대체 인터널 (단탑 전환)'
+        : '대체 규격안',
+      labelEn: isOpposite
+        ? opt3.res.internalsKind === 'packed'
+          ? 'Alternative: Packed Column'
+          : 'Alternative: Tray Column'
+        : 'Alternative Geometry',
+      badgeKo: isOpposite
+        ? opt3.res.internalsKind === 'packed'
+          ? '충진탑 대안'
+          : '단탑 대안'
+        : '대체 규격',
+      badgeEn: isOpposite
+        ? opt3.res.internalsKind === 'packed'
+          ? 'Packed Alt'
+          : 'Tray Alt'
+        : 'Alt Spec',
+      cfg: opt3.cfg,
+      res: opt3.res,
+      costUsd: opt3.costUsd,
+      allPassed: opt3.allPassed,
+    });
+  }
+
+  const bestIc = opt1.cfg;
+  const bestRes = opt1.res;
+  const bestScore = opt1.score;
+
+  // ── 변경 조치 목록 상세 기록 ──
+  const actionsTaken: string[] = [];
+  if (solvedBefore.internalsKind !== bestRes.internalsKind) {
+    actionsTaken.push(
+      `인터널 형식 전환 (${solvedBefore.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'} → ${
+        bestRes.internalsKind === 'tray' ? '단탑(Tray)' : '충진탑(Packed)'
+      })`
+    );
+  }
+  if (initialIc.manualRectDiamM || initialIc.manualStripDiamM) {
+    actionsTaken.push('수동 내경 고정 해제 → 수력학 기반 표준 탑경 자동 사이징 전환');
+  }
+  if (solvedBefore.shellSectionMode !== bestRes.shellSectionMode) {
+    actionsTaken.push(
+      `동체 직경 구성 변경 (${solvedBefore.shellSectionMode === 'swaged' ? '이단 직경' : '단일 직경'} → ${
+        bestRes.shellSectionMode === 'swaged' ? '이단 직경(Swaged)' : '단일 직경(Uniform)'
+      })`
+    );
+  }
+  if (bestRes.internalsKind === 'tray') {
+    if (solvedBefore.internalsKind !== 'tray' || solvedBefore.trayType !== bestRes.trayType) {
+      actionsTaken.push(`트레이 형식 ${solvedBefore.trayType}→${bestRes.trayType} (${bestRes.trayTypeLabel})`);
+    }
+    if (solvedBefore.internalsKind !== 'tray' || solvedBefore.traySpacingMm !== bestRes.traySpacingMm) {
+      actionsTaken.push(`단간격 ${solvedBefore.traySpacingMm}→${bestRes.traySpacingMm} mm`);
+    }
+    if (
+      solvedBefore.internalsKind !== 'tray' ||
+      solvedBefore.rectifying.flowPasses !== bestRes.rectifying.flowPasses ||
+      solvedBefore.stripping.flowPasses !== bestRes.stripping.flowPasses
+    ) {
+      actionsTaken.push(
+        `유로 패스 수 ${bestRes.rectifying.flowPasses}-Pass(정류)/${bestRes.stripping.flowPasses}-Pass(회수) 적용`
+      );
+    }
+  } else {
+    if (
+      solvedBefore.internalsKind !== 'packed' ||
+      solvedBefore.packingSpec.key !== bestRes.packingSpec.key
+    ) {
+      actionsTaken.push(`충진물 규격 ${bestRes.packingSpec.name} 적용`);
+    }
+  }
   if (
-    bestScore > 1 &&
-    (simResult.topPressKgcm2g < -0.25 || bestRes.totalInternalsDpMbar > 100) &&
-    bestRes.internalsKind !== 'packed'
+    bestIc.designFloodTargetPct !== undefined &&
+    bestIc.designFloodTargetPct !== initialIc.designFloodTargetPct
   ) {
-    tryPatch(
-      {
-        internalsKind: 'packed',
-        packingKey: 'mellapak_250y',
-        designFloodTargetPct: 72,
-        manualRectDiamM: undefined,
-        manualStripDiamM: undefined,
-      },
-      '진공/저압손 조건에 맞춰 저압손 규칙 충진물(Mellapak 250Y)로 전환'
-    );
+    actionsTaken.push(`설계 범람율 목표 ${bestIc.designFloodTargetPct}% 적용`);
   }
-
-  // 위핑/턴다운 우려 시 밸브 트레이
-  if (bestRes.internalsKind === 'tray' && bestRes.designWarnings.some((w) => w.includes('위핑') || w.includes('턴다운'))) {
-    tryPatch({ trayType: 'valve' }, '밸브 트레이(Valve Tray) 적용으로 턴다운·위핑 안정화');
+  if (Math.abs(solvedBefore.governingDiamM - bestRes.governingDiamM) > 0.01) {
+    actionsTaken.push(
+      `표준 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m`
+    );
   }
 
   const patch: Partial<ColumnInternalsParams> = {};
@@ -1251,19 +1856,31 @@ export function autoFixColumnInternals(
     }
   });
 
-  const improved = bestScore < scoreInternalsResult(solvedBefore) - 1e-3;
-  const resolved = bestRes.overallStatus === 'ok';
+  const beforeScore = scoreInternalsResult(solvedBefore);
+  const beforePassed = isInternalsStrictPass(solvedBefore);
+  const beforeCost = getInternalsInstalledCostUsd(solvedBefore);
+  const improved =
+    (opt1.allPassed && !beforePassed) ||
+    bestScore < beforeScore - 1e-3 ||
+    (opt1.allPassed && beforePassed && opt1.costUsd < beforeCost);
+  const resolved = opt1.allPassed || bestRes.overallStatus === 'ok';
+  const costBeforeK = (beforeCost / 1000).toFixed(1);
+  const costAfterK = (opt1.costUsd / 1000).toFixed(1);
+  const headline = resolved
+    ? `AI 인터널 최적화 완료 (${candidates.length}개 조합 검증 · 최저 원가 1번 $${costAfterK}k 자동 적용): 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · 내경 ${solvedBefore.governingDiamM.toFixed(2)}→${bestRes.governingDiamM.toFixed(2)} m (원가 $${costBeforeK}k→$${costAfterK}k).`
+    : `인터널 보정 완료 (${candidates.length}개 조합 탐색): 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}%→${bestRes.maxFloodPct.toFixed(1)}% · ΔP ${solvedBefore.totalInternalsDpMbar.toFixed(1)}→${bestRes.totalInternalsDpMbar.toFixed(1)} mbar · 내경 ${bestRes.governingDiamM.toFixed(2)} m ($${costAfterK}k).`;
+
   return {
     improved,
     resolved,
     patch,
     solvedBefore,
     solvedAfter: bestRes,
-    headline: resolved
-      ? `인터널 AI 보정 완료: 최대 범람율 ${bestRes.maxFloodPct.toFixed(1)}% · 총 압손 ${bestRes.totalInternalsDpMbar.toFixed(1)} mbar (정상)`
-      : `인터널 보정 완료: 범람율 ${solvedBefore.maxFloodPct.toFixed(1)}% → ${bestRes.maxFloodPct.toFixed(1)}%`,
+    headline,
     rootCauses,
-    actionsTaken: actionsTaken.length > 0 ? actionsTaken : ['현재 인터널 수력학 조건이 정상 범위입니다.'],
+    actionsTaken:
+      actionsTaken.length > 0 ? actionsTaken : ['현재 인터널 수력학 조건이 최적 범위입니다.'],
+    internalsOptions,
   };
 }
 
@@ -1273,10 +1890,10 @@ export async function autoFixColumnInternalsAsync(
   simResult: DistillSolveResult,
   onProgress?: (step: number, total: number, label: string) => void
 ): Promise<EquipmentAutoFixResult<ColumnInternalsParams, ColumnInternalsSolveResult>> {
-  onProgress?.(1, 2, '트레이/충진물 범람율·압력손실·위핑 수력학 분석 중...');
+  onProgress?.(1, 2, '트레이/충진물 조합 격자 스윕(범람·ΔP·턴다운·원가) 탐색 중...');
   await yieldToBrowser();
   const res = autoFixColumnInternals(colParams, feeds, simResult);
-  onProgress?.(2, 2, '컬럼 인터널 최적 보정 완료');
+  onProgress?.(2, 2, '상위 3개 AI 검증 인터널 설계 대안 산출 완료');
   await yieldToBrowser();
   return res;
 }
