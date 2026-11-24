@@ -66,7 +66,8 @@ const selStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-type SatMetallurgy = 'Rubber-Lined CS' | 'FRP' | 'Titanium Gr.2';
+type SatType = 'conventional_bed' | 'vertical_cyl' | 'agitated_dissolver';
+type SatMetallurgy = 'Acid-Proof Concrete / Tile' | 'Rubber-Lined CS' | 'FRP' | 'Titanium Gr.2';
 type ChelateConfig = '2-Tower Lead-Lag' | '3-Tower Merry-Go-Round';
 type ChelateResinType = 'Iminodiacetic (IDA)' | 'Aminophosphonic';
 type ChelateMetallurgy = 'Rubber-Lined CS' | 'FRP';
@@ -95,12 +96,37 @@ export default function PurificationWorkbenchModal({
   const isEn = lang === 'en';
 
   // ── 1) Saturator & Clarifier state ──
+  const [satType, setSatType] = useState<SatType>('conventional_bed');
   const [targetBrineWtPct, setTargetBrineWtPct] = useState<number>(params.targetBrineWtPct ?? 25.6);
+  const [upflowVelMh, setUpflowVelMh] = useState<number>(1.8);
+  const [saltBedHeightM, setSaltBedHeightM] = useState<number>(3.0);
+  const [clearZoneM, setClearZoneM] = useState<number>(1.5);
+  const [satParallelCount, setSatParallelCount] = useState<number>(1);
   const [residenceTimeMin, setResidenceTimeMin] = useState<number>(45);
   const [hdRatio, setHdRatio] = useState<number>(1.4);
   const [coneAngleDeg, setConeAngleDeg] = useState<number>(60);
   const [agitSpecPower, setAgitSpecPower] = useState<number>(0.35);
-  const [satMetallurgy, setSatMetallurgy] = useState<SatMetallurgy>('Rubber-Lined CS');
+  const [satMetallurgy, setSatMetallurgy] = useState<SatMetallurgy>('Acid-Proof Concrete / Tile');
+
+  const handleChangeSatType = (next: SatType) => {
+    setSatType(next);
+    if (next === 'conventional_bed') {
+      setUpflowVelMh(1.8);
+      setSaltBedHeightM(3.0);
+      setClearZoneM(1.5);
+      setSatMetallurgy('Acid-Proof Concrete / Tile');
+    } else if (next === 'vertical_cyl') {
+      setUpflowVelMh(4.5);
+      setSaltBedHeightM(3.5);
+      setClearZoneM(1.5);
+      setSatMetallurgy('FRP');
+    } else {
+      setResidenceTimeMin(45);
+      setHdRatio(1.4);
+      setConeAngleDeg(60);
+      setSatMetallurgy('Rubber-Lined CS');
+    }
+  };
 
   // ── 2) Chelate Resin Tower state ──
   const [svBvh, setSvBvh] = useState<number>(18);
@@ -167,19 +193,8 @@ export default function PurificationWorkbenchModal({
   // ── Engineering Calculations ──
   const satCalc = useMemo(() => {
     const wt = clampNum(targetBrineWtPct, 15, 26.5, 25.6);
-    const tau = clampNum(residenceTimeMin, 5, 240, 45);
-    const hd = clampNum(hdRatio, 0.7, 3.0, 1.4);
-    const coneDeg = clampNum(coneAngleDeg, 30, 75, 60);
-    const specKw = clampNum(agitSpecPower, 0.05, 2.5, 0.35);
-
-    const activeVolM3 = safeQ * (tau / 60);
-    const totalVolM3 = activeVolM3 / 0.82; // 18% freeboard
-    const tanCone = Math.tan((coneDeg * Math.PI) / 180);
-    const tankIdM = Math.cbrt((4 * totalVolM3) / (Math.PI * (hd + tanCone / 6)));
-    const straightSideM = hd * tankIdM;
-    const coneHeightM = (tankIdM / 2) * tanCone;
-    const totalHeightM = straightSideM + coneHeightM;
-    const agitatorKw = activeVolM3 * specKw;
+    const nUnits = Math.round(clampNum(satParallelCount, 1, 6, 1));
+    const qPerUnit = safeQ / nUnits;
 
     // Resaturation from typical depleted brine (17.5 wt% NaCl) to targetBrineWtPct
     const wIn = 0.175;
@@ -188,9 +203,68 @@ export default function PurificationWorkbenchModal({
     const saltDissolutionKgH = Math.max(0, waterMass * (wOut / (1 - wOut)) - safeM * wIn);
     const sludgePct = clampNum(params.sludgePurgePct ?? 0.35, 0.05, 5, 0.35);
     const sludgeBlowdownKgH = safeM * (sludgePct / 100);
-    const riseVelMh = safeQ / ((Math.PI / 4) * tankIdM * tankIdM);
+
+    if (satType === 'conventional_bed' || satType === 'vertical_cyl') {
+      const vUp = clampNum(upflowVelMh, 0.5, 12, satType === 'conventional_bed' ? 1.8 : 4.5);
+      const hBed = clampNum(saltBedHeightM, 1.0, 6.0, satType === 'conventional_bed' ? 3.0 : 3.5);
+      const hClear = clampNum(clearZoneM, 0.6, 3.5, 1.5);
+      const freeboard = 0.6;
+
+      const areaPerUnitM2 = qPerUnit / vUp;
+      const tankIdM = Math.sqrt((4 * areaPerUnitM2) / Math.PI);
+      const straightSideM = hBed + hClear + freeboard;
+      const coneHeightM = satType === 'vertical_cyl' ? (tankIdM / 2) * Math.tan((45 * Math.PI) / 180) * 0.4 : 0;
+      const totalHeightM = straightSideM + coneHeightM;
+      const activeVolM3 = areaPerUnitM2 * (hBed + hClear);
+      const totalVolM3 = areaPerUnitM2 * straightSideM;
+      const saltInventoryTon = (areaPerUnitM2 * hBed * 1150 * nUnits) / 1000;
+      const autonomyH = saltDissolutionKgH > 1 ? (saltInventoryTon * 1000) / saltDissolutionKgH : 24;
+      const tau = (activeVolM3 / Math.max(0.1, qPerUnit)) * 60;
+
+      return {
+        satType,
+        nUnits,
+        wt,
+        tau,
+        hd: straightSideM / Math.max(0.1, tankIdM),
+        coneDeg: coneHeightM > 0 ? 45 : 0,
+        specKw: 0,
+        activeVolM3,
+        totalVolM3,
+        tankIdM,
+        straightSideM,
+        coneHeightM,
+        totalHeightM,
+        agitatorKw: 0,
+        saltDissolutionKgH,
+        sludgeBlowdownKgH,
+        riseVelMh: vUp,
+        saltBedHeightM: hBed,
+        clearZoneM: hClear,
+        saltInventoryTon,
+        autonomyH,
+      };
+    }
+
+    // Agitated Brine Dissolver Tank
+    const tau = clampNum(residenceTimeMin, 5, 240, 45);
+    const hd = clampNum(hdRatio, 0.7, 3.0, 1.4);
+    const coneDeg = clampNum(coneAngleDeg, 30, 75, 60);
+    const specKw = clampNum(agitSpecPower, 0.05, 2.5, 0.35);
+
+    const activeVolM3 = qPerUnit * (tau / 60);
+    const totalVolM3 = activeVolM3 / 0.82; // 18% freeboard
+    const tanCone = Math.tan((coneDeg * Math.PI) / 180);
+    const tankIdM = Math.cbrt((4 * totalVolM3) / (Math.PI * (hd + tanCone / 6)));
+    const straightSideM = hd * tankIdM;
+    const coneHeightM = (tankIdM / 2) * tanCone;
+    const totalHeightM = straightSideM + coneHeightM;
+    const agitatorKw = activeVolM3 * specKw;
+    const riseVelMh = qPerUnit / ((Math.PI / 4) * tankIdM * tankIdM);
 
     return {
+      satType,
+      nUnits,
       wt,
       tau,
       hd,
@@ -206,8 +280,26 @@ export default function PurificationWorkbenchModal({
       saltDissolutionKgH,
       sludgeBlowdownKgH,
       riseVelMh,
+      saltBedHeightM: 0,
+      clearZoneM: 0,
+      saltInventoryTon: 0,
+      autonomyH: tau / 60,
     };
-  }, [targetBrineWtPct, residenceTimeMin, hdRatio, coneAngleDeg, agitSpecPower, safeQ, safeM, params.sludgePurgePct]);
+  }, [
+    satType,
+    satParallelCount,
+    targetBrineWtPct,
+    upflowVelMh,
+    saltBedHeightM,
+    clearZoneM,
+    residenceTimeMin,
+    hdRatio,
+    coneAngleDeg,
+    agitSpecPower,
+    safeQ,
+    safeM,
+    params.sludgePurgePct,
+  ]);
 
   const chelateCalc = useMemo(() => {
     const sv = clampNum(svBvh, 4, 40, 18);
@@ -737,12 +829,76 @@ export default function PurificationWorkbenchModal({
 
           {/* Title block */}
           <text x="16" y="22" fontSize="11" fontWeight="800" fill="#0F172A">
-            {isEn ? `CAD ELEVATION — [${tag}] AGITATED BRINE SATURATOR` : `CAD 입면도 — [${tag}] 교반식 원염 포화·침전조`}
+            {satType === 'agitated_dissolver'
+              ? isEn
+                ? `CAD ELEVATION — [${tag}] AGITATED BRINE DISSOLVER`
+                : `CAD 입면도 — [${tag}] 교반식 원염 용해조`
+              : satType === 'vertical_cyl'
+                ? isEn
+                  ? `CAD ELEVATION — [${tag}] VERTICAL SALT-BED SATURATOR`
+                  : `CAD 입면도 — [${tag}] 수직 원통형 염상 포화조`
+                : isEn
+                  ? `CAD ELEVATION — [${tag}] CONVENTIONAL UPFLOW SALT-BED SATURATOR`
+                  : `CAD 입면도 — [${tag}] 컨벤셔널 상향류 염상 포화조`}
           </text>
           <text x="16" y="36" fontSize="9.5" fill="#64748B" fontFamily={MONO}>
-            {`${satMetallurgy} | Ø${satCalc.tankIdM.toFixed(2)}m × Hss ${satCalc.straightSideM.toFixed(2)}m + Cone ${satCalc.coneHeightM.toFixed(2)}m (${satCalc.coneDeg}°)`}
+            {satType === 'agitated_dissolver'
+              ? `${satMetallurgy} | ${satCalc.nUnits} EA | Ø${satCalc.tankIdM.toFixed(2)}m × Hss ${satCalc.straightSideM.toFixed(2)}m + Cone ${satCalc.coneHeightM.toFixed(2)}m`
+              : `${satMetallurgy} | ${satCalc.nUnits} EA | Ø${satCalc.tankIdM.toFixed(2)}m × H ${satCalc.straightSideM.toFixed(2)}m | v_up=${satCalc.riseVelMh.toFixed(1)} m/h | Salt ${satCalc.saltInventoryTon.toFixed(0)}t`}
           </text>
 
+          {satType !== 'agitated_dissolver' ? (
+            <>
+              {/* Wide upflow salt-bed saturator basin */}
+              <rect x="135" y="102" width="270" height="58" fill="url(#brineGrad)" />
+              <rect x="135" y="160" width="270" height="108" fill="#FEF3C7" />
+              {/* Salt bed crystals texture */}
+              <line x1="135" y1="160" x2="405" y2="160" stroke="#D97706" strokeWidth="1.5" strokeDasharray="5 3" />
+              <text x="270" y="210" textAnchor="middle" fontSize="10" fontWeight="800" fill="#92400E" fontFamily={MONO}>
+                {isEn ? `SALT BED (${satCalc.saltBedHeightM.toFixed(1)} m · ${satCalc.saltInventoryTon.toFixed(0)} t)` : `원염층 Salt Bed (${satCalc.saltBedHeightM.toFixed(1)} m · ${satCalc.saltInventoryTon.toFixed(0)} t)`}
+              </text>
+              <text x="270" y="135" textAnchor="middle" fontSize="9.2" fontWeight="800" fill="#0369A1" fontFamily={MONO}>
+                {isEn ? `CLEAR BRINE ZONE (${satCalc.clearZoneM.toFixed(1)} m · v=${satCalc.riseVelMh.toFixed(1)} m/h)` : `상부 정징층 (${satCalc.clearZoneM.toFixed(1)} m · 상승유속 ${satCalc.riseVelMh.toFixed(1)} m/h)`}
+              </text>
+              {/* Vessel shell */}
+              <rect x="135" y="82" width="270" height="186" fill="none" stroke="#0F172A" strokeWidth="2.3" />
+              {/* Bottom sparger distributor header */}
+              <line x1="150" y1="256" x2="390" y2="256" stroke="#1D4ED8" strokeWidth="3" strokeDasharray="6 4" />
+              {/* Upflow arrows */}
+              {[180, 240, 300, 360].map((ax) => (
+                <g key={ax}>
+                  <line x1={ax} y1="248" x2={ax} y2="226" stroke="#1D4ED8" strokeWidth="1.4" />
+                  <polygon points={`${ax},222 ${ax - 3.5},229 ${ax + 3.5},229`} fill="#1D4ED8" />
+                </g>
+              ))}
+              {/* N1 Depleted Brine Bottom Inlet */}
+              <line x1="78" y1="256" x2="135" y2="256" stroke="#1D4ED8" strokeWidth="2.2" />
+              <polygon points="133,256 125,252 125,260" fill="#1D4ED8" />
+              <text x="16" y="251" fontSize="8.8" fontWeight="800" fill="#1D4ED8">N1: {isEn ? 'Depleted Brine' : '희박염수 유입'}</text>
+              <text x="16" y="263" fontSize="8.2" fill="#475569" fontFamily={MONO}>{safeQ.toFixed(1)} m³/h</text>
+              {/* Top Raw Salt Feed */}
+              <line x1="270" y1="48" x2="270" y2="80" stroke="#B45309" strokeWidth="2.2" />
+              <polygon points="270,82 266,74 274,74" fill="#B45309" />
+              <text x="278" y="61" fontSize="8.8" fontWeight="800" fill="#B45309">
+                {isEn ? `Raw Salt Feed (${satCalc.saltDissolutionKgH.toFixed(0)} kg/h)` : `원염 투입 (${satCalc.saltDissolutionKgH.toFixed(0)} kg/h)`}
+              </text>
+              {/* N2 Saturated Brine Overflow */}
+              <line x1="405" y1="115" x2="452" y2="115" stroke="#059669" strokeWidth="2.2" />
+              <polygon points="454,115 446,111 446,119" fill="#059669" />
+              <text x="458" y="112" fontSize="8.8" fontWeight="800" fill="#059669">N2: {isEn ? 'Sat. Brine' : '포화염수'}</text>
+              <text x="458" y="124" fontSize="8.2" fill="#475569" fontFamily={MONO}>{satCalc.wt.toFixed(1)} wt%</text>
+              {/* Dimensions */}
+              <line x1="135" y1="286" x2="405" y2="286" stroke="#334155" strokeWidth="1.1" />
+              <text x="270" y="301" textAnchor="middle" fontSize="10" fontWeight="900" fill="#0F172A" fontFamily={MONO}>
+                ØD = {satCalc.tankIdM.toFixed(2)} m ({satCalc.nUnits} EA)
+              </text>
+              <line x1="422" y1="82" x2="422" y2="268" stroke="#334155" strokeWidth="1.1" />
+              <text x="430" y="182" fontSize="9.2" fontWeight="800" fill="#0F172A" fontFamily={MONO}>
+                H = {satCalc.straightSideM.toFixed(2)} m
+              </text>
+            </>
+          ) : (
+            <>
           {/* Liquid fill inside cylinder + cone */}
           <path d="M 185 112 L 355 112 L 355 215 L 285 280 L 255 280 L 185 215 Z" fill="url(#brineGrad)" />
           {/* Sludge layer at cone bottom */}
@@ -822,6 +978,8 @@ export default function PurificationWorkbenchModal({
           <text x="404" y="252" fontSize="9" fontWeight="800" fill="#0F172A" fontFamily={MONO}>
             Hcone {satCalc.coneHeightM.toFixed(2)} m ({satCalc.coneDeg}°)
           </text>
+            </>
+          )}
         </svg>
       );
     }
@@ -1432,68 +1590,163 @@ export default function PurificationWorkbenchModal({
               </div>
 
               {unitType === 'saturator' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   <div>
-                    <label style={lblStyle}>{isEn ? 'Target Brine (wt%)' : '목표 브라인 (wt%)'}</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={targetBrineWtPct}
-                      onChange={(e) => setTargetBrineWtPct(parseFloat(e.target.value) || 0)}
-                      style={inpStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={lblStyle}>{isEn ? 'Residence Time (min)' : '체류시간 τ (min)'}</label>
-                    <input
-                      type="number"
-                      step="5"
-                      value={residenceTimeMin}
-                      onChange={(e) => setResidenceTimeMin(parseFloat(e.target.value) || 0)}
-                      style={inpStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={lblStyle}>{isEn ? 'H / D Ratio' : '형상비 (H/D)'}</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={hdRatio}
-                      onChange={(e) => setHdRatio(parseFloat(e.target.value) || 0)}
-                      style={inpStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={lblStyle}>{isEn ? 'Cone Angle (°)' : '원추각 (°)'}</label>
-                    <input
-                      type="number"
-                      step="5"
-                      value={coneAngleDeg}
-                      onChange={(e) => setConeAngleDeg(parseFloat(e.target.value) || 0)}
-                      style={inpStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={lblStyle}>{isEn ? 'Agitator Power (kW/m³)' : '교반 비동력 (kW/m³)'}</label>
-                    <input
-                      type="number"
-                      step="0.05"
-                      value={agitSpecPower}
-                      onChange={(e) => setAgitSpecPower(parseFloat(e.target.value) || 0)}
-                      style={inpStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={lblStyle}>{isEn ? 'Metallurgy' : '용기 재질'}</label>
+                    <label style={lblStyle}>{isEn ? 'Saturator Type' : '포화조 형식'}</label>
                     <select
-                      value={satMetallurgy}
-                      onChange={(e) => setSatMetallurgy(e.target.value as SatMetallurgy)}
+                      value={satType}
+                      onChange={(e) => handleChangeSatType(e.target.value as SatType)}
                       style={selStyle}
                     >
-                      <option value="Rubber-Lined CS">Rubber-Lined CS</option>
-                      <option value="FRP">FRP</option>
-                      <option value="Titanium Gr.2">Titanium Gr.2</option>
+                      <option value="conventional_bed">
+                        {isEn
+                          ? 'Conventional Upflow Salt-Bed (Ø8–15 m)'
+                          : '컨벤셔널 염상 포화조 (상향류 대형, Ø8~15 m)'}
+                      </option>
+                      <option value="vertical_cyl">
+                        {isEn
+                          ? 'Vertical Cylindrical Salt-Bed (Ø3–6 m)'
+                          : '수직 원통형 염상 포화조 (FRP/RLCS, Ø3~6 m)'}
+                      </option>
+                      <option value="agitated_dissolver">
+                        {isEn
+                          ? 'Agitated Brine Dissolver Tank (Ø2.5–5 m)'
+                          : '교반 용해조 (Agitated Dissolver, Ø2.5~5 m)'}
+                      </option>
                     </select>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
+                    <div>
+                      <label style={lblStyle}>{isEn ? 'Target Brine (wt%)' : '목표 브라인 (wt%)'}</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={targetBrineWtPct}
+                        onChange={(e) => setTargetBrineWtPct(parseFloat(e.target.value) || 0)}
+                        style={inpStyle}
+                      />
+                    </div>
+                    <div>
+                      <label style={lblStyle}>{isEn ? 'Parallel Units (EA)' : '병렬 기수 (기)'}</label>
+                      <input
+                        type="number"
+                        step="1"
+                        min="1"
+                        max="6"
+                        value={satParallelCount}
+                        onChange={(e) => setSatParallelCount(parseInt(e.target.value, 10) || 1)}
+                        style={inpStyle}
+                      />
+                    </div>
+
+                    {satType === 'agitated_dissolver' ? (
+                      <>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Residence Time (min)' : '체류시간 τ (min)'}</label>
+                          <input
+                            type="number"
+                            step="5"
+                            value={residenceTimeMin}
+                            onChange={(e) => setResidenceTimeMin(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'H / D Ratio' : '형상비 (H/D)'}</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={hdRatio}
+                            onChange={(e) => setHdRatio(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Cone Angle (°)' : '원추각 (°)'}</label>
+                          <input
+                            type="number"
+                            step="5"
+                            value={coneAngleDeg}
+                            onChange={(e) => setConeAngleDeg(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Agitator Power (kW/m³)' : '교반 비동력 (kW/m³)'}</label>
+                          <input
+                            type="number"
+                            step="0.05"
+                            value={agitSpecPower}
+                            onChange={(e) => setAgitSpecPower(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Upflow Velocity (m/h)' : '상승 유속 (m/h)'}</label>
+                          <input
+                            type="number"
+                            step="0.2"
+                            value={upflowVelMh}
+                            onChange={(e) => setUpflowVelMh(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Salt Bed Depth (m)' : '원염층 높이 (m)'}</label>
+                          <input
+                            type="number"
+                            step="0.2"
+                            value={saltBedHeightM}
+                            onChange={(e) => setSaltBedHeightM(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Clear Brine Zone (m)' : '상부 정징층 (m)'}</label>
+                          <input
+                            type="number"
+                            step="0.2"
+                            value={clearZoneM}
+                            onChange={(e) => setClearZoneM(parseFloat(e.target.value) || 0)}
+                            style={inpStyle}
+                          />
+                        </div>
+                        <div>
+                          <label style={lblStyle}>{isEn ? 'Salt Inventory' : '원염 재고량'}</label>
+                          <div
+                            style={{
+                              ...inpStyle,
+                              display: 'flex',
+                              alignItems: 'center',
+                              background: '#F8FAFC',
+                              color: '#0369A1',
+                            }}
+                          >
+                            {satCalc.saltInventoryTon.toFixed(0)} t ({satCalc.autonomyH.toFixed(1)} h)
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <label style={lblStyle}>{isEn ? 'Metallurgy / Lining' : '용기 재질 / 라이닝'}</label>
+                      <select
+                        value={satMetallurgy}
+                        onChange={(e) => setSatMetallurgy(e.target.value as SatMetallurgy)}
+                        style={selStyle}
+                      >
+                        <option value="Acid-Proof Concrete / Tile">
+                          {isEn ? 'Acid-Proof Concrete / Tile (Conventional Pit)' : '내산 타일 콘크리트 (컨벤셔널 대형조)'}
+                        </option>
+                        <option value="Rubber-Lined CS">Rubber-Lined CS</option>
+                        <option value="FRP">FRP</option>
+                        <option value="Titanium Gr.2">Titanium Gr.2</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
