@@ -5498,7 +5498,7 @@ export function FlowsheetWorkspace({
       const newDef: FlowNodeDef = {
         id,
         tag,
-        name: meta.label.split(' (')[0],
+        name: isEn ? meta.labelEn : meta.label.split(' (')[0],
         unitType: type,
         params: createDefaultParamsForType(type, useGenericDefault),
       };
