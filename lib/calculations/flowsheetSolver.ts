@@ -549,6 +549,7 @@ export type FlowUnitType =
   | 'feed'
   | 'saturator'       // 100 SEC: 원염 포화조 · 1차 화학정제 침전조
   | 'chelate_tower'   // 100 SEC: 킬레이트 2차 이온교환수지탑 (Ca+Mg < 20 ppb)
+  | 'candle_filter'   // 100 SEC: 캔들 필터 · 활성탄 카본 필터 (정밀 여과 / 탈염소)
   | 'electrolyzer'    // 200 SEC: 이온교환막 전해조
   | 'separator'       // 기액분리기 / 진공 탈염소 플래시탑
   | 'absorber'        // 흡수·건조탑 / 제해탑
@@ -916,6 +917,9 @@ export interface FlowUnitParams {
   sludgePurgePct?: number;            // 1차 침전 슬러지 동반 손실률 (%)
   resinVolM3?: number;                // 킬레이트 수지 충진 부피 (m³/탑, 기본 9.9 m³)
   inletHardnessPpb?: number;          // 유입 브라인 경도 Ca+Mg (ppb, 예: 2200 ppb -> <15 ppb)
+  filterMode?: 'candle' | 'carbon';   // 캔들 필터 vs 활성탄 카본 필터 모드
+  filterDeltaPBar?: number;           // 필터 설계 차압 ΔP (bar, 기본 0.4 bar)
+  filterFluxM3M2H?: number;           // 캔들 필터 설계 여과 플럭스 (m³/m²·h, 기본 1.2)
   targetDewPointC?: number;           // 실리카겔 제습탑 목표 노점 (°C, 기본 -60°C)
 
   // 계층형 서브-플로우시트 경계 연동 메타
@@ -4572,6 +4576,42 @@ export function solveFlowsheet(
           '탑 차압 (ΔP)': `${dP.toFixed(2)} kg/cm² (${P_in.toFixed(2)} → ${P_out.toFixed(2)} kG)`,
         };
         note = `킬레이트 정제 Ca+Mg ${outHardPpb.toFixed(1)} ppb (<20 ppb) | SV ${sv.toFixed(1)} BV/h`;
+      }
+
+      // ── 11-b) 100 SEC 캔들 필터 · 활성탄 카본 필터 (Pre-coat Candle / Activated Carbon Filter) ──
+      else if (node.unitType === 'candle_filter') {
+        const mode: 'candle' | 'carbon' = p.filterMode === 'carbon' ? 'carbon' : 'candle';
+        const dPBar = Math.max(0, p.filterDeltaPBar ?? 0.4);
+        const flux = Math.max(0.1, p.filterFluxM3M2H ?? 1.2);
+        const T_out = T_in;
+        const P_out = Math.max(0, P_in - dPBar * 1.01972);
+        const inProps = calcStreamProps(totalIn, T_in, P_in, undefined, allIn.vapRatio, runtimePropertyMethod);
+        const volM3H = inProps.volFlowM3H;
+        const reqAreaM2 = volM3H / flux;
+
+        if (outEdges.length > 0) {
+          const nOut = outEdges.length;
+          outEdges.forEach(oe => {
+            const splitF = emptyFlows();
+            SIM_COMPS.forEach(k => { splitF[k] = totalIn[k] / nOut; });
+            assignEdge(oe, splitF, T_out, P_out, undefined, allIn.vapRatio ?? {});
+          });
+        } else {
+          pushUnrouted('out', mode === 'carbon' ? '카본 필터 출구 미연결' : '캔들 필터 출구 미연결', totalIn, T_out, P_out, inProps.phase);
+        }
+        heatDutyKcalH = derivedDutyKcalH();
+        dutyFromEnthalpy = true;
+
+        const modeLabel = mode === 'carbon' ? '[활성탄 카본 필터]' : '[캔들 필터]';
+        const clarityLabel = mode === 'carbon' ? 'Free Cl₂ < 0.1 ppm' : 'TSS < 1 ppm';
+        extraMetrics = {
+          '인식 유체': detectedFluid,
+          '여과 모드': mode === 'carbon' ? '활성탄 카본 베드 (Activated Carbon)' : `프리코트 캔들 필터 (Flux ${flux.toFixed(2)} m³/m²·h)`,
+          ...(mode === 'candle' ? { '필요 여과면적': `${reqAreaM2.toFixed(1)} m²` } : {}),
+          '유량 / 차압 (ΔP)': `${volM3H.toFixed(1)} m³/h · ΔP ${dPBar.toFixed(2)} bar (${P_in.toFixed(2)} → ${P_out.toFixed(2)} kG)`,
+          '출구 청정도': clarityLabel,
+        };
+        note = `${modeLabel} ${volM3H.toFixed(1)} m³/h · ΔP ${dPBar.toFixed(2)} bar · ${clarityLabel}`;
       }
 
       // ── 12) 600 SEC 실리카겔 흡착 제습탑 (Desiccant Dryer — 고순도 H₂ 노점 -60°C) ──

@@ -424,17 +424,23 @@ export function ClassicUnitSvg({
     case 'saturator':
       return (
         <svg width={size} height={size * 0.8} viewBox="0 0 64 52">
-          <rect x="20" y="6" width="24" height="40" rx="8" fill={fillLight} stroke={stroke} strokeWidth="2" />
-          <line x1="32" y1="2" x2="32" y2="6" stroke={stroke} strokeWidth="1.5" />
-          <line x1="32" y1="46" x2="32" y2="50" stroke={stroke} strokeWidth="1.5" />
-          <line x1="21" y1="16" x2="43" y2="16" stroke={stroke} strokeWidth="1.4" />
-          <line x1="21" y1="38" x2="43" y2="38" stroke={stroke} strokeWidth="1.4" />
-          <line x1="21" y1="16" x2="43" y2="38" stroke="#64748B" strokeWidth="1.2" />
-          <line x1="43" y1="16" x2="21" y2="38" stroke="#64748B" strokeWidth="1.2" />
-          <line x1="21" y1="27" x2="32" y2="38" stroke="#94A3B8" strokeWidth="1.1" />
-          <line x1="32" y1="16" x2="43" y2="27" stroke="#94A3B8" strokeWidth="1.1" />
-          <line x1="32" y1="16" x2="21" y2="27" stroke="#94A3B8" strokeWidth="1.1" />
-          <line x1="43" y1="27" x2="32" y2="38" stroke="#94A3B8" strokeWidth="1.1" />
+          <path d="M12 10 L52 10 L52 30 L37 44 L27 44 L12 30 Z" fill="#F0F9FF" stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+          <line x1="12" y1="16" x2="52" y2="16" stroke="#0284C7" strokeWidth="1.3" strokeDasharray="3 2" />
+          <line x1="32" y1="3" x2="32" y2="32" stroke={stroke} strokeWidth="1.6" />
+          <path d="M22 30 L42 30 M24 23 L40 23" stroke="#0369A1" strokeWidth="1.7" />
+          <line x1="32" y1="44" x2="32" y2="50" stroke={stroke} strokeWidth="1.7" />
+        </svg>
+      );
+    case 'candle_filter':
+      return (
+        <svg width={size} height={size * 0.8} viewBox="0 0 64 52">
+          <path d="M18 11 A14 5 0 0 1 46 11 L46 34 L35 45 L29 45 L18 34 Z" fill="#F0FDFA" stroke={stroke} strokeWidth="2" strokeLinejoin="round" />
+          <line x1="18" y1="14" x2="46" y2="14" stroke="#0F766E" strokeWidth="1.5" />
+          <rect x="22" y="14" width="4" height="17" rx="1.5" fill="#CCFBF1" stroke="#0F766E" strokeWidth="1.2" />
+          <rect x="30" y="14" width="4" height="17" rx="1.5" fill="#CCFBF1" stroke="#0F766E" strokeWidth="1.2" />
+          <rect x="38" y="14" width="4" height="17" rx="1.5" fill="#CCFBF1" stroke="#0F766E" strokeWidth="1.2" />
+          <line x1="32" y1="2" x2="32" y2="6" stroke={stroke} strokeWidth="1.6" />
+          <line x1="32" y1="45" x2="32" y2="50" stroke={stroke} strokeWidth="1.6" />
         </svg>
       );
     case 'chelate_tower':

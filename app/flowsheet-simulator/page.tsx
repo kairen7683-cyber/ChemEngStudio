@@ -54,6 +54,7 @@ import DistillationWorkbenchModal from '@/components/flowsheet/DistillationWorkb
 import ComponentPropertySetupModal from '@/components/flowsheet/ComponentPropertySetupModal';
 import FlowsheetOptimizationModal from '@/components/flowsheet/FlowsheetOptimizationModal';
 import ReactorWorkbenchModal from '@/components/flowsheet/ReactorWorkbenchModal';
+import PurificationWorkbenchModal from '@/components/flowsheet/PurificationWorkbenchModal';
 import type { DesignSpecDef } from '@/lib/calculations/flowsheetOptimization';
 import PlantUnitCopyBox from '@/components/flowsheet/PlantUnitCopyBox';
 import FlowsheetBalanceSummary from '@/components/flowsheet/FlowsheetBalanceSummary';
@@ -184,8 +185,9 @@ const UNIT_CATALOG: UnitCatalogItem[] = [
   // ① 시뮬레이션 수지·상평형 계산 장치 및 물질 흐름 블록 (Active Units & Material Streams)
   { type: 'feed',            category: 'calc', label: '유입 스트림 (Feed)',     labelEn: 'Feed Stream',           tagPrefix: 'S-IN',  color: '#059669', badge: '유입류➔', desc: '장치 없이 단독 유입 유량·조성·온도·압력을 지정하는 물질 유입 흐름 블록', descEn: 'Material feed stream specifying flow, composition, temperature, and pressure' },
   { type: 'saturator',       category: 'calc', label: '포화조 · 1차 침전정제', labelEn: 'Saturator / Clarifier', tagPrefix: 'D',    color: '#0369A1', badge: '1차정제', desc: '원염 자동 포화(25.6 wt%) 및 약품침전 슬러지 분리', descEn: 'Salt saturation (25.6 wt%) and chemical precipitation sludge separation' },
+  { type: 'candle_filter',   category: 'calc', label: '캔들 · 카본 필터',     labelEn: 'Candle / Carbon Filter', tagPrefix: 'F',   color: '#0F766E', badge: '여과',    desc: '프리코트 캔들 필터(TSS < 1 ppm) 및 활성탄 카본 필터(유리염소 제거)', descEn: 'Pre-coat candle filter (TSS < 1 ppm) and activated carbon bed (free Cl₂ removal)' },
   { type: 'chelate_tower',   category: 'calc', label: '2차 킬레이트 수지탑',   labelEn: 'Chelate Resin Tower',   tagPrefix: 'T',    color: '#0D9488', badge: '2차수지', desc: '이온교환 킬레이트 수지 정제 (Ca+Mg < 20 ppb 초고순도 염수)', descEn: 'Ion-exchange chelate resin polishing (Ca+Mg < 20 ppb ultra-pure brine)' },
-  { type: 'electrolyzer',    category: 'calc', label: '이온교환막 전해조',     labelEn: 'Electrolyzer',          tagPrefix: 'EL',   color: '#0F766E', badge: '전해',    desc: '양극 In/Out · 음극 In/Out 패러데이 전해 수지', descEn: 'Membrane electrolyzer with anode/cathode Faraday balance' },
+  { type: 'electrolyzer',    category: 'calc', label: '전해조 (NaOH·KOH·수전해)', labelEn: 'Electrolyzer (NaOH·KOH·H₂)', tagPrefix: 'EL', color: '#0F766E', badge: '전해', desc: 'NaCl→NaOH · KCl→KOH · AWE/PEM 수전해 · HCl · NaClO₃ 6종 프리셋 지원', descEn: 'Multi-type electrolyzer supporting NaCl→NaOH, KCl→KOH, AWE/PEM water, HCl & NaClO₃ presets' },
   { type: 'separator',       category: 'calc', label: '기액분리기 (Flash)',    labelEn: 'Separator (Flash)',     tagPrefix: 'D',    color: '#1E3A8A', badge: 'VLE',     desc: '상부 기상(G↑) / 하부 액상(L↓) 상평형 자동 분리', descEn: 'Vapor-liquid equilibrium flash drum separating overhead gas (G↑) and bottoms liquid (L↓)' },
   { type: 'distillation',    category: 'calc', label: '다단 정밀증류탑',       labelEn: 'Distillation Column',   tagPrefix: 'C',    color: '#4338CA', badge: '정밀증류', desc: '목표순도 기반 단수·유량 자동설계 및 단별 MESH 기액평형 증류탑', descEn: 'Multi-stage rigorous MESH distillation column with purity-based shortcut design' },
   { type: 'absorber',        category: 'calc', label: '건조탑 · 흡수탑',       labelEn: 'Absorber / Dryer',      tagPrefix: 'T',    color: '#5B21B6', badge: '컬럼',    desc: 'H₂O 황산건조 / HCl 흡수 / Cl₂ 가성제해 및 엄밀 MESH 흡수탑', descEn: 'Gas absorption, H₂SO₄ drying, caustic scrubbing, and rigorous MESH absorber' },
@@ -215,7 +217,7 @@ const PALETTE_GROUPS: Array<{ key: PaletteGroupKey; label: string; labelEn: stri
   { key: 'column_sep', label: '증류·흡수·추출탑', labelEn: 'Columns & Sep',    types: ['distillation', 'absorber', 'extractor', 'separator', 'desiccant_dryer'] },
   { key: 'heat_evap',  label: '열교환·액화·증발', labelEn: 'Heat & Evap',      types: ['hex', 'liquefier', 'evaporator'] },
   { key: 'press_move', label: '펌프·압축·감압',   labelEn: 'Pumps & Valves',   types: ['pump', 'compressor', 'valve'] },
-  { key: 'react_elec', label: '반응·전해·정제',   labelEn: 'React & Electro',  types: ['reactor', 'electrolyzer', 'saturator', 'chelate_tower'] },
+  { key: 'react_elec', label: '반응·전해·정제',   labelEn: 'React & Electro',  types: ['reactor', 'electrolyzer', 'saturator', 'candle_filter', 'chelate_tower'] },
   { key: 'io_pipe',    label: '공급·혼합·출구',   labelEn: 'Streams & Mix',    types: ['feed', 'mixer', 'splitter', 'product'] },
   { key: 'visual_aux', label: '탱크·밸브(도면)',  labelEn: 'Tanks & Aux',      types: ['tank_visual', 'h_drum_visual', 'filter_visual', 'valve_visual'] },
 ];
@@ -238,6 +240,7 @@ const SHORT_CLASSIC_PALETTE_LABEL: Partial<Record<FlowUnitType, string>> = {
   reactor: '반응기',
   electrolyzer: '전해조',
   saturator: '포화조',
+  candle_filter: '캔들·카본',
   chelate_tower: '수지탑',
   mixer: '혼합기',
   splitter: '분기기',
@@ -265,6 +268,7 @@ const SHORT_CLASSIC_PALETTE_LABEL_EN: Partial<Record<FlowUnitType, string>> = {
   reactor: 'Reactor',
   electrolyzer: 'Electrolyzer',
   saturator: 'Saturator',
+  candle_filter: 'Candle/C',
   chelate_tower: 'Chelate',
   mixer: 'Mixer',
   splitter: 'Splitter',
@@ -582,6 +586,20 @@ function PfdEquipmentSvg({
           <circle cx={23} cy={37} r={1.6} fill="#0F766E" />
           <circle cx={28} cy={37} r={1.6} fill="#0F766E" />
           <path d="M13 53 L11 61 M31 53 L33 61" stroke={s} strokeWidth={1.5} />
+        </svg>
+      );
+
+    // 18-b. [계산 장치] 캔들 필터 · 활성탄 카본 필터 (Candle / Carbon Filter — 48×62)
+    case 'candle_filter':
+      return (
+        <svg width={Math.round(44 * scale)} height={Math.round(56 * scale)} viewBox="0 0 48 62">
+          <path d="M9 12 A15 6 0 0 1 39 12 L39 40 L27 52 L21 52 L9 40 Z" fill="#F0FDFA" stroke={s} strokeWidth={1.7} />
+          <line x1={9} y1={16} x2={39} y2={16} stroke="#0F766E" strokeWidth={1.4} />
+          <rect x={13} y={16} width={5} height={21} rx={2} fill="#CCFBF1" stroke="#0F766E" strokeWidth={1.1} />
+          <rect x={21.5} y={16} width={5} height={21} rx={2} fill="#CCFBF1" stroke="#0F766E" strokeWidth={1.1} />
+          <rect x={30} y={16} width={5} height={21} rx={2} fill="#CCFBF1" stroke="#0F766E" strokeWidth={1.1} />
+          <line x1={24} y1={2} x2={24} y2={6} stroke={s} strokeWidth={1.5} />
+          <line x1={24} y1={52} x2={24} y2={59} stroke={s} strokeWidth={1.6} />
         </svg>
       );
 
@@ -2029,6 +2047,13 @@ function createDefaultParamsForType(type: FlowUnitType, useGenericDefault = fals
         columnDeltaPKgcm2: 0.8,
         operTempC: 65.0,
       };
+    case 'candle_filter':
+      return {
+        calcMode: 'rigorous' as const,
+        filterMode: 'candle' as const,
+        filterDeltaPBar: 0.4,
+        filterFluxM3M2H: 1.2,
+      };
     case 'electrolyzer':
       return {
         currentKA: 16.2, cellCount: 190, unitCount: 5, currentEffPct: 94.0,
@@ -2282,6 +2307,7 @@ export function FlowsheetWorkspace({
   const [distillModalInitialView, setDistillModalInitialView] = useState<'simulation' | 'internals'>('simulation');
   const [hxModalNodeId, setHxModalNodeId] = useState<string | null>(null);
   const [hxModalInitialView, setHxModalInitialView] = useState<HxWorkbenchView>('thermal');
+  const [purifModalNodeId, setPurifModalNodeId] = useState<string | null>(null);
 
   const [simDefs, setSimDefs] = useState<FlowNodeDef[]>(() =>
     initialSheets.master.simDefs.map(d => ({ ...d, params: { ...d.params } }))
@@ -4956,10 +4982,23 @@ export function FlowsheetWorkspace({
           summary = `${def.params.targetBrineWtPct ?? 25.6} wt% · ${uRes.outletMassKgH.toFixed(0)} kg/h`;
         } else if (def.unitType === 'chelate_tower') {
           summary = `Ca+Mg <20ppb · ${uRes.outletMassKgH.toFixed(0)} kg/h`;
+        } else if (def.unitType === 'candle_filter') {
+          const fMode = def.params.filterMode === 'carbon' ? '카본 필터' : '캔들 필터';
+          const dpVal = Number(def.params.filterDeltaPBar ?? 0.4).toFixed(1);
+          summary = `${fMode} · ΔP ${dpVal} bar`;
         } else if (def.unitType === 'desiccant_dryer') {
           summary = `노점 ${def.params.targetDewPointC ?? -60}°C · 건조H₂`;
         } else if (def.unitType === 'electrolyzer') {
-          summary = `${def.params.currentKA ?? 16.2}kA · ${(Math.abs(uRes.heatDutyKcalH) / 1000).toFixed(0)}Mcal/h`;
+          const presetShortMap: Record<ElectrolyzerPresetId, string> = {
+            nacl_chlor_alkali: '[NaCl→NaOH]',
+            kcl_koh: '[KCl→KOH]',
+            awe_water: '[AWE]',
+            pem_water: '[PEM]',
+            hcl_electrolysis: '[HCl]',
+            naclo3_chlorate: '[NaClO₃]',
+          };
+          const pTag = presetShortMap[def.params.electrolyzerPreset ?? 'nacl_chlor_alkali'] ?? '[NaCl→NaOH]';
+          summary = `${pTag} ${def.params.currentKA ?? 16.2}kA · ${(Math.abs(uRes.heatDutyKcalH) / 1000).toFixed(0)}Mcal/h`;
         } else if (def.unitType === 'liquefier') {
           summary =
             uRes.condensedOrRemovedKgH > 0
@@ -5581,12 +5620,9 @@ export function FlowsheetWorkspace({
   const handleOpenUnitDesign = useCallback((overrideNodeId?: unknown) => {
     const explicitId = typeof overrideNodeId === 'string' ? overrideNodeId : undefined;
     const targetDef = explicitId ? simDefs.find(d => d.id === explicitId) : selectedDef;
-    const targetRoute = targetDef
-      ? getUnitDesignRouteInfo(targetDef, isElectrolyzerMode, activeSheetId)
-      : null;
-    if (!targetDef || !targetRoute) return;
+    if (!targetDef) return;
 
-    // 정밀증류탑(distillation) 및 열교환기·액화기(hex/cooler/liquefier)는 외부 페이지 이탈 없이 빌더 내장 설계 워크벤치를 오픈
+    // 정밀증류탑(distillation), 열교환기·액화기(hex/cooler/liquefier), 정제·여과 설비(saturator/chelate_tower/candle_filter)는 외부 페이지 이탈 없이 빌더 내장 설계 워크벤치를 오픈
     if (targetDef.unitType === 'distillation') {
       setDistillModalInitialView('internals');
       setDistillModalNodeId(targetDef.id);
@@ -5601,6 +5637,17 @@ export function FlowsheetWorkspace({
       setHxModalNodeId(targetDef.id);
       return;
     }
+    if (
+      targetDef.unitType === 'saturator' ||
+      targetDef.unitType === 'chelate_tower' ||
+      targetDef.unitType === 'candle_filter'
+    ) {
+      setPurifModalNodeId(targetDef.id);
+      return;
+    }
+
+    const targetRoute = getUnitDesignRouteInfo(targetDef, isElectrolyzerMode, activeSheetId);
+    if (!targetRoute) return;
 
     const targetUnitRes = unitResultMap.get(targetDef.id);
 
@@ -7351,6 +7398,14 @@ export function FlowsheetWorkspace({
                     setSelectedEdgeId(null);
                     setHxModalInitialView('thermal');
                     setHxModalNodeId(d.id);
+                  } else if (
+                    d?.unitType === 'saturator' ||
+                    d?.unitType === 'chelate_tower' ||
+                    d?.unitType === 'candle_filter'
+                  ) {
+                    setSelectedNodeId(d.id);
+                    setSelectedEdgeId(null);
+                    setPurifModalNodeId(d.id);
                   }
                 }}
                 onEdgeClick={(_, edge) => {
@@ -10236,6 +10291,24 @@ export function FlowsheetWorkspace({
                       {isEn ? 'Auto Salt (NaCl) Makeup' : '원염(NaCl) 자동보충'}
                     </label>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setPurifModalNodeId(selectedDef.id)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: '#0369A1',
+                      color: '#FFFFFF',
+                      fontSize: 11.5,
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      marginTop: 2,
+                    }}
+                  >
+                    {isEn ? 'Saturator Workbench & CAD →' : '포화조 상세 설계 · CAD 도면 →'}
+                  </button>
                 </div>
               )}
 
@@ -10288,6 +10361,86 @@ export function FlowsheetWorkspace({
                       inputStyle={{ padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
                     />
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setPurifModalNodeId(selectedDef.id)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: '#0D9488',
+                      color: '#FFFFFF',
+                      fontSize: 11.5,
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      marginTop: 2,
+                    }}
+                  >
+                    {isEn ? 'Chelate Resin Tower Workbench & CAD →' : '이온교환수지탑 상세 설계 · CAD 도면 →'}
+                  </button>
+                </div>
+              )}
+
+              {selectedDef.unitType === 'candle_filter' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 800 }}>{isEn ? 'Filter Mode' : '필터 형식'}</label>
+                    <select
+                      value={selectedDef.params.filterMode === 'carbon' ? 'carbon' : 'candle'}
+                      onChange={e => updateParam('filterMode', e.target.value as 'candle' | 'carbon')}
+                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 11.5, fontWeight: 700, background: '#FFFFFF' }}
+                    >
+                      <option value="candle">{isEn ? 'Pre-coat Candle Filter (TSS Removal)' : '프리코트 캔들 필터 (TSS 제거)'}</option>
+                      <option value="carbon">{isEn ? 'Activated Carbon Filter (Free Cl₂ / Organics)' : '활성탄 카본 필터 (유리염소·유기물 제거)'}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 10, fontWeight: 800 }}>{isEn ? 'Design Pressure Drop ΔP (bar)' : '설계 차압 ΔP (bar)'}</label>
+                    <BufferedNumberInput
+                      syncKey={`${selectedDef.id}-cfdp`}
+                      step={0.05}
+                      min={0}
+                      max={10}
+                      value={selectedDef.params.filterDeltaPBar ?? 0.4}
+                      onValueChange={v => updateParam('filterDeltaPBar', v)}
+                      onEnterRun={() => runSimulationNow()}
+                      style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                    />
+                  </div>
+                  {selectedDef.params.filterMode !== 'carbon' && (
+                    <div>
+                      <label style={{ fontSize: 10, fontWeight: 800 }}>{isEn ? 'Filtration Flux (m³/m²·h)' : '여과 플럭스 (m³/m²·h)'}</label>
+                      <BufferedNumberInput
+                        syncKey={`${selectedDef.id}-cfflux`}
+                        step={0.1}
+                        min={0.1}
+                        max={20}
+                        value={selectedDef.params.filterFluxM3M2H ?? 1.2}
+                        onValueChange={v => updateParam('filterFluxM3M2H', v)}
+                        onEnterRun={() => runSimulationNow()}
+                        style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', borderRadius: 5, fontSize: 12 }}
+                      />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPurifModalNodeId(selectedDef.id)}
+                    style={{
+                      width: '100%',
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: '#0F766E',
+                      color: '#FFFFFF',
+                      fontSize: 11.5,
+                      fontWeight: 900,
+                      cursor: 'pointer',
+                      marginTop: 2,
+                    }}
+                  >
+                    {isEn ? 'Candle / Carbon Filter Workbench & CAD →' : '캔들·카본 필터 상세 설계 · CAD 도면 →'}
+                  </button>
                 </div>
               )}
 
@@ -10842,6 +10995,74 @@ export function FlowsheetWorkspace({
                     : d
                 )
               );
+            }}
+          />
+        );
+      })()}
+
+      {/* ── 정제·여과 설비 설계 워크벤치 모달 (포화조 · 이온교환수지탑 · 캔들/카본 필터) ── */}
+      {purifModalNodeId && (() => {
+        const pDef = simDefs.find(d => d.id === purifModalNodeId);
+        if (
+          !pDef ||
+          (pDef.unitType !== 'saturator' &&
+            pDef.unitType !== 'chelate_tower' &&
+            pDef.unitType !== 'candle_filter')
+        ) {
+          return null;
+        }
+        const pUnitRes = unitResultMap.get(pDef.id);
+        const pInStreams = flowEdges
+          .filter(e => e.target === pDef.id)
+          .map(e => streamResultMap.get(e.id))
+          .filter((s): s is SolvedStream => Boolean(s));
+        let sumMass = 0;
+        let sumVol = 0;
+        let sumMassT = 0;
+        let minP = Infinity;
+        for (const s of pInStreams) {
+          sumMass += s.totalMassKgH;
+          sumVol += s.volFlowM3H;
+          sumMassT += s.tempC * s.totalMassKgH;
+          if (s.pressKgcm2g < minP) minP = s.pressKgcm2g;
+        }
+        const inletMassKgH =
+          sumMass > 1e-6
+            ? sumMass
+            : pUnitRes && pUnitRes.inletMassKgH > 1e-6
+              ? pUnitRes.inletMassKgH
+              : 120000;
+        const inletDensityKgM3 =
+          sumMass > 1e-6 && sumVol > 1e-6 ? sumMass / sumVol : 1190;
+        const inletVolM3H =
+          sumVol > 1e-6 ? sumVol : inletMassKgH / inletDensityKgM3;
+        const inletTempC =
+          sumMass > 1e-6 ? sumMassT / sumMass : (pDef.params.operTempC ?? 65);
+        const inletPressKgcm2g = Number.isFinite(minP)
+          ? minP
+          : (pDef.params.operPressKgcm2g ?? 2.5);
+
+        return (
+          <PurificationWorkbenchModal
+            open={true}
+            onClose={() => setPurifModalNodeId(null)}
+            unitType={pDef.unitType}
+            tag={pDef.tag}
+            name={pDef.name}
+            inletMassKgH={inletMassKgH}
+            inletVolM3H={inletVolM3H}
+            inletTempC={inletTempC}
+            inletPressKgcm2g={inletPressKgcm2g}
+            inletDensityKgM3={inletDensityKgM3}
+            params={pDef.params}
+            onApplyParams={patch => {
+              const nextDefs = simDefs.map(d =>
+                d.id === pDef.id
+                  ? { ...d, params: { ...d.params, ...patch } }
+                  : d
+              );
+              setSimDefs(nextDefs);
+              runSimulationNow(nextDefs, flowEdges, propertyMethod, activeComponents, tearMethod);
             }}
           />
         );
