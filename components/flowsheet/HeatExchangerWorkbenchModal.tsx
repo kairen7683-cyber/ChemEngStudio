@@ -10,6 +10,7 @@ import {
   UnitSelect,
   useLocalUnit,
 } from '@/components/units/UnitControls';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import {
   formatCanonicalValue,
   getUnitLabel,
@@ -116,6 +117,63 @@ const selStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const REFRIGERANT_PRESET_LABELS_EN: Record<RefrigerantPresetKey, string> = {
+  cw: 'Cooling Water (28→36°C)',
+  chw: 'Chilled Water (7→12°C)',
+  meg_brine: '40% MEG Brine (-15→-8°C)',
+  brine_m20: '25% CaCl₂ Deep Brine (-25→-18°C)',
+  r134a_chiller: 'R-134a Evaporating (-15°C sat · 5°C SH)',
+  r22_m30: 'R-22 Evaporating (-33°C sat)',
+  r404a_m32: 'R-404A Low-Temp Evaporating (-35°C sat)',
+  freon_m35: 'R-507A Azeotropic Evaporating (-38°C sat · Std Liquefier)',
+  nh3_m33: 'R-717 Ammonia Evaporating (-33°C sat · High Latent)',
+  steam_lp: 'LP Steam Heating (145°C condensing)',
+  custom: 'Custom Utility Input',
+};
+
+const HX_MATERIAL_EN: Record<HxMaterialCode, { label: string; shortLabel: string; serviceNote: string }> = {
+  CS_A179: {
+    label: 'Carbon Steel (SA-179 / SA-516-70)',
+    shortLabel: 'CS (SA-179)',
+    serviceNote: 'General cooling water, steam, and non-corrosive organics at ambient temperatures',
+  },
+  LTCS_A334: {
+    label: 'Low-Temp Carbon Steel (LTCS, SA-334 Gr.6 / SA-516-60N)',
+    shortLabel: 'LTCS (-45°C)',
+    serviceNote: 'Standard for dry Cl₂ (<50 ppm H₂O) & anhydrous HCl deep liquefiers (-20 to -40°C)',
+  },
+  SS316L: {
+    label: 'Stainless Steel 316L (SA-213 TP316L)',
+    shortLabel: 'SS 316L',
+    serviceNote: 'ECH/DCP/glycerin condensers, H₂ coolers, and cold dilute caustic soda',
+  },
+  DUPLEX_2205: {
+    label: 'Duplex Stainless Steel (S32205)',
+    shortLabel: 'Duplex 2205',
+    serviceNote: 'Chloride SCC resistance; chlorinated organics (DCH/MCH) process coolers',
+  },
+  TI_GR2: {
+    label: 'Titanium Gr.2 (SB-338 Gr.2)',
+    shortLabel: 'Titanium Gr.2',
+    serviceNote: 'Standard for wet Cl₂ gas coolers, saturated/dechlorinated brine & hypochlorite (NEVER for dry Cl₂!)',
+  },
+  NI_200: {
+    label: 'Nickel 200 (SB-163 UNS N02200)',
+    shortLabel: 'Nickel 200',
+    serviceNote: 'Standard for hot/concentrated (32–50 wt%) NaOH heating/cooling (prevents caustic embrittlement)',
+  },
+  HASTELLOY_C276: {
+    label: 'Hastelloy C-276 (UNS N10276)',
+    shortLabel: 'Hastelloy C-276',
+    serviceNote: 'Hot HCl, DCH/glycerin chlorination heat exchange, and ferric chloride corrosion service',
+  },
+  IMPERVIOUS_GRAPHITE: {
+    label: 'Impervious Graphite (Karbate)',
+    shortLabel: 'Graphite',
+    serviceNote: 'Ultra-corrosive & high-conductivity standard for HCl concentration/azeotropic reboilers & absorbers',
+  },
+};
+
 export default function HeatExchangerWorkbenchModal({
   open,
   onClose,
@@ -134,6 +192,8 @@ export default function HeatExchangerWorkbenchModal({
   onRunSimulation,
   onOpenChemProDesign,
 }: HeatExchangerWorkbenchModalProps) {
+  const lang = useUnitStore((s) => s.lang);
+  const isEn = lang === 'en';
   const [workbenchView, setWorkbenchView] = useState<HxWorkbenchView>(initialView);
   const [visualTab, setVisualTab] = useState<MechVisualTab>('cad');
   const [isRunningFeedback, setIsRunningFeedback] = useState(false);
@@ -269,7 +329,7 @@ export default function HeatExchangerWorkbenchModal({
 
   const runAiAutoFixHx = async () => {
     setIsAiBusy(true);
-    setAiStepLabel('열·수력학 병목 원인 분석 중...');
+    setAiStepLabel(isEn ? 'Analyzing thermal & hydraulic bottlenecks...' : '열·수력학 병목 원인 분석 중...');
     setAiReport(null);
     try {
       const fix = await autoFixHeatExchangerAsync(
@@ -292,7 +352,9 @@ export default function HeatExchangerWorkbenchModal({
         patchHxCfg(fix.patch);
       }
       setWorkbenchView('mechanical');
-      const prompt = `[열교환기 ${unitTag}] Q=${fix.solvedAfter.dutyMcalH.toFixed(1)} Mcal/h, Pinch ΔT=${fix.solvedAfter.minPinchDeltaTC.toFixed(1)}°C, 전열면적=${fix.solvedAfter.areaProvM2.toFixed(1)} m², 유틸리티=${fix.solvedAfter.utilitySide.inTempC.toFixed(1)}→${fix.solvedAfter.utilitySide.outTempC.toFixed(1)}°C, Ft=${fix.solvedAfter.ftFactor.toFixed(2)}, Tube ΔP=${fix.solvedAfter.dpTubeBar.toFixed(2)} bar, Shell ΔP=${fix.solvedAfter.dpShellBar.toFixed(2)} bar. 조치: ${fix.actionsTaken.join(', ')}`;
+      const prompt = isEn
+        ? `[Heat Exchanger ${unitTag}] Q=${fix.solvedAfter.dutyMcalH.toFixed(1)} Mcal/h, Pinch ΔT=${fix.solvedAfter.minPinchDeltaTC.toFixed(1)}°C, Area=${fix.solvedAfter.areaProvM2.toFixed(1)} m², Utility=${fix.solvedAfter.utilitySide.inTempC.toFixed(1)}→${fix.solvedAfter.utilitySide.outTempC.toFixed(1)}°C, Ft=${fix.solvedAfter.ftFactor.toFixed(2)}, Tube ΔP=${fix.solvedAfter.dpTubeBar.toFixed(2)} bar, Shell ΔP=${fix.solvedAfter.dpShellBar.toFixed(2)} bar. Actions: ${fix.actionsTaken.join(', ')}. Respond concisely in English.`
+        : `[열교환기 ${unitTag}] Q=${fix.solvedAfter.dutyMcalH.toFixed(1)} Mcal/h, Pinch ΔT=${fix.solvedAfter.minPinchDeltaTC.toFixed(1)}°C, 전열면적=${fix.solvedAfter.areaProvM2.toFixed(1)} m², 유틸리티=${fix.solvedAfter.utilitySide.inTempC.toFixed(1)}→${fix.solvedAfter.utilitySide.outTempC.toFixed(1)}°C, Ft=${fix.solvedAfter.ftFactor.toFixed(2)}, Tube ΔP=${fix.solvedAfter.dpTubeBar.toFixed(2)} bar, Shell ΔP=${fix.solvedAfter.dpShellBar.toFixed(2)} bar. 조치: ${fix.actionsTaken.join(', ')}`;
       const geminiNote = await fetchOptionalGeminiAdvice(prompt);
       setAiReport({ result: fix, geminiNote });
     } catch (err) {
@@ -301,7 +363,9 @@ export default function HeatExchangerWorkbenchModal({
         result: {
           resolved: false,
           improved: false,
-          headline: `⚠ AI 자동 해결 중 오류가 발생했습니다 (${errMsg})`,
+          headline: isEn
+            ? `⚠ An error occurred during AI Auto-Fix (${errMsg})`
+            : `⚠ AI 자동 해결 중 오류가 발생했습니다 (${errMsg})`,
           rootCauses: [errMsg],
           actionsTaken: [],
           patch: {},
@@ -676,7 +740,7 @@ export default function HeatExchangerWorkbenchModal({
       if (!ws) {
         setTemaImportNotice({
           count: 0,
-          summary: '워크시트를 찾을 수 없습니다.',
+          summary: isEn ? 'Worksheet not found.' : '워크시트를 찾을 수 없습니다.',
           isError: true,
         });
         return;
@@ -931,7 +995,9 @@ export default function HeatExchangerWorkbenchModal({
       } else {
         setTemaImportNotice({
           count: 0,
-          summary: '인식 가능한 TEMA 설계 항목을 찾지 못했습니다.',
+          summary: isEn
+            ? 'No recognizable TEMA design items found.'
+            : '인식 가능한 TEMA 설계 항목을 찾지 못했습니다.',
           isError: true,
         });
       }
@@ -939,7 +1005,7 @@ export default function HeatExchangerWorkbenchModal({
       const msg = err instanceof Error ? err.message : String(err);
       setTemaImportNotice({
         count: 0,
-        summary: `엑셀 파싱 오류: ${msg}`,
+        summary: isEn ? `Excel parsing error: ${msg}` : `엑셀 파싱 오류: ${msg}`,
         isError: true,
       });
     } finally {
@@ -953,18 +1019,40 @@ export default function HeatExchangerWorkbenchModal({
     params.refrigerantPreset ?? (isLiquefier ? 'freon_m35' : 'cw');
 
   const statusTone = isRunningFeedback
-    ? { bg: '#EFF6FF', fg: '#1D4ED8', bd: '#93C5FD', text: '⏳ 열수지·수력학 계산 실행 중...' }
+    ? {
+        bg: '#EFF6FF',
+        fg: '#1D4ED8',
+        bd: '#93C5FD',
+        text: isEn ? '⏳ Running heat balance & hydraulics...' : '⏳ 열수지·수력학 계산 실행 중...',
+      }
     : isSimDirty
-    ? { bg: '#FFFBEB', fg: '#92400E', bd: '#FCD34D', text: '운전조건 변경됨 — [▶ RUN] 실행 필요' }
+    ? {
+        bg: '#FFFBEB',
+        fg: '#92400E',
+        bd: '#FCD34D',
+        text: isEn ? 'Conditions changed — Click [▶ Run (F5)]' : '운전조건 변경됨 — [▶ RUN] 실행 필요',
+      }
     : dRes.overallStatus === 'error'
-    ? { bg: '#FEF2F2', fg: '#991B1B', bd: '#FCA5A5', text: '✕ 열역학 핀치 또는 재질 안전 점검 필요' }
+    ? {
+        bg: '#FEF2F2',
+        fg: '#991B1B',
+        bd: '#FCA5A5',
+        text: isEn ? '✕ Check thermal pinch or metallurgy safety' : '✕ 열역학 핀치 또는 재질 안전 점검 필요',
+      }
     : dRes.overallStatus === 'warning'
-    ? { bg: '#FFFBEB', fg: '#92400E', bd: '#FCD34D', text: '⚠ 압력손실·접근온도 권장치 점검' }
+    ? {
+        bg: '#FFFBEB',
+        fg: '#92400E',
+        bd: '#FCD34D',
+        text: isEn ? '⚠ Check ΔP & approach temperature limits' : '⚠ 압력손실·접근온도 권장치 점검',
+      }
     : {
         bg: '#DCFCE7',
         fg: '#166534',
         bd: '#86EFAC',
-        text: `✓ 열수지·수력학·재질 정상 (${dRes.hxKind === 'plate_phe' ? '판형 PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`,
+        text: isEn
+          ? `✓ Thermal, Hydraulics & Material OK (${dRes.hxKind === 'plate_phe' ? 'Plate PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`
+          : `✓ 열수지·수력학·재질 정상 (${dRes.hxKind === 'plate_phe' ? '판형 PHE' : `TEMA ${dRes.temaType}`} · ${dRes.areaProvM2.toFixed(1)} m²)`,
       };
 
   const renderTQProfileSvg = () => {
@@ -1072,7 +1160,7 @@ export default function HeatExchangerWorkbenchModal({
               fontWeight={800}
               fill="#92400E"
             >
-              이슬점 {dRes.dewPointC.toFixed(1)}°C
+              {isEn ? `Dew Pt ${dRes.dewPointC.toFixed(1)}°C` : `이슬점 ${dRes.dewPointC.toFixed(1)}°C`}
             </text>
           </g>
         )}
@@ -1101,13 +1189,17 @@ export default function HeatExchangerWorkbenchModal({
 
         {/* 상단 범례 */}
         <text x={padL} y={16} fontSize={10} fontWeight={800} fill="#B45309">
-          ━ 고온측 ({dRes.hotSide.inTempC.toFixed(1)} → {dRes.hotSide.outTempC.toFixed(1)}°C)
+          {isEn
+            ? `━ Hot Side (${dRes.hotSide.inTempC.toFixed(1)} → ${dRes.hotSide.outTempC.toFixed(1)}°C)`
+            : `━ 고온측 (${dRes.hotSide.inTempC.toFixed(1)} → ${dRes.hotSide.outTempC.toFixed(1)}°C)`}
         </text>
         <text x={padL + 195} y={16} fontSize={10} fontWeight={800} fill="#0369A1">
-          ━ 저온측 향류 ({dRes.coldSide.inTempC.toFixed(1)} → {dRes.coldSide.outTempC.toFixed(1)}°C)
+          {isEn
+            ? `━ Cold Side Countercurrent (${dRes.coldSide.inTempC.toFixed(1)} → ${dRes.coldSide.outTempC.toFixed(1)}°C)`
+            : `━ 저온측 향류 (${dRes.coldSide.inTempC.toFixed(1)} → ${dRes.coldSide.outTempC.toFixed(1)}°C)`}
         </text>
         <text x={W - padR} y={H - 2} fontSize={9} textAnchor="end" fill="#64748B">
-          누적 교환열량 Q (Mcal/h)
+          {isEn ? 'Cumulative Heat Duty Q (Mcal/h)' : '누적 교환열량 Q (Mcal/h)'}
         </text>
       </svg>
     );
@@ -1131,10 +1223,14 @@ export default function HeatExchangerWorkbenchModal({
           }}
         >
           <text x={16} y={22} fontSize={11} fontWeight={900} fill="#0F172A">
-            판형 열교환기 (Chevron PHE) 개념설계 외형도 · 포트 배치도
+            {isEn
+              ? 'Plate Heat Exchanger (Chevron PHE) Conceptual Outline & Port Layout'
+              : '판형 열교환기 (Chevron PHE) 개념설계 외형도 · 포트 배치도'}
           </text>
           <text x={16} y={37} fontSize={9.8} fill="#475569" fontFamily={MONO}>
-            전열판 {dRes.phePlateCount}매 ({dRes.material.shortLabel}) · 쉐브론 {dRes.pheChevronDeg}° · 유효면적 {dRes.areaProvM2.toFixed(1)} m²
+            {isEn
+              ? `${dRes.phePlateCount} Plates (${HX_MATERIAL_EN[dRes.material.code].shortLabel}) · Chevron ${dRes.pheChevronDeg}° · Eff. Area ${dRes.areaProvM2.toFixed(1)} m²`
+              : `전열판 ${dRes.phePlateCount}매 (${dRes.material.shortLabel}) · 쉐브론 ${dRes.pheChevronDeg}° · 유효면적 ${dRes.areaProvM2.toFixed(1)} m²`}
           </text>
 
           {/* 측면 프레임 + 판 팩(Plate Pack) */}
@@ -1150,7 +1246,9 @@ export default function HeatExchangerWorkbenchModal({
           <rect x={44} y={237} width={236} height={7} fill="#64748B" />
           <line x1={64} x2={234} y1={258} y2={258} stroke="#1E3A8A" strokeWidth={1.3} />
           <text x={149} y={272} fontSize={10} fontWeight={800} fill="#1E3A8A" textAnchor="middle" fontFamily={MONO}>
-            판 팩 압축길이 L_pack = {dRes.phePackLengthMm} mm
+            {isEn
+              ? `Plate Pack Length L_pack = ${dRes.phePackLengthMm} mm`
+              : `판 팩 압축길이 L_pack = ${dRes.phePackLengthMm} mm`}
           </text>
 
           {/* 우측 전면 고정판 4-포트 배치 + 쉐브론 패턴 */}
@@ -1178,7 +1276,9 @@ export default function HeatExchangerWorkbenchModal({
             />
           ))}
           <text x={387} y={266} fontSize={10} fontWeight={800} textAnchor="middle" fill="#334155" fontFamily={MONO}>
-            판 규격 {dRes.phePlateWidthMm}W × {dRes.phePlateHeightMm}H mm
+            {isEn
+              ? `Plate Size ${dRes.phePlateWidthMm}W × ${dRes.phePlateHeightMm}H mm`
+              : `판 규격 ${dRes.phePlateWidthMm}W × ${dRes.phePlateHeightMm}H mm`}
           </text>
         </svg>
       );
@@ -1205,10 +1305,14 @@ export default function HeatExchangerWorkbenchModal({
         }}
       >
         <text x={14} y={21} fontSize={11} fontWeight={900} fill="#0F172A">
-          TEMA {dRes.temaType} 다관원통형 열교환기 개념설계 종단면도 & 관배열(A-A)
+          {isEn
+            ? `TEMA ${dRes.temaType} Shell & Tube Heat Exchanger Conceptual Elevation & Tube Layout (A-A)`
+            : `TEMA ${dRes.temaType} 다관원통형 열교환기 개념설계 종단면도 & 관배열(A-A)`}
         </text>
         <text x={14} y={36} fontSize={9.8} fill="#475569" fontFamily={MONO}>
-          동체 내경 Ø{dRes.shellIdMm} mm × {dRes.shellCount}기 · 튜브 Ø{dRes.tubeOdMm}×{dRes.tubeLengthM}m ({dRes.tubeCountPerShell}본, {dRes.tubePasses}패스) · {dRes.material.shortLabel}
+          {isEn
+            ? `Shell ID Ø${dRes.shellIdMm} mm × ${dRes.shellCount} · Tubes Ø${dRes.tubeOdMm}×${dRes.tubeLengthM}m (${dRes.tubeCountPerShell} ea, ${dRes.tubePasses}P) · ${HX_MATERIAL_EN[dRes.material.code].shortLabel}`
+            : `동체 내경 Ø${dRes.shellIdMm} mm × ${dRes.shellCount}기 · 튜브 Ø${dRes.tubeOdMm}×${dRes.tubeLengthM}m (${dRes.tubeCountPerShell}본, ${dRes.tubePasses}패스) · ${dRes.material.shortLabel}`}
         </text>
 
         {/* 전면 헤더 (Front Stationary Head - B형 보닛/채널) */}
@@ -1311,7 +1415,9 @@ export default function HeatExchangerWorkbenchModal({
         {/* 치수 보조선 */}
         <line x1={80} x2={300} y1={250} y2={250} stroke="#1E3A8A" strokeWidth={1.2} />
         <text x={190} y={264} fontSize={9.8} fontWeight={800} textAnchor="middle" fill="#1E3A8A" fontFamily={MONO}>
-          유효 관길이 L = {dRes.tubeLengthM.toFixed(2)} m · 배플 {dRes.baffleCount}단 (간격 {dRes.baffleSpacingMm} mm)
+          {isEn
+            ? `Effective Tube Length L = ${dRes.tubeLengthM.toFixed(2)} m · ${dRes.baffleCount} Baffles (Spacing ${dRes.baffleSpacingMm} mm)`
+            : `유효 관길이 L = ${dRes.tubeLengthM.toFixed(2)} m · 배플 ${dRes.baffleCount}단 (간격 ${dRes.baffleSpacingMm} mm)`}
         </text>
 
         {/* 우측 A-A 동체 단면도 */}
@@ -1332,10 +1438,12 @@ export default function HeatExchangerWorkbenchModal({
           })
         )}
         <text x={422} y={216} fontSize={9.8} fontWeight={800} textAnchor="middle" fill="#0F172A" fontFamily={MONO}>
-          단면 A-A (Ø{dRes.shellIdMm} mm)
+          {isEn ? `Section A-A (Ø${dRes.shellIdMm} mm)` : `단면 A-A (Ø${dRes.shellIdMm} mm)`}
         </text>
         <text x={422} y={230} fontSize={9} textAnchor="middle" fill="#475569" fontFamily={MONO}>
-          피치 {dRes.tubePitchMm}mm ({dRes.pitchAngle}° 배열)
+          {isEn
+            ? `Pitch ${dRes.tubePitchMm}mm (${dRes.pitchAngle}° Layout)`
+            : `피치 ${dRes.tubePitchMm}mm (${dRes.pitchAngle}° 배열)`}
         </text>
       </svg>
     );
@@ -1443,8 +1551,8 @@ export default function HeatExchangerWorkbenchModal({
                 <button
                   type="button"
                   onClick={onClose}
-                  aria-label="워크벤치 닫기"
-                  title="닫기 (Esc)"
+                  aria-label={isEn ? 'Close workbench' : '워크벤치 닫기'}
+                  title={isEn ? 'Close (Esc)' : '닫기 (Esc)'}
                   style={{
                     flexShrink: 0,
                     padding: '5px 10px',
@@ -1514,7 +1622,11 @@ export default function HeatExchangerWorkbenchModal({
                 onClick={() => setTemaMenuOpen((prev) => !prev)}
                 aria-expanded={temaMenuOpen}
                 aria-haspopup="menu"
-                title="TEMA / API 662 엑셀 내보내기·가져오기 및 단품 설계기"
+                title={
+                  isEn
+                    ? 'Export/Import TEMA / API 662 Excel & Shortcut Designer'
+                    : 'TEMA / API 662 엑셀 내보내기·가져오기 및 단품 설계기'
+                }
                 style={{
                   width: isMobile ? '100%' : undefined,
                   padding: '5px 10px',
@@ -1528,7 +1640,7 @@ export default function HeatExchangerWorkbenchModal({
                   whiteSpace: 'nowrap',
                 }}
               >
-                📊 TEMA · 도구 ▾
+                {isEn ? '📊 TEMA · Tools ▾' : '📊 TEMA · 도구 ▾'}
               </button>
 
               {temaMenuOpen && (
@@ -1577,9 +1689,15 @@ export default function HeatExchangerWorkbenchModal({
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'transparent';
                     }}
-                    title="공식 TEMA / API 662 엑셀 데이터시트(.xlsx) 다운로드"
+                    title={
+                      isEn
+                        ? 'Download official TEMA / API 662 Excel datasheet (.xlsx)'
+                        : '공식 TEMA / API 662 엑셀 데이터시트(.xlsx) 다운로드'
+                    }
                   >
-                    📊 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx 내보내기
+                    {isEn
+                      ? `📊 Export ${dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx`
+                      : `📊 ${dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} .xlsx 내보내기`}
                   </button>
                   <button
                     type="button"
@@ -1607,9 +1725,13 @@ export default function HeatExchangerWorkbenchModal({
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = 'transparent';
                     }}
-                    title="TEMA / API 662 엑셀 데이터시트(.xlsx) 불러오기"
+                    title={
+                      isEn
+                        ? 'Import TEMA / API 662 Excel datasheet (.xlsx)'
+                        : 'TEMA / API 662 엑셀 데이터시트(.xlsx) 불러오기'
+                    }
                   >
-                    📂 TEMA .xlsx 가져오기
+                    {isEn ? '📂 Import TEMA .xlsx' : '📂 TEMA .xlsx 가져오기'}
                   </button>
                   {onOpenChemProDesign && (
                     <>
@@ -1641,7 +1763,7 @@ export default function HeatExchangerWorkbenchModal({
                           e.currentTarget.style.background = 'transparent';
                         }}
                       >
-                        ↗ 단품 숏컷 설계기 열기
+                        {isEn ? '↗ Shortcut Designer' : '↗ 단품 숏컷 설계기 열기'}
                       </button>
                     </>
                   )}
@@ -1666,7 +1788,9 @@ export default function HeatExchangerWorkbenchModal({
                 whiteSpace: 'nowrap',
               }}
             >
-              {isAiBusy ? (aiStepLabel || '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+              {isAiBusy
+                ? (aiStepLabel || (isEn ? '⏳ Analyzing...' : '⏳ AI 분석 중...'))
+                : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
             </button>
 
             <button
@@ -1688,15 +1812,17 @@ export default function HeatExchangerWorkbenchModal({
                   : '0 1px 4px rgba(15,23,42,0.25)',
               }}
             >
-              {isRunningFeedback ? '⏳ 계산 중...' : '▶ RUN (F5)'}
+              {isRunningFeedback
+                ? (isEn ? '⏳ Running...' : '⏳ 계산 중...')
+                : (isEn ? '▶ Run (F5)' : '▶ RUN (F5)')}
             </button>
 
             {!isMobile && (
               <button
                 type="button"
                 onClick={onClose}
-                aria-label="워크벤치 닫기"
-                title="닫기 (Esc)"
+                aria-label={isEn ? 'Close workbench' : '워크벤치 닫기'}
+                title={isEn ? 'Close (Esc)' : '닫기 (Esc)'}
                 style={{
                   padding: '5px 10px',
                   borderRadius: 6,
@@ -1735,13 +1861,13 @@ export default function HeatExchangerWorkbenchModal({
               [
                 {
                   id: 'thermal',
-                  title: '① 열수지 · T-Q 프로파일',
-                  sub: '출구온도 · 열매/냉매 · 핀치',
+                  title: isEn ? '① Heat Balance & T-Q Profile' : '① 열수지 · T-Q 프로파일',
+                  sub: isEn ? 'Outlet Temp · Utility · Pinch' : '출구온도 · 열매/냉매 · 핀치',
                 },
                 {
                   id: 'mechanical',
-                  title: '② 숏컷 사이징 · 수력학 · 도면',
-                  sub: '핵심 규격 · ΔP/진동 · CAD',
+                  title: isEn ? '② Shortcut Sizing, Hydraulics & CAD' : '② 숏컷 사이징 · 수력학 · 도면',
+                  sub: isEn ? 'Key Specs · ΔP/FIV · CAD' : '핵심 규격 · ΔP/진동 · CAD',
                 },
               ] as { id: HxWorkbenchView; title: string; sub: string }[]
             ).map((tb) => {
@@ -1802,6 +1928,8 @@ export default function HeatExchangerWorkbenchModal({
             >
               {temaImportNotice.isError
                 ? `⚠ ${temaImportNotice.summary}`
+                : isEn
+                ? `✓ Imported ${temaImportNotice.count} TEMA items`
                 : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
             </span>
           )}
@@ -1834,7 +1962,7 @@ export default function HeatExchangerWorkbenchModal({
                 cursor: 'pointer',
               }}
             >
-              ⚙ 조건 · 기하구조 입력
+              {isEn ? '⚙ Conditions & Geometry' : '⚙ 조건 · 기하구조 입력'}
             </button>
             <button
               type="button"
@@ -1850,7 +1978,7 @@ export default function HeatExchangerWorkbenchModal({
                 cursor: 'pointer',
               }}
             >
-              📈 선도 · 단면도 · 사양서
+              {isEn ? '📈 Curves · CAD · Spec' : '📈 선도 · 단면도 · 사양서'}
             </button>
           </div>
         )}
@@ -1887,7 +2015,9 @@ export default function HeatExchangerWorkbenchModal({
           >
             {isAiBusy ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#3730A3' }}>
-                <span style={{ fontWeight: 900 }}>⏳ ✨ AI 자동 해결 탐색 중...</span>
+                <span style={{ fontWeight: 900 }}>
+                  {isEn ? '⏳ ✨ Running AI Auto-Fix...' : '⏳ ✨ AI 자동 해결 탐색 중...'}
+                </span>
                 {aiStepLabel && (
                   <span
                     style={{
@@ -1921,12 +2051,12 @@ export default function HeatExchangerWorkbenchModal({
                 </div>
                 {aiReport.result.rootCauses.length > 0 && (
                   <div style={{ color: '#475569', fontSize: 10.5 }}>
-                    원인: {aiReport.result.rootCauses.slice(0, 2).join(' · ')}
+                    {isEn ? 'Causes: ' : '원인: '}{aiReport.result.rootCauses.slice(0, 2).join(' · ')}
                   </div>
                 )}
                 {aiReport.result.actionsTaken.length > 0 && (
                   <div style={{ color: '#1E293B', fontWeight: 700, fontSize: 10.6 }}>
-                    조치: {aiReport.result.actionsTaken.join(' · ')}
+                    {isEn ? 'Actions: ' : '조치: '}{aiReport.result.actionsTaken.join(' · ')}
                   </div>
                 )}
                 {aiReport.geminiNote && (
@@ -1952,7 +2082,7 @@ export default function HeatExchangerWorkbenchModal({
                   cursor: 'pointer',
                 }}
               >
-                ✕ 닫기
+                {isEn ? '✕ Close' : '✕ 닫기'}
               </button>
             )}
           </div>
@@ -2061,7 +2191,9 @@ export default function HeatExchangerWorkbenchModal({
                               cursor: 'pointer',
                             }}
                           >
-                            {isAiBusy ? (aiStepLabel || '⏳ 분석중...') : '✨ AI 자동 해결'}
+                            {isAiBusy
+                              ? (aiStepLabel || (isEn ? '⏳ Analyzing...' : '⏳ 분석중...'))
+                              : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
                           </button>
                         )}
                       </div>
@@ -2080,7 +2212,7 @@ export default function HeatExchangerWorkbenchModal({
                     }}
                   >
                     <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
-                      공정 운전 사양 & 열매/냉매 선택
+                      {isEn ? 'Process Operating Spec & Utility Selection' : '공정 운전 사양 & 열매/냉매 선택'}
                     </span>
                     <span
                       style={{
@@ -2093,13 +2225,13 @@ export default function HeatExchangerWorkbenchModal({
                         border: '1px solid #BFDBFE',
                       }}
                     >
-                      유입 유체: {dRes.processSide.fluidName} ({formatCanonicalValue('massFlow', dRes.processSide.massFlowKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
+                      {isEn ? 'Inlet Fluid: ' : '유입 유체: '}{dRes.processSide.fluidName} ({formatCanonicalValue('massFlow', dRes.processSide.massFlowKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
                     </span>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9 }}>
                     <div>
-                      <label style={lblStyle}>열수지 지정 기준</label>
+                      <label style={lblStyle}>{isEn ? 'Heat Balance Spec Basis' : '열수지 지정 기준'}</label>
                       <select
                         value={hexSpecMode}
                         onChange={(e) =>
@@ -2109,15 +2241,21 @@ export default function HeatExchangerWorkbenchModal({
                         }
                         style={selStyle}
                       >
-                        <option value="proc_temp">공정 출구 목표온도 지정</option>
-                        <option value="heat_duty">교환 열부하 Q 직접 지정</option>
+                        <option value="proc_temp">
+                          {isEn ? 'Specify Process Outlet Temp' : '공정 출구 목표온도 지정'}
+                        </option>
+                        <option value="heat_duty">
+                          {isEn ? 'Specify Heat Duty Q Directly' : '교환 열부하 Q 직접 지정'}
+                        </option>
                       </select>
                     </div>
 
                     {hexSpecMode === 'proc_temp' ? (
                       <div>
                         <label style={lblStyle}>
-                          공정 출구 목표온도 [입구 {formatCanonicalValue('temp', dRes.processSide.inTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}]
+                          {isEn
+                            ? `Target Outlet Temp [Inlet ${formatCanonicalValue('temp', dRes.processSide.inTempC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}]`
+                            : `공정 출구 목표온도 [입구 ${formatCanonicalValue('temp', dRes.processSide.inTempC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}]`}
                         </label>
                         <UnitNumberInput
                           quantity="temp"
@@ -2134,7 +2272,9 @@ export default function HeatExchangerWorkbenchModal({
                       </div>
                     ) : (
                       <div>
-                        <label style={lblStyle}>지정 교환열량 (냉각 음수 -)</label>
+                        <label style={lblStyle}>
+                          {isEn ? 'Specified Heat Duty (Cooling = Negative -)' : '지정 교환열량 (냉각 음수 -)'}
+                        </label>
                         <UnitNumberInput
                           quantity="heatDuty"
                           unitId={dutyUnit}
@@ -2149,7 +2289,9 @@ export default function HeatExchangerWorkbenchModal({
                     )}
 
                     <div>
-                      <label style={lblStyle}>사용 냉매 · 열매 (유틸리티 프리셋)</label>
+                      <label style={lblStyle}>
+                        {isEn ? 'Utility / Refrigerant Preset' : '사용 냉매 · 열매 (유틸리티 프리셋)'}
+                      </label>
                       <select
                         value={refKey}
                         onChange={(e) =>
@@ -2161,14 +2303,16 @@ export default function HeatExchangerWorkbenchModal({
                       >
                         {(Object.keys(REFRIGERANT_PRESETS) as RefrigerantPresetKey[]).map((rk) => (
                           <option key={rk} value={rk}>
-                            {REFRIGERANT_PRESETS[rk].label}
+                            {isEn ? REFRIGERANT_PRESET_LABELS_EN[rk] : REFRIGERANT_PRESETS[rk].label}
                           </option>
                         ))}
                       </select>
                     </div>
 
                     <div>
-                      <label style={lblStyle}>공정 출구 운전압력</label>
+                      <label style={lblStyle}>
+                        {isEn ? 'Process Outlet Pressure' : '공정 출구 운전압력'}
+                      </label>
                       <UnitNumberInput
                         quantity="pressG"
                         unitId={pressUnit}
@@ -2200,7 +2344,7 @@ export default function HeatExchangerWorkbenchModal({
                       }}
                     >
                       <div>
-                        <label style={lblStyle}>유틸리티 입구 온도</label>
+                        <label style={lblStyle}>{isEn ? 'Utility Inlet Temp' : '유틸리티 입구 온도'}</label>
                         <UnitNumberInput
                           quantity="temp"
                           unitId={tempUnit}
@@ -2213,7 +2357,7 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유틸리티 출구 온도</label>
+                        <label style={lblStyle}>{isEn ? 'Utility Outlet Temp' : '유틸리티 출구 온도'}</label>
                         <UnitNumberInput
                           quantity="temp"
                           unitId={tempUnit}
@@ -2226,7 +2370,7 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유틸리티 비열 Cp</label>
+                        <label style={lblStyle}>{isEn ? 'Utility Specific Heat Cp' : '유틸리티 비열 Cp'}</label>
                         <UnitNumberInput
                           quantity="cp"
                           unitId={cpUnit}
@@ -2247,7 +2391,9 @@ export default function HeatExchangerWorkbenchModal({
                 {dRes.latentDutyMcalH > 0.05 && (
                   <div style={cardBox}>
                     <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>
-                      상변화 3-구간 열부하 분해 (이슬점 {dRes.dewPointC !== null ? `${formatCanonicalValue('temp', dRes.dewPointC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '—'} · 응축/액화량 {formatCanonicalValue('massFlow', dRes.processSide.phaseChangeMassKgH, massUnit)} {getUnitLabel('massFlow', massUnit)})
+                      {isEn
+                        ? `Phase-Change 3-Zone Duty Breakdown (Dew Pt ${dRes.dewPointC !== null ? `${formatCanonicalValue('temp', dRes.dewPointC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '—'} · Condensed ${formatCanonicalValue('massFlow', dRes.processSide.phaseChangeMassKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)})`
+                        : `상변화 3-구간 열부하 분해 (이슬점 ${dRes.dewPointC !== null ? `${formatCanonicalValue('temp', dRes.dewPointC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '—'} · 응축/액화량 ${formatCanonicalValue('massFlow', dRes.processSide.phaseChangeMassKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)})`}
                     </div>
                     <div
                       style={{
@@ -2258,19 +2404,25 @@ export default function HeatExchangerWorkbenchModal({
                       }}
                     >
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>① 과열가스 냉각</div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                          {isEn ? '① Desuperheating' : '① 과열가스 냉각'}
+                        </div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {formatCanonicalValue('heatDuty', dRes.desupDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
                       </div>
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>② 잠열 응축·액화</div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                          {isEn ? '② Latent Condensation' : '② 잠열 응축·액화'}
+                        </div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#1E3A8A', marginTop: 2 }}>
                           {formatCanonicalValue('heatDuty', dRes.latentDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
                       </div>
                       <div style={{ background: '#F8FAFC', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>③ 응축액 과냉각</div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                          {isEn ? '③ Condensate Subcooling' : '③ 응축액 과냉각'}
+                        </div>
                         <div style={{ fontSize: 13, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {formatCanonicalValue('heatDuty', dRes.subcoolDutyMcalH, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                         </div>
@@ -2282,19 +2434,21 @@ export default function HeatExchangerWorkbenchModal({
                 {/* 공정 유체 vs 유틸리티 열수지·물성 비교 표 */}
                 <div style={cardBox}>
                   <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                    양측 유체 열수지 및 대표 열물성 비교
+                    {isEn ? 'Process vs. Utility Heat Balance & Thermophysical Properties' : '양측 유체 열수지 및 대표 열물성 비교'}
                   </div>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                     <thead>
                       <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
-                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>항목</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>공정측 (Process)</th>
-                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>유틸리티측 (Utility)</th>
+                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>{isEn ? 'Parameter' : '항목'}</th>
+                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>{isEn ? 'Process Side' : '공정측 (Process)'}</th>
+                        <th style={{ padding: '5px 7px', textAlign: 'right' }}>{isEn ? 'Utility Side' : '유틸리티측 (Utility)'}</th>
                       </tr>
                     </thead>
                     <tbody style={{ fontFamily: MONO }}>
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>유체 / 상거동</td>
+                        <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
+                          {isEn ? 'Fluid / Phase Regime' : '유체 / 상거동'}
+                        </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right', fontFamily: 'inherit', fontWeight: 800 }}>
                           {dRes.processSide.phaseLabel}
                         </td>
@@ -2305,7 +2459,7 @@ export default function HeatExchangerWorkbenchModal({
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
                         <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            질량유량
+                            {isEn ? 'Mass Flow' : '질량유량'}
                             <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
                           </span>
                         </td>
@@ -2319,7 +2473,7 @@ export default function HeatExchangerWorkbenchModal({
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
                         <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                            입구 → 출구 온도
+                            {isEn ? 'Inlet → Outlet Temp' : '입구 → 출구 온도'}
                             <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
                           </span>
                         </td>
@@ -2333,7 +2487,7 @@ export default function HeatExchangerWorkbenchModal({
                       <tr style={{ borderBottom: '1px solid #F1F5F9' }}>
                         <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                            밀도 <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} /> / 점도 <UnitSelect quantity="viscosity" value={viscUnit} onChange={setViscUnit} />
+                            {isEn ? 'Density' : '밀도'} <UnitSelect quantity="density" value={densUnit} onChange={setDensUnit} /> / {isEn ? 'Viscosity' : '점도'} <UnitSelect quantity="viscosity" value={viscUnit} onChange={setViscUnit} />
                           </span>
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right' }}>
@@ -2346,7 +2500,7 @@ export default function HeatExchangerWorkbenchModal({
                       <tr>
                         <td style={{ padding: '4px 7px', fontFamily: 'inherit', fontWeight: 700 }}>
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                            열전도도 (W/m·K) / 비열 <UnitSelect quantity="cp" value={cpUnit} onChange={setCpUnit} />
+                            {isEn ? 'Conductivity (W/m·K) / Cp' : '열전도도 (W/m·K) / 비열'} <UnitSelect quantity="cp" value={cpUnit} onChange={setCpUnit} />
                           </span>
                         </td>
                         <td style={{ padding: '4px 7px', textAlign: 'right' }}>
@@ -2378,7 +2532,9 @@ export default function HeatExchangerWorkbenchModal({
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
-                    향류 T-Q 열교환 온도 프로파일 & 핀치(Pinch) 선도
+                    {isEn
+                      ? 'Countercurrent T-Q Temperature Profile & Pinch Diagram'
+                      : '향류 T-Q 열교환 온도 프로파일 & 핀치(Pinch) 선도'}
                   </span>
                   <button
                     type="button"
@@ -2394,7 +2550,7 @@ export default function HeatExchangerWorkbenchModal({
                       cursor: 'pointer',
                     }}
                   >
-                    기하 사이징 · 도면 설계로 이동 →
+                    {isEn ? 'Go to Sizing & CAD →' : '기하 사이징 · 도면 설계로 이동 →'}
                   </button>
                 </div>
 
@@ -2410,7 +2566,9 @@ export default function HeatExchangerWorkbenchModal({
                 >
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>총 교환열량 Q</span>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Heat Duty Q' : '총 교환열량 Q'}
+                      </span>
                       <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
@@ -2422,7 +2580,9 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>유효 온도차 CMTD</span>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Effective CMTD' : '유효 온도차 CMTD'}
+                      </span>
                       <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
@@ -2434,7 +2594,9 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>산출 총괄 U</span>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Calculated U' : '산출 총괄 U'}
+                      </span>
                       <UnitSelect quantity="htc" value={htcUnit} onChange={setHtcUnit} />
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A', marginTop: 2 }}>
@@ -2446,14 +2608,16 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>설계 전열면적 A</span>
+                      <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Design Area A' : '설계 전열면적 A'}
+                      </span>
                       <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                       {formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)}
                     </div>
                     <div style={{ fontSize: 9.5, color: '#475569' }}>
-                      요구 {formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)} (+{dRes.actualOverdesignPct.toFixed(0)}%)
+                      {isEn ? 'Req' : '요구'} {formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} {getUnitLabel('area', areaUnit)} (+{dRes.actualOverdesignPct.toFixed(0)}%)
                     </div>
                   </div>
                 </div>
@@ -2480,7 +2644,9 @@ export default function HeatExchangerWorkbenchModal({
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6, fontFamily: MONO }}>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>열부하 Q</span>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Heat Duty Q' : '열부하 Q'}
+                      </span>
                       <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
                     </div>
                     <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
@@ -2497,7 +2663,9 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>전열면적</span>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Heat Transfer Area' : '전열면적'}
+                      </span>
                       <UnitSelect quantity="area" value={areaUnit} onChange={setAreaUnit} />
                     </div>
                     <div style={{ fontSize: 12.5, fontWeight: 900, color: '#1E3A8A' }}>
@@ -2507,7 +2675,9 @@ export default function HeatExchangerWorkbenchModal({
                   </div>
                   <div style={cardBox}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>최대 ΔP</span>
+                      <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 700 }}>
+                        {isEn ? 'Max ΔP' : '최대 ΔP'}
+                      </span>
                       <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                     </div>
                     <div
@@ -2541,7 +2711,7 @@ export default function HeatExchangerWorkbenchModal({
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 900, color: '#0F172A' }}>
-                        ⚠ 차압 · 진동 · 온도교차 점검
+                        {isEn ? '⚠ ΔP · Vibration · Temp Cross Check' : '⚠ 차압 · 진동 · 온도교차 점검'}
                       </span>
                       <button
                         type="button"
@@ -2558,27 +2728,45 @@ export default function HeatExchangerWorkbenchModal({
                           cursor: isAiBusy ? 'wait' : 'pointer',
                         }}
                       >
-                        {isAiBusy ? (aiStepLabel || '⏳ 최적화 중...') : '✨ AI 자동 해결'}
+                        {isAiBusy
+                          ? (aiStepLabel || (isEn ? '⏳ Optimizing...' : '⏳ 최적화 중...'))
+                          : (isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결')}
                       </button>
                     </div>
                     {dRes.dpTubeBar > 0.7 && (
                       <div style={{ color: '#991B1B' }}>
-                        • 관측 ΔP={dRes.dpTubeBar.toFixed(2)} bar 초과 → <b>패스 수 감소</b>(4→2→1패스) 또는 <b>관길이 단축·외경 확대</b> 필요 (ΔP ∝ N³·L)
+                        {isEn ? (
+                          <>• Tube ΔP={dRes.dpTubeBar.toFixed(2)} bar exceeded → <b>Reduce passes</b> (4→2→1P) or <b>shorten length / increase OD</b> (ΔP ∝ N³·L)</>
+                        ) : (
+                          <>• 관측 ΔP={dRes.dpTubeBar.toFixed(2)} bar 초과 → <b>패스 수 감소</b>(4→2→1패스) 또는 <b>관길이 단축·외경 확대</b> 필요 (ΔP ∝ N³·L)</>
+                        )}
                       </div>
                     )}
                     {dRes.dpShellBar > 0.7 && (
                       <div style={{ color: '#92400E' }}>
-                        • 동체 ΔP={dRes.dpShellBar.toFixed(2)} bar 초과 → <b>배플 간격비(B/Ds) 확대</b> 또는 <b>배플 컷(%) 상향</b> 필요
+                        {isEn ? (
+                          <>• Shell ΔP={dRes.dpShellBar.toFixed(2)} bar exceeded → <b>Increase baffle spacing ratio (B/Ds)</b> or <b>increase baffle cut (%)</b></>
+                        ) : (
+                          <>• 동체 ΔP={dRes.dpShellBar.toFixed(2)} bar 초과 → <b>배플 간격비(B/Ds) 확대</b> 또는 <b>배플 컷(%) 상향</b> 필요</>
+                        )}
                       </div>
                     )}
                     {dRes.ftFactor < 0.78 && (
                       <div style={{ color: '#991B1B' }}>
-                        • Ft={dRes.ftFactor.toFixed(2)} 저하 → <b>직렬 동체 수(2기 이상)</b> 증가 또는 <b>1패스 향류</b> 전환
+                        {isEn ? (
+                          <>• Low Ft={dRes.ftFactor.toFixed(2)} → <b>Add shells in series (2+)</b> or switch to <b>1-pass countercurrent</b></>
+                        ) : (
+                          <>• Ft={dRes.ftFactor.toFixed(2)} 저하 → <b>직렬 동체 수(2기 이상)</b> 증가 또는 <b>1패스 향류</b> 전환</>
+                        )}
                       </div>
                     )}
                     {dRes.vibRatio > 0.8 && (
                       <div style={{ color: '#92400E' }}>
-                        • 와류진동비 {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b>배플 간격·튜브 피치(45°/90°)</b> 완화
+                        {isEn ? (
+                          <>• Vortex FIV ratio {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b>Adjust baffle spacing / tube pitch (45°/90°)</b></>
+                        ) : (
+                          <>• 와류진동비 {dRes.vibRatio.toFixed(2)} ≥ 0.80 → <b>배플 간격·튜브 피치(45°/90°)</b> 완화</>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2589,8 +2777,8 @@ export default function HeatExchangerWorkbenchModal({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 8 }}>
                     {(
                       [
-                        { id: 'shell_tube', label: '다관원통형 (Shell & Tube)' },
-                        { id: 'plate_phe', label: '판형 열교환기 (PHE)' },
+                        { id: 'shell_tube', label: isEn ? 'Shell & Tube' : '다관원통형 (Shell & Tube)' },
+                        { id: 'plate_phe', label: isEn ? 'Plate Heat Exchanger (PHE)' : '판형 열교환기 (PHE)' },
                       ] as { id: HxEquipmentKind; label: string }[]
                     ).map((kt) => {
                       const active = dRes.hxKind === kt.id;
@@ -2616,9 +2804,14 @@ export default function HeatExchangerWorkbenchModal({
                     })}
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <label style={{ ...lblStyle, marginBottom: 0 }}>재질 (Metallurgy)</label>
+                    <label style={{ ...lblStyle, marginBottom: 0 }}>
+                      {isEn ? 'Metallurgy' : '재질 (Metallurgy)'}
+                    </label>
                     <span style={{ fontSize: 9.5, fontWeight: 800, color: '#1D4ED8' }}>
-                      추천: {HX_MATERIAL_CATALOG[dRes.recommendedMaterial].shortLabel}
+                      {isEn ? 'Recommended: ' : '추천: '}
+                      {isEn
+                        ? HX_MATERIAL_EN[dRes.recommendedMaterial].shortLabel
+                        : HX_MATERIAL_CATALOG[dRes.recommendedMaterial].shortLabel}
                     </span>
                   </div>
                   <select
@@ -2628,7 +2821,7 @@ export default function HeatExchangerWorkbenchModal({
                   >
                     {(Object.keys(HX_MATERIAL_CATALOG) as HxMaterialCode[]).map((mc) => (
                       <option key={mc} value={mc}>
-                        {HX_MATERIAL_CATALOG[mc].label} (k={HX_MATERIAL_CATALOG[mc].kwWmK})
+                        {isEn ? HX_MATERIAL_EN[mc].label : HX_MATERIAL_CATALOG[mc].label} (k={HX_MATERIAL_CATALOG[mc].kwWmK})
                       </option>
                     ))}
                   </select>
@@ -2638,11 +2831,11 @@ export default function HeatExchangerWorkbenchModal({
                 {dRes.hxKind === 'shell_tube' ? (
                   <div style={cardBox}>
                     <div style={{ fontSize: 11.2, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                      핵심 규격 설정 (숏컷 방식)
+                      {isEn ? 'Core Specifications (Shortcut)' : '핵심 규격 설정 (숏컷 방식)'}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
-                        <label style={lblStyle}>관측 패스 수 (Tube Passes)</label>
+                        <label style={lblStyle}>{isEn ? 'Tube Passes' : '관측 패스 수 (Tube Passes)'}</label>
                         <select
                           value={dRes.tubePasses}
                           onChange={(e) =>
@@ -2650,14 +2843,16 @@ export default function HeatExchangerWorkbenchModal({
                           }
                           style={selStyle}
                         >
-                          <option value={1}>1 패스 (향류 · 최저 ΔP)</option>
-                          <option value={2}>2 패스 (표준)</option>
-                          <option value={4}>4 패스 (고전열)</option>
-                          <option value={6}>6 패스</option>
+                          <option value={1}>
+                            {isEn ? '1 Pass (Countercurrent · Min ΔP)' : '1 패스 (향류 · 최저 ΔP)'}
+                          </option>
+                          <option value={2}>{isEn ? '2 Passes (Standard)' : '2 패스 (표준)'}</option>
+                          <option value={4}>{isEn ? '4 Passes (High HTC)' : '4 패스 (고전열)'}</option>
+                          <option value={6}>{isEn ? '6 Passes' : '6 패스'}</option>
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 튜브 길이 L</label>
+                        <label style={lblStyle}>{isEn ? 'Effective Tube Length L' : '유효 튜브 길이 L'}</label>
                         <div style={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
                           <select
                             value={dRes.tubeLengthM}
@@ -2671,7 +2866,7 @@ export default function HeatExchangerWorkbenchModal({
                             {([
                               { v: 2.44, note: '8 ft' },
                               { v: 3.05, note: '10 ft' },
-                              { v: 3.66, note: '12 ft 표준' },
+                              { v: 3.66, note: isEn ? '12 ft Std' : '12 ft 표준' },
                               { v: 4.88, note: '16 ft' },
                               { v: 6.1, note: '20 ft' },
                             ] as const).map((opt) => (
@@ -2684,7 +2879,7 @@ export default function HeatExchangerWorkbenchModal({
                         </div>
                       </div>
                       <div>
-                        <label style={lblStyle}>배플 간격비 (B / Ds)</label>
+                        <label style={lblStyle}>{isEn ? 'Baffle Spacing Ratio (B / Ds)' : '배플 간격비 (B / Ds)'}</label>
                         <BufferedNumberInput
                           syncKey={`${unitTag}-hx-bratio`}
                           step={0.05}
@@ -2696,16 +2891,16 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>직렬 동체 수 (Shells)</label>
+                        <label style={lblStyle}>{isEn ? 'Shells in Series' : '직렬 동체 수 (Shells)'}</label>
                         <select
                           value={dRes.shellCount}
                           onChange={(e) => patchHxCfg({ shellCount: Number(e.target.value) })}
                           style={selStyle}
                         >
-                          <option value={1}>1기 (단독)</option>
-                          <option value={2}>직렬 2기</option>
-                          <option value={3}>직렬 3기</option>
-                          <option value={4}>직렬 4기</option>
+                          <option value={1}>{isEn ? '1 Shell (Single)' : '1기 (단독)'}</option>
+                          <option value={2}>{isEn ? '2 Shells in Series' : '직렬 2기'}</option>
+                          <option value={3}>{isEn ? '3 Shells in Series' : '직렬 3기'}</option>
+                          <option value={4}>{isEn ? '4 Shells in Series' : '직렬 4기'}</option>
                         </select>
                       </div>
                     </div>
@@ -2713,11 +2908,11 @@ export default function HeatExchangerWorkbenchModal({
                 ) : (
                   <div style={cardBox}>
                     <div style={{ fontSize: 11.2, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                      핵심 PHE 규격 설정
+                      {isEn ? 'Core PHE Specifications' : '핵심 PHE 규격 설정'}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                       <div>
-                        <label style={lblStyle}>쉐브론 각도 (β)</label>
+                        <label style={lblStyle}>{isEn ? 'Chevron Angle (β)' : '쉐브론 각도 (β)'}</label>
                         <select
                           value={dRes.pheChevronDeg}
                           onChange={(e) =>
@@ -2725,13 +2920,13 @@ export default function HeatExchangerWorkbenchModal({
                           }
                           style={selStyle}
                         >
-                          <option value={30}>30° (저압손)</option>
-                          <option value={45}>45° (표준)</option>
-                          <option value={60}>60° (고난류)</option>
+                          <option value={30}>{isEn ? '30° (Low ΔP)' : '30° (저압손)'}</option>
+                          <option value={45}>{isEn ? '45° (Standard)' : '45° (표준)'}</option>
+                          <option value={60}>{isEn ? '60° (High Turbulence)' : '60° (고난류)'}</option>
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>채널 판간격 b</label>
+                        <label style={lblStyle}>{isEn ? 'Channel Gap b' : '채널 판간격 b'}</label>
                         <UnitNumberInput
                           quantity="length"
                           syncKey={`${unitTag}-phe-gap`}
@@ -2743,7 +2938,7 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 판폭 W</label>
+                        <label style={lblStyle}>{isEn ? 'Effective Plate Width W' : '유효 판폭 W'}</label>
                         <UnitNumberInput
                           quantity="length"
                           unitId={lenUnit}
@@ -2757,7 +2952,7 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>유효 판길이 L</label>
+                        <label style={lblStyle}>{isEn ? 'Effective Plate Length L' : '유효 판길이 L'}</label>
                         <UnitNumberInput
                           quantity="length"
                           unitId={lenUnit}
@@ -2778,35 +2973,41 @@ export default function HeatExchangerWorkbenchModal({
                 {dRes.hxKind === 'shell_tube' && (
                   <details style={cardBox}>
                     <summary style={{ cursor: 'pointer', fontSize: 11, fontWeight: 900, color: '#334155', listStyle: 'none' }}>
-                      ⚙ 고급 TEMA 기하 설정 (형식 {dRes.temaType} · OD {dRes.tubeOdMm}mm · 컷 {dRes.baffleCutPct}% ▾)
+                      {isEn
+                        ? `⚙ Advanced TEMA Geometry (Type ${dRes.temaType} · OD ${dRes.tubeOdMm}mm · Cut ${dRes.baffleCutPct}% ▾)`
+                        : `⚙ 고급 TEMA 기하 설정 (형식 ${dRes.temaType} · OD ${dRes.tubeOdMm}mm · 컷 ${dRes.baffleCutPct}% ▾)`}
                     </summary>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 9 }}>
                       <div>
-                        <label style={lblStyle}>TEMA 형식</label>
+                        <label style={lblStyle}>{isEn ? 'TEMA Type' : 'TEMA 형식'}</label>
                         <select
                           value={dRes.temaType}
                           onChange={(e) => patchHxCfg({ temaType: e.target.value as TemaConfiguration })}
                           style={selStyle}
                         >
-                          <option value="BEM">BEM (고정관판식)</option>
-                          <option value="AES">AES (유동두식)</option>
-                          <option value="BKM">BKM (케틀형)</option>
-                          <option value="BEU">BEU (U-튜브식)</option>
+                          <option value="BEM">{isEn ? 'BEM (Fixed Tubesheet)' : 'BEM (고정관판식)'}</option>
+                          <option value="AES">{isEn ? 'AES (Floating Head)' : 'AES (유동두식)'}</option>
+                          <option value="BKM">{isEn ? 'BKM (Kettle Reboiler)' : 'BKM (케틀형)'}</option>
+                          <option value="BEU">{isEn ? 'BEU (U-Tube)' : 'BEU (U-튜브식)'}</option>
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>유체 배치</label>
+                        <label style={lblStyle}>{isEn ? 'Fluid Allocation' : '유체 배치'}</label>
                         <select
                           value={dRes.allocation}
                           onChange={(e) => patchHxCfg({ allocation: e.target.value as HxTubeAllocation })}
                           style={selStyle}
                         >
-                          <option value="process_tube">공정=Tube / 열매=Shell</option>
-                          <option value="process_shell">공정=Shell / 열매=Tube</option>
+                          <option value="process_tube">
+                            {isEn ? 'Process = Tube / Utility = Shell' : '공정=Tube / 열매=Shell'}
+                          </option>
+                          <option value="process_shell">
+                            {isEn ? 'Process = Shell / Utility = Tube' : '공정=Shell / 열매=Tube'}
+                          </option>
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>튜브 외경 OD</label>
+                        <label style={lblStyle}>{isEn ? 'Tube OD' : '튜브 외경 OD'}</label>
                         <div style={{ display: 'flex', gap: 3, alignItems: 'stretch' }}>
                           <select
                             value={dRes.tubeOdMm}
@@ -2827,19 +3028,19 @@ export default function HeatExchangerWorkbenchModal({
                         </div>
                       </div>
                       <div>
-                        <label style={lblStyle}>배열 각도</label>
+                        <label style={lblStyle}>{isEn ? 'Tube Layout Angle' : '배열 각도'}</label>
                         <select
                           value={dRes.pitchAngle}
                           onChange={(e) => patchHxCfg({ pitchAngle: Number(e.target.value) as TubeLayoutAngle })}
                           style={selStyle}
                         >
-                          <option value={30}>30° 삼각</option>
-                          <option value={90}>90° 사각</option>
-                          <option value={45}>45° 회전</option>
+                          <option value={30}>{isEn ? '30° Triangular' : '30° 삼각'}</option>
+                          <option value={90}>{isEn ? '90° Square' : '90° 사각'}</option>
+                          <option value={45}>{isEn ? '45° Rotated Square' : '45° 회전'}</option>
                         </select>
                       </div>
                       <div>
-                        <label style={lblStyle}>배플 컷율 (%)</label>
+                        <label style={lblStyle}>{isEn ? 'Baffle Cut (%)' : '배플 컷율 (%)'}</label>
                         <BufferedNumberInput
                           syncKey={`${unitTag}-hx-bcut`}
                           step={2}
@@ -2851,7 +3052,7 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={lblStyle}>설계 여유율 (%)</label>
+                        <label style={lblStyle}>{isEn ? 'Design Margin (%)' : '설계 여유율 (%)'}</label>
                         <BufferedNumberInput
                           syncKey={`${unitTag}-hx-margin`}
                           step={5}
@@ -2863,7 +3064,9 @@ export default function HeatExchangerWorkbenchModal({
                         />
                       </div>
                     </div>
-                    <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 6 }}>{dRes.material.serviceNote}</div>
+                    <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 6 }}>
+                      {isEn ? HX_MATERIAL_EN[dRes.material.code].serviceNote : dRes.material.serviceNote}
+                    </div>
                   </details>
                 )}
 
@@ -2903,7 +3106,7 @@ export default function HeatExchangerWorkbenchModal({
                       cursor: 'pointer',
                     }}
                   >
-                    ✓ U값 반영 후 재실행
+                    {isEn ? '✓ Apply U & Re-Run' : '✓ U값 반영 후 재실행'}
                   </button>
                 </div>
               </div>
@@ -2926,9 +3129,9 @@ export default function HeatExchangerWorkbenchModal({
                 <div style={{ display: 'flex', gap: 5 }}>
                   {(
                     [
-                      { id: 'cad', label: '개념설계 단면도 (CAD)' },
-                      { id: 'hydraulics', label: '열저항 · 압력손실 · 진동 검증' },
-                      { id: 'datasheet', label: '노즐 스케줄 · 제작 사양서' },
+                      { id: 'cad', label: isEn ? 'Conceptual Section (CAD)' : '개념설계 단면도 (CAD)' },
+                      { id: 'hydraulics', label: isEn ? 'Thermal, ΔP & Vibration Check' : '열저항 · 압력손실 · 진동 검증' },
+                      { id: 'datasheet', label: isEn ? 'Nozzle Schedule & Spec Sheet' : '노즐 스케줄 · 제작 사양서' },
                     ] as { id: MechVisualTab; label: string }[]
                   ).map((vt) => {
                     const active = visualTab === vt.id;
@@ -2968,7 +3171,9 @@ export default function HeatExchangerWorkbenchModal({
                       <div style={cardBox}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
                           <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
-                            {dRes.hxKind === 'plate_phe' ? '전열판 매수' : '동체 내경 D_s'}
+                            {dRes.hxKind === 'plate_phe'
+                              ? (isEn ? 'Plate Count' : '전열판 매수')
+                              : (isEn ? 'Shell ID D_s' : '동체 내경 D_s')}
                           </span>
                           {dRes.hxKind !== 'plate_phe' && (
                             <UnitSelect quantity="length" value={lenUnit} onChange={setLenUnit} />
@@ -2976,44 +3181,52 @@ export default function HeatExchangerWorkbenchModal({
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {dRes.hxKind === 'plate_phe'
-                            ? `${dRes.phePlateCount} 매`
+                            ? (isEn ? `${dRes.phePlateCount} ea` : `${dRes.phePlateCount} 매`)
                             : `Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
                           {dRes.hxKind === 'plate_phe'
-                            ? `채널 ${dRes.pheChannelsPerSide}×2`
-                            : `번들 Ø${formatCanonicalValue('length', dRes.bundleDiaMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`}
+                            ? (isEn ? `Channels ${dRes.pheChannelsPerSide}×2` : `채널 ${dRes.pheChannelsPerSide}×2`)
+                            : `${isEn ? 'Bundle' : '번들'} Ø${formatCanonicalValue('length', dRes.bundleDiaMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`}
                         </div>
                       </div>
                       <div style={cardBox}>
                         <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
-                          {dRes.hxKind === 'plate_phe' ? '압축 팩 길이' : '튜브 수량 / 동체'}
+                          {dRes.hxKind === 'plate_phe'
+                            ? (isEn ? 'Compressed Pack L' : '압축 팩 길이')
+                            : (isEn ? 'Tube Count / Shell' : '튜브 수량 / 동체')}
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {dRes.hxKind === 'plate_phe'
                             ? `${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)}`
-                            : `${dRes.tubeCountPerShell} 본`}
+                            : (isEn ? `${dRes.tubeCountPerShell} ea` : `${dRes.tubeCountPerShell} 본`)}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
                           {dRes.hxKind === 'plate_phe'
-                            ? `간격 ${dRes.pheGapMm} mm`
-                            : `${dRes.tubePasses}패스 · L=${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)}`}
+                            ? (isEn ? `Gap ${dRes.pheGapMm} mm` : `간격 ${dRes.pheGapMm} mm`)
+                            : (isEn
+                                ? `${dRes.tubePasses}P · L=${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)}`
+                                : `${dRes.tubePasses}패스 · L=${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)}`)}
                         </div>
                       </div>
                       <div style={cardBox}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
-                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>관측 / 동체 압손</span>
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                            {isEn ? 'Tube / Shell ΔP' : '관측 / 동체 압손'}
+                          </span>
                           <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                         </div>
                         <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                           {formatCanonicalValue('deltaP', dRes.dpTubeBar * BAR_TO_KGCM2, dpUnit, 2)} / {formatCanonicalValue('deltaP', dRes.dpShellBar * BAR_TO_KGCM2, dpUnit, 2)}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
-                          {getUnitLabel('deltaP', dpUnit)} (권장 ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)})
+                          {getUnitLabel('deltaP', dpUnit)} ({isEn ? 'Limit' : '권장'} ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)})
                         </div>
                       </div>
                       <div style={cardBox}>
-                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>와류 진동비 FIV</div>
+                        <div style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                          {isEn ? 'Vortex Vibration FIV' : '와류 진동비 FIV'}
+                        </div>
                         <div
                           style={{
                             fontSize: 13.5,
@@ -3022,10 +3235,12 @@ export default function HeatExchangerWorkbenchModal({
                             marginTop: 2,
                           }}
                         >
-                          {dRes.hxKind === 'plate_phe' ? '해당없음' : dRes.vibRatio.toFixed(2)}
+                          {dRes.hxKind === 'plate_phe' ? (isEn ? 'N/A' : '해당없음') : dRes.vibRatio.toFixed(2)}
                         </div>
                         <div style={{ fontSize: 9.5, color: '#475569' }}>
-                          {dRes.hxKind === 'plate_phe' ? '판형 밀착지지' : '안전기준 < 0.80'}
+                          {dRes.hxKind === 'plate_phe'
+                            ? (isEn ? 'Plate Contact Support' : '판형 밀착지지')
+                            : (isEn ? 'Safe Limit < 0.80' : '안전기준 < 0.80')}
                         </div>
                       </div>
                     </div>
@@ -3037,43 +3252,55 @@ export default function HeatExchangerWorkbenchModal({
                     <div style={cardBox}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                          막열전달계수 & 총괄 열전달계수 산출 내역
+                          {isEn
+                            ? 'Film & Overall Heat Transfer Coefficient Breakdown'
+                            : '막열전달계수 & 총괄 열전달계수 산출 내역'}
                         </span>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>U/h</span>
                           <UnitSelect quantity="htc" value={htcUnit} onChange={setHtcUnit} />
-                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>유속</span>
+                          <span style={{ fontSize: 9.8, color: '#64748B', fontWeight: 700 }}>
+                            {isEn ? 'Vel' : '유속'}
+                          </span>
                           <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} />
                         </div>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontFamily: MONO, fontSize: 11 }}>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                          <div style={{ color: '#64748B', fontSize: 10 }}>관측(유로A) 막계수 h_i</div>
+                          <div style={{ color: '#64748B', fontSize: 10 }}>
+                            {isEn ? 'Tube (Ch. A) Film Coeff. h_i' : '관측(유로A) 막계수 h_i'}
+                          </div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
                             {formatCanonicalValue('htc', dRes.hTubeWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
-                            유속 {formatCanonicalValue('velocity', dRes.velTubeMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reTube.toFixed(0)}
+                            {isEn ? 'Vel' : '유속'} {formatCanonicalValue('velocity', dRes.velTubeMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reTube.toFixed(0)}
                           </div>
                         </div>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                          <div style={{ color: '#64748B', fontSize: 10 }}>동체(유로B) 막계수 h_o</div>
+                          <div style={{ color: '#64748B', fontSize: 10 }}>
+                            {isEn ? 'Shell (Ch. B) Film Coeff. h_o' : '동체(유로B) 막계수 h_o'}
+                          </div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
                             {formatCanonicalValue('htc', dRes.hShellWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
-                            유속 {formatCanonicalValue('velocity', dRes.velShellMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reShell.toFixed(0)}
+                            {isEn ? 'Vel' : '유속'} {formatCanonicalValue('velocity', dRes.velShellMs, velUnit, 2)} {getUnitLabel('velocity', velUnit)} · Re = {dRes.reShell.toFixed(0)}
                           </div>
                         </div>
                         <div style={{ background: '#F8FAFC', padding: '8px 10px', borderRadius: 6, border: '1px solid #E2E8F0' }}>
-                          <div style={{ color: '#64748B', fontSize: 10 }}>청정 총괄 U_clean</div>
+                          <div style={{ color: '#64748B', fontSize: 10 }}>
+                            {isEn ? 'Clean Overall U_clean' : '청정 총괄 U_clean'}
+                          </div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#0F172A' }}>
                             {formatCanonicalValue('htc', dRes.uCleanWm2K * WM2K_TO_KCALM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>({dRes.uCleanWm2K.toFixed(0)} W/m²·K)</div>
                         </div>
                         <div style={{ background: '#EFF6FF', padding: '8px 10px', borderRadius: 6, border: '1px solid #BFDBFE' }}>
-                          <div style={{ color: '#1E3A8A', fontSize: 10, fontWeight: 800 }}>오염반영 설계 U_design</div>
+                          <div style={{ color: '#1E3A8A', fontSize: 10, fontWeight: 800 }}>
+                            {isEn ? 'Fouled Design U_design' : '오염반영 설계 U_design'}
+                          </div>
                           <div style={{ fontSize: 13.5, fontWeight: 900, color: '#1E3A8A' }}>
                             {formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} {getUnitLabel('htc', htcUnit)}
                           </div>
@@ -3085,13 +3312,17 @@ export default function HeatExchangerWorkbenchModal({
                     <div style={cardBox}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                          압력손실(ΔP ≤ {formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} {getUnitLabel('deltaP', dpUnit)}) 및 TEMA RCB-V 진동(FIV) 검증 게이지
+                          {isEn
+                            ? `Pressure Drop (ΔP ≤ ${formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}) & TEMA RCB-V Vibration (FIV) Gauges`
+                            : `압력손실(ΔP ≤ ${formatCanonicalValue('deltaP', 0.7 * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}) 및 TEMA RCB-V 진동(FIV) 검증 게이지`}
                         </span>
                         <UnitSelect quantity="deltaP" value={dpUnit} onChange={setDpUnit} />
                       </div>
                       {[
                         {
-                          label: `${dRes.hxKind === 'plate_phe' ? '유로 A' : '관측(Tube)'} 압력손실`,
+                          label: isEn
+                            ? `${dRes.hxKind === 'plate_phe' ? 'Channel A' : 'Tube Side'} Pressure Drop`
+                            : `${dRes.hxKind === 'plate_phe' ? '유로 A' : '관측(Tube)'} 압력손실`,
                           val: dRes.dpTubeBar,
                           limit: 0.7,
                           dangerAt: 0.7,
@@ -3099,7 +3330,9 @@ export default function HeatExchangerWorkbenchModal({
                           subText: '',
                         },
                         {
-                          label: `${dRes.hxKind === 'plate_phe' ? '유로 B' : '동체(Shell)'} 압력손실`,
+                          label: isEn
+                            ? `${dRes.hxKind === 'plate_phe' ? 'Channel B' : 'Shell Side'} Pressure Drop`
+                            : `${dRes.hxKind === 'plate_phe' ? '유로 B' : '동체(Shell)'} 압력손실`,
                           val: dRes.dpShellBar,
                           limit: 0.7,
                           dangerAt: 0.7,
@@ -3109,7 +3342,9 @@ export default function HeatExchangerWorkbenchModal({
                         ...(dRes.hxKind === 'shell_tube'
                           ? [
                               {
-                                label: `① 와류 방출 진동비 Vortex Shedding (f_vs=${(dRes.vibration?.vortexFreqHz ?? dRes.vortexFreqHz).toFixed(1)}Hz / f_n=${(dRes.vibration?.naturalFreqHz ?? dRes.naturalFreqHz).toFixed(1)}Hz)`,
+                                label: isEn
+                                  ? `① Vortex Shedding Ratio (f_vs=${(dRes.vibration?.vortexFreqHz ?? dRes.vortexFreqHz).toFixed(1)}Hz / f_n=${(dRes.vibration?.naturalFreqHz ?? dRes.naturalFreqHz).toFixed(1)}Hz)`
+                                  : `① 와류 방출 진동비 Vortex Shedding (f_vs=${(dRes.vibration?.vortexFreqHz ?? dRes.vortexFreqHz).toFixed(1)}Hz / f_n=${(dRes.vibration?.naturalFreqHz ?? dRes.naturalFreqHz).toFixed(1)}Hz)`,
                                 val: dRes.vibration?.vortexRatio ?? dRes.vibRatio,
                                 limit: 0.8,
                                 dangerAt: 1.0,
@@ -3119,7 +3354,9 @@ export default function HeatExchangerWorkbenchModal({
                               ...(dRes.vibration
                                 ? [
                                     {
-                                      label: `② 유체탄성 불안정 Connors Fluidelastic (V=${dRes.velShellMs.toFixed(2)}m/s / V_c=${dRes.vibration.criticalVelMs.toFixed(2)}m/s)`,
+                                      label: isEn
+                                        ? `② Connors Fluidelastic Instability (V=${dRes.velShellMs.toFixed(2)}m/s / V_c=${dRes.vibration.criticalVelMs.toFixed(2)}m/s)`
+                                        : `② 유체탄성 불안정 Connors Fluidelastic (V=${dRes.velShellMs.toFixed(2)}m/s / V_c=${dRes.vibration.criticalVelMs.toFixed(2)}m/s)`,
                                       val: dRes.vibration.fluidelasticRatio,
                                       limit: 0.8,
                                       dangerAt: 1.0,
@@ -3129,13 +3366,22 @@ export default function HeatExchangerWorkbenchModal({
                                     {
                                       label:
                                         dRes.vibration.acousticFreqsHz.length > 0
-                                          ? `③ 음향 공진 Acoustic Resonance (f_vs=${dRes.vibration.vortexFreqHz.toFixed(1)}Hz / f_a1=${dRes.vibration.acousticFreqsHz[0].toFixed(1)}Hz)`
-                                          : '③ 음향 공진 Acoustic Resonance (액상/비공진 — 해당 없음)',
+                                          ? (isEn
+                                              ? `③ Acoustic Resonance (f_vs=${dRes.vibration.vortexFreqHz.toFixed(1)}Hz / f_a1=${dRes.vibration.acousticFreqsHz[0].toFixed(1)}Hz)`
+                                              : `③ 음향 공진 Acoustic Resonance (f_vs=${dRes.vibration.vortexFreqHz.toFixed(1)}Hz / f_a1=${dRes.vibration.acousticFreqsHz[0].toFixed(1)}Hz)`)
+                                          : (isEn
+                                              ? '③ Acoustic Resonance (Liquid / Non-resonant — N/A)'
+                                              : '③ 음향 공진 Acoustic Resonance (액상/비공진 — 해당 없음)'),
                                       val: dRes.vibration.acousticRatio,
                                       limit: 0.8,
                                       dangerAt: 1.0,
                                       isDp: false,
-                                      subText: dRes.vibration.acousticFreqsHz.length === 0 ? 'N/A (액상)' : dRes.vibration.acousticRisk ? '⚠ 공진대역 (±20%)' : 'OK',
+                                      subText:
+                                        dRes.vibration.acousticFreqsHz.length === 0
+                                          ? (isEn ? 'N/A (Liquid)' : 'N/A (액상)')
+                                          : dRes.vibration.acousticRisk
+                                          ? (isEn ? '⚠ Resonance Band (±20%)' : '⚠ 공진대역 (±20%)')
+                                          : 'OK',
                                     },
                                   ]
                                 : []),
@@ -3151,10 +3397,10 @@ export default function HeatExchangerWorkbenchModal({
                               <span style={{ color: '#334155' }}>{g.label}</span>
                               <span style={{ fontFamily: MONO, color: danger ? '#991B1B' : over ? '#92400E' : '#166534', whiteSpace: 'nowrap' }}>
                                 {g.isDp
-                                  ? `${formatCanonicalValue('deltaP', g.val * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)} / 기준 ${formatCanonicalValue('deltaP', g.limit * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}`
+                                  ? `${formatCanonicalValue('deltaP', g.val * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)} / ${isEn ? 'Limit' : '기준'} ${formatCanonicalValue('deltaP', g.limit * BAR_TO_KGCM2, dpUnit, 2)} ${getUnitLabel('deltaP', dpUnit)}`
                                   : g.subText && g.val === 0
                                   ? g.subText
-                                  : `${g.val.toFixed(2)} / 기준 ${g.limit.toFixed(2)}${g.subText ? ` (${g.subText})` : ''}`}
+                                  : `${g.val.toFixed(2)} / ${isEn ? 'Limit' : '기준'} ${g.limit.toFixed(2)}${g.subText ? ` (${g.subText})` : ''}`}
                               </span>
                             </div>
                             <div style={{ height: 8, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
@@ -3185,7 +3431,7 @@ export default function HeatExchangerWorkbenchModal({
                             </span>
                             {dRes.vibration.soundSpeedMs != null && (
                               <span style={{ padding: '3px 7px', borderRadius: 5, background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 800 }}>
-                                음속 c = {dRes.vibration.soundSpeedMs.toFixed(0)} m/s
+                                {isEn ? 'Sound Speed' : '음속'} c = {dRes.vibration.soundSpeedMs.toFixed(0)} m/s
                               </span>
                             )}
                           </div>
@@ -3197,10 +3443,10 @@ export default function HeatExchangerWorkbenchModal({
                             const rStatus = dRes.rhoV2Status ?? shIn?.rhoV2Status ?? (dRes.impingementRequired ? 'IMPINGEMENT_REQ' : 'OK');
                             const tone =
                               rStatus === 'OVERSIZE_NOZZLE'
-                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B', lbl: '노즐 확관 필요 (OVERSIZE)' }
+                                ? { bg: '#FEF2F2', bd: '#FCA5A5', fg: '#991B1B', lbl: isEn ? 'Oversize Nozzle Req (OVERSIZE)' : '노즐 확관 필요 (OVERSIZE)' }
                                 : rStatus === 'IMPINGEMENT_REQ'
-                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E', lbl: '충돌판 필수 (IMPINGEMENT PLATE REQ)' }
-                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534', lbl: '충돌판 불필요 (OK)' };
+                                ? { bg: '#FFFBEB', bd: '#FCD34D', fg: '#92400E', lbl: isEn ? 'Impingement Plate Required' : '충돌판 필수 (IMPINGEMENT PLATE REQ)' }
+                                : { bg: '#DCFCE7', bd: '#86EFAC', fg: '#166534', lbl: isEn ? 'No Impingement Needed (OK)' : '충돌판 불필요 (OK)' };
                             return (
                               <span
                                 style={{
@@ -3214,7 +3460,9 @@ export default function HeatExchangerWorkbenchModal({
                                   fontFamily: MONO,
                                 }}
                               >
-                                TEMA RCB-4.6 노즐 ρv² = {shIn?.rhoV2Pa ?? 0} Pa (기준 {dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · {tone.lbl}
+                                {isEn
+                                  ? `TEMA RCB-4.6 Nozzle ρv² = ${shIn?.rhoV2Pa ?? 0} Pa (Limit ${dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · ${tone.lbl}`
+                                  : `TEMA RCB-4.6 노즐 ρv² = ${shIn?.rhoV2Pa ?? 0} Pa (기준 ${dRes.rhoV2LimitPa ?? shIn?.rhoV2LimitPa ?? 2230} Pa) · ${tone.lbl}`}
                               </span>
                             );
                           })()}
@@ -3239,7 +3487,9 @@ export default function HeatExchangerWorkbenchModal({
                                   fontFamily: MONO,
                                 }}
                               >
-                                비등 CHF(Dryout) [{dRes.chfCheck.status}] q&quot;={(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF={(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (비율 {dRes.chfCheck.chfRatio.toFixed(2)})
+                                {isEn
+                                  ? `Boiling CHF (Dryout) [${dRes.chfCheck.status}] q"=${(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF=${(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (Ratio ${dRes.chfCheck.chfRatio.toFixed(2)})`
+                                  : `비등 CHF(Dryout) [${dRes.chfCheck.status}] q"=${(dRes.chfCheck.heatFluxWm2 / 1000).toFixed(1)} / q_CHF=${(dRes.chfCheck.qChfBundleWm2 / 1000).toFixed(1)} kW/m² (비율 ${dRes.chfCheck.chfRatio.toFixed(2)})`}
                               </span>
                             );
                           })()}
@@ -3254,7 +3504,9 @@ export default function HeatExchangerWorkbenchModal({
                     <div style={cardBox}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 7, flexWrap: 'wrap' }}>
                         <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                          노즐 스케줄 (Nozzle Sizing & Momentum ρv² Check — TEMA RCB-4.6)
+                          {isEn
+                            ? 'Nozzle Schedule (Nozzle Sizing & Momentum ρv² Check — TEMA RCB-4.6)'
+                            : '노즐 스케줄 (Nozzle Sizing & Momentum ρv² Check — TEMA RCB-4.6)'}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                           <button
@@ -3271,7 +3523,9 @@ export default function HeatExchangerWorkbenchModal({
                               cursor: 'pointer',
                             }}
                           >
-                            📥 공식 {dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} 엑셀 데이터시트 (.xlsx)
+                            {isEn
+                              ? `📥 Official ${dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} Excel Datasheet (.xlsx)`
+                              : `📥 공식 ${dRes.hxKind === 'plate_phe' ? 'API 662' : 'TEMA'} 엑셀 데이터시트 (.xlsx)`}
                           </button>
                           <button
                             type="button"
@@ -3287,7 +3541,7 @@ export default function HeatExchangerWorkbenchModal({
                               cursor: 'pointer',
                             }}
                           >
-                            📂 TEMA .xlsx 가져오기
+                            {isEn ? '📂 Import TEMA .xlsx' : '📂 TEMA .xlsx 가져오기'}
                           </button>
                           {temaImportNotice && (
                             <span
@@ -3306,6 +3560,8 @@ export default function HeatExchangerWorkbenchModal({
                             >
                               {temaImportNotice.isError
                                 ? `⚠ ${temaImportNotice.summary}`
+                                : isEn
+                                ? `✓ Imported ${temaImportNotice.count} TEMA items`
                                 : `✓ TEMA 항목 ${temaImportNotice.count}건 불러옴`}
                             </span>
                           )}
@@ -3315,15 +3571,21 @@ export default function HeatExchangerWorkbenchModal({
                         <thead>
                           <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
                             <th style={{ padding: '5px 7px', textAlign: 'left' }}>Nozzle</th>
-                            <th style={{ padding: '5px 7px', textAlign: 'left', fontFamily: 'inherit' }}>서비스 위치</th>
-                            <th style={{ padding: '5px 7px', textAlign: 'right' }}>규격 (DN / NPS)</th>
+                            <th style={{ padding: '5px 7px', textAlign: 'left', fontFamily: 'inherit' }}>
+                              {isEn ? 'Service' : '서비스 위치'}
+                            </th>
+                            <th style={{ padding: '5px 7px', textAlign: 'right' }}>
+                              {isEn ? 'Size (DN / NPS)' : '규격 (DN / NPS)'}
+                            </th>
                             <th style={{ padding: '5px 7px', textAlign: 'right' }}>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                유속 <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} />
+                                {isEn ? 'Velocity' : '유속'} <UnitSelect quantity="velocity" value={velUnit} onChange={setVelUnit} />
                               </span>
                             </th>
                             <th style={{ padding: '5px 7px', textAlign: 'right' }}>ρv² (Pa)</th>
-                            <th style={{ padding: '5px 7px', textAlign: 'center', fontFamily: 'inherit' }}>충돌판 (RCB-4.6)</th>
+                            <th style={{ padding: '5px 7px', textAlign: 'center', fontFamily: 'inherit' }}>
+                              {isEn ? 'Impingement (RCB-4.6)' : '충돌판 (RCB-4.6)'}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3333,7 +3595,7 @@ export default function HeatExchangerWorkbenchModal({
                               nStatus === 'OVERSIZE_NOZZLE'
                                 ? { bg: '#FEF2F2', fg: '#991B1B', text: 'OVERSIZE' }
                                 : nStatus === 'IMPINGEMENT_REQ'
-                                ? { bg: '#FFFBEB', fg: '#92400E', text: '충돌판 필수' }
+                                ? { bg: '#FFFBEB', fg: '#92400E', text: isEn ? 'IMPINGEMENT REQ' : '충돌판 필수' }
                                 : { bg: '#DCFCE7', fg: '#166534', text: 'OK' };
                             return (
                               <tr key={nz.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
@@ -3358,33 +3620,49 @@ export default function HeatExchangerWorkbenchModal({
 
                     <div style={cardBox}>
                       <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A', marginBottom: 7 }}>
-                        열교환기 개념설계 사양서 요약 (Equipment Specification Summary)
+                        {isEn
+                          ? 'Heat Exchanger Equipment Specification Summary'
+                          : '열교환기 개념설계 사양서 요약 (Equipment Specification Summary)'}
                       </div>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                         <tbody>
                           {[
-                            ['기기 번호 / 명칭', `${unitTag} — ${unitLabel}`],
+                            [isEn ? 'Equipment Tag / Service' : '기기 번호 / 명칭', `${unitTag} — ${unitLabel}`],
                             [
-                              '형식 규격',
+                              isEn ? 'Equipment Type' : '형식 규격',
                               dRes.hxKind === 'plate_phe'
-                                ? `가스켓 판형 열교환기 (Chevron ${dRes.pheChevronDeg}°)`
-                                : `TEMA ${dRes.temaType} 다관원통형 (${dRes.shellCount} Shell × ${dRes.tubePasses} Tube Pass)`,
-                            ],
-                            ['적용 주요 재질', dRes.material.label],
-                            ['교환 열부하 Q', `${formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} ${getUnitLabel('heatDuty', dutyUnit)} (${dRes.dutyKW.toFixed(1)} kW)`],
-                            [
-                              '전열 면적 (제공 / 요구)',
-                              `${formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} / ${formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} (여유율 +${dRes.actualOverdesignPct.toFixed(1)}%)`,
+                                ? (isEn
+                                    ? `Gasketed Plate Heat Exchanger (Chevron ${dRes.pheChevronDeg}°)`
+                                    : `가스켓 판형 열교환기 (Chevron ${dRes.pheChevronDeg}°)`)
+                                : (isEn
+                                    ? `TEMA ${dRes.temaType} Shell & Tube (${dRes.shellCount} Shell × ${dRes.tubePasses} Tube Pass)`
+                                    : `TEMA ${dRes.temaType} 다관원통형 (${dRes.shellCount} Shell × ${dRes.tubePasses} Tube Pass)`),
                             ],
                             [
-                              '유효 온도차 / 총괄 U',
+                              isEn ? 'Metallurgy' : '적용 주요 재질',
+                              isEn ? HX_MATERIAL_EN[dRes.material.code].label : dRes.material.label,
+                            ],
+                            [
+                              isEn ? 'Heat Duty Q' : '교환 열부하 Q',
+                              `${formatCanonicalValue('heatDuty', dRes.dutyMcalH, dutyUnit)} ${getUnitLabel('heatDuty', dutyUnit)} (${dRes.dutyKW.toFixed(1)} kW)`,
+                            ],
+                            [
+                              isEn ? 'Heat Transfer Area (Prov / Req)' : '전열 면적 (제공 / 요구)',
+                              `${formatCanonicalValue('area', dRes.areaProvM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} / ${formatCanonicalValue('area', dRes.areaReqM2, areaUnit, 1)} ${getUnitLabel('area', areaUnit)} (${isEn ? 'Overdesign' : '여유율'} +${dRes.actualOverdesignPct.toFixed(1)}%)`,
+                            ],
+                            [
+                              isEn ? 'Effective ΔT / Overall U' : '유효 온도차 / 총괄 U',
                               `CMTD ${formatDeltaT(dRes.cmtdC, tempUnit)} · U = ${formatCanonicalValue('htc', dRes.uCalcKcalM2HC, htcUnit, 0)} ${getUnitLabel('htc', htcUnit)}`,
                             ],
                             [
-                              '기하 주요 치수',
+                              isEn ? 'Principal Dimensions' : '기하 주요 치수',
                               dRes.hxKind === 'plate_phe'
-                                ? `${formatCanonicalValue('length', dRes.phePlateWidthMm / 1000, lenUnit)}W × ${formatCanonicalValue('length', dRes.phePlateHeightMm / 1000, lenUnit)}H ${getUnitLabel('length', lenUnit)} × ${dRes.phePlateCount}매 (팩 ${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)})`
-                                : `동체 ID Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)} · 튜브 Ø${dRes.tubeOdMm}mm×${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} × ${dRes.tubeCountPerShell}본 · 배플 ${dRes.baffleCount}단`,
+                                ? (isEn
+                                    ? `${formatCanonicalValue('length', dRes.phePlateWidthMm / 1000, lenUnit)}W × ${formatCanonicalValue('length', dRes.phePlateHeightMm / 1000, lenUnit)}H ${getUnitLabel('length', lenUnit)} × ${dRes.phePlateCount} plates (Pack ${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)})`
+                                    : `${formatCanonicalValue('length', dRes.phePlateWidthMm / 1000, lenUnit)}W × ${formatCanonicalValue('length', dRes.phePlateHeightMm / 1000, lenUnit)}H ${getUnitLabel('length', lenUnit)} × ${dRes.phePlateCount}매 (팩 ${formatCanonicalValue('length', dRes.phePackLengthMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)})`)
+                                : (isEn
+                                    ? `Shell ID Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)} · Tubes Ø${dRes.tubeOdMm}mm×${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} × ${dRes.tubeCountPerShell} ea · ${dRes.baffleCount} Baffles`
+                                    : `동체 ID Ø${formatCanonicalValue('length', dRes.shellIdMm / 1000, lenUnit)} ${getUnitLabel('length', lenUnit)} · 튜브 Ø${dRes.tubeOdMm}mm×${formatCanonicalValue('length', dRes.tubeLengthM, lenUnit, 2)}${getUnitLabel('length', lenUnit)} × ${dRes.tubeCountPerShell}본 · 배플 ${dRes.baffleCount}단`),
                             ],
                           ].map(([k, v], i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>

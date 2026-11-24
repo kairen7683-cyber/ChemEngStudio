@@ -12,6 +12,7 @@ import {
   formatCanonicalValue,
   getUnitLabel,
 } from '@/lib/units/unitSystem';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import {
   resolveEffectiveDofSlots,
   type DistillCalcMode,
@@ -105,18 +106,19 @@ const DEFAULT_SPEC2: DistillDesignSpec = {
 const SIDECUT_SPEC_OPTIONS: Array<{
   value: SideCutSpecType;
   label: string;
+  labelEn: string;
   unit: string;
   step: number;
   min: number;
   max: number;
 }> = [
-  { value: 'mass_kgh', label: '질량유량 지정 S (kg/h)', unit: 'kg/h', step: 10, min: 0.1, max: 1_000_000 },
-  { value: 's_over_f_mass', label: '공급 대비 질량분배비 S/F (wt/wt)', unit: 'wt/wt', step: 0.01, min: 0.005, max: 0.95 },
-  { value: 's_over_f_mole', label: '공급 대비 몰분배비 S/F (mol/mol)', unit: 'mol/mol', step: 0.01, min: 0.005, max: 0.95 },
-  { value: 'draw_ratio', label: '단 내부유량 대비 인출비 (Draw Ratio 0.01~0.85)', unit: 'ratio', step: 0.02, min: 0.01, max: 0.85 },
-  { value: 'purity_wt_pct', label: '측류 목표 성분순도 (wt%) 역산', unit: 'wt%', step: 0.1, min: 0.1, max: 99.999 },
-  { value: 'recovery_pct', label: '측류 목표 성분회수율 (%) 역산', unit: '%', step: 0.5, min: 1, max: 99.9 },
-  { value: 'impurity_ppm', label: '측류 불순물 한계 (ppm) 역산', unit: 'ppm', step: 25, min: 1, max: 200_000 },
+  { value: 'mass_kgh', label: '질량유량 지정 S (kg/h)', labelEn: 'Mass Flow S (kg/h)', unit: 'kg/h', step: 10, min: 0.1, max: 1_000_000 },
+  { value: 's_over_f_mass', label: '공급 대비 질량분배비 S/F (wt/wt)', labelEn: 'Mass Split S/F (wt/wt)', unit: 'wt/wt', step: 0.01, min: 0.005, max: 0.95 },
+  { value: 's_over_f_mole', label: '공급 대비 몰분배비 S/F (mol/mol)', labelEn: 'Molar Split S/F (mol/mol)', unit: 'mol/mol', step: 0.01, min: 0.005, max: 0.95 },
+  { value: 'draw_ratio', label: '단 내부유량 대비 인출비 (Draw Ratio 0.01~0.85)', labelEn: 'Stage Internal Draw Ratio (0.01~0.85)', unit: 'ratio', step: 0.02, min: 0.01, max: 0.85 },
+  { value: 'purity_wt_pct', label: '측류 목표 성분순도 (wt%) 역산', labelEn: 'Side-Cut Target Purity (wt%)', unit: 'wt%', step: 0.1, min: 0.1, max: 99.999 },
+  { value: 'recovery_pct', label: '측류 목표 성분회수율 (%) 역산', labelEn: 'Side-Cut Target Recovery (%)', unit: '%', step: 0.5, min: 1, max: 99.9 },
+  { value: 'impurity_ppm', label: '측류 불순물 한계 (ppm) 역산', labelEn: 'Side-Cut Impurity Limit (ppm)', unit: 'ppm', step: 25, min: 1, max: 200_000 },
 ];
 
 const SIDECUT_SPEC_META = Object.fromEntries(
@@ -218,6 +220,8 @@ export default function DistillationWorkbenchModal({
   onRunSimulation,
   onChangeConfig,
 }: DistillationWorkbenchModalProps) {
+  const lang = useUnitStore((s) => s.lang);
+  const isEn = lang === 'en';
   const [workspaceView, setWorkspaceView] = useState<'simulation' | 'internals'>(initialView);
   const [leftTab, setLeftTab] = useState<LeftTabId>('specs');
   const [rightChart, setRightChart] = useState<RightChartId>('comp');
@@ -308,7 +312,7 @@ export default function DistillationWorkbenchModal({
 
   const runAiAutoFixDistill = async () => {
     setIsAiBusy(true);
-    setAiStepLabel('후보 조합 및 원인 분석 중...');
+    setAiStepLabel(isEn ? 'Analyzing candidates and root causes...' : '후보 조합 및 원인 분석 중...');
     setAiReport(null);
     try {
       const fix = await autoFixDistillationSimulationAsync(feeds, config, (step, total, label) => {
@@ -329,7 +333,9 @@ export default function DistillationWorkbenchModal({
         result: {
           resolved: false,
           improved: false,
-          headline: `⚠ AI 자동 해결 중 오류가 발생했습니다 (${errMsg})`,
+          headline: isEn
+            ? `⚠ Error occurred during AI Auto-Fix (${errMsg})`
+            : `⚠ AI 자동 해결 중 오류가 발생했습니다 (${errMsg})`,
           rootCauses: [errMsg],
           actionsTaken: [],
           patch: {},
@@ -629,11 +635,11 @@ export default function DistillationWorkbenchModal({
     const selectedCount = mainCount + sideCount;
 
     const activeLabels: string[] = [];
-    if (hasRr) activeLabels.push('① 환류비');
-    if (hasSplit) activeLabels.push('② 유량분할');
-    if (hasTop) activeLabels.push('③ 탑정품질');
-    if (hasBot) activeLabels.push('④ 탑저품질');
-    if (hasSide) activeLabels.push('⑤ 사이드컷');
+    if (hasRr) activeLabels.push(isEn ? '① Reflux Ratio' : '① 환류비');
+    if (hasSplit) activeLabels.push(isEn ? '② Flow Split' : '② 유량분할');
+    if (hasTop) activeLabels.push(isEn ? '③ Top Quality' : '③ 탑정품질');
+    if (hasBot) activeLabels.push(isEn ? '④ Bottoms Quality' : '④ 탑저품질');
+    if (hasSide) activeLabels.push(isEn ? '⑤ Side-Cut' : '⑤ 사이드컷');
 
     const sameEndpointConflict =
       hasTop &&
@@ -650,30 +656,45 @@ export default function DistillationWorkbenchModal({
           selectedCount,
           requiredCount,
           statusLevel: 'error' as const,
-          headline: `⚠️ 자유도 초과 (${mainCount}/2) — 과다 구속`,
-          hint: '고정 단수(⓪) 모드에서는 ①~④ 중 정확히 2개만 선택해야 합니다. 1개 이상 해제하거나 ⓪ 고정 단수를 해제하세요.',
+          headline: isEn
+            ? `⚠️ DOF Exceeded (${mainCount}/2) — Over-Specified`
+            : `⚠️ 자유도 초과 (${mainCount}/2) — 과다 구속`,
+          hint: isEn
+            ? 'In Fixed Stages (⓪) mode, select exactly 2 of ①–④. Deselect at least 1 or uncheck ⓪ Fixed Stages.'
+            : '고정 단수(⓪) 모드에서는 ①~④ 중 정확히 2개만 선택해야 합니다. 1개 이상 해제하거나 ⓪ 고정 단수를 해제하세요.',
         };
       }
       if (mainCount < 2) {
-        let hint = '① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요.';
+        let hint = isEn
+          ? 'Select 2 of ① Reflux Ratio, ② Flow Split, ③ Top Purity, ④ Bottoms Purity.'
+          : '① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요.';
         if (mainCount === 0 && hasSide) {
-          hint =
-            '⑤ 사이드컷 선택 완료 → ① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요 (③ 없이 ①+④+⑤ 또는 ②+④+⑤ 가능).';
+          hint = isEn
+            ? '⑤ Side-Cut selected → Select 2 of ① Reflux Ratio, ② Flow Split, ③ Top Purity, ④ Bottoms Purity (①+④+⑤ or ②+④+⑤ allowed without ③).'
+            : '⑤ 사이드컷 선택 완료 → ① 환류비, ② 유량분할, ③ 탑정순도, ④ 탑저순도 중 2개를 선택하세요 (③ 없이 ①+④+⑤ 또는 ②+④+⑤ 가능).';
         } else if (hasSide && hasBot && !hasTop) {
-          hint =
-            '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.';
+          hint = isEn
+            ? '④ Bottoms Purity + ⑤ Side-Cut selected → Select 1 of ① Reflux Ratio or ② Flow Split to run without ③ Top Purity.'
+            : '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.';
         } else if (hasRr) {
-          hint =
-            '① 탑정 환류비 선택 완료 → 추가로 ② 유량분할 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+          hint = isEn
+            ? '① Reflux Ratio selected → Select 1 more from ② Flow Split, ③ Top Purity, or ④ Bottoms Purity to run.'
+            : '① 탑정 환류비 선택 완료 → 추가로 ② 유량분할 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
         } else if (hasSplit) {
-          hint =
-            '② 유량·분할 조건 선택 완료 → 추가로 ① 환류비 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+          hint = isEn
+            ? '② Flow Split selected → Select 1 more from ① Reflux Ratio, ③ Top Purity, or ④ Bottoms Purity to run.'
+            : '② 유량·분할 조건 선택 완료 → 추가로 ① 환류비 또는 ③ 탑정순도 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
         } else if (hasTop) {
-          hint =
-            '③ 탑정순도 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
+          hint = isEn
+            ? '③ Top Purity selected → Select 1 more from ① Reflux Ratio, ② Flow Split, or ④ Bottoms Purity to run.'
+            : '③ 탑정순도 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 또는 ④ 탑저순도 중 1개를 선택하면 실행할 수 있습니다.';
         } else if (hasBot) {
           hint = hasSide
-            ? '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.'
+            ? isEn
+              ? '④ Bottoms Purity + ⑤ Side-Cut selected → Select 1 of ① Reflux Ratio or ② Flow Split to run without ③ Top Purity.'
+              : '④ 탑저순도 + ⑤ 사이드컷 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 중 1개를 선택하면 ③ 탑정순도 없이 실행할 수 있습니다.'
+            : isEn
+            ? '④ Bottoms Purity selected → Select 1 more from ① Reflux Ratio, ② Flow Split, or ③ Top Purity to run.'
             : '④ 탑저순도 선택 완료 → 추가로 ① 환류비 또는 ② 유량분할 또는 ③ 탑정순도 중 1개를 선택하면 실행할 수 있습니다.';
         }
         return {
@@ -681,7 +702,9 @@ export default function DistillationWorkbenchModal({
           selectedCount,
           requiredCount,
           statusLevel: 'warn' as const,
-          headline: `🟡 추가 조건 ${2 - mainCount}개 선택 필요`,
+          headline: isEn
+            ? `🟡 Select ${2 - mainCount} More Spec${2 - mainCount > 1 ? 's' : ''}`
+            : `🟡 추가 조건 ${2 - mainCount}개 선택 필요`,
           hint,
         };
       }
@@ -691,8 +714,12 @@ export default function DistillationWorkbenchModal({
           selectedCount,
           requiredCount,
           statusLevel: 'error' as const,
-          headline: '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
-          hint: '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
+          headline: isEn
+            ? '⚠️ Duplicate Top (③) & Bottoms (④) Target Component'
+            : '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
+          hint: isEn
+            ? 'Top (③) and Bottoms (④) target components are identical. Choose distinct Light Key (LK) and Heavy Key (HK) components.'
+            : '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
         };
       }
       return {
@@ -700,10 +727,16 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount,
         statusLevel: 'ok' as const,
-        headline: `✓ 자유도 충족 [${activeLabels.join(' + ')}]`,
+        headline: isEn
+          ? `✓ DOF Satisfied [${activeLabels.join(' + ')}]`
+          : `✓ 자유도 충족 [${activeLabels.join(' + ')}]`,
         hint:
           hasSide && !hasTop
-            ? `⑤ 사이드컷 활성: ③ 탑정순도 없이 [${activeLabels.join(' + ')}] 조합으로 정밀 MESH 해석을 실행합니다.`
+            ? isEn
+              ? `⑤ Side-Cut active: Running rigorous MESH with [${activeLabels.join(' + ')}] without ③ Top Purity.`
+              : `⑤ 사이드컷 활성: ③ 탑정순도 없이 [${activeLabels.join(' + ')}] 조합으로 정밀 MESH 해석을 실행합니다.`
+            : isEn
+            ? 'All operating/design degrees of freedom are satisfied. Ready to click [▶ Run].'
             : '모든 운전·설계 자유도가 정확히 충족되어 즉시 [▶ RUN] 실행 가능합니다.',
       };
     }
@@ -715,8 +748,12 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount: 2 + (hasRr ? 1 : 0) + sideCount,
         statusLevel: 'error' as const,
-        headline: '⚠️ 자유도 과다 구속 (③+④ + ② 충돌)',
-        hint: 'AI 최적 단수 모드에서 ③ 탑정품질과 ④ 탑저품질을 동시에 지정하면 ② 유출분배(D/F)는 자동 산출되므로 ②를 해제하거나 ⓪ 고정 단수를 체크하세요.',
+        headline: isEn
+          ? '⚠️ Over-Specified DOF (③+④ conflicts with ②)'
+          : '⚠️ 자유도 과다 구속 (③+④ + ② 충돌)',
+        hint: isEn
+          ? 'In AI Optimal Stages mode, specifying both ③ Top and ④ Bottoms quality automatically determines ② D/F split. Deselect ② or check ⓪ Fixed Stages.'
+          : 'AI 최적 단수 모드에서 ③ 탑정품질과 ④ 탑저품질을 동시에 지정하면 ② 유출분배(D/F)는 자동 산출되므로 ②를 해제하거나 ⓪ 고정 단수를 체크하세요.',
       };
     }
     if (sameEndpointConflict) {
@@ -725,8 +762,12 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount: selectedCount,
         statusLevel: 'error' as const,
-        headline: '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
-        hint: '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
+        headline: isEn
+          ? '⚠️ Duplicate Top (③) & Bottoms (④) Target Component'
+          : '⚠️ 탑정(③)·탑저(④) 목표 성분 중복',
+        hint: isEn
+          ? 'Top (③) and Bottoms (④) target components are identical. Choose distinct Light Key (LK) and Heavy Key (HK) components.'
+          : '탑정(③)과 탑저(④) 목표 성분이 동일합니다. 서로 다른 경질(LK)/중질(HK) 성분을 선택하세요.',
       };
     }
     if (hasSide && !hasTop) {
@@ -736,10 +777,16 @@ export default function DistillationWorkbenchModal({
           selectedCount,
           requiredCount: Math.max(2, selectedCount),
           statusLevel: 'ok' as const,
-          headline: `✓ 사이드컷(⑤) + 탑저(④) AI 단수설계 [${activeLabels.join(' + ')}]`,
-          hint: `⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ${
-            hasRr ? '① 환류비 + ④ 탑저순도' : hasSplit ? '② 유량분할 + ④ 탑저순도' : '④ 탑저순도(환류비 자동최적)'
-          }만으로 N·Nf·측류를 자동 설계합니다.`,
+          headline: isEn
+            ? `✓ Side-Cut (⑤) + Bottoms (④) AI Stage Design [${activeLabels.join(' + ')}]`
+            : `✓ 사이드컷(⑤) + 탑저(④) AI 단수설계 [${activeLabels.join(' + ')}]`,
+          hint: isEn
+            ? `With ⑤ Side-Cut, N, Nf, and side-cut are auto-designed using ${
+                hasRr ? '① Reflux Ratio + ④ Bottoms Purity' : hasSplit ? '② Flow Split + ④ Bottoms Purity' : '④ Bottoms Purity (Auto-Opt RR)'
+              } without ③ Top Purity.`
+            : `⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ${
+                hasRr ? '① 환류비 + ④ 탑저순도' : hasSplit ? '② 유량분할 + ④ 탑저순도' : '④ 탑저순도(환류비 자동최적)'
+              }만으로 N·Nf·측류를 자동 설계합니다.`,
         };
       }
       return {
@@ -747,8 +794,10 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount: Math.max(2, selectedCount + 1),
         statusLevel: 'warn' as const,
-        headline: '🟡 ④ 탑저순도 추가 선택 필요',
-        hint: '⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ④ 탑저순도(또는 ⓪ 고정 단수 체크 후 ①+②)만 선택하면 해석 가능합니다.',
+        headline: isEn ? '🟡 Select ④ Bottoms Purity' : '🟡 ④ 탑저순도 추가 선택 필요',
+        hint: isEn
+          ? 'With ⑤ Side-Cut, select ④ Bottoms Purity (without ③ Top Purity), or check ⓪ Fixed Stages and select ①+②.'
+          : '⑤ 사이드컷 선택 시 ③ 탑정순도 없이 ④ 탑저순도(또는 ⓪ 고정 단수 체크 후 ①+②)만 선택하면 해석 가능합니다.',
       };
     }
     if (hasTop && hasBot) {
@@ -757,9 +806,15 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount: Math.max(2, selectedCount),
         statusLevel: 'ok' as const,
-        headline: `✓ AI 최적 단수·피드단 설계 [${activeLabels.join(' + ')}]`,
+        headline: isEn
+          ? `✓ AI Optimal Stages & Feed Stage Design [${activeLabels.join(' + ')}]`
+          : `✓ AI 최적 단수·피드단 설계 [${activeLabels.join(' + ')}]`,
         hint: hasRr
-          ? '① 지정 환류비 조건에서 ③ 탑정·④ 탑저 목표를 만족하는 최적 단수(N·Nf)와 D/F를 자동 산출합니다.'
+          ? isEn
+            ? 'Auto-calculates optimal stages (N, Nf) and D/F satisfying ③ Top & ④ Bottoms specs at fixed ① Reflux Ratio.'
+            : '① 지정 환류비 조건에서 ③ 탑정·④ 탑저 목표를 만족하는 최적 단수(N·Nf)와 D/F를 자동 산출합니다.'
+          : isEn
+          ? 'Searches optimal stages (N, Nf), reflux ratio, and D/F minimizing TAC while meeting both ③ Top & ④ Bottoms specs.'
           : '③ 탑정·④ 탑저 목표를 동시에 만족하는 최적 단수(N·Nf)·환류비·D/F를 TAC 최소 기준으로 탐색합니다.',
       };
     }
@@ -769,8 +824,10 @@ export default function DistillationWorkbenchModal({
         selectedCount,
         requiredCount: Math.max(2, selectedCount + 1),
         statusLevel: 'warn' as const,
-        headline: '🟡 ④ 탑저품질 추가 선택 필요',
-        hint: '③ 탑정품질 선택 완료 → AI 최적 단수(N·Nf) 설계를 위해 ④ 탑저 제품 순도·회수율을 추가로 선택하세요 (운전 고정은 ⓪ 체크).',
+        headline: isEn ? '🟡 Select ④ Bottoms Quality' : '🟡 ④ 탑저품질 추가 선택 필요',
+        hint: isEn
+          ? '③ Top Quality selected → Add ④ Bottoms Purity/Recovery for AI optimal stage (N, Nf) design (or check ⓪ for fixed stages).'
+          : '③ 탑정품질 선택 완료 → AI 최적 단수(N·Nf) 설계를 위해 ④ 탑저 제품 순도·회수율을 추가로 선택하세요 (운전 고정은 ⓪ 체크).',
       };
     }
     return {
@@ -778,9 +835,13 @@ export default function DistillationWorkbenchModal({
       selectedCount,
       requiredCount: 2 + sideCount,
       statusLevel: 'warn' as const,
-      headline: '🟡 제품 품질 목표(③·④) 선택 필요',
+      headline: isEn ? '🟡 Select Product Quality Specs (③ · ④)' : '🟡 제품 품질 목표(③·④) 선택 필요',
       hint: hasBot
-        ? '④ 탑저품질 선택 완료 → ③ 탑정품질을 추가하거나 ⑤ 사이드컷을 선택하면 AI 최적 단수(N·Nf)를 자동 설계합니다.'
+        ? isEn
+          ? '④ Bottoms Quality selected → Add ③ Top Quality or ⑤ Side-Cut for AI optimal stage (N, Nf) auto-design.'
+          : '④ 탑저품질 선택 완료 → ③ 탑정품질을 추가하거나 ⑤ 사이드컷을 선택하면 AI 최적 단수(N·Nf)를 자동 설계합니다.'
+        : isEn
+        ? 'In AI Optimal Stages mode (⓪ unchecked), select ③+④ (or ④ / ①+④ / ②+④ with ⑤ Side-Cut). Check ⓪ Fixed Stages to run with ①+②.'
         : 'AI 최적 단수(⓪ 해제) 모드에서는 ③+④ (또는 ⑤ 사이드컷 시 ④ 단독/①+④/②+④)를 선택하세요. ①+②만으로 실행하려면 ⓪ 고정 단수를 체크하세요.',
     };
   })();
@@ -841,21 +902,31 @@ export default function DistillationWorkbenchModal({
   const complementRatioText = (() => {
     if (splitSpecType === 'd_over_f_mass') {
       const bf = Math.max(0, 1 - splitSpecValue);
-      return `자동 연동 B/F (질량비) = ${bf.toFixed(4)} (${(bf * 100).toFixed(1)}%)`;
+      return isEn
+        ? `Linked B/F (mass) = ${bf.toFixed(4)} (${(bf * 100).toFixed(1)}%)`
+        : `자동 연동 B/F (질량비) = ${bf.toFixed(4)} (${(bf * 100).toFixed(1)}%)`;
     }
     if (splitSpecType === 'b_over_f_mass') {
       const df = Math.max(0, 1 - splitSpecValue);
-      return `자동 연동 D/F (질량비) = ${df.toFixed(4)} (${(df * 100).toFixed(1)}%)`;
+      return isEn
+        ? `Linked D/F (mass) = ${df.toFixed(4)} (${(df * 100).toFixed(1)}%)`
+        : `자동 연동 D/F (질량비) = ${df.toFixed(4)} (${(df * 100).toFixed(1)}%)`;
     }
     if (splitSpecType === 'd_over_f_mole') {
       const bf = Math.max(0, 1 - splitSpecValue);
-      return `자동 연동 B/F (몰비) = ${bf.toFixed(4)}`;
+      return isEn
+        ? `Linked B/F (molar) = ${bf.toFixed(4)}`
+        : `자동 연동 B/F (몰비) = ${bf.toFixed(4)}`;
     }
     if (splitSpecType === 'distillate_kgh' && totalFeedKgH > 0) {
-      return `자동 연동 탑저 유량 B ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`;
+      return isEn
+        ? `Linked Bottoms Flow B ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`
+        : `자동 연동 탑저 유량 B ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`;
     }
     if (splitSpecType === 'bottoms_kgh' && totalFeedKgH > 0) {
-      return `자동 연동 탑정 유량 D ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`;
+      return isEn
+        ? `Linked Distillate Flow D ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`
+        : `자동 연동 탑정 유량 D ≈ ${Math.max(0, totalFeedKgH - splitSpecValue).toFixed(1)} kg/h`;
     }
     return '';
   })();
@@ -914,7 +985,7 @@ export default function DistillationWorkbenchModal({
   const renderCompOptGroups = () => (
     <>
       {feedSortedComps.length > 0 && (
-        <optgroup label="현재 유입 성분 (비점 순)">
+        <optgroup label={isEn ? 'Feed Components (by BP)' : '현재 유입 성분 (비점 순)'}>
           {feedSortedComps.map((ck) => (
             <option key={ck} value={ck}>
               {formatCompOptionWithBp(ck)}
@@ -922,7 +993,7 @@ export default function DistillationWorkbenchModal({
           ))}
         </optgroup>
       )}
-      <optgroup label="기타 시뮬레이션 성분">
+      <optgroup label={isEn ? 'Other Simulation Components' : '기타 시뮬레이션 성분'}>
         {otherSortedComps.map((ck) => (
           <option key={ck} value={ck}>
             {formatCompOptionWithBp(ck)}
@@ -971,7 +1042,9 @@ export default function DistillationWorkbenchModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 900, color: sideCutEnabled ? '#4C1D95' : '#334155' }}>
-              ⑤ 사이드컷(측류) 조건 · Side-Cut (③ 탑정순도 없이 ①+④+⑤ 또는 ②+④+⑤ 지원)
+              {isEn
+                ? '⑤ Side-Cut Spec (Supports ①+④+⑤ or ②+④+⑤ without ③ Top Purity)'
+                : '⑤ 사이드컷(측류) 조건 · Side-Cut (③ 탑정순도 없이 ①+④+⑤ 또는 ②+④+⑤ 지원)'}
             </span>
           </div>
 
@@ -998,7 +1071,7 @@ export default function DistillationWorkbenchModal({
                 onChange={toggleSideCutEnabled}
                 style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
               />
-              <span>사이드컷(측류, Side-Cut) 인출 활성화</span>
+              <span>{isEn ? 'Enable Side-Cut Draw' : '사이드컷(측류, Side-Cut) 인출 활성화'}</span>
             </label>
           </div>
         </div>
@@ -1018,7 +1091,9 @@ export default function DistillationWorkbenchModal({
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>빠른 공정 프리셋:</span>
+                <span style={{ fontSize: 10, fontWeight: 900, color: '#6B21A8' }}>
+                  {isEn ? 'Quick Process Presets:' : '빠른 공정 프리셋:'}
+                </span>
                 <button
                   type="button"
                   onClick={() =>
@@ -1041,7 +1116,7 @@ export default function DistillationWorkbenchModal({
                     cursor: 'pointer',
                   }}
                 >
-                  🧪 파스퇴르 정제품 측류 (상부 3단 액상)
+                  {isEn ? '🧪 Pasteurization Product Side-Cut (Stage 3 Liq)' : '🧪 파스퇴르 정제품 측류 (상부 3단 액상)'}
                 </button>
                 <button
                   type="button"
@@ -1074,23 +1149,25 @@ export default function DistillationWorkbenchModal({
                     cursor: 'pointer',
                   }}
                 >
-                  🎯 중간비점 농축 측류 (최적단 AI 자동탐색)
+                  {isEn ? '🎯 Mid-Boiler Enriched Side-Cut (AI Auto Stage)' : '🎯 중간비점 농축 측류 (최적단 AI 자동탐색)'}
                 </button>
               </div>
               <div style={{ fontSize: 10, color: '#6B21A8', lineHeight: 1.35 }}>
-                💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.
+                {isEn
+                  ? '💡 In pasteurization mode, overhead (D) purges trace light impurities while high-purity main product is drawn from the upper side-cut (S).'
+                  : '💡 파스퇴르 정제 운전 시 탑정(D)은 상부 미량 저비점(Lights) 불순물을 소량 퍼지(Purge)하고, 상부 측류(S)로 고순도 주제품을 인출합니다.'}
               </div>
             </div>
 
             {/* 인출 상(Phase) + 인출 단(Stage) + 최적단 자동탐색 */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.05fr 0.95fr', gap: 8 }}>
               <div>
-                <label style={labelStyle}>인출 상 (Phase)</label>
+                <label style={labelStyle}>{isEn ? 'Draw Phase' : '인출 상 (Phase)'}</label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
                   {(
                     [
-                      { id: 'liquid', lbl: '💧 액상 (Liquid — 침니 트레이)' },
-                      { id: 'vapor', lbl: '💨 기상 (Vapor)' },
+                      { id: 'liquid', lbl: isEn ? '💧 Liquid (Chimney Tray)' : '💧 액상 (Liquid — 침니 트레이)' },
+                      { id: 'vapor', lbl: isEn ? '💨 Vapor' : '💨 기상 (Vapor)' },
                     ] as { id: SideCutPhase; lbl: string }[]
                   ).map((ph) => {
                     const active = sideCutCfg.phase === ph.id;
@@ -1124,7 +1201,7 @@ export default function DistillationWorkbenchModal({
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, gap: 4 }}>
                   <label style={{ ...labelStyle, marginBottom: 0 }}>
-                    인출 단번호 (2 ~ {maxSideStage}단)
+                    {isEn ? `Draw Stage (2 ~ ${maxSideStage})` : `인출 단번호 (2 ~ ${maxSideStage}단)`}
                   </label>
                   {result?.sideCutStageUsed && (
                     <span
@@ -1138,7 +1215,7 @@ export default function DistillationWorkbenchModal({
                         fontFamily: MONO,
                       }}
                     >
-                      실제 적용: {result.sideCutStageUsed}단
+                      {isEn ? `Applied: Stg ${result.sideCutStageUsed}` : `실제 적용: ${result.sideCutStageUsed}단`}
                       {result.sideCutTempC !== undefined ? ` (${result.sideCutTempC.toFixed(1)}°C)` : ''}
                     </span>
                   )}
@@ -1183,7 +1260,7 @@ export default function DistillationWorkbenchModal({
                     onChange={(e) => updateSideCut({ autoOptimizeStage: e.target.checked })}
                     style={{ width: 13.5, height: 13.5, cursor: 'pointer', accentColor: '#7C3AED' }}
                   />
-                  <span>✨ 최적 인출단 자동탐색 (피크 농도단)</span>
+                  <span>{isEn ? '✨ Auto-Find Optimal Draw Stage (Peak Conc.)' : '✨ 최적 인출단 자동탐색 (피크 농도단)'}</span>
                 </label>
               </div>
             </div>
@@ -1201,7 +1278,7 @@ export default function DistillationWorkbenchModal({
               }}
             >
               <div>
-                <label style={labelStyle}>제어 변수 선택</label>
+                <label style={labelStyle}>{isEn ? 'Control Variable' : '제어 변수 선택'}</label>
                 <select
                   value={sideCutCfg.specType}
                   onChange={(e) => {
@@ -1221,7 +1298,7 @@ export default function DistillationWorkbenchModal({
                 >
                   {SIDECUT_SPEC_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                      {isEn ? opt.labelEn : opt.label}
                     </option>
                   ))}
                 </select>
@@ -1229,7 +1306,7 @@ export default function DistillationWorkbenchModal({
 
               {showTargetComp && (
                 <div>
-                  <label style={labelStyle}>기준 성분 (Target)</label>
+                  <label style={labelStyle}>{isEn ? 'Target Component' : '기준 성분 (Target)'}</label>
                   <select
                     value={effectiveTargetComp}
                     onChange={(e) => updateSideCut({ targetComp: e.target.value as SimCompKey })}
@@ -1242,7 +1319,9 @@ export default function DistillationWorkbenchModal({
 
               <div>
                 <label style={labelStyle}>
-                  {sideCutCfg.specType === 'mass_kgh' ? '목표 질량유량 S' : `목표 수치 (${specMeta.unit})`}
+                  {sideCutCfg.specType === 'mass_kgh'
+                    ? isEn ? 'Target Mass Flow S' : '목표 질량유량 S'
+                    : isEn ? `Target Value (${specMeta.unit})` : `목표 수치 (${specMeta.unit})`}
                 </label>
                 {sideCutCfg.specType === 'mass_kgh' ? (
                   <UnitNumberInput
@@ -1280,7 +1359,7 @@ export default function DistillationWorkbenchModal({
                 )}
                 {sideCutCfg.specType === 's_over_f_mole' && (
                   <div style={{ fontSize: 9.8, color: '#64748B', marginTop: 3, fontFamily: MONO }}>
-                    몰분배 {(sideCutCfg.specValue * 100).toFixed(1)} mol%
+                    {isEn ? `Molar split ${(sideCutCfg.specValue * 100).toFixed(1)} mol%` : `몰분배 ${(sideCutCfg.specValue * 100).toFixed(1)} mol%`}
                   </div>
                 )}
               </div>
@@ -1349,7 +1428,9 @@ export default function DistillationWorkbenchModal({
             textAlign: 'center',
           }}
         >
-          유입 피드 배관을 연결하면 단별(Stage 1 ~ {N}) 엄밀 MESH 프로파일이 즉시 계산됩니다.
+          {isEn
+            ? `Connect a feed stream to immediately compute rigorous stage-by-stage MESH profiles (Stage 1 ~ ${N}).`
+            : `유입 피드 배관을 연결하면 단별(Stage 1 ~ ${N}) 엄밀 MESH 프로파일이 즉시 계산됩니다.`}
         </div>
       );
     }
@@ -1390,7 +1471,9 @@ export default function DistillationWorkbenchModal({
             fill="#7C3AED"
             fontWeight={800}
           >
-            {`◀ S 측류 (${result.sideCutStageUsed}단 · ${result.sideCutPhase === 'G' ? '기상' : '액상'} ${result.sideCutMassKgH!.toFixed(1)} kg/h)`}
+            {isEn
+              ? `◀ S Side-Cut (Stg ${result.sideCutStageUsed} · ${result.sideCutPhase === 'G' ? 'Vap' : 'Liq'} ${result.sideCutMassKgH!.toFixed(1)} kg/h)`
+              : `◀ S 측류 (${result.sideCutStageUsed}단 · ${result.sideCutPhase === 'G' ? '기상' : '액상'} ${result.sideCutMassKgH!.toFixed(1)} kg/h)`}
           </text>
         </g>
       );
@@ -1430,7 +1513,9 @@ export default function DistillationWorkbenchModal({
                 strokeDasharray={stNum === primaryFeedStage ? '4 2' : undefined}
               />
               <text x={6} y={yOfStage(stNum) + 4} fontSize={10} fill="#475569" fontWeight={700}>
-                {stNum === 1 ? '1(탑정)' : stNum === stages.length ? `${stNum}(탑저)` : `F:${stNum}단`}
+                {isEn
+                  ? stNum === 1 ? '1(Top)' : stNum === stages.length ? `${stNum}(Bot)` : `F:${stNum}`
+                  : stNum === 1 ? '1(탑정)' : stNum === stages.length ? `${stNum}(탑저)` : `F:${stNum}단`}
               </text>
             </g>
           ))}
@@ -1458,7 +1543,9 @@ export default function DistillationWorkbenchModal({
             );
           })}
           <text x={W - padR} y={15} fontSize={10.5} textAnchor="end" fill="#0369A1" fontWeight={800}>
-            탑정 {result?.topTempC.toFixed(1)}°C → 탑저 {result?.bottomTempC.toFixed(1)}°C
+            {isEn
+              ? `Top ${result?.topTempC.toFixed(1)}°C → Bot ${result?.bottomTempC.toFixed(1)}°C`
+              : `탑정 ${result?.topTempC.toFixed(1)}°C → 탑저 ${result?.bottomTempC.toFixed(1)}°C`}
           </text>
         </svg>
       );
@@ -1500,7 +1587,9 @@ export default function DistillationWorkbenchModal({
                 strokeDasharray={stNum === primaryFeedStage ? '4 2' : undefined}
               />
               <text x={6} y={yOfStage(stNum) + 4} fontSize={10} fill="#475569" fontWeight={700}>
-                {stNum === 1 ? '1단' : stNum === stages.length ? `${stNum}단` : `F:${stNum}단`}
+                {isEn
+                  ? stNum === 1 ? 'Stg 1' : stNum === stages.length ? `Stg ${stNum}` : `F:${stNum}`
+                  : stNum === 1 ? '1단' : stNum === stages.length ? `${stNum}단` : `F:${stNum}단`}
               </text>
             </g>
           ))}
@@ -1517,10 +1606,10 @@ export default function DistillationWorkbenchModal({
             );
           })}
           <text x={padL + 4} y={15} fontSize={10} fill="#2563EB" fontWeight={800}>
-            ━ 내부 액상유량 L (kg/h)
+            {isEn ? '━ Internal Liquid L (kg/h)' : '━ 내부 액상유량 L (kg/h)'}
           </text>
           <text x={padL + 160} y={15} fontSize={10} fill="#EA580C" fontWeight={800}>
-            ┅ 내부 기상유량 V (kg/h)
+            {isEn ? '┅ Internal Vapor V (kg/h)' : '┅ 내부 기상유량 V (kg/h)'}
           </text>
         </svg>
       );
@@ -1559,7 +1648,9 @@ export default function DistillationWorkbenchModal({
                 strokeDasharray={stNum === primaryFeedStage ? '4 2' : undefined}
               />
               <text x={5} y={yOfStage(stNum) + 4} fontSize={10} fill="#475569" fontWeight={700}>
-                {stNum === 1 ? '1(탑정)' : stNum === stages.length ? `${stNum}(탑저)` : `F:${stNum}단`}
+                {isEn
+                  ? stNum === 1 ? '1(Top)' : stNum === stages.length ? `${stNum}(Bot)` : `F:${stNum}`
+                  : stNum === 1 ? '1(탑정)' : stNum === stages.length ? `${stNum}(탑저)` : `F:${stNum}단`}
               </text>
             </g>
           ))}
@@ -1646,7 +1737,13 @@ export default function DistillationWorkbenchModal({
                   color: hiddenTrace ? '#94A3B8' : '#1E293B',
                   opacity: hiddenTrace ? 0.78 : 1,
                 }}
-                title={hiddenTrace ? '선형 스케일에서 0.08 wt% 미만 미량 성분 — 우측 상단 [ppm 로그 스케일] 버튼으로 확인 가능' : undefined}
+                title={
+                  hiddenTrace
+                    ? isEn
+                      ? 'Trace component (<0.08 wt%) on linear scale — switch to [ppm Log Scale] button at top-right to view'
+                      : '선형 스케일에서 0.08 wt% 미만 미량 성분 — 우측 상단 [ppm 로그 스케일] 버튼으로 확인 가능'
+                    : undefined
+                }
               >
                 <span
                   style={{
@@ -1658,7 +1755,7 @@ export default function DistillationWorkbenchModal({
                   }}
                 />
                 {COMP_META[ck]?.formula ?? ck}
-                {hiddenTrace && <span style={{ fontSize: 9.5, fontWeight: 600 }}>(미량)</span>}
+                {hiddenTrace && <span style={{ fontSize: 9.5, fontWeight: 600 }}>{isEn ? '(trace)' : '(미량)'}</span>}
               </span>
             );
           })}
@@ -1694,10 +1791,14 @@ export default function DistillationWorkbenchModal({
           }}
         >
           <span style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
-            ✨ 다중후보 (단수 · 공급단 · 환류비 · 탑정유량) 수렴 & 총연간비용(TAC) 비교표
+            {isEn
+              ? '✨ Multi-Candidate (Stages · Feed · RR · Distillate) Convergence & TAC Comparison'
+              : '✨ 다중후보 (단수 · 공급단 · 환류비 · 탑정유량) 수렴 & 총연간비용(TAC) 비교표'}
           </span>
           <span style={{ fontSize: 9.8, color: '#475569', fontWeight: 700 }}>
-            TAC 지수 100.0 = 연간 투자비+에너지비 최저 최적안
+            {isEn
+              ? 'TAC Index 100.0 = Lowest Total Annualized Cost (CAPEX + Energy)'
+              : 'TAC 지수 100.0 = 연간 투자비+에너지비 최저 최적안'}
           </span>
         </div>
         <div style={{ overflowX: 'auto' }}>
@@ -1714,21 +1815,21 @@ export default function DistillationWorkbenchModal({
           >
             <thead>
               <tr style={{ background: '#E2E8F0', color: '#1E293B', textAlign: 'right' }}>
-                <th style={{ padding: '5px 7px', textAlign: 'left', fontWeight: 900 }}>설계 후보</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>단수 N (실단)</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>피드 Nf</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>환류비 RR</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑정 D (kg/h)</th>
+                <th style={{ padding: '5px 7px', textAlign: 'left', fontWeight: 900 }}>{isEn ? 'Candidate' : '설계 후보'}</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Stages N (Act)' : '단수 N (실단)'}</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Feed Nf' : '피드 Nf'}</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Reflux RR' : '환류비 RR'}</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Dist. D (kg/h)' : '탑정 D (kg/h)'}</th>
                 {hasSideCutCols && (
                   <>
-                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>측류단</th>
-                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>측류 S/F</th>
+                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>{isEn ? 'Side Stg' : '측류단'}</th>
+                    <th style={{ padding: '5px 6px', fontWeight: 900, color: '#6D28D9' }}>{isEn ? 'Side S/F' : '측류 S/F'}</th>
                   </>
                 )}
                 <th style={{ padding: '5px 6px', fontWeight: 900 }}>Q_reb (kW)</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>탑경 (m)</th>
-                <th style={{ padding: '5px 6px', fontWeight: 900 }}>상대 TAC</th>
-                <th style={{ padding: '5px 6px', textAlign: 'center', fontWeight: 900 }}>적용</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Dia. (m)' : '탑경 (m)'}</th>
+                <th style={{ padding: '5px 6px', fontWeight: 900 }}>{isEn ? 'Rel. TAC' : '상대 TAC'}</th>
+                <th style={{ padding: '5px 6px', textAlign: 'center', fontWeight: 900 }}>{isEn ? 'Apply' : '적용'}</th>
               </tr>
             </thead>
             <tbody>
@@ -1765,7 +1866,7 @@ export default function DistillationWorkbenchModal({
                             color: c.specsMet ? '#166534' : '#92400E',
                           }}
                         >
-                          {c.specsMet ? '✓ 달성' : '⚠ 근접'}
+                          {c.specsMet ? (isEn ? '✓ Met' : '✓ 달성') : (isEn ? '⚠ Near' : '⚠ 근접')}
                         </span>
                       </div>
                     </td>
@@ -1781,7 +1882,7 @@ export default function DistillationWorkbenchModal({
                     {hasSideCutCols && (
                       <>
                         <td style={{ padding: '5px 6px', color: '#6D28D9', fontWeight: 800 }}>
-                          {c.sideCutStage ? `${c.sideCutStage}단` : '-'}
+                          {c.sideCutStage ? (isEn ? `Stg ${c.sideCutStage}` : `${c.sideCutStage}단`) : '-'}
                         </td>
                         <td style={{ padding: '5px 6px', color: '#6D28D9', fontWeight: 700 }}>
                           {c.sOverFMass !== undefined
@@ -1834,7 +1935,9 @@ export default function DistillationWorkbenchModal({
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {contextMode === 'design_stages' ? '정밀모사 확정' : '이 후보 고정'}
+                        {contextMode === 'design_stages'
+                          ? isEn ? 'Lock Rigorous Sim' : '정밀모사 확정'
+                          : isEn ? 'Lock Candidate' : '이 후보 고정'}
                       </button>
                     </td>
                   </tr>
@@ -1900,7 +2003,9 @@ export default function DistillationWorkbenchModal({
               <div style={{ minWidth: 0, flex: 1 }}>
                 {isMobile && (
                   <div style={{ fontSize: 9.8, fontWeight: 700, color: '#93C5FD', letterSpacing: 0.2, marginBottom: 2 }}>
-                    다단 정밀증류 통합 시뮬레이션 &amp; 단수·유량 자동역산 워크벤치
+                    {isEn
+                      ? 'Rigorous Multistage Distillation & Auto Stage/Flow Workbench'
+                      : '다단 정밀증류 통합 시뮬레이션 & 단수·유량 자동역산 워크벤치'}
                   </div>
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
@@ -1932,7 +2037,7 @@ export default function DistillationWorkbenchModal({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      ⏳ 수렴 계산 중...
+                      {isEn ? '⏳ Converging...' : '⏳ 수렴 계산 중...'}
                     </span>
                   ) : isSimDirty ? (
                     <span
@@ -1948,12 +2053,16 @@ export default function DistillationWorkbenchModal({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      ⏸ 입력 변경됨 · RUN 필요
+                      {isEn ? '⏸ Inputs Changed · Run Needed' : '⏸ 입력 변경됨 · RUN 필요'}
                     </span>
                   ) : (
                     result && (
                       <span
-                        title={`${result.thermoModelUsed} · ${result.innerIterations}회 반복`}
+                        title={
+                          isEn
+                            ? `${result.thermoModelUsed} · ${result.innerIterations} iterations`
+                            : `${result.thermoModelUsed} · ${result.innerIterations}회 반복`
+                        }
                         style={{
                           flexShrink: 0,
                           fontSize: 10,
@@ -1975,7 +2084,7 @@ export default function DistillationWorkbenchModal({
                           ? `✕ ${result.diagnostics.badgeText}`
                           : result.diagnostics?.level === 'warning'
                           ? `⚠ ${result.diagnostics.badgeText}`
-                          : `✓ ${result.diagnostics?.badgeText ?? '정상 수렴'}`}
+                          : `✓ ${result.diagnostics?.badgeText ?? (isEn ? 'Converged' : '정상 수렴')}`}
                       </span>
                     )
                   )}
@@ -1986,7 +2095,7 @@ export default function DistillationWorkbenchModal({
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  aria-label="워크벤치 닫기"
+                  aria-label={isEn ? 'Close workbench' : '워크벤치 닫기'}
                   style={{
                     flexShrink: 0,
                     padding: '5px 10px',
@@ -2016,13 +2125,27 @@ export default function DistillationWorkbenchModal({
                 textOverflow: 'ellipsis',
               }}
             >
-              {calcMode === 'design_stages' ? '자동 ' : ''}
-              <b>{N}단</b> (실제 {actualTrays}단) · 피드 {primaryFeedStage}단 (권장 {recFeedStage}단) · Ø
-              {(result?.estimatedDiameterM ?? 1.2).toFixed(2)}m
-              {result?.sideCutStageUsed && (result?.sideCutMassKgH ?? 0) > 1e-4
-                ? ` · 측류 S ${result.sideCutStageUsed}단 (${result.sideCutMassKgH!.toFixed(1)} kg/h)`
-                : ''}
-              {lastRunStamp ? ` · ${lastRunStamp}` : ''}
+              {isEn ? (
+                <>
+                  {calcMode === 'design_stages' ? 'Auto ' : ''}
+                  <b>{N} stages</b> ({actualTrays} actual) · Feed Stg {primaryFeedStage} (rec. {recFeedStage}) · Ø
+                  {(result?.estimatedDiameterM ?? 1.2).toFixed(2)}m
+                  {result?.sideCutStageUsed && (result?.sideCutMassKgH ?? 0) > 1e-4
+                    ? ` · Side-Cut S Stg ${result.sideCutStageUsed} (${result.sideCutMassKgH!.toFixed(1)} kg/h)`
+                    : ''}
+                  {lastRunStamp ? ` · ${lastRunStamp}` : ''}
+                </>
+              ) : (
+                <>
+                  {calcMode === 'design_stages' ? '자동 ' : ''}
+                  <b>{N}단</b> (실제 {actualTrays}단) · 피드 {primaryFeedStage}단 (권장 {recFeedStage}단) · Ø
+                  {(result?.estimatedDiameterM ?? 1.2).toFixed(2)}m
+                  {result?.sideCutStageUsed && (result?.sideCutMassKgH ?? 0) > 1e-4
+                    ? ` · 측류 S ${result.sideCutStageUsed}단 (${result.sideCutMassKgH!.toFixed(1)} kg/h)`
+                    : ''}
+                  {lastRunStamp ? ` · ${lastRunStamp}` : ''}
+                </>
+              )}
             </div>
           </div>
 
@@ -2067,7 +2190,7 @@ export default function DistillationWorkbenchModal({
                   textAlign: 'center',
                 }}
               >
-                ① 공정 시뮬레이션
+                {isEn ? '① Process Simulation & Profiles' : '① 공정 시뮬레이션'}
               </button>
               <button
                 type="button"
@@ -2085,7 +2208,7 @@ export default function DistillationWorkbenchModal({
                   textAlign: 'center',
                 }}
               >
-                ② 컬럼 사이징·인터널
+                {isEn ? '② Column Sizing & Internals' : '② 컬럼 사이징·인터널'}
               </button>
             </div>
 
@@ -2112,14 +2235,22 @@ export default function DistillationWorkbenchModal({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {isAiBusy ? (aiStepLabel ? `⏳ ${aiStepLabel}` : '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+                  {isAiBusy
+                    ? aiStepLabel
+                      ? `⏳ ${aiStepLabel}`
+                      : isEn ? '⏳ AI Analyzing...' : '⏳ AI 분석 중...'
+                    : isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결'}
                 </button>
                 {onRunSimulation && (
                   <button
                     type="button"
                     onClick={triggerRunSimulation}
                     disabled={isRunningFeedback || !dofEvaluation.canRun}
-                    title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행'}
+                    title={
+                      !dofEvaluation.canRun
+                        ? dofEvaluation.hint
+                        : isEn ? 'Run multistage MESH simulation' : '다단 MESH 시뮬레이션 실행'
+                    }
                     style={{
                       flex: 1,
                       padding: '6px 10px',
@@ -2142,7 +2273,11 @@ export default function DistillationWorkbenchModal({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {isRunningFeedback ? '⏳ 계산 중...' : !dofEvaluation.canRun ? '▶ RUN (조건 필요)' : '▶ RUN 실행'}
+                    {isRunningFeedback
+                      ? isEn ? '⏳ Running...' : '⏳ 계산 중...'
+                      : !dofEvaluation.canRun
+                      ? isEn ? '▶ Run (Check DOF)' : '▶ RUN (조건 필요)'
+                      : isEn ? '▶ Run' : '▶ RUN 실행'}
                   </button>
                 )}
               </div>
@@ -2168,14 +2303,22 @@ export default function DistillationWorkbenchModal({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {isAiBusy ? (aiStepLabel ? `⏳ ${aiStepLabel}` : '⏳ AI 분석 중...') : '✨ AI 자동 해결'}
+                  {isAiBusy
+                    ? aiStepLabel
+                      ? `⏳ ${aiStepLabel}`
+                      : isEn ? '⏳ AI Analyzing...' : '⏳ AI 분석 중...'
+                    : isEn ? '✨ AI Auto-Fix' : '✨ AI 자동 해결'}
                 </button>
                 {onRunSimulation && (
                   <button
                     type="button"
                     onClick={triggerRunSimulation}
                     disabled={isRunningFeedback || !dofEvaluation.canRun}
-                    title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행 (F5)'}
+                    title={
+                      !dofEvaluation.canRun
+                        ? dofEvaluation.hint
+                        : isEn ? 'Run multistage MESH simulation (F5)' : '다단 MESH 시뮬레이션 실행 (F5)'
+                    }
                     style={{
                       padding: '5px 11px',
                       borderRadius: 6,
@@ -2210,19 +2353,19 @@ export default function DistillationWorkbenchModal({
                     }}
                   >
                     {isRunningFeedback
-                      ? '⏳ 계산 중...'
+                      ? isEn ? '⏳ Running...' : '⏳ 계산 중...'
                       : !dofEvaluation.canRun
-                      ? '▶ RUN (자유도 확인)'
+                      ? isEn ? '▶ Run (Check DOF)' : '▶ RUN (자유도 확인)'
                       : isSimDirty
-                      ? '▶ RUN 실행'
-                      : '▶ RUN (F5)'}
+                      ? isEn ? '▶ Run' : '▶ RUN 실행'
+                      : isEn ? '▶ Run (F5)' : '▶ RUN (F5)'}
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={handleCloseModal}
-                  aria-label="워크벤치 닫기"
-                  title="닫기 (Esc)"
+                  aria-label={isEn ? 'Close workbench' : '워크벤치 닫기'}
+                  title={isEn ? 'Close (Esc)' : '닫기 (Esc)'}
                   style={{
                     padding: '5px 10px',
                     borderRadius: 6,
@@ -2275,7 +2418,9 @@ export default function DistillationWorkbenchModal({
           >
             {isAiBusy ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', color: '#3730A3' }}>
-                <span style={{ fontWeight: 900 }}>⏳ ✨ AI 자동 해결 탐색 중...</span>
+                <span style={{ fontWeight: 900 }}>
+                  {isEn ? '⏳ ✨ Running AI Auto-Fix Search...' : '⏳ ✨ AI 자동 해결 탐색 중...'}
+                </span>
                 {aiStepLabel && (
                   <span
                     style={{
@@ -2309,12 +2454,14 @@ export default function DistillationWorkbenchModal({
                 </div>
                 {aiReport.result.rootCauses.length > 0 && (
                   <div style={{ color: '#475569', fontSize: 10.6 }}>
-                    원인: {aiReport.result.rootCauses.slice(0, 2).join(' · ')}
+                    {isEn ? 'Root Cause: ' : '원인: '}
+                    {aiReport.result.rootCauses.slice(0, 2).join(' · ')}
                   </div>
                 )}
                 {aiReport.result.actionsTaken.length > 0 && (
                   <div style={{ color: '#1E293B', fontWeight: 700, fontSize: 10.8 }}>
-                    조치: {aiReport.result.actionsTaken.join(' · ')}
+                    {isEn ? 'Actions: ' : '조치: '}
+                    {aiReport.result.actionsTaken.join(' · ')}
                   </div>
                 )}
                 {aiReport.geminiNote && (
@@ -2340,7 +2487,7 @@ export default function DistillationWorkbenchModal({
                   cursor: 'pointer',
                 }}
               >
-                ✕ 닫기
+                {isEn ? '✕ Close' : '✕ 닫기'}
               </button>
             )}
           </div>
@@ -2395,7 +2542,7 @@ export default function DistillationWorkbenchModal({
                   cursor: 'pointer',
                 }}
               >
-                ⚙ 분리조건 · 유량 입력
+                {isEn ? '⚙ Specs & Flows' : '⚙ 분리조건 · 유량 입력'}
               </button>
               <button
                 type="button"
@@ -2411,7 +2558,7 @@ export default function DistillationWorkbenchModal({
                   cursor: 'pointer',
                 }}
               >
-                📈 단별 프로파일 · 결과표
+                {isEn ? '📈 Stage Profiles & Table' : '📈 단별 프로파일 · 결과표'}
               </button>
             </div>
           )}
@@ -2454,15 +2601,24 @@ export default function DistillationWorkbenchModal({
                 [
                   {
                     id: 'specs',
-                    label: `① 운전·설계 변수 (${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount})`,
+                    label: isEn
+                      ? `① Operating & Design Specs (${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount})`
+                      : `① 운전·설계 변수 (${dofEvaluation.selectedCount}/${dofEvaluation.requiredCount})`,
                   },
                   {
                     id: 'tower',
                     label: isFixedStages
-                      ? `② 탑 단수·피드단 구성 (N=${N}단)`
+                      ? isEn
+                        ? `② Stages & Feed Config (N=${N})`
+                        : `② 탑 단수·피드단 구성 (N=${N}단)`
+                      : isEn
+                      ? `② Condenser, Reboiler & Feeds (${feeds.length})`
                       : `② 응축기·리보일러·피드 (${feeds.length}개)`,
                   },
-                  { id: 'pressure', label: '③ 압력·열역학·효율' },
+                  {
+                    id: 'pressure',
+                    label: isEn ? '③ Pressure, Thermo & Eff.' : '③ 압력·열역학·효율',
+                  },
                 ] as { id: LeftTabId; label: string }[]
               ).map((tb) => {
                 const active = leftTab === tb.id;
@@ -2517,7 +2673,9 @@ export default function DistillationWorkbenchModal({
                         fontWeight: 800,
                       }}
                     >
-                      ⏳ 다단 MESH 기액평형 행렬 및 물질·열수지 반복 수렴 계산 중입니다...
+                      {isEn
+                        ? '⏳ Converging multistage MESH VLE matrix and material/energy balances...'
+                        : '⏳ 다단 MESH 기액평형 행렬 및 물질·열수지 반복 수렴 계산 중입니다...'}
                     </div>
                   );
                 }
@@ -2539,7 +2697,9 @@ export default function DistillationWorkbenchModal({
                       >
                         <div>
                           <div style={{ fontSize: 11.5, fontWeight: 900, color: '#92400E' }}>
-                            ⏸ 조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.
+                            {isEn
+                              ? '⏸ Inputs changed — click [▶ Run] to update stage profiles.'
+                              : '⏸ 조건 변경됨 — [▶ RUN] 실행 시 프로파일이 갱신됩니다.'}
                           </div>
                         </div>
                         {onRunSimulation && (
@@ -2547,7 +2707,7 @@ export default function DistillationWorkbenchModal({
                             type="button"
                             onClick={triggerRunSimulation}
                             disabled={!dofEvaluation.canRun}
-                            title={!dofEvaluation.canRun ? dofEvaluation.hint : '시뮬레이션 실행'}
+                            title={!dofEvaluation.canRun ? dofEvaluation.hint : isEn ? 'Run simulation' : '시뮬레이션 실행'}
                             style={{
                               padding: '6px 12px',
                               borderRadius: 6,
@@ -2561,7 +2721,7 @@ export default function DistillationWorkbenchModal({
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            ▶ RUN 실행
+                            {isEn ? '▶ Run' : '▶ RUN 실행'}
                           </button>
                         )}
                       </div>
@@ -2590,8 +2750,12 @@ export default function DistillationWorkbenchModal({
                               {icon} [{diag.badgeText}] {diag.headline}
                             </span>
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#475569', fontFamily: MONO }}>
-                              {result ? `내부 MESH ${result.innerIterations}회 · 외부 ${result.outerIterations}회` : ''}
-                              {lastRunStamp ? ` · ${lastRunStamp} 갱신` : ''}
+                              {result
+                                ? isEn
+                                  ? `Inner MESH ${result.innerIterations} iter · Outer ${result.outerIterations} iter`
+                                  : `내부 MESH ${result.innerIterations}회 · 외부 ${result.outerIterations}회`
+                                : ''}
+                              {lastRunStamp ? (isEn ? ` · ${lastRunStamp} updated` : ` · ${lastRunStamp} 갱신`) : ''}
                             </span>
                           </div>
                           {diag.causes.length > 0 && (
@@ -2623,7 +2787,7 @@ export default function DistillationWorkbenchModal({
                           recipes.push({
                             key: `diag_${rem.label}`,
                             label: rem.label,
-                            desc: '진단 엔진 권장 처방',
+                            desc: isEn ? 'Diagnostic engine recommended remedy' : '진단 엔진 권장 처방',
                             patch: rem.patch,
                           });
                         }
@@ -2654,8 +2818,12 @@ export default function DistillationWorkbenchModal({
                         ) {
                           recipes.push({
                             key: 'builtin_fixed_rr_df',
-                            label: `고정 운전 (① 환류비 RR=${safeRR} + ② D/F=${safeDF}) 안정 수렴 모드 전환`,
-                            desc: '품질 역산 루프를 해제하고 추정 물리 유량비로 즉시 수렴',
+                            label: isEn
+                              ? `Switch to Stable Fixed-Op Mode (① RR=${safeRR} + ② D/F=${safeDF})`
+                              : `고정 운전 (① 환류비 RR=${safeRR} + ② D/F=${safeDF}) 안정 수렴 모드 전환`,
+                            desc: isEn
+                              ? 'Release quality spec loop and converge immediately with physical flow split'
+                              : '품질 역산 루프를 해제하고 추정 물리 유량비로 즉시 수렴',
                             patch: {
                               columnCalcMode: 'rigorous_mesh',
                               activeDofSlots: ['rr', 'split'],
@@ -2687,8 +2855,12 @@ export default function DistillationWorkbenchModal({
                           }
                           recipes.push({
                             key: 'builtin_relax_sidecut',
-                            label: `사이드컷(⑤) 발출량/회수율 안전 범위(0.7배 → ${relaxedVal})로 완화`,
-                            desc: '단 내부 기액 트래픽 과부하·플러딩 방지 및 최적단 탐색',
+                            label: isEn
+                              ? `Relax Side-Cut (⑤) Draw/Recovery to Safe Range (0.7× → ${relaxedVal})`
+                              : `사이드컷(⑤) 발출량/회수율 안전 범위(0.7배 → ${relaxedVal})로 완화`,
+                            desc: isEn
+                              ? 'Prevent internal traffic overload/flooding and auto-find optimal draw stage'
+                              : '단 내부 기액 트래픽 과부하·플러딩 방지 및 최적단 탐색',
                             patch: {
                               sideCut: {
                                 ...sideCutCfg,
@@ -2706,8 +2878,12 @@ export default function DistillationWorkbenchModal({
                             sideCutEnabled && !hasTopSlot ? ['bot_spec'] : ['top_spec', 'bot_spec'];
                           recipes.push({
                             key: 'builtin_auto_stages',
-                            label: '고정 단수(⓪) 해제 → AI 최적 단수·피드단 자동 탐색',
-                            desc: '단수·공급단·환류비를 목표 순도 기준으로 자동 최적화',
+                            label: isEn
+                              ? 'Uncheck Fixed Stages (⓪) → AI Auto-Optimize Stages & Feed Stage'
+                              : '고정 단수(⓪) 해제 → AI 최적 단수·피드단 자동 탐색',
+                            desc: isEn
+                              ? 'Automatically optimize stages, feed stage, and reflux ratio for target purity'
+                              : '단수·공급단·환류비를 목표 순도 기준으로 자동 최적화',
                             patch: {
                               columnCalcMode: 'design_stages',
                               activeDofSlots: nextSlotsForAuto,
@@ -2741,8 +2917,12 @@ export default function DistillationWorkbenchModal({
                               : Number(Math.max(85, Math.min(98.5, uiBotTarget - 1.2)).toFixed(2));
                           recipes.push({
                             key: 'builtin_realistic_purity_rr',
-                            label: `목표 순도 현실화 & 환류비 상향 (RR=${higherRR})`,
-                            desc: '공비·다성분 물리 한계를 반영해 목표치 완화 및 분리도 강화',
+                            label: isEn
+                              ? `Relax Purity Target & Increase Reflux Ratio (RR=${higherRR})`
+                              : `목표 순도 현실화 & 환류비 상향 (RR=${higherRR})`,
+                            desc: isEn
+                              ? 'Account for azeotropic/multicomponent limits and boost separation power'
+                              : '공비·다성분 물리 한계를 반영해 목표치 완화 및 분리도 강화',
                             patch: {
                               topSpecType: 'reflux_ratio',
                               topSpecValue: higherRR,
@@ -2767,7 +2947,9 @@ export default function DistillationWorkbenchModal({
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 11.8, fontWeight: 900, color: '#4C1D95' }}>
-                                💡 수렴·스펙 달성 추천 조합 (클릭 1회로 조건 변경 &amp; 즉시 재실행)
+                                {isEn
+                                  ? '💡 Recommended Convergence & Spec Recipes (1-click apply & run)'
+                                  : '💡 수렴·스펙 달성 추천 조합 (클릭 1회로 조건 변경 & 즉시 재실행)'}
                               </span>
                               <button
                                 type="button"
@@ -2784,7 +2966,9 @@ export default function DistillationWorkbenchModal({
                                   cursor: isAiBusy ? 'wait' : 'pointer',
                                 }}
                               >
-                                {isAiBusy ? (aiStepLabel || '⏳ AI 해결 탐색 중...') : '✨ AI 전수 자동 해결'}
+                                {isAiBusy
+                                  ? aiStepLabel || (isEn ? '⏳ AI Searching...' : '⏳ AI 해결 탐색 중...')
+                                  : isEn ? '✨ AI Full Auto-Fix' : '✨ AI 전수 자동 해결'}
                               </button>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -2826,7 +3010,7 @@ export default function DistillationWorkbenchModal({
                                       fontWeight: 900,
                                     }}
                                   >
-                                    즉시 적용·실행
+                                    {isEn ? 'Apply & Run' : '즉시 적용·실행'}
                                   </span>
                                 </button>
                               ))}
@@ -2853,14 +3037,26 @@ export default function DistillationWorkbenchModal({
                         color: '#1E3A8A',
                       }}
                     >
-                      ✨ 현재 <b>AI 최적 단수·피드단 자동 탐색 모드</b> (⓪ 해제)입니다. 단수(N)·피드단(Nf)을 직접 고정하려면 [① 운전·설계 변수] 탭에서 <b>⓪ 고정 단수 지정</b>을 체크하세요.
+                      {isEn ? (
+                        <>
+                          ✨ Currently in <b>AI Optimal Stages &amp; Feed Stage Auto-Search Mode</b> (⓪ unchecked). To fix stages (N) and feed stage (Nf) manually, check <b>⓪ Fixed Stages</b> in the [① Operating &amp; Design Specs] tab.
+                        </>
+                      ) : (
+                        <>
+                          ✨ 현재 <b>AI 최적 단수·피드단 자동 탐색 모드</b> (⓪ 해제)입니다. 단수(N)·피드단(Nf)을 직접 고정하려면 [① 운전·설계 변수] 탭에서 <b>⓪ 고정 단수 지정</b>을 체크하세요.
+                        </>
+                      )}
                     </div>
                   )}
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
                     <div style={cardStyle}>
                       <label style={labelStyle}>
                         {isActualMurphreeUi
-                          ? '총 실제단수 N (1=응축기, N=리보일러 · 행렬 내 η_M)'
+                          ? isEn
+                            ? 'Total Actual Stages N (1=Condenser, N=Reboiler · η_M in matrix)'
+                            : '총 실제단수 N (1=응축기, N=리보일러 · 행렬 내 η_M)'
+                          : isEn
+                          ? 'Total Theoretical Stages N (1=Condenser, N=Reboiler)'
                           : '총 이론단수 N (1=응축기, N=리보일러)'}
                       </label>
                       <BufferedNumberInput
@@ -2896,7 +3092,13 @@ export default function DistillationWorkbenchModal({
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4 }}>
                         {isActualMurphreeUi ? (
-                          <>실제 트레이 <b>{actualTrays}단</b> (MESH 행렬 내 η_M={murphreeEff}% 직접 반영)</>
+                          isEn ? (
+                            <>Actual trays: <b>{actualTrays}</b> (η_M={murphreeEff}% applied directly in MESH matrix)</>
+                          ) : (
+                            <>실제 트레이 <b>{actualTrays}단</b> (MESH 행렬 내 η_M={murphreeEff}% 직접 반영)</>
+                          )
+                        ) : isEn ? (
+                          <>At {murphreeEff}% stage eff., approx. <b>{actualTrays} actual trays</b></>
                         ) : (
                           <>단효율 {murphreeEff}% 적용 시 실제 트레이 약 <b>{actualTrays}단</b></>
                         )}
@@ -2906,7 +3108,7 @@ export default function DistillationWorkbenchModal({
                     <div style={cardStyle}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <label style={{ ...labelStyle, marginBottom: 0 }}>
-                          주 공급단 (Primary Feed Stage)
+                          {isEn ? 'Primary Feed Stage' : '주 공급단 (Primary Feed Stage)'}
                         </label>
                         {isFixedStages && recFeedStage !== primaryFeedStage && (
                           <button
@@ -2923,7 +3125,7 @@ export default function DistillationWorkbenchModal({
                               cursor: 'pointer',
                             }}
                           >
-                            최적 {recFeedStage}단 적용
+                            {isEn ? `Apply Opt. Stg ${recFeedStage}` : `최적 ${recFeedStage}단 적용`}
                           </button>
                         )}
                       </div>
@@ -2949,7 +3151,11 @@ export default function DistillationWorkbenchModal({
                         }}
                       />
                       <div style={{ fontSize: 10.5, color: '#475569', fontWeight: 700, marginTop: 4 }}>
-                        조성 정합 기준 권장 공급단: <b>제 {recFeedStage} 단</b>
+                        {isEn ? (
+                          <>Recommended feed stage (composition match): <b>Stage {recFeedStage}</b></>
+                        ) : (
+                          <>조성 정합 기준 권장 공급단: <b>제 {recFeedStage} 단</b></>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2989,7 +3195,7 @@ export default function DistillationWorkbenchModal({
                           onChange={toggleSideCutEnabled}
                           style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#7C3AED' }}
                         />
-                        <span>사이드컷 (측류 인출 · Side-Cut) 단 위치</span>
+                        <span>{isEn ? 'Side-Cut Draw Stage Location' : '사이드컷 (측류 인출 · Side-Cut) 단 위치'}</span>
                       </label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         {sideCutEnabled && result?.sideCutStageUsed && (
@@ -3004,7 +3210,9 @@ export default function DistillationWorkbenchModal({
                               fontFamily: MONO,
                             }}
                           >
-                            실제 {result.sideCutStageUsed}단 · {(result.sideCutMassKgH ?? 0).toFixed(1)} kg/h
+                            {isEn
+                              ? `Actual Stg ${result.sideCutStageUsed} · ${(result.sideCutMassKgH ?? 0).toFixed(1)} kg/h`
+                              : `실제 ${result.sideCutStageUsed}단 · ${(result.sideCutMassKgH ?? 0).toFixed(1)} kg/h`}
                           </span>
                         )}
                         <button
@@ -3021,7 +3229,7 @@ export default function DistillationWorkbenchModal({
                             cursor: 'pointer',
                           }}
                         >
-                          변수 상세설정 →
+                          {isEn ? 'Detailed Specs →' : '변수 상세설정 →'}
                         </button>
                       </div>
                     </div>
@@ -3037,7 +3245,7 @@ export default function DistillationWorkbenchModal({
                         }}
                       >
                         <div>
-                          <label style={labelStyle}>인출 상 (Phase)</label>
+                          <label style={labelStyle}>{isEn ? 'Draw Phase' : '인출 상 (Phase)'}</label>
                           <select
                             value={sideCutCfg.phase}
                             onChange={(e) =>
@@ -3045,12 +3253,14 @@ export default function DistillationWorkbenchModal({
                             }
                             style={selectBaseStyle}
                           >
-                            <option value="liquid">💧 액상 (Liquid)</option>
-                            <option value="vapor">💨 기상 (Vapor)</option>
+                            <option value="liquid">{isEn ? '💧 Liquid' : '💧 액상 (Liquid)'}</option>
+                            <option value="vapor">{isEn ? '💨 Vapor' : '💨 기상 (Vapor)'}</option>
                           </select>
                         </div>
                         <div>
-                          <label style={labelStyle}>인출 단 (2 ~ {Math.max(2, N - 1)})</label>
+                          <label style={labelStyle}>
+                            {isEn ? `Draw Stage (2 ~ ${Math.max(2, N - 1)})` : `인출 단 (2 ~ ${Math.max(2, N - 1)})`}
+                          </label>
                           <BufferedNumberInput
                             syncKey={`${unitTag}-scstage-tower-${sideCutCfg.autoOptimizeStage ? 'auto' : 'man'}`}
                             min={2}
@@ -3099,7 +3309,7 @@ export default function DistillationWorkbenchModal({
                               }
                               style={{ width: 13.5, height: 13.5, cursor: 'pointer', accentColor: '#7C3AED' }}
                             />
-                            <span>✨ 최적 인출단 자동탐색</span>
+                            <span>{isEn ? '✨ Auto-Find Optimal Stage' : '✨ 최적 인출단 자동탐색'}</span>
                           </label>
                         </div>
                       </div>
@@ -3108,7 +3318,9 @@ export default function DistillationWorkbenchModal({
 
                   <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
                     <div style={cardStyle}>
-                      <label style={labelStyle}>탑정 응축기 (Stage 1 Condenser)</label>
+                      <label style={labelStyle}>
+                        {isEn ? 'Overhead Condenser (Stage 1)' : '탑정 응축기 (Stage 1 Condenser)'}
+                      </label>
                       <select
                         value={condenserType}
                         onChange={(e) =>
@@ -3116,14 +3328,22 @@ export default function DistillationWorkbenchModal({
                         }
                         style={selectBaseStyle}
                       >
-                        <option value="total">전응축기 (Total Condenser — 액상 유출 D)</option>
-                        <option value="partial">부분응축기 (Partial Condenser — 기상 유출 D)</option>
-                        <option value="decanter_ech">공비 디캔터 응축기 (유기층 환류 · 수층 분리)</option>
+                        <option value="total">
+                          {isEn ? 'Total Condenser (Liquid Distillate D)' : '전응축기 (Total Condenser — 액상 유출 D)'}
+                        </option>
+                        <option value="partial">
+                          {isEn ? 'Partial Condenser (Vapor Distillate D)' : '부분응축기 (Partial Condenser — 기상 유출 D)'}
+                        </option>
+                        <option value="decanter_ech">
+                          {isEn ? 'Azeotropic Decanter Condenser (Org. Reflux · Aq. Draw)' : '공비 디캔터 응축기 (유기층 환류 · 수층 분리)'}
+                        </option>
                       </select>
                     </div>
 
                     <div style={cardStyle}>
-                      <label style={labelStyle}>탑저 리보일러 (Stage N Reboiler)</label>
+                      <label style={labelStyle}>
+                        {isEn ? 'Bottoms Reboiler (Stage N)' : '탑저 리보일러 (Stage N Reboiler)'}
+                      </label>
                       <select
                         value={reboilerType}
                         onChange={(e) =>
@@ -3131,9 +3351,9 @@ export default function DistillationWorkbenchModal({
                         }
                         style={selectBaseStyle}
                       >
-                        <option value="kettle">케틀형 리보일러 (Kettle Reboiler)</option>
-                        <option value="thermosyphon">써모사이펀 리보일러 (Thermosyphon)</option>
-                        <option value="live_steam">직접 생증기 취입 (Live Steam Stripping)</option>
+                        <option value="kettle">{isEn ? 'Kettle Reboiler' : '케틀형 리보일러 (Kettle Reboiler)'}</option>
+                        <option value="thermosyphon">{isEn ? 'Thermosyphon Reboiler' : '써모사이펀 리보일러 (Thermosyphon)'}</option>
+                        <option value="live_steam">{isEn ? 'Live Steam Stripping' : '직접 생증기 취입 (Live Steam Stripping)'}</option>
                       </select>
                     </div>
                   </div>
@@ -3142,24 +3362,32 @@ export default function DistillationWorkbenchModal({
                   <div style={cardStyle}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                       <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1A2F44' }}>
-                        연결된 유입 피드 배관 ({feeds.length}개 · 총 {totalFeedKgH.toFixed(1)} kg/h)
+                        {isEn
+                          ? `Connected Feed Streams (${feeds.length} · Total ${totalFeedKgH.toFixed(1)} kg/h)`
+                          : `연결된 유입 피드 배관 (${feeds.length}개 · 총 ${totalFeedKgH.toFixed(1)} kg/h)`}
                       </span>
                       <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>
-                        다중 피드(주원료 + 순환액) 개별 투입단 지정 가능
+                        {isEn
+                          ? 'Individual feed stage configurable for multiple feeds (fresh + recycle)'
+                          : '다중 피드(주원료 + 순환액) 개별 투입단 지정 가능'}
                       </span>
                     </div>
                     {feeds.length === 0 ? (
                       <div style={{ fontSize: 11, color: '#94A3B8', padding: '8px 0' }}>
-                        연결된 유입 피드가 없습니다. 캔버스에서 원료 배관을 증류탑 좌측 포트에 연결하세요.
+                        {isEn
+                          ? 'No feed streams connected. Connect a feed pipe to the left port of the column on the canvas.'
+                          : '연결된 유입 피드가 없습니다. 캔버스에서 원료 배관을 증류탑 좌측 포트에 연결하세요.'}
                       </div>
                     ) : (
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
                         <thead>
                           <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
-                            <th style={{ padding: '5px 8px', textAlign: 'left' }}>배관 번호</th>
-                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>유량 (kg/h)</th>
-                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>온도 / 압력</th>
-                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>투입 단번호 (2~{N - 1})</th>
+                            <th style={{ padding: '5px 8px', textAlign: 'left' }}>{isEn ? 'Stream No.' : '배관 번호'}</th>
+                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>{isEn ? 'Flow (kg/h)' : '유량 (kg/h)'}</th>
+                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>{isEn ? 'Temp / Press' : '온도 / 압력'}</th>
+                            <th style={{ padding: '5px 8px', textAlign: 'right' }}>
+                              {isEn ? `Feed Stage (2~${N - 1})` : `투입 단번호 (2~${N - 1})`}
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3299,7 +3527,7 @@ export default function DistillationWorkbenchModal({
                             fontWeight: 900,
                           }}
                         >
-                          ✓ 선택됨 (클릭 시 해제)
+                          {isEn ? '✓ Selected (click to clear)' : '✓ 선택됨 (클릭 시 해제)'}
                         </span>
                       ) : canAdd ? (
                         <span
@@ -3313,7 +3541,7 @@ export default function DistillationWorkbenchModal({
                             fontWeight: 900,
                           }}
                         >
-                          + 클릭하여 선택
+                          {isEn ? '+ Click to select' : '+ 클릭하여 선택'}
                         </span>
                       ) : (
                         <span
@@ -3327,7 +3555,7 @@ export default function DistillationWorkbenchModal({
                             fontFamily: MONO,
                           }}
                         >
-                          자동 계산됨 · {autoSummaryText}
+                          {isEn ? `Auto-calculated · ${autoSummaryText}` : `자동 계산됨 · ${autoSummaryText}`}
                         </span>
                       )}
                     </div>
@@ -3406,7 +3634,7 @@ export default function DistillationWorkbenchModal({
                             style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E3A8A' }}
                           />
                           <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
-                            ⓪ 고정 단수 지정 (N · Nf)
+                            {isEn ? '⓪ Fixed Stages (N · Nf)' : '⓪ 고정 단수 지정 (N · Nf)'}
                           </span>
                         </div>
                         <span
@@ -3421,7 +3649,11 @@ export default function DistillationWorkbenchModal({
                           }}
                         >
                           {isFixedStages
-                            ? `고정 단수 정밀모사 (N=${N}단 · 피드 ${primaryFeedStage}단)`
+                            ? isEn
+                              ? `Fixed Stages Sim (N=${N} · Feed Stg ${primaryFeedStage})`
+                              : `고정 단수 정밀모사 (N=${N}단 · 피드 ${primaryFeedStage}단)`
+                            : isEn
+                            ? '✨ Unchecked: AI Optimal Stages (N) & Feed (Nf) Auto-Design'
                             : '✨ 해제됨: AI 최적 단수(N)·피드단(Nf) 자동 설계'}
                         </span>
                       </div>
@@ -3439,7 +3671,9 @@ export default function DistillationWorkbenchModal({
                         >
                           <div>
                             <label style={labelStyle}>
-                              {isActualMurphreeUi ? '총 실제단수 N' : '총 이론단수 N'} (1=응축, N=리보일러)
+                              {isActualMurphreeUi
+                                ? isEn ? 'Total Actual Stages N (1=Cond, N=Reb)' : '총 실제단수 N (1=응축, N=리보일러)'
+                                : isEn ? 'Total Theoretical Stages N (1=Cond, N=Reb)' : '총 이론단수 N (1=응축, N=리보일러)'}
                             </label>
                             <BufferedNumberInput
                               syncKey={`${unitTag}-nstages-spec`}
@@ -3471,7 +3705,7 @@ export default function DistillationWorkbenchModal({
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                               <label style={{ ...labelStyle, marginBottom: 0 }}>
-                                주 공급단 Nf (2 ~ {N - 1}단)
+                                {isEn ? `Primary Feed Stage Nf (2 ~ ${N - 1})` : `주 공급단 Nf (2 ~ ${N - 1}단)`}
                               </label>
                               {recFeedStage !== primaryFeedStage && (
                                 <button
@@ -3488,7 +3722,7 @@ export default function DistillationWorkbenchModal({
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  최적 {recFeedStage}단
+                                  {isEn ? `Opt. ${recFeedStage}` : `최적 ${recFeedStage}단`}
                                 </button>
                               )}
                             </div>
@@ -3513,13 +3747,24 @@ export default function DistillationWorkbenchModal({
                       ) : (
                         <div style={{ marginTop: 8, paddingTop: 7, borderTop: '1px solid #BBF7D0', display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <div style={{ fontSize: 10.5, color: '#166534', fontWeight: 700, lineHeight: 1.4 }}>
-                            💡 체크 해제 시 목표 스펙을 만족하는 최적 이론단수(N)·공급단(Nf)을 TAC 최소 기준으로 자동 탐색합니다.
-                            {!isRrSel && ' (환류비 ① 미선택 시 R도 함께 자동 최적화)'}
+                            {isEn ? (
+                              <>
+                                💡 When unchecked, optimal theoretical stages (N) and feed stage (Nf) are automatically searched to minimize TAC while meeting target specs.
+                                {!isRrSel && ' (R is also auto-optimized when ① Reflux Ratio is unchecked)'}
+                              </>
+                            ) : (
+                              <>
+                                💡 체크 해제 시 목표 스펙을 만족하는 최적 이론단수(N)·공급단(Nf)을 TAC 최소 기준으로 자동 탐색합니다.
+                                {!isRrSel && ' (환류비 ① 미선택 시 R도 함께 자동 최적화)'}
+                              </>
+                            )}
                           </div>
                           {!isRrSel && (
                             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.4fr 0.8fr', gap: 8, alignItems: 'end' }}>
                               <div>
-                                <label style={labelStyle}>자동 환류비(R) 탐색 기준</label>
+                                <label style={labelStyle}>
+                                  {isEn ? 'Auto Reflux Ratio (R) Search Basis' : '자동 환류비(R) 탐색 기준'}
+                                </label>
                                 <select
                                   value={effRMode === 'fixed_rr' ? 'auto_opt' : effRMode}
                                   onChange={(e) =>
@@ -3529,13 +3774,21 @@ export default function DistillationWorkbenchModal({
                                   }
                                   style={selectBaseStyle}
                                 >
-                                  <option value="auto_opt">✨ AI 다중후보 TAC 최소 최적화 (1.15~1.80 × R_min)</option>
-                                  <option value="r_mult">최소환류비 배수 지정 (R = 배수 × R_min)</option>
+                                  <option value="auto_opt">
+                                    {isEn
+                                      ? '✨ AI Multi-Candidate Min-TAC Optimization (1.15~1.80 × R_min)'
+                                      : '✨ AI 다중후보 TAC 최소 최적화 (1.15~1.80 × R_min)'}
+                                  </option>
+                                  <option value="r_mult">
+                                    {isEn
+                                      ? 'Specify R_min Multiplier (R = mult × R_min)'
+                                      : '최소환류비 배수 지정 (R = 배수 × R_min)'}
+                                  </option>
                                 </select>
                               </div>
                               {effRMode === 'r_mult' && (
                                 <div>
-                                  <label style={labelStyle}>R / R_min 배수</label>
+                                  <label style={labelStyle}>{isEn ? 'R / R_min Multiplier' : 'R / R_min 배수'}</label>
                                   <BufferedNumberInput
                                     syncKey={`${unitTag}-rmult`}
                                     min={1.05}
@@ -3582,7 +3835,9 @@ export default function DistillationWorkbenchModal({
                               fontFamily: MONO,
                             }}
                           >
-                            선택된 자유도: {dofEvaluation.selectedCount} / 필요 {dofEvaluation.requiredCount}
+                            {isEn
+                              ? `Selected DOF: ${dofEvaluation.selectedCount} / Required ${dofEvaluation.requiredCount}`
+                              : `선택된 자유도: ${dofEvaluation.selectedCount} / 필요 ${dofEvaluation.requiredCount}`}
                           </span>
                           <span style={{ fontSize: 11.5, fontWeight: 900, color: dofBannerColors.fg }}>
                             {dofEvaluation.headline}
@@ -3602,7 +3857,7 @@ export default function DistillationWorkbenchModal({
                             cursor: 'pointer',
                           }}
                         >
-                          조건 다시 선택 (초기화)
+                          {isEn ? 'Reset Specs' : '조건 다시 선택 (초기화)'}
                         </button>
                       </div>
                       <div style={{ fontSize: 10.8, fontWeight: 700, color: '#1E293B', lineHeight: 1.45 }}>
@@ -3614,13 +3869,19 @@ export default function DistillationWorkbenchModal({
                     <div style={slotCardBoxStyle(isRrSel, 'rr')}>
                       {renderSlotHeader(
                         'rr',
-                        '① 탑정 응축기 운전조건 (환류비 RR = L₀/D · 환류량 · 재비율)',
-                        result ? `RR = ${result.actualRefluxRatio.toFixed(2)}` : '시뮬레이션 시 역산'
+                        isEn
+                          ? '① Reflux / Boilup Spec (Reflux Ratio RR = L₀/D · Reflux Flow · Boilup Ratio)'
+                          : '① 탑정 응축기 운전조건 (환류비 RR = L₀/D · 환류량 · 재비율)',
+                        result
+                          ? `RR = ${result.actualRefluxRatio.toFixed(2)}`
+                          : isEn ? 'Calculated on run' : '시뮬레이션 시 역산'
                       )}
                       {isRrSel && (
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.35fr 1fr', gap: 8 }}>
                           <div>
-                            <label style={labelStyle}>환류/재비 입력 방식</label>
+                            <label style={labelStyle}>
+                              {isEn ? 'Reflux / Boilup Input Basis' : '환류/재비 입력 방식'}
+                            </label>
                             <select
                               value={isFixedStages ? topSpecType : 'reflux_ratio'}
                               disabled={!isFixedStages}
@@ -3634,18 +3895,24 @@ export default function DistillationWorkbenchModal({
                                 background: !isFixedStages ? '#F1F5F9' : '#FFFFFF',
                               }}
                             >
-                              <option value="reflux_ratio">몰 환류비 (Reflux Ratio, RR = L₀/D)</option>
-                              <option value="reflux_mass_kgh">환류 액상 유량 L₀ (kg/h)</option>
-                              <option value="boilup_ratio">리보일러 재비율 (Boilup Ratio, VB/B)</option>
+                              <option value="reflux_ratio">
+                                {isEn ? 'Molar Reflux Ratio (RR = L₀/D)' : '몰 환류비 (Reflux Ratio, RR = L₀/D)'}
+                              </option>
+                              <option value="reflux_mass_kgh">
+                                {isEn ? 'Reflux Liquid Mass Flow L₀ (kg/h)' : '환류 액상 유량 L₀ (kg/h)'}
+                              </option>
+                              <option value="boilup_ratio">
+                                {isEn ? 'Reboiler Boilup Ratio (VB/B)' : '리보일러 재비율 (Boilup Ratio, VB/B)'}
+                              </option>
                             </select>
                           </div>
                           <div>
                             <label style={labelStyle}>
                               {isFixedStages && topSpecType === 'reflux_mass_kgh'
-                                ? '환류 액상 유량 L₀'
+                                ? isEn ? 'Reflux Liquid Flow L₀' : '환류 액상 유량 L₀'
                                 : isFixedStages && topSpecType === 'boilup_ratio'
-                                ? '재비율 (VB/B)'
-                                : '운전 환류비 (RR)'}
+                                ? isEn ? 'Boilup Ratio (VB/B)' : '재비율 (VB/B)'
+                                : isEn ? 'Operating Reflux Ratio (RR)' : '운전 환류비 (RR)'}
                             </label>
                             {isFixedStages && topSpecType === 'reflux_mass_kgh' ? (
                               <UnitNumberInput
@@ -3695,16 +3962,20 @@ export default function DistillationWorkbenchModal({
                     <div style={slotCardBoxStyle(isSplitSel, 'split')}>
                       {renderSlotHeader(
                         'split',
-                        '② 유량·분할 조건 (D/F · B/F · 탑정/탑저 유량 kg/h)',
+                        isEn
+                          ? '② Flow / Split Spec (D/F · B/F · Distillate/Bottoms kg/h)'
+                          : '② 유량·분할 조건 (D/F · B/F · 탑정/탑저 유량 kg/h)',
                         result
                           ? `D=${distTotalKgH.toFixed(1)} kg/h (D/F=${result.actualDOverFMass.toFixed(3)})`
-                          : '시뮬레이션 시 역산'
+                          : isEn ? 'Calculated on run' : '시뮬레이션 시 역산'
                       )}
                       {isSplitSel && (
                         <>
                           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.35fr 1fr', gap: 8 }}>
                             <div>
-                              <label style={labelStyle}>유출 분배 입력 방식</label>
+                              <label style={labelStyle}>
+                                {isEn ? 'Draw / Split Input Basis' : '유출 분배 입력 방식'}
+                              </label>
                               <select
                                 value={splitSpecType}
                                 onChange={(e) =>
@@ -3714,20 +3985,30 @@ export default function DistillationWorkbenchModal({
                                 }
                                 style={selectBaseStyle}
                               >
-                                <option value="d_over_f_mass">탑정 대 피드 질량비 (D/F, kg/kg)</option>
-                                <option value="b_over_f_mass">탑저 대 피드 질량비 (B/F, kg/kg)</option>
-                                <option value="d_over_f_mole">탑정 대 피드 몰비 (D/F, kmol/kmol)</option>
-                                <option value="distillate_kgh">탑정 유출 유량 D (kg/h)</option>
-                                <option value="bottoms_kgh">탑저 관출 유량 B (kg/h)</option>
+                                <option value="d_over_f_mass">
+                                  {isEn ? 'Distillate-to-Feed Mass Ratio (D/F, kg/kg)' : '탑정 대 피드 질량비 (D/F, kg/kg)'}
+                                </option>
+                                <option value="b_over_f_mass">
+                                  {isEn ? 'Bottoms-to-Feed Mass Ratio (B/F, kg/kg)' : '탑저 대 피드 질량비 (B/F, kg/kg)'}
+                                </option>
+                                <option value="d_over_f_mole">
+                                  {isEn ? 'Distillate-to-Feed Molar Ratio (D/F, kmol/kmol)' : '탑정 대 피드 몰비 (D/F, kmol/kmol)'}
+                                </option>
+                                <option value="distillate_kgh">
+                                  {isEn ? 'Distillate Mass Flow D (kg/h)' : '탑정 유출 유량 D (kg/h)'}
+                                </option>
+                                <option value="bottoms_kgh">
+                                  {isEn ? 'Bottoms Mass Flow B (kg/h)' : '탑저 관출 유량 B (kg/h)'}
+                                </option>
                               </select>
                             </div>
                             <div>
                               <label style={labelStyle}>
                                 {splitSpecType === 'distillate_kgh'
-                                  ? '탑정 유출 유량 D'
+                                  ? isEn ? 'Distillate Flow D' : '탑정 유출 유량 D'
                                   : splitSpecType === 'bottoms_kgh'
-                                  ? '탑저 관출 유량 B'
-                                  : '분배 비율 수치'}
+                                  ? isEn ? 'Bottoms Flow B' : '탑저 관출 유량 B'
+                                  : isEn ? 'Split Ratio Value' : '분배 비율 수치'}
                               </label>
                               {splitSpecType === 'distillate_kgh' || splitSpecType === 'bottoms_kgh' ? (
                                 <UnitNumberInput
@@ -3781,7 +4062,9 @@ export default function DistillationWorkbenchModal({
                           >
                             ⇄ {complementRatioText}
                             {!isFixedStages && sideCutEnabled && !isTopSel
-                              ? ' (사이드컷 모드 탑정 퍼지 비율 연동)'
+                              ? isEn
+                                ? ' (Linked to overhead purge ratio in Side-Cut mode)'
+                                : ' (사이드컷 모드 탑정 퍼지 비율 연동)'
                               : ''}
                           </div>
                         </>
@@ -3792,21 +4075,27 @@ export default function DistillationWorkbenchModal({
                     <div style={slotCardBoxStyle(isTopSel, 'top_spec')}>
                       {renderSlotHeader(
                         'top_spec',
-                        '③ 탑정 제품 순도·회수율 (wt% · 불순물 ppm · 회수율 %)',
+                        isEn
+                          ? '③ Distillate Product Quality (wt% · Impurity ppm · Recovery %)'
+                          : '③ 탑정 제품 순도·회수율 (wt% · 불순물 ppm · 회수율 %)',
                         result && activeComps[0]
                           ? `D=${distTotalKgH.toFixed(1)} kg/h`
-                          : '시뮬레이션 시 자동 산출'
+                          : isEn ? 'Auto-calculated on run' : '시뮬레이션 시 자동 산출'
                       )}
                       {isTopSel && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           <div>
-                            <label style={labelStyle}>어떤 기준으로 탑정(D) 품질을 지정할까요? (택 1)</label>
+                            <label style={labelStyle}>
+                              {isEn
+                                ? 'Select basis for Distillate (D) quality spec (Choose 1)'
+                                : '어떤 기준으로 탑정(D) 품질을 지정할까요? (택 1)'}
+                            </label>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
                               {(
                                 [
-                                  { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
-                                  { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
-                                  { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
+                                  { id: 'purity_wt_pct', lbl: isEn ? 'Product Purity (wt%)' : '주제품 농도 (wt%)' },
+                                  { id: 'impurity_wt_ppm', lbl: isEn ? 'Max Impurity (wt ppm)' : '불순물 상한 (wt ppm)' },
+                                  { id: 'recovery_pct', lbl: isEn ? 'Recovery (% · Opt)' : '성분 회수율 (% · 선택)' },
                                 ] as { id: DistillSpecMetric; lbl: string }[]
                               ).map((m) => (
                                 <button
@@ -3842,10 +4131,10 @@ export default function DistillationWorkbenchModal({
                             <div>
                               <label style={labelStyle}>
                                 {uiTopMetric === 'impurity_wt_ppm'
-                                  ? '탑정(D)에서 억제할 불순물 성분'
+                                  ? isEn ? 'Impurity to Limit in Distillate (D)' : '탑정(D)에서 억제할 불순물 성분'
                                   : uiTopMetric === 'recovery_pct'
-                                  ? '탑정(D)으로 회수할 성분'
-                                  : '탑정(D) 목표 제품 성분'}
+                                  ? isEn ? 'Component to Recover in Distillate (D)' : '탑정(D)으로 회수할 성분'
+                                  : isEn ? 'Target Product in Distillate (D)' : '탑정(D) 목표 제품 성분'}
                               </label>
                               <select
                                 value={uiTopComp}
@@ -3862,9 +4151,15 @@ export default function DistillationWorkbenchModal({
                             <div>
                               <label style={{ ...labelStyle, color: '#0F172A' }}>
                                 {uiTopMetric === 'impurity_wt_ppm'
-                                  ? `탑정(D) 내 [${topCompFormula}] 허용 농도 (wt ppm)`
+                                  ? isEn
+                                    ? `Max [${topCompFormula}] in Distillate (wt ppm)`
+                                    : `탑정(D) 내 [${topCompFormula}] 허용 농도 (wt ppm)`
                                   : uiTopMetric === 'recovery_pct'
-                                  ? `원료 대비 탑정(D) [${topCompFormula}] 회수율 (%)`
+                                  ? isEn
+                                    ? `[${topCompFormula}] Distillate Recovery (%)`
+                                    : `원료 대비 탑정(D) [${topCompFormula}] 회수율 (%)`
+                                  : isEn
+                                  ? `Target [${topCompFormula}] in Distillate (wt%)`
                                   : `탑정(D) 내 [${topCompFormula}] 목표 농도 (wt%)`}
                               </label>
                               <BufferedNumberInput
@@ -3883,9 +4178,15 @@ export default function DistillationWorkbenchModal({
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
                             {uiTopMetric === 'impurity_wt_ppm'
-                              ? `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 허용 불순물 농도(ppm = ${(uiTopTarget / 10000).toFixed(4)} wt%)입니다.`
+                              ? isEn
+                                ? `※ Allowable impurity concentration of [${topCompFormula}] in Distillate (D) (${(uiTopTarget / 10000).toFixed(4)} wt%).`
+                                : `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 허용 불순물 농도(ppm = ${(uiTopTarget / 10000).toFixed(4)} wt%)입니다.`
                               : uiTopMetric === 'recovery_pct'
-                              ? `※ 입력하신 수치는 유입 원료 중 탑정(D)으로 회수되는 [${topCompFormula}]의 질량 회수율(%)입니다.`
+                              ? isEn
+                                ? `※ Mass recovery (%) of [${topCompFormula}] from feed to Distillate (D).`
+                                : `※ 입력하신 수치는 유입 원료 중 탑정(D)으로 회수되는 [${topCompFormula}]의 질량 회수율(%)입니다.`
+                              : isEn
+                              ? `※ Mass purity (wt%) of [${topCompFormula}] in Distillate (D). Recovery (%) is auto-calculated.`
                               : `※ 입력하신 수치는 탑정(D) 스트림 내 [${topCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
                           </div>
                         </div>
@@ -3896,21 +4197,27 @@ export default function DistillationWorkbenchModal({
                     <div style={slotCardBoxStyle(isBotSel, 'bot_spec')}>
                       {renderSlotHeader(
                         'bot_spec',
-                        '④ 탑저 제품 순도·회수율·불순물 (wt% · ppm · %)',
+                        isEn
+                          ? '④ Bottoms Product Quality (wt% · ppm · %)'
+                          : '④ 탑저 제품 순도·회수율·불순물 (wt% · ppm · %)',
                         result
                           ? `B=${botTotalKgH.toFixed(1)} kg/h`
-                          : '시뮬레이션 시 자동 산출'
+                          : isEn ? 'Auto-calculated on run' : '시뮬레이션 시 자동 산출'
                       )}
                       {isBotSel && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                           <div>
-                            <label style={labelStyle}>어떤 기준으로 탑저(B) 품질을 지정할까요? (택 1)</label>
+                            <label style={labelStyle}>
+                              {isEn
+                                ? 'Select basis for Bottoms (B) quality spec (Choose 1)'
+                                : '어떤 기준으로 탑저(B) 품질을 지정할까요? (택 1)'}
+                            </label>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 5 }}>
                               {(
                                 [
-                                  { id: 'purity_wt_pct', lbl: '주제품 농도 (wt%)' },
-                                  { id: 'impurity_wt_ppm', lbl: '불순물 상한 (wt ppm)' },
-                                  { id: 'recovery_pct', lbl: '성분 회수율 (% · 선택)' },
+                                  { id: 'purity_wt_pct', lbl: isEn ? 'Product Purity (wt%)' : '주제품 농도 (wt%)' },
+                                  { id: 'impurity_wt_ppm', lbl: isEn ? 'Max Impurity (wt ppm)' : '불순물 상한 (wt ppm)' },
+                                  { id: 'recovery_pct', lbl: isEn ? 'Recovery (% · Opt)' : '성분 회수율 (% · 선택)' },
                                 ] as { id: DistillSpecMetric; lbl: string }[]
                               ).map((m) => (
                                 <button
@@ -3946,10 +4253,10 @@ export default function DistillationWorkbenchModal({
                             <div>
                               <label style={labelStyle}>
                                 {uiBotMetric === 'impurity_wt_ppm'
-                                  ? '탑저(B)에서 억제할 불순물 성분'
+                                  ? isEn ? 'Impurity to Limit in Bottoms (B)' : '탑저(B)에서 억제할 불순물 성분'
                                   : uiBotMetric === 'recovery_pct'
-                                  ? '탑저(B)로 회수할 성분'
-                                  : '탑저(B) 목표 제품 성분'}
+                                  ? isEn ? 'Component to Recover in Bottoms (B)' : '탑저(B)로 회수할 성분'
+                                  : isEn ? 'Target Product in Bottoms (B)' : '탑저(B) 목표 제품 성분'}
                               </label>
                               <select
                                 value={uiBotComp}
@@ -3966,9 +4273,15 @@ export default function DistillationWorkbenchModal({
                             <div>
                               <label style={{ ...labelStyle, color: '#0F172A' }}>
                                 {uiBotMetric === 'impurity_wt_ppm'
-                                  ? `탑저(B) 내 [${botCompFormula}] 허용 농도 (wt ppm)`
+                                  ? isEn
+                                    ? `Max [${botCompFormula}] in Bottoms (wt ppm)`
+                                    : `탑저(B) 내 [${botCompFormula}] 허용 농도 (wt ppm)`
                                   : uiBotMetric === 'recovery_pct'
-                                  ? `원료 대비 탑저(B) [${botCompFormula}] 회수율 (%)`
+                                  ? isEn
+                                    ? `[${botCompFormula}] Bottoms Recovery (%)`
+                                    : `원료 대비 탑저(B) [${botCompFormula}] 회수율 (%)`
+                                  : isEn
+                                  ? `Target [${botCompFormula}] in Bottoms (wt%)`
                                   : `탑저(B) 내 [${botCompFormula}] 목표 농도 (wt%)`}
                               </label>
                               <BufferedNumberInput
@@ -3987,9 +4300,15 @@ export default function DistillationWorkbenchModal({
                           </div>
                           <div style={{ fontSize: 10, color: '#475569' }}>
                             {uiBotMetric === 'impurity_wt_ppm'
-                              ? `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 허용 불순물 농도(ppm = ${(uiBotTarget / 10000).toFixed(4)} wt%)입니다.`
+                              ? isEn
+                                ? `※ Allowable impurity concentration of [${botCompFormula}] in Bottoms (B) (${(uiBotTarget / 10000).toFixed(4)} wt%).`
+                                : `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 허용 불순물 농도(ppm = ${(uiBotTarget / 10000).toFixed(4)} wt%)입니다.`
                               : uiBotMetric === 'recovery_pct'
-                              ? `※ 입력하신 수치는 유입 원료 중 탑저(B)로 회수되는 [${botCompFormula}]의 질량 회수율(%)입니다.`
+                              ? isEn
+                                ? `※ Mass recovery (%) of [${botCompFormula}] from feed to Bottoms (B).`
+                                : `※ 입력하신 수치는 유입 원료 중 탑저(B)로 회수되는 [${botCompFormula}]의 질량 회수율(%)입니다.`
+                              : isEn
+                              ? `※ Mass purity (wt%) of [${botCompFormula}] in Bottoms (B). Recovery (%) is auto-calculated.`
                               : `※ 입력하신 수치는 탑저(B) 스트림 내 [${botCompFormula}]의 질량 농도(wt%)입니다. 회수율(%)은 별도 입력 없이 자동 계산됩니다.`}
                           </div>
                         </div>
@@ -4011,7 +4330,9 @@ export default function DistillationWorkbenchModal({
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11.8, fontWeight: 900, color: '#0F172A' }}>
-                            AI 자동설계 산출 요약 (단수 · 피드단 · 환류비 · 상하부 유량)
+                            {isEn
+                              ? 'AI Auto-Design Summary (Stages · Feed · RR · Top/Bottom Flows)'
+                              : 'AI 자동설계 산출 요약 (단수 · 피드단 · 환류비 · 상하부 유량)'}
                           </span>
                           <button
                             type="button"
@@ -4042,7 +4363,9 @@ export default function DistillationWorkbenchModal({
                               cursor: 'pointer',
                             }}
                           >
-                            산출 단수({result.shortcutDesign.solvedStagesN}단)·RR을 ⓪ 고정 단수로 확정 →
+                            {isEn
+                              ? `Lock Stages (${result.shortcutDesign.solvedStagesN}) & RR to ⓪ Fixed →`
+                              : `산출 단수(${result.shortcutDesign.solvedStagesN}단)·RR을 ⓪ 고정 단수로 확정 →`}
                           </button>
                         </div>
 
@@ -4056,16 +4379,24 @@ export default function DistillationWorkbenchModal({
                           }}
                         >
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>산출 이론단 / 실제단</div>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>
+                              {isEn ? 'Theo. / Actual Stages' : '산출 이론단 / 실제단'}
+                            </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
-                              {result.shortcutDesign.solvedStagesN}단 / {result.shortcutDesign.solvedActualTrays}단
+                              {isEn
+                                ? `${result.shortcutDesign.solvedStagesN} / ${result.shortcutDesign.solvedActualTrays}`
+                                : `${result.shortcutDesign.solvedStagesN}단 / ${result.shortcutDesign.solvedActualTrays}단`}
                             </div>
                             <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              N_min={result.shortcutDesign.minStagesNmin} · 피드 {result.shortcutDesign.solvedFeedStage}단
+                              {isEn
+                                ? `N_min=${result.shortcutDesign.minStagesNmin} · Feed Stg ${result.shortcutDesign.solvedFeedStage}`
+                                : `N_min=${result.shortcutDesign.minStagesNmin} · 피드 ${result.shortcutDesign.solvedFeedStage}단`}
                             </div>
                           </div>
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
-                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>운전 환류비 (RR)</div>
+                            <div style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>
+                              {isEn ? 'Operating Reflux Ratio (RR)' : '운전 환류비 (RR)'}
+                            </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                               {result.actualRefluxRatio.toFixed(2)}
                             </div>
@@ -4075,26 +4406,34 @@ export default function DistillationWorkbenchModal({
                           </div>
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑정 유량 D (상부)</span>
+                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>
+                                {isEn ? 'Distillate Flow D (Top)' : '탑정 유량 D (상부)'}
+                              </span>
                               <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
                             </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                               {formatCanonicalValue('massFlow', distTotalKgH, massUnit)} {getUnitLabel('massFlow', massUnit)}
                             </div>
                             <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              {result.shortcutDesign.lkComp} {result.shortcutDesign.topLkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.topLkRecoveryPct}%)
+                              {result.shortcutDesign.lkComp} {result.shortcutDesign.topLkPurityWtPct.toFixed(2)} wt% (
+                              {isEn ? 'Rec. ' : '회수 '}
+                              {result.shortcutDesign.topLkRecoveryPct}%)
                             </div>
                           </div>
                           <div style={{ background: '#F8FAFC', padding: '7px 9px', borderRadius: 7, border: '1px solid #E2E8F0' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>탑저 유량 B (하부)</span>
+                              <span style={{ fontSize: 10, color: '#64748B', fontWeight: 700 }}>
+                                {isEn ? 'Bottoms Flow B (Bot)' : '탑저 유량 B (하부)'}
+                              </span>
                               <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
                             </div>
                             <div style={{ fontSize: 14, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
                               {formatCanonicalValue('massFlow', botTotalKgH, massUnit)} {getUnitLabel('massFlow', massUnit)}
                             </div>
                             <div style={{ fontSize: 9.5, color: '#475569' }}>
-                              {result.shortcutDesign.hkComp} {result.shortcutDesign.botHkPurityWtPct.toFixed(2)} wt% (회수 {result.shortcutDesign.botHkRecoveryPct}%)
+                              {result.shortcutDesign.hkComp} {result.shortcutDesign.botHkPurityWtPct.toFixed(2)} wt% (
+                              {isEn ? 'Rec. ' : '회수 '}
+                              {result.shortcutDesign.botHkRecoveryPct}%)
                             </div>
                           </div>
                         </div>
@@ -4123,7 +4462,7 @@ export default function DistillationWorkbenchModal({
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                             <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                              탑정 응축기 냉각열량 (Q_cond)
+                              {isEn ? 'Condenser Cooling Duty (Q_cond)' : '탑정 응축기 냉각열량 (Q_cond)'}
                             </span>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                               <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
@@ -4134,7 +4473,8 @@ export default function DistillationWorkbenchModal({
                             {formatCanonicalValue('heatDuty', result.condenserDutyKcalH / 1000, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                           </div>
                           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                            ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · 탑정 {formatCanonicalValue('temp', result.topTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
+                            ({(result.condenserDutyKcalH / 860).toFixed(1)} kW · {isEn ? 'Top ' : '탑정 '}
+                            {formatCanonicalValue('temp', result.topTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
                           </div>
                         </div>
                         <div
@@ -4147,7 +4487,7 @@ export default function DistillationWorkbenchModal({
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                             <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
-                              탑저 리보일러 가열열량 (Q_reb)
+                              {isEn ? 'Reboiler Heating Duty (Q_reb)' : '탑저 리보일러 가열열량 (Q_reb)'}
                             </span>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                               <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
@@ -4158,7 +4498,8 @@ export default function DistillationWorkbenchModal({
                             +{formatCanonicalValue('heatDuty', result.reboilerDutyKcalH / 1000, dutyUnit)} {getUnitLabel('heatDuty', dutyUnit)}
                           </div>
                           <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 2 }}>
-                            ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · 탑저 {formatCanonicalValue('temp', result.bottomTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
+                            ({(result.reboilerDutyKcalH / 860).toFixed(1)} kW · {isEn ? 'Bot ' : '탑저 '}
+                            {formatCanonicalValue('temp', result.bottomTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)})
                           </div>
                         </div>
                       </div>
@@ -4171,7 +4512,9 @@ export default function DistillationWorkbenchModal({
               {leftTab === 'pressure' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                   <div style={cardStyle}>
-                    <label style={labelStyle}>열역학 기액평형(VLE) 패키지 선택</label>
+                    <label style={labelStyle}>
+                      {isEn ? 'Thermodynamic VLE Package' : '열역학 기액평형(VLE) 패키지 선택'}
+                    </label>
                     <select
                       value={thermoModel}
                       onChange={(e) =>
@@ -4180,32 +4523,46 @@ export default function DistillationWorkbenchModal({
                       style={selectBaseStyle}
                     >
                       <option value="AUTO">
-                        자동 판별 (AUTO — 피드 성분에 따라 ENRTL / NRTL / PR / SRK 자동 선택)
+                        {isEn
+                          ? 'Auto-Detect (AUTO — auto-selects ENRTL / NRTL / PR / SRK by feed)'
+                          : '자동 판별 (AUTO — 피드 성분에 따라 ENRTL / NRTL / PR / SRK 자동 선택)'}
                       </option>
                       <option value="ENRTL">
-                        ENRTL 전해질 수용액 활동도 모델 (산·알칼리·염 수용액, 염석 및 압력변동 공비)
+                        {isEn
+                          ? 'ENRTL Electrolyte Aqueous Model (acid/alkali/salt, salting-out & PSA azeotrope)'
+                          : 'ENRTL 전해질 수용액 활동도 모델 (산·알칼리·염 수용액, 염석 및 압력변동 공비)'}
                       </option>
                       <option value="NRTL">
-                        NRTL 비이상 액상 활동도 모델 (알코올·케톤·에스테르·ECH·클로로히드린·LLE 공비)
+                        {isEn
+                          ? 'NRTL Non-Ideal Liquid Activity Model (alcohols, ketones, esters, ECH, LLE azeotropes)'
+                          : 'NRTL 비이상 액상 활동도 모델 (알코올·케톤·에스테르·ECH·클로로히드린·LLE 공비)'}
                       </option>
                       <option value="PR">
-                        PR (Peng-Robinson 3차 상태방정식 — 탄화수소·BTX 방향족·액화 Cl₂/CO₂/AHCl)
+                        {isEn
+                          ? 'PR (Peng-Robinson Cubic EOS — hydrocarbons, BTX, liquefied Cl₂/CO₂/AHCl)'
+                          : 'PR (Peng-Robinson 3차 상태방정식 — 탄화수소·BTX 방향족·액화 Cl₂/CO₂/AHCl)'}
                       </option>
                       <option value="SRK">
-                        SRK (Soave-Redlich-Kwong 3차 상태방정식 — 수소·합성가스·에틸렌/프로필렌)
+                        {isEn
+                          ? 'SRK (Soave-Redlich-Kwong Cubic EOS — H₂, syngas, ethylene/propylene)'
+                          : 'SRK (Soave-Redlich-Kwong 3차 상태방정식 — 수소·합성가스·에틸렌/프로필렌)'}
                       </option>
                       <option value="ELEC_HCL_AZEO">
-                        ELEC_HCL_AZEO 압력변동 공비증류 전용 (진공 22.9% ↔ 상압 20.2% ↔ 가압 17.5% HCl)
+                        {isEn
+                          ? 'ELEC_HCL_AZEO Pressure-Swing HCl Azeotrope (Vac 22.9% ↔ Atm 20.2% ↔ Press 17.5%)'
+                          : 'ELEC_HCL_AZEO 압력변동 공비증류 전용 (진공 22.9% ↔ 상압 20.2% ↔ 가압 17.5% HCl)'}
                       </option>
                       <option value="PENG_ROB">
-                        Peng-Robinson 호환 모드 (초고순도 무수염산 AHCl 고압 정제)
+                        {isEn
+                          ? 'Peng-Robinson Compat. Mode (Ultra-High Purity AHCl High-P Purification)'
+                          : 'Peng-Robinson 호환 모드 (초고순도 무수염산 AHCl 고압 정제)'}
                       </option>
                     </select>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 9 }}>
                     <div style={cardStyle}>
-                      <label style={labelStyle}>탑정 압력</label>
+                      <label style={labelStyle}>{isEn ? 'Top Pressure' : '탑정 압력'}</label>
                       <UnitNumberInput
                         quantity="pressG"
                         unitId={pressUnit}
@@ -4230,7 +4587,7 @@ export default function DistillationWorkbenchModal({
                     </div>
 
                     <div style={cardStyle}>
-                      <label style={labelStyle}>단당 ΔP (/단)</label>
+                      <label style={labelStyle}>{isEn ? 'Stage ΔP (/stage)' : '단당 ΔP (/단)'}</label>
                       <UnitNumberInput
                         quantity="deltaP"
                         unitId={dpUnit}
@@ -4248,12 +4605,15 @@ export default function DistillationWorkbenchModal({
                         inputStyle={inputBaseStyle}
                       />
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4, fontFamily: MONO }}>
-                        탑저: {formatCanonicalValue('pressG', botPress, pressUnit, 2)} {getUnitLabel('pressG', pressUnit)} ({botBarA.toFixed(2)} barA)
+                        {isEn ? 'Bottom: ' : '탑저: '}
+                        {formatCanonicalValue('pressG', botPress, pressUnit, 2)} {getUnitLabel('pressG', pressUnit)} ({botBarA.toFixed(2)} barA)
                       </div>
                     </div>
 
                     <div style={cardStyle}>
-                      <label style={labelStyle}>Murphree 단효율 (%)</label>
+                      <label style={labelStyle}>
+                        {isEn ? 'Murphree Stage Eff. (%)' : 'Murphree 단효율 (%)'}
+                      </label>
                       <BufferedNumberInput
                         syncKey={`${unitTag}-meff`}
                         step={5}
@@ -4277,25 +4637,35 @@ export default function DistillationWorkbenchModal({
                         }
                         style={{ ...selectBaseStyle, marginTop: 5, fontSize: 11, padding: '4px 6px' }}
                       >
-                        <option value="theoretical">이론단 입력 → 실단 환산 (기본)</option>
-                        <option value="actual_murphree">실제단 입력 → MESH 행렬 η_M 반영</option>
+                        <option value="theoretical">
+                          {isEn ? 'Theoretical Input → Actual Conversion (Default)' : '이론단 입력 → 실단 환산 (기본)'}
+                        </option>
+                        <option value="actual_murphree">
+                          {isEn ? 'Actual Input → η_M in MESH Matrix' : '실제단 입력 → MESH 행렬 η_M 반영'}
+                        </option>
                       </select>
                       <div style={{ fontSize: 10.5, color: '#64748B', marginTop: 4 }}>
                         {isActualMurphreeUi
-                          ? `행렬 내 η_M 직접 적용 (실트레이 ${actualTrays}단 · 중복환산 없음)`
+                          ? isEn
+                            ? `η_M applied directly in matrix (${actualTrays} actual trays · no double conversion)`
+                            : `행렬 내 η_M 직접 적용 (실트레이 ${actualTrays}단 · 중복환산 없음)`
+                          : isEn
+                          ? `Basis for ${actualTrays} actual trays`
                           : `실제 트레이 ${actualTrays}단 산출 기준`}
                       </div>
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>빠른 운전압력 적용:</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#475569' }}>
+                      {isEn ? 'Quick Operating Pressure:' : '빠른 운전압력 적용:'}
+                    </span>
                     {[
-                      { label: '고진공 60 Torr (-0.95 kG, ECH/DCH)', p: -0.95, dp: 0.0015 },
-                      { label: '진공 115 Torr (-0.88 kG, 폐염산 농축)', p: -0.88, dp: 0.002 },
-                      { label: '상압 (0.05 kG)', p: 0.05, dp: 0.004 },
-                      { label: '가압 6.0 kG (폐염산 공비탈기)', p: 6.0, dp: 0.006 },
-                      { label: '고압 17.6 kG (5N AHCl 정제)', p: 17.6, dp: 0.008 },
+                      { label: isEn ? 'High Vac 60 Torr (-0.95 kG, ECH/DCH)' : '고진공 60 Torr (-0.95 kG, ECH/DCH)', p: -0.95, dp: 0.0015 },
+                      { label: isEn ? 'Vac 115 Torr (-0.88 kG, HCl Conc.)' : '진공 115 Torr (-0.88 kG, 폐염산 농축)', p: -0.88, dp: 0.002 },
+                      { label: isEn ? 'Atm (0.05 kG)' : '상압 (0.05 kG)', p: 0.05, dp: 0.004 },
+                      { label: isEn ? 'Press 6.0 kG (HCl Azeo Strip)' : '가압 6.0 kG (폐염산 공비탈기)', p: 6.0, dp: 0.006 },
+                      { label: isEn ? 'High-P 17.6 kG (5N AHCl)' : '고압 17.6 kG (5N AHCl 정제)', p: 17.6, dp: 0.008 },
                     ].map((pr) => (
                       <button
                         key={pr.label}
@@ -4350,7 +4720,11 @@ export default function DistillationWorkbenchModal({
                   >
                     <span style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
                       {hasSideCutOut
-                        ? '탑정(D) · 사이드컷(S) · 탑저(B) 물질수지 및 순도 요약'
+                        ? isEn
+                          ? 'Distillate (D) · Side-Cut (S) · Bottoms (B) Material Balance & Purity'
+                          : '탑정(D) · 사이드컷(S) · 탑저(B) 물질수지 및 순도 요약'
+                        : isEn
+                        ? 'Distillate (D) vs Bottoms (B) Material Balance & Purity'
                         : '탑정 유출(D) vs 탑저 관출(B) 물질수지 및 순도 요약'}
                     </span>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -4359,7 +4733,7 @@ export default function DistillationWorkbenchModal({
                         {hasSideCutOut ? ` | S = ${formatCanonicalValue('massFlow', sideCutOutMass, massUnit)} ${getUnitLabel('massFlow', massUnit)}` : ''}
                         {` | B = ${formatCanonicalValue('massFlow', botTotalKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)}`}
                         {result.decanterWaterDrawKgH > 0.005
-                          ? ` | 💧 디캔터 수분 W = ${formatCanonicalValue('massFlow', result.decanterWaterDrawKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)}`
+                          ? ` | ${isEn ? '💧 Decanter Water W' : '💧 디캔터 수분 W'} = ${formatCanonicalValue('massFlow', result.decanterWaterDrawKgH, massUnit)} ${getUnitLabel('massFlow', massUnit)}`
                           : ''}
                       </span>
                       <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
@@ -4389,18 +4763,22 @@ export default function DistillationWorkbenchModal({
                         }}
                       >
                         <span style={{ fontSize: 11, fontWeight: 900, color: '#5B21B6' }}>
-                          🟣 사이드컷 측류 (S)
+                          {isEn ? '🟣 Side-Cut Stream (S)' : '🟣 사이드컷 측류 (S)'}
                         </span>
                         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#4C1D95', fontFamily: MONO }}>
                           {formatCanonicalValue('massFlow', sideCutOutMass, massUnit)} {getUnitLabel('massFlow', massUnit)} (S/F {((result.actualSOverFMass ?? 0) * 100).toFixed(1)}%) ·{' '}
-                          {result.sideCutStageUsed ?? '-'}단 ·{' '}
+                          {isEn ? `Stg ${result.sideCutStageUsed ?? '-'}` : `${result.sideCutStageUsed ?? '-'}단`} ·{' '}
                           {result.sideCutTempC !== undefined ? `${formatCanonicalValue('temp', result.sideCutTempC, tempUnit, 1)} ${getUnitLabel('temp', tempUnit)}` : '-'} ·{' '}
-                          {result.sideCutPhase === 'G' ? '기상 (Vapor)' : '액상 (Liquid)'}
+                          {result.sideCutPhase === 'G'
+                            ? isEn ? 'Vapor' : '기상 (Vapor)'
+                            : isEn ? 'Liquid' : '액상 (Liquid)'}
                         </span>
                       </div>
                       {scCompBreakdown.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: '#6D28D9' }}>주요 조성:</span>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: '#6D28D9' }}>
+                            {isEn ? 'Key Comp.:' : '주요 조성:'}
+                          </span>
                           {scCompBreakdown.map((item) => (
                             <span
                               key={item.ck}
@@ -4427,17 +4805,25 @@ export default function DistillationWorkbenchModal({
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
                       <thead>
                         <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1' }}>
-                          <th style={{ padding: '5px 8px', textAlign: 'left' }}>성분</th>
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 D ({getUnitLabel('massFlow', massUnit)})</th>
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑정 농도</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'left' }}>{isEn ? 'Component' : '성분'}</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>
+                            {isEn ? `Dist. D (${getUnitLabel('massFlow', massUnit)})` : `탑정 D (${getUnitLabel('massFlow', massUnit)})`}
+                          </th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>{isEn ? 'Dist. Conc.' : '탑정 농도'}</th>
                           {hasSideCutOut && (
                             <>
-                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 S ({getUnitLabel('massFlow', massUnit)})</th>
-                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>측류 농도</th>
+                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>
+                                {isEn ? `Side S (${getUnitLabel('massFlow', massUnit)})` : `측류 S (${getUnitLabel('massFlow', massUnit)})`}
+                              </th>
+                              <th style={{ padding: '5px 8px', textAlign: 'right', color: '#6D28D9' }}>
+                                {isEn ? 'Side Conc.' : '측류 농도'}
+                              </th>
                             </>
                           )}
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 B ({getUnitLabel('massFlow', massUnit)})</th>
-                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>탑저 농도</th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>
+                            {isEn ? `Bot. B (${getUnitLabel('massFlow', massUnit)})` : `탑저 B (${getUnitLabel('massFlow', massUnit)})`}
+                          </th>
+                          <th style={{ padding: '5px 8px', textAlign: 'right' }}>{isEn ? 'Bot. Conc.' : '탑저 농도'}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -4509,9 +4895,9 @@ export default function DistillationWorkbenchModal({
               <div style={{ display: 'flex', gap: 4 }}>
                 {(
                   [
-                    { id: 'comp', label: '조성 프로파일' },
-                    { id: 'temp', label: '온도 프로파일' },
-                    { id: 'traffic', label: '기액유량(L/V)' },
+                    { id: 'comp', label: isEn ? 'Composition Profile' : '조성 프로파일' },
+                    { id: 'temp', label: isEn ? 'Temp. Profile' : '온도 프로파일' },
+                    { id: 'traffic', label: isEn ? 'L/V Traffic' : '기액유량(L/V)' },
                   ] as { id: RightChartId; label: string }[]
                 ).map((ct) => {
                   const active = rightChart === ct.id;
@@ -4553,7 +4939,9 @@ export default function DistillationWorkbenchModal({
                       cursor: 'pointer',
                     }}
                   >
-                    {phaseBasis === 'liq' ? '액상 x (wt%)' : '기상 y (wt%)'}
+                    {phaseBasis === 'liq'
+                      ? isEn ? 'Liquid x (wt%)' : '액상 x (wt%)'
+                      : isEn ? 'Vapor y (wt%)' : '기상 y (wt%)'}
                   </button>
                   <button
                     type="button"
@@ -4569,7 +4957,9 @@ export default function DistillationWorkbenchModal({
                       cursor: 'pointer',
                     }}
                   >
-                    {logScalePpm ? 'ppm 로그 스케일' : '선형 wt%'}
+                    {logScalePpm
+                      ? isEn ? 'ppm Log Scale' : 'ppm 로그 스케일'
+                      : isEn ? 'Linear wt%' : '선형 wt%'}
                   </button>
                 </div>
               )}
@@ -4605,7 +4995,7 @@ export default function DistillationWorkbenchModal({
                           zIndex: 2,
                         }}
                       >
-                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>단(Stage)</th>
+                        <th style={{ padding: '5px 7px', textAlign: 'left' }}>{isEn ? 'Stage' : '단(Stage)'}</th>
                         <th style={{ padding: '5px 7px', textAlign: 'right' }}>T (°C)</th>
                         <th style={{ padding: '5px 7px', textAlign: 'right' }}>P (barA)</th>
                         <th style={{ padding: '5px 7px', textAlign: 'right' }}>L (kg/h)</th>
@@ -4624,13 +5014,21 @@ export default function DistillationWorkbenchModal({
                         const scLiq = st.sideCutLiqKgH ?? 0;
                         const scVap = st.sideCutVapKgH ?? 0;
                         const scTooltip = isSideCut
-                          ? `사이드컷 측류 인출: ${
-                              scVap > 0 && scLiq > 0
-                                ? `액상 ${scLiq.toFixed(1)} + 기상 ${scVap.toFixed(1)} kg/h`
-                                : scVap > 0
-                                ? `기상 ${scVap.toFixed(1)} kg/h`
-                                : `액상 ${scLiq.toFixed(1)} kg/h`
-                            }`
+                          ? isEn
+                            ? `Side-Cut Draw: ${
+                                scVap > 0 && scLiq > 0
+                                  ? `Liq ${scLiq.toFixed(1)} + Vap ${scVap.toFixed(1)} kg/h`
+                                  : scVap > 0
+                                  ? `Vap ${scVap.toFixed(1)} kg/h`
+                                  : `Liq ${scLiq.toFixed(1)} kg/h`
+                              }`
+                            : `사이드컷 측류 인출: ${
+                                scVap > 0 && scLiq > 0
+                                  ? `액상 ${scLiq.toFixed(1)} + 기상 ${scVap.toFixed(1)} kg/h`
+                                  : scVap > 0
+                                  ? `기상 ${scVap.toFixed(1)} kg/h`
+                                  : `액상 ${scLiq.toFixed(1)} kg/h`
+                              }`
                           : undefined;
                         return (
                           <tr
@@ -4645,9 +5043,9 @@ export default function DistillationWorkbenchModal({
                             <td style={{ padding: '4px 7px' }}>
                               {st.stage}
                               {st.stage === 1
-                                ? ' (응축)'
+                                ? isEn ? ' (Cond)' : ' (응축)'
                                 : st.stage === stages.length
-                                  ? ' (리보일)'
+                                  ? isEn ? ' (Reb)' : ' (리보일)'
                                   : isFeed
                                     ? ' ★F'
                                     : ''}
@@ -4666,7 +5064,7 @@ export default function DistillationWorkbenchModal({
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  🟣 S측류
+                                  {isEn ? '🟣 S-Cut' : '🟣 S측류'}
                                 </span>
                               )}
                             </td>
@@ -4711,7 +5109,11 @@ export default function DistillationWorkbenchModal({
                 type="button"
                 onClick={triggerRunSimulation}
                 disabled={isRunningFeedback || !dofEvaluation.canRun}
-                title={!dofEvaluation.canRun ? dofEvaluation.hint : '다단 MESH 시뮬레이션 실행'}
+                title={
+                  !dofEvaluation.canRun
+                    ? dofEvaluation.hint
+                    : isEn ? 'Run multistage MESH simulation' : '다단 MESH 시뮬레이션 실행'
+                }
                 style={{
                   flex: 1,
                   padding: '9px 12px',
@@ -4741,12 +5143,12 @@ export default function DistillationWorkbenchModal({
                 }}
               >
                 {isRunningFeedback
-                  ? '⏳ 수렴 계산 중...'
+                  ? isEn ? '⏳ Converging...' : '⏳ 수렴 계산 중...'
                   : !dofEvaluation.canRun
-                  ? '▶ RUN (자유도 확인)'
+                  ? isEn ? '▶ Run (Check DOF)' : '▶ RUN (자유도 확인)'
                   : isSimDirty
-                  ? '▶ RUN 시뮬레이션 실행'
-                  : '▶ RUN 재실행'}
+                  ? isEn ? '▶ Run Simulation' : '▶ RUN 시뮬레이션 실행'
+                  : isEn ? '▶ Run' : '▶ RUN 재실행'}
               </button>
             )}
             <button
@@ -4765,7 +5167,7 @@ export default function DistillationWorkbenchModal({
                 textAlign: 'center',
               }}
             >
-              ✕ 닫기
+              {isEn ? '✕ Close' : '✕ 닫기'}
             </button>
           </div>
         )}

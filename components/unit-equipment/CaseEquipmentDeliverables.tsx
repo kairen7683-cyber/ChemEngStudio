@@ -47,14 +47,14 @@ const DELIVERABLES_KEY_PREFIX = 'chemplant-case-deliverables-v1';
 
 const EXCLUDED_UNIT_TYPES = new Set<FlowUnitType>(['feed', 'product', 'mixer', 'splitter']);
 
-const MATERIAL_OPTIONS: Array<{ key: CostMaterialKey; shortLabel: string }> = [
-  { key: 'CS', shortLabel: 'CS (탄소강)' },
-  { key: 'SS304', shortLabel: 'SS304' },
-  { key: 'SS316L', shortLabel: 'SS316L' },
-  { key: 'DUPLEX_2205', shortLabel: 'Duplex 2205' },
-  { key: 'TI_GR2', shortLabel: 'Ti Gr.2 (티타늄)' },
-  { key: 'HASTELLOY_C276', shortLabel: 'Hastelloy C-276' },
-  { key: 'PTFE_LINED', shortLabel: 'PTFE-Lined CS' },
+const MATERIAL_OPTIONS: Array<{ key: CostMaterialKey; shortLabel: string; enShortLabel: string }> = [
+  { key: 'CS', shortLabel: 'CS (탄소강)', enShortLabel: 'CS (Carbon Steel)' },
+  { key: 'SS304', shortLabel: 'SS304', enShortLabel: 'SS304' },
+  { key: 'SS316L', shortLabel: 'SS316L', enShortLabel: 'SS316L' },
+  { key: 'DUPLEX_2205', shortLabel: 'Duplex 2205', enShortLabel: 'Duplex 2205' },
+  { key: 'TI_GR2', shortLabel: 'Ti Gr.2 (티타늄)', enShortLabel: 'Ti Gr.2 (Titanium)' },
+  { key: 'HASTELLOY_C276', shortLabel: 'Hastelloy C-276', enShortLabel: 'Hastelloy C-276' },
+  { key: 'PTFE_LINED', shortLabel: 'PTFE-Lined CS', enShortLabel: 'PTFE-Lined CS' },
 ];
 
 export interface ChemProStateSnapshot {
@@ -122,48 +122,48 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function getUnitTypeKoLabel(unitType: FlowUnitType): string {
+function getUnitTypeLabel(unitType: FlowUnitType, isEn: boolean): string {
   switch (unitType) {
     case 'hex':
     case 'cooler':
-      return '열교환기 (HX)';
+      return isEn ? 'Heat Exchanger (HX)' : '열교환기 (HX)';
     case 'liquefier':
-      return '액화기 / 응축기';
+      return isEn ? 'Liquefier / Condenser' : '액화기 / 응축기';
     case 'evaporator':
-      return '증발관 (Evaporator)';
+      return isEn ? 'Evaporator' : '증발관 (Evaporator)';
     case 'pump':
-      return '펌프 (Pump)';
+      return isEn ? 'Pump' : '펌프 (Pump)';
     case 'compressor':
-      return '압축기 (Compressor)';
+      return isEn ? 'Compressor' : '압축기 (Compressor)';
     case 'distillation':
-      return '증류탑 (Column)';
+      return isEn ? 'Distillation Column' : '증류탑 (Column)';
     case 'absorber':
-      return '흡수/세정탑 (Absorber)';
+      return isEn ? 'Absorber / Scrubber' : '흡수/세정탑 (Absorber)';
     case 'extractor':
-      return '추출탑 (Extractor)';
+      return isEn ? 'Extractor Column' : '추출탑 (Extractor)';
     case 'desiccant_dryer':
-      return '흡착 제습탑 (Dryer)';
+      return isEn ? 'Adsorption Dryer' : '흡착 제습탑 (Dryer)';
     case 'chelate_tower':
-      return '킬레이트 수지탑';
+      return isEn ? 'Chelate Resin Tower' : '킬레이트 수지탑';
     case 'separator':
-      return '기액분리기 (Separator)';
+      return isEn ? 'V-L Separator' : '기액분리기 (Separator)';
     case 'reactor':
-      return '반응기 (Reactor)';
+      return isEn ? 'Reactor' : '반응기 (Reactor)';
     case 'saturator':
-      return '포화/침전조';
+      return isEn ? 'Saturator / Clarifier' : '포화/침전조';
     case 'electrolyzer':
-      return '전해조 (Electrolyzer)';
+      return isEn ? 'Electrolyzer' : '전해조 (Electrolyzer)';
     case 'valve':
     case 'valve_visual':
-      return '제어/감압 밸브';
+      return isEn ? 'Control / PRV Valve' : '제어/감압 밸브';
     case 'h_drum_visual':
-      return '수평 드럼';
+      return isEn ? 'Horizontal Drum' : '수평 드럼';
     case 'tank_visual':
-      return '저장 탱크';
+      return isEn ? 'Storage Tank' : '저장 탱크';
     case 'filter_visual':
-      return '여과기 (Filter)';
+      return isEn ? 'Filter' : '여과기 (Filter)';
     case 'silo_visual':
-      return '사일로 (Silo)';
+      return isEn ? 'Silo' : '사일로 (Silo)';
     default:
       return unitType;
   }
@@ -211,10 +211,21 @@ function formatUsdCompact(usd: number): string {
   return `$${Math.round(usd).toLocaleString()}`;
 }
 
+function formatKrwCompactEn(krw: number): string {
+  if (Math.abs(krw) >= 1e9) {
+    return `₩${(krw / 1e9).toFixed(2)}B`;
+  }
+  if (Math.abs(krw) >= 1e6) {
+    return `₩${(krw / 1e6).toFixed(1)}M`;
+  }
+  return `₩${Math.round(krw).toLocaleString()}`;
+}
+
 function buildFallbackHandoffPayload(
   row: EquipmentRowModel,
   plantId: string,
-  caseTitle: string
+  caseTitle: string,
+  isEn = false
 ): ChemProSimHandoffPayload {
   const tab = row.chemproTab;
   const tOp = row.inletTempC ?? row.outletTempC ?? 40;
@@ -227,11 +238,11 @@ function buildFallbackHandoffPayload(
     version: 1,
     timestamp: Date.now(),
     plantId,
-    sourceLabel: caseTitle || '현재 시뮬레이션 케이스',
+    sourceLabel: caseTitle || (isEn ? 'Current Simulation Case' : '현재 시뮬레이션 케이스'),
     tab,
     equipTag: row.def.tag || row.def.id,
     equipName: row.def.name || row.def.tag,
-    detectedFluidSummary: row.detectedFluid || '공정 유체',
+    detectedFluidSummary: row.detectedFluid || (isEn ? 'Process Fluid' : '공정 유체'),
   };
 
   if (tab === 'hx') {
@@ -415,6 +426,8 @@ export default function CaseEquipmentDeliverables() {
   const { activePlantId } = useBalanceStore();
   const units = useUnitStore(s => s.units);
   const hydrateUnits = useUnitStore(s => s.hydrate);
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
 
   const [caseTitle, setCaseTitle] = useState<string>('');
   const [loadedSheets, setLoadedSheets] = useState<LoadedCaseSheet[]>([]);
@@ -582,7 +595,7 @@ export default function CaseEquipmentDeliverables() {
           uRes?.detectedFluidLabel ||
           primaryIn?.keyConcLabel ||
           primaryOut?.keyConcLabel ||
-          '공정 유체';
+          (isEn ? 'Process Fluid' : '공정 유체');
 
         const defaultMat = inferDefaultMaterial(def, detectedFluid);
         const existingOverride = unitOverrides[rowKey];
@@ -720,7 +733,7 @@ export default function CaseEquipmentDeliverables() {
             contingencyFeeFactor: contingencyFactor,
           });
           cost = {
-            equipmentType: getUnitTypeKoLabel(def.unitType),
+            equipmentType: getUnitTypeLabel(def.unitType, isEn),
             materialLabel: COST_MATERIAL_FACTORS[material]?.label ?? material,
             cepciUsed: colCost.cepciUsed,
             fxKrwPerUsd: colCost.fxKrwPerUsd,
@@ -739,7 +752,7 @@ export default function CaseEquipmentDeliverables() {
               fbm: colCost.factors.fbmVessel,
               contingencyFeeFactor: colCost.factors.contingencyFeeFactor,
             },
-            basisSummary: `Ø${innerDiamM.toFixed(2)}m × H${tangentHeightM.toFixed(1)}m (${nStages}단)`,
+            basisSummary: `Ø${innerDiamM.toFixed(2)}m × H${tangentHeightM.toFixed(1)}m (${nStages}${isEn ? ' stages' : '단'})`,
           };
         } else if (def.unitType === 'valve' || def.unitType === 'valve_visual') {
           sizingKind = 'volume';
@@ -813,7 +826,7 @@ export default function CaseEquipmentDeliverables() {
           condParts.push(`W=${shaftPowerKw.toFixed(1)} kW`);
         }
         if (stages) {
-          condParts.push(`${stages}단`);
+          condParts.push(`${stages}${isEn ? ' stages' : '단'}`);
         }
 
         rows.push({
@@ -823,7 +836,7 @@ export default function CaseEquipmentDeliverables() {
           flowEdges: sheet.flowEdges,
           streams: sheet.solved.streams,
           uRes,
-          unitTypeLabel: getUnitTypeKoLabel(def.unitType),
+          unitTypeLabel: getUnitTypeLabel(def.unitType, isEn),
           sizingKind,
           autoSizingValue,
           effectiveSizingValue,
@@ -838,7 +851,12 @@ export default function CaseEquipmentDeliverables() {
           shaftPowerKw,
           stages,
           detectedFluid,
-          conditionSummary: condParts.length > 0 ? condParts.join(' · ') : '시뮬레이션 미실행 (기본 추정)',
+          conditionSummary:
+            condParts.length > 0
+              ? condParts.join(' · ')
+              : isEn
+                ? 'Not simulated (default estimate)'
+                : '시뮬레이션 미실행 (기본 추정)',
           material,
           override,
           cost,
@@ -848,7 +866,7 @@ export default function CaseEquipmentDeliverables() {
     }
 
     return rows;
-  }, [loadedSheets, persistState]);
+  }, [loadedSheets, persistState, isEn]);
 
   const totals = useMemo(() => {
     let cpUsd = 0;
@@ -917,8 +935,12 @@ export default function CaseEquipmentDeliverables() {
     const win = modalIframeRef.current?.contentWindow;
     if (!win || !activeModalRow) return;
     win.postMessage({ type: 'CHEMPRO_APPLY_SIM_HANDOFF' }, '*');
-    showToast(`[${activeModalRow.def.tag}] 시뮬레이션 운전조건으로 초기화했습니다.`);
-  }, [activeModalRow, showToast]);
+    showToast(
+      isEn
+        ? `[${activeModalRow.def.tag}] Reset to simulation operating conditions.`
+        : `[${activeModalRow.def.tag}] 시뮬레이션 운전조건으로 초기화했습니다.`
+    );
+  }, [activeModalRow, isEn, showToast]);
 
   useEffect(() => {
     if (!modalRowKey) return;
@@ -946,7 +968,15 @@ export default function CaseEquipmentDeliverables() {
   };
 
   const handleOpenDatasheetModal = (row: EquipmentRowModel) => {
-    const srcLabel = caseTitle || (activePlantId === 'classic_sim' ? '클래식 시뮬레이터 케이스' : '현재 시뮬레이션 케이스');
+    const srcLabel =
+      caseTitle ||
+      (activePlantId === 'classic_sim'
+        ? isEn
+          ? 'Classic Simulator Case'
+          : '클래식 시뮬레이터 케이스'
+        : isEn
+          ? 'Current Simulation Case'
+          : '현재 시뮬레이션 케이스');
     const built = buildChemProHandoffPayload(
       row.def,
       row.flowEdges,
@@ -956,7 +986,7 @@ export default function CaseEquipmentDeliverables() {
     );
     const payload: ChemProSimHandoffPayload = built
       ? { ...built, plantId: activePlantId }
-      : buildFallbackHandoffPayload(row, activePlantId, srcLabel);
+      : buildFallbackHandoffPayload(row, activePlantId, srcLabel, isEn);
 
     saveChemProHandoffPayload(payload);
 
@@ -1076,8 +1106,12 @@ export default function CaseEquipmentDeliverables() {
 
       showToast(
         nextSnapshot
-          ? `[${activeModalRow.def.tag}] 숏컷 설계 상태와 데이터시트가 현재 케이스에 저장되었습니다.`
-          : `[${activeModalRow.def.tag}] 데이터시트가 현재 케이스에 저장되고 투자비에 반영되었습니다.`
+          ? isEn
+            ? `[${activeModalRow.def.tag}] Shortcut design state and datasheet saved to current case.`
+            : `[${activeModalRow.def.tag}] 숏컷 설계 상태와 데이터시트가 현재 케이스에 저장되었습니다.`
+          : isEn
+            ? `[${activeModalRow.def.tag}] Datasheet saved to current case and applied to CAPEX.`
+            : `[${activeModalRow.def.tag}] 데이터시트가 현재 케이스에 저장되고 투자비에 반영되었습니다.`
       );
       setModalRowKey(null);
     } finally {
@@ -1088,83 +1122,167 @@ export default function CaseEquipmentDeliverables() {
   const handleExportExcel = () => {
     if (equipmentRows.length === 0) return;
 
-    const sheet1Rows = equipmentRows.map((r, idx) => ({
-      No: idx + 1,
-      Tag: r.def.tag,
-      장치명: r.def.name,
-      유형: r.unitTypeLabel,
-      '유체 / 서비스': r.detectedFluid,
-      '운전조건 (시뮬레이션)': r.conditionSummary,
-      '설계압력 (barG)': Number(r.designPressBarG.toFixed(2)),
-      '사이징 근거': r.cost.basisSummary,
-      '재질 (F_M)': `${r.material} (FM=${r.cost.factors.fm})`,
-      '데이터시트 상태': r.override.datasheetSaved ? '저장됨' : '미작성',
-      '데이터시트 요약': r.override.datasheetSummary || '-',
-      '구매원가 Cp (USD)': r.cost.purchasedUsd,
-      '설치투자비 C_BM (USD)': r.cost.bareModuleUsd,
-      '총 투자비 C_TM (USD)': r.cost.totalModuleUsd,
-      '구매원가 Cp (KRW)': r.cost.purchasedKrw,
-      '설치투자비 C_BM (KRW)': r.cost.bareModuleKrw,
-      '총 투자비 C_TM (KRW)': r.cost.totalModuleKrw,
-    }));
+    const sheet1Rows = isEn
+      ? [
+          ...equipmentRows.map((r, idx) => ({
+            No: idx + 1,
+            Tag: r.def.tag,
+            Equipment: r.def.name,
+            Type: r.unitTypeLabel,
+            'Fluid / Service': r.detectedFluid,
+            'Operating Conditions (Sim)': r.conditionSummary,
+            'Design Press. (barG)': Number(r.designPressBarG.toFixed(2)),
+            'Sizing Basis': r.cost.basisSummary,
+            'Material (F_M)': `${r.material} (FM=${r.cost.factors.fm})`,
+            'Datasheet Status': r.override.datasheetSaved ? 'Saved' : 'Pending',
+            'Datasheet Summary': r.override.datasheetSummary || '-',
+            'Purchased Cp (USD)': r.cost.purchasedUsd,
+            'Bare Module C_BM (USD)': r.cost.bareModuleUsd,
+            'Total CAPEX C_TM (USD)': r.cost.totalModuleUsd,
+            'Purchased Cp (KRW)': r.cost.purchasedKrw,
+            'Bare Module C_BM (KRW)': r.cost.bareModuleKrw,
+            'Total CAPEX C_TM (KRW)': r.cost.totalModuleKrw,
+          })),
+          {
+            No: equipmentRows.length + 1,
+            Tag: 'TOTAL',
+            Equipment: `Total (${equipmentRows.length} units)`,
+            Type: '-',
+            'Fluid / Service': '-',
+            'Operating Conditions (Sim)': `Datasheets ${totals.datasheetsDone}/${totals.count}`,
+            'Design Press. (barG)': 0,
+            'Sizing Basis': `CEPCI=${persistState.cepci}, FX=${persistState.fxKrwPerUsd}`,
+            'Material (F_M)': '-',
+            'Datasheet Status': `${totals.datasheetsDone}/${totals.count}`,
+            'Datasheet Summary': formatUsdCompact(totals.ctmUsd),
+            'Purchased Cp (USD)': totals.cpUsd,
+            'Bare Module C_BM (USD)': totals.cbmUsd,
+            'Total CAPEX C_TM (USD)': totals.ctmUsd,
+            'Purchased Cp (KRW)': totals.cpKrw,
+            'Bare Module C_BM (KRW)': totals.cbmKrw,
+            'Total CAPEX C_TM (KRW)': totals.ctmKrw,
+          },
+        ]
+      : [
+          ...equipmentRows.map((r, idx) => ({
+            No: idx + 1,
+            Tag: r.def.tag,
+            장치명: r.def.name,
+            유형: r.unitTypeLabel,
+            '유체 / 서비스': r.detectedFluid,
+            '운전조건 (시뮬레이션)': r.conditionSummary,
+            '설계압력 (barG)': Number(r.designPressBarG.toFixed(2)),
+            '사이징 근거': r.cost.basisSummary,
+            '재질 (F_M)': `${r.material} (FM=${r.cost.factors.fm})`,
+            '데이터시트 상태': r.override.datasheetSaved ? '저장됨' : '미작성',
+            '데이터시트 요약': r.override.datasheetSummary || '-',
+            '구매원가 Cp (USD)': r.cost.purchasedUsd,
+            '설치투자비 C_BM (USD)': r.cost.bareModuleUsd,
+            '총 투자비 C_TM (USD)': r.cost.totalModuleUsd,
+            '구매원가 Cp (KRW)': r.cost.purchasedKrw,
+            '설치투자비 C_BM (KRW)': r.cost.bareModuleKrw,
+            '총 투자비 C_TM (KRW)': r.cost.totalModuleKrw,
+          })),
+          {
+            No: equipmentRows.length + 1,
+            Tag: 'TOTAL',
+            장치명: `총 ${equipmentRows.length}기 장치 합계`,
+            유형: '-',
+            '유체 / 서비스': '-',
+            '운전조건 (시뮬레이션)': `데이터시트 완료 ${totals.datasheetsDone}/${totals.count}`,
+            '설계압력 (barG)': 0,
+            '사이징 근거': `CEPCI=${persistState.cepci}, FX=${persistState.fxKrwPerUsd}`,
+            '재질 (F_M)': '-',
+            '데이터시트 상태': `${totals.datasheetsDone}/${totals.count}`,
+            '데이터시트 요약': formatKrwReadable(totals.ctmKrw),
+            '구매원가 Cp (USD)': totals.cpUsd,
+            '설치투자비 C_BM (USD)': totals.cbmUsd,
+            '총 투자비 C_TM (USD)': totals.ctmUsd,
+            '구매원가 Cp (KRW)': totals.cpKrw,
+            '설치투자비 C_BM (KRW)': totals.cbmKrw,
+            '총 투자비 C_TM (KRW)': totals.ctmKrw,
+          },
+        ];
 
-    sheet1Rows.push({
-      No: equipmentRows.length + 1,
-      Tag: 'TOTAL',
-      장치명: `총 ${equipmentRows.length}기 장치 합계`,
-      유형: '-',
-      '유체 / 서비스': '-',
-      '운전조건 (시뮬레이션)': `데이터시트 완료 ${totals.datasheetsDone}/${totals.count}`,
-      '설계압력 (barG)': 0,
-      '사이징 근거': `CEPCI=${persistState.cepci}, FX=${persistState.fxKrwPerUsd}`,
-      '재질 (F_M)': '-',
-      '데이터시트 상태': `${totals.datasheetsDone}/${totals.count}`,
-      '데이터시트 요약': formatKrwReadable(totals.ctmKrw),
-      '구매원가 Cp (USD)': totals.cpUsd,
-      '설치투자비 C_BM (USD)': totals.cbmUsd,
-      '총 투자비 C_TM (USD)': totals.ctmUsd,
-      '구매원가 Cp (KRW)': totals.cpKrw,
-      '설치투자비 C_BM (KRW)': totals.cbmKrw,
-      '총 투자비 C_TM (KRW)': totals.ctmKrw,
-    });
-
-    const basisRows = [
-      { 항목: '케이스명', 값: caseTitle || '현재 작업 케이스', 비고: '이 케이스 전용 산출물' },
-      {
-        항목: '시뮬레이터 모드',
-        값: activePlantId === 'classic_sim' ? '클래식 공정 시뮬레이터' : '신규 공정 시뮬레이터',
-        비고: activePlantId,
-      },
-      { 항목: '산출 일시', 값: new Date().toLocaleString('ko-KR'), 비고: '' },
-      { 항목: 'CEPCI 지수', 값: persistState.cepci, 비고: 'Turton 기준 397 / Towler 기준 532 환산' },
-      { 항목: '환율 (KRW/USD)', 값: persistState.fxKrwPerUsd, 비고: '사용자 설정 환율' },
-      {
-        항목: '총 모듈 계수 (C_TM / C_BM)',
-        값: persistState.contingencyFactor,
-        비고: '예비비 15% + 엔지니어링 수수료 3% (Turton 기본 1.18)',
-      },
-      { 항목: '총 장치 수', 값: `${totals.count} 기`, 비고: `데이터시트 완료 ${totals.datasheetsDone} 기` },
-      {
-        항목: '총 구매원가 (Cp)',
-        값: `${formatUsdCompact(totals.cpUsd)} (${formatKrwReadable(totals.cpKrw)})`,
-        비고: `${totals.cpUsd.toLocaleString()} USD`,
-      },
-      {
-        항목: '총 설치투자비 (C_BM)',
-        값: `${formatUsdCompact(totals.cbmUsd)} (${formatKrwReadable(totals.cbmKrw)})`,
-        비고: `${totals.cbmUsd.toLocaleString()} USD`,
-      },
-      {
-        항목: '총 모듈 투자비 (C_TM)',
-        값: `${formatUsdCompact(totals.ctmUsd)} (${formatKrwReadable(totals.ctmKrw)})`,
-        비고: `${totals.ctmUsd.toLocaleString()} USD`,
-      },
-      {
-        항목: '산출 문헌 근거',
-        값: 'Turton (2018) 5th ed. Appendix A / Towler & Sinnott (2022) Ch.7 / Guthrie Bare-Module',
-        비고: 'Class 4 개념설계 추정 (±30%)',
-      },
-    ];
+    const basisRows = isEn
+      ? [
+          { Item: 'Case Name', Value: caseTitle || 'Current Case', Notes: 'Case-scoped deliverables' },
+          {
+            Item: 'Simulator Mode',
+            Value: activePlantId === 'classic_sim' ? 'Classic Process Simulator' : 'Flowsheet Simulator',
+            Notes: activePlantId,
+          },
+          { Item: 'Generated At', Value: new Date().toLocaleString('en-US'), Notes: '' },
+          { Item: 'CEPCI Index', Value: persistState.cepci, Notes: 'Escalated from Turton (397) / Towler (532)' },
+          { Item: 'FX Rate (KRW/USD)', Value: persistState.fxKrwPerUsd, Notes: 'User-configured exchange rate' },
+          {
+            Item: 'Total Module Factor (C_TM / C_BM)',
+            Value: persistState.contingencyFactor,
+            Notes: '15% contingency + 3% engineering fee (Turton default 1.18)',
+          },
+          {
+            Item: 'Equipment Count',
+            Value: `${totals.count} units`,
+            Notes: `Datasheets completed: ${totals.datasheetsDone}`,
+          },
+          {
+            Item: 'Total Purchased Cost (Cp)',
+            Value: `${formatUsdCompact(totals.cpUsd)} (${formatKrwCompactEn(totals.cpKrw)})`,
+            Notes: `${totals.cpUsd.toLocaleString()} USD`,
+          },
+          {
+            Item: 'Total Bare Module Cost (C_BM)',
+            Value: `${formatUsdCompact(totals.cbmUsd)} (${formatKrwCompactEn(totals.cbmKrw)})`,
+            Notes: `${totals.cbmUsd.toLocaleString()} USD`,
+          },
+          {
+            Item: 'Total Module CAPEX (C_TM)',
+            Value: `${formatUsdCompact(totals.ctmUsd)} (${formatKrwCompactEn(totals.ctmKrw)})`,
+            Notes: `${totals.ctmUsd.toLocaleString()} USD`,
+          },
+          {
+            Item: 'Literature Basis',
+            Value: 'Turton (2018) 5th ed. Appendix A / Towler & Sinnott (2022) Ch.7 / Guthrie Bare-Module',
+            Notes: 'Class 4 conceptual estimate (±30%)',
+          },
+        ]
+      : [
+          { 항목: '케이스명', 값: caseTitle || '현재 작업 케이스', 비고: '이 케이스 전용 산출물' },
+          {
+            항목: '시뮬레이터 모드',
+            값: activePlantId === 'classic_sim' ? '클래식 공정 시뮬레이터' : '신규 공정 시뮬레이터',
+            비고: activePlantId,
+          },
+          { 항목: '산출 일시', 값: new Date().toLocaleString('ko-KR'), 비고: '' },
+          { 항목: 'CEPCI 지수', 값: persistState.cepci, 비고: 'Turton 기준 397 / Towler 기준 532 환산' },
+          { 항목: '환율 (KRW/USD)', 값: persistState.fxKrwPerUsd, 비고: '사용자 설정 환율' },
+          {
+            항목: '총 모듈 계수 (C_TM / C_BM)',
+            값: persistState.contingencyFactor,
+            비고: '예비비 15% + 엔지니어링 수수료 3% (Turton 기본 1.18)',
+          },
+          { 항목: '총 장치 수', 값: `${totals.count} 기`, 비고: `데이터시트 완료 ${totals.datasheetsDone} 기` },
+          {
+            항목: '총 구매원가 (Cp)',
+            값: `${formatUsdCompact(totals.cpUsd)} (${formatKrwReadable(totals.cpKrw)})`,
+            비고: `${totals.cpUsd.toLocaleString()} USD`,
+          },
+          {
+            항목: '총 설치투자비 (C_BM)',
+            값: `${formatUsdCompact(totals.cbmUsd)} (${formatKrwReadable(totals.cbmKrw)})`,
+            비고: `${totals.cbmUsd.toLocaleString()} USD`,
+          },
+          {
+            항목: '총 모듈 투자비 (C_TM)',
+            값: `${formatUsdCompact(totals.ctmUsd)} (${formatKrwReadable(totals.ctmKrw)})`,
+            비고: `${totals.ctmUsd.toLocaleString()} USD`,
+          },
+          {
+            항목: '산출 문헌 근거',
+            값: 'Turton (2018) 5th ed. Appendix A / Towler & Sinnott (2022) Ch.7 / Guthrie Bare-Module',
+            비고: 'Class 4 개념설계 추정 (±30%)',
+          },
+        ];
 
     const wb = XLSX.utils.book_new();
     const ws1 = XLSX.utils.json_to_sheet(sheet1Rows);
@@ -1196,12 +1314,23 @@ export default function CaseEquipmentDeliverables() {
     const safeName = (caseTitle || activePlantId).replace(/[^a-zA-Z0-9가-힣_-]/g, '_').slice(0, 32);
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     XLSX.writeFile(wb, `Equipment_CAPEX_${safeName}_${ymd}.xlsx`);
-    showToast('장치목록·투자비 엑셀(.xlsx) 파일을 다운로드했습니다.');
+    showToast(
+      isEn
+        ? 'Downloaded Equipment List & CAPEX Excel (.xlsx).'
+        : '장치목록·투자비 엑셀(.xlsx) 파일을 다운로드했습니다.'
+    );
   };
 
   const backHref = activePlantId === 'classic_sim' ? '/classic-simulator' : '/flowsheet-simulator';
   const displayCaseTitle =
-    caseTitle || (activePlantId === 'classic_sim' ? '현재 클래식 케이스' : '현재 시뮬레이터 케이스');
+    caseTitle ||
+    (activePlantId === 'classic_sim'
+      ? isEn
+        ? 'Current Classic Case'
+        : '현재 클래식 케이스'
+      : isEn
+        ? 'Current Simulator Case'
+        : '현재 시뮬레이터 케이스');
 
   const modalIframeSrc = useMemo(() => {
     if (!modalRowKey) return '';
@@ -1261,7 +1390,7 @@ export default function CaseEquipmentDeliverables() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#0F172A' }}>
-                장치목록 · 데이터시트 · 투자비 (CAPEX)
+                {isEn ? 'Equipment List · Datasheets · CAPEX' : '장치목록 · 데이터시트 · 투자비 (CAPEX)'}
               </h1>
               <span
                 style={{
@@ -1278,11 +1407,15 @@ export default function CaseEquipmentDeliverables() {
                 }}
               >
                 <span>📁 {displayCaseTitle}</span>
-                <span style={{ color: '#64748B', fontWeight: 500 }}>· 이 케이스 전용 산출물</span>
+                <span style={{ color: '#64748B', fontWeight: 500 }}>
+                  {isEn ? '· Case-Scoped Deliverables' : '· 이 케이스 전용 산출물'}
+                </span>
               </span>
             </div>
             <p style={{ margin: '5px 0 0', fontSize: 12.5, color: '#475569' }}>
-              시뮬레이션 수렴 운전조건 기반으로 주요 공정장치의 사이징·데이터시트·Turton/Guthrie Bare-Module 투자비를 산출합니다.
+              {isEn
+                ? 'Calculates equipment sizing, datasheets, and Turton/Guthrie Bare-Module CAPEX from converged simulation operating conditions.'
+                : '시뮬레이션 수렴 운전조건 기반으로 주요 공정장치의 사이징·데이터시트·Turton/Guthrie Bare-Module 투자비를 산출합니다.'}
             </p>
           </div>
 
@@ -1301,7 +1434,7 @@ export default function CaseEquipmentDeliverables() {
                 cursor: 'pointer',
               }}
             >
-              ← 시뮬레이션으로 돌아가기
+              {isEn ? '← Back to Simulation' : '← 시뮬레이션으로 돌아가기'}
             </button>
             <button
               type="button"
@@ -1319,7 +1452,9 @@ export default function CaseEquipmentDeliverables() {
                 boxShadow: equipmentRows.length === 0 ? 'none' : '0 2px 6px rgba(30,58,138,0.22)',
               }}
             >
-              📊 장치목록·투자비 엑셀(.xlsx) 다운로드
+              {isEn
+                ? '📊 Export Equipment List & CAPEX (.xlsx)'
+                : '📊 장치목록·투자비 엑셀(.xlsx) 다운로드'}
             </button>
           </div>
         </div>
@@ -1341,9 +1476,13 @@ export default function CaseEquipmentDeliverables() {
               padding: '13px 15px',
             }}
           >
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>공정 장치 / 데이터시트</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>
+              {isEn ? 'Equipment / Datasheets' : '공정 장치 / 데이터시트'}
+            </div>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-              <span style={{ fontSize: 22, fontWeight: 800, color: '#0F172A' }}>{totals.count}기</span>
+              <span style={{ fontSize: 22, fontWeight: 800, color: '#0F172A' }}>
+                {isEn ? `${totals.count} units` : `${totals.count}기`}
+              </span>
               <span
                 style={{
                   fontSize: 12,
@@ -1351,11 +1490,15 @@ export default function CaseEquipmentDeliverables() {
                   color: totals.datasheetsDone === totals.count && totals.count > 0 ? '#059669' : '#2563EB',
                 }}
               >
-                시트 {totals.datasheetsDone} / {totals.count}
+                {isEn
+                  ? `Sheets ${totals.datasheetsDone} / ${totals.count}`
+                  : `시트 ${totals.datasheetsDone} / ${totals.count}`}
               </span>
             </div>
             <div style={{ marginTop: 3, fontSize: 11, color: '#94A3B8' }}>
-              Feed/Product/Mixer/Splitter 제외
+              {isEn
+                ? 'Excludes Feed / Product / Mixer / Splitter'
+                : 'Feed/Product/Mixer/Splitter 제외'}
             </div>
           </div>
 
@@ -1367,12 +1510,14 @@ export default function CaseEquipmentDeliverables() {
               padding: '13px 15px',
             }}
           >
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>총 구매원가 (Cp)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>
+              {isEn ? 'Total Purchased Cost (Cp)' : '총 구매원가 (Cp)'}
+            </div>
             <div style={{ marginTop: 6, fontSize: 20, fontWeight: 800, color: '#0F172A' }}>
-              {formatKrwReadable(totals.cpKrw)}
+              {isEn ? formatUsdCompact(totals.cpUsd) : formatKrwReadable(totals.cpKrw)}
             </div>
             <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>
-              {formatUsdCompact(totals.cpUsd)}
+              {isEn ? formatKrwCompactEn(totals.cpKrw) : formatUsdCompact(totals.cpUsd)}
             </div>
           </div>
 
@@ -1384,12 +1529,16 @@ export default function CaseEquipmentDeliverables() {
               padding: '13px 15px',
             }}
           >
-            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>총 설치투자비 (C_BM)</div>
+            <div style={{ fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>
+              {isEn ? 'Bare Module Cost (C_BM)' : '총 설치투자비 (C_BM)'}
+            </div>
             <div style={{ marginTop: 6, fontSize: 20, fontWeight: 800, color: '#1E3A8A' }}>
-              {formatKrwReadable(totals.cbmKrw)}
+              {isEn ? formatUsdCompact(totals.cbmUsd) : formatKrwReadable(totals.cbmKrw)}
             </div>
             <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600, color: '#64748B' }}>
-              {formatUsdCompact(totals.cbmUsd)} · Bare-Module
+              {isEn
+                ? `${formatKrwCompactEn(totals.cbmKrw)} · Bare-Module`
+                : `${formatUsdCompact(totals.cbmUsd)} · Bare-Module`}
             </div>
           </div>
 
@@ -1403,13 +1552,15 @@ export default function CaseEquipmentDeliverables() {
             }}
           >
             <div style={{ fontSize: 11.5, fontWeight: 600, color: '#BFDBFE' }}>
-              총 모듈 CAPEX (C_TM)
+              {isEn ? 'Total Module CAPEX (C_TM)' : '총 모듈 CAPEX (C_TM)'}
             </div>
             <div style={{ marginTop: 6, fontSize: 21, fontWeight: 800 }}>
-              {formatKrwReadable(totals.ctmKrw)}
+              {isEn ? formatUsdCompact(totals.ctmUsd) : formatKrwReadable(totals.ctmKrw)}
             </div>
             <div style={{ marginTop: 3, fontSize: 11.5, fontWeight: 600, color: '#DBEAFE' }}>
-              {formatUsdCompact(totals.ctmUsd)} (계수 ×{persistState.contingencyFactor.toFixed(2)})
+              {isEn
+                ? `${formatKrwCompactEn(totals.ctmKrw)} (Factor ×${persistState.contingencyFactor.toFixed(2)})`
+                : `${formatUsdCompact(totals.ctmUsd)} (계수 ×${persistState.contingencyFactor.toFixed(2)})`}
             </div>
           </div>
 
@@ -1453,7 +1604,9 @@ export default function CaseEquipmentDeliverables() {
               />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: '#334155' }}>환율 (₩/$)</label>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: '#334155' }}>
+                {isEn ? 'FX Rate (₩/$)' : '환율 (₩/$)'}
+              </label>
               <input
                 type="number"
                 min={800}
@@ -1494,10 +1647,14 @@ export default function CaseEquipmentDeliverables() {
           >
             <div style={{ fontSize: 34, marginBottom: 10 }}>🏭</div>
             <div style={{ fontSize: 16, fontWeight: 800, color: '#1E293B', marginBottom: 6 }}>
-              현재 케이스에 등록된 공정 장치가 없습니다
+              {isEn
+                ? 'No process equipment in the current case'
+                : '현재 케이스에 등록된 공정 장치가 없습니다'}
             </div>
             <p style={{ margin: '0 auto 18px', maxWidth: 460, fontSize: 13, color: '#64748B', lineHeight: 1.6 }}>
-              시뮬레이터 캔버스에 열교환기, 펌프, 압축기, 탑조, 분리기, 반응기 등 공정 장치를 배치하고 계산을 실행하면 이 케이스 전용 장치목록과 CAPEX가 자동으로 산출됩니다.
+              {isEn
+                ? 'Place process equipment (heat exchangers, pumps, compressors, columns, separators, reactors, etc.) on the simulator canvas and run the calculation to automatically generate the case-scoped equipment list and CAPEX.'
+                : '시뮬레이터 캔버스에 열교환기, 펌프, 압축기, 탑조, 분리기, 반응기 등 공정 장치를 배치하고 계산을 실행하면 이 케이스 전용 장치목록과 CAPEX가 자동으로 산출됩니다.'}
             </p>
             <button
               type="button"
@@ -1513,7 +1670,7 @@ export default function CaseEquipmentDeliverables() {
                 cursor: 'pointer',
               }}
             >
-              ← 시뮬레이션으로 돌아가기
+              {isEn ? '← Back to Simulation' : '← 시뮬레이션으로 돌아가기'}
             </button>
           </div>
         ) : (
@@ -1544,15 +1701,33 @@ export default function CaseEquipmentDeliverables() {
                       textAlign: 'left',
                     }}
                   >
-                    <th style={{ padding: '11px 12px', fontWeight: 700 }}>Tag / 장치명</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>유형</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>운전조건 (시뮬레이션)</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>재질 (F_M)</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>데이터시트</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>구매원가 (Cp)</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>설치투자비 (C_BM)</th>
-                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>총 투자비 (C_TM)</th>
-                    <th style={{ padding: '11px 12px', fontWeight: 700, textAlign: 'center' }}>작업</th>
+                    <th style={{ padding: '11px 12px', fontWeight: 700 }}>
+                      {isEn ? 'Tag / Equipment' : 'Tag / 장치명'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>
+                      {isEn ? 'Type' : '유형'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>
+                      {isEn ? 'Operating Conditions (Sim)' : '운전조건 (시뮬레이션)'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>
+                      {isEn ? 'Material (F_M)' : '재질 (F_M)'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700 }}>
+                      {isEn ? 'Datasheet' : '데이터시트'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>
+                      {isEn ? 'Purchased (Cp)' : '구매원가 (Cp)'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>
+                      {isEn ? 'Bare Module (C_BM)' : '설치투자비 (C_BM)'}
+                    </th>
+                    <th style={{ padding: '11px 10px', fontWeight: 700, textAlign: 'right' }}>
+                      {isEn ? 'Total CAPEX (C_TM)' : '총 투자비 (C_TM)'}
+                    </th>
+                    <th style={{ padding: '11px 12px', fontWeight: 700, textAlign: 'center' }}>
+                      {isEn ? 'Action' : '작업'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1635,7 +1810,7 @@ export default function CaseEquipmentDeliverables() {
                         >
                           {MATERIAL_OPTIONS.map(opt => (
                             <option key={opt.key} value={opt.key}>
-                              {opt.shortLabel}
+                              {isEn ? opt.enShortLabel : opt.shortLabel}
                             </option>
                           ))}
                         </select>
@@ -1664,8 +1839,12 @@ export default function CaseEquipmentDeliverables() {
                               }}
                             >
                               {row.override.chemproSnapshot
-                                ? '✅ 저장됨 (숏컷 보관)'
-                                : '✅ 저장됨'}
+                                ? isEn
+                                  ? '✅ Saved (Shortcut)'
+                                  : '✅ 저장됨 (숏컷 보관)'
+                                : isEn
+                                  ? '✅ Saved'
+                                  : '✅ 저장됨'}
                             </span>
                             {row.override.datasheetSummary && (
                               <div
@@ -1696,7 +1875,7 @@ export default function CaseEquipmentDeliverables() {
                               fontWeight: 600,
                             }}
                           >
-                            미작성
+                            {isEn ? 'Pending' : '미작성'}
                           </span>
                         )}
                       </td>
@@ -1711,10 +1890,14 @@ export default function CaseEquipmentDeliverables() {
                         }}
                       >
                         <div style={{ fontWeight: 700, color: '#0F172A' }}>
-                          {formatKrwReadable(row.cost.purchasedKrw)}
+                          {isEn
+                            ? formatUsdCompact(row.cost.purchasedUsd)
+                            : formatKrwReadable(row.cost.purchasedKrw)}
                         </div>
                         <div style={{ fontSize: 11, color: '#64748B' }}>
-                          {formatUsdCompact(row.cost.purchasedUsd)}
+                          {isEn
+                            ? formatKrwCompactEn(row.cost.purchasedKrw)
+                            : formatUsdCompact(row.cost.purchasedUsd)}
                         </div>
                       </td>
 
@@ -1728,10 +1911,14 @@ export default function CaseEquipmentDeliverables() {
                         }}
                       >
                         <div style={{ fontWeight: 700, color: '#1E3A8A' }}>
-                          {formatKrwReadable(row.cost.bareModuleKrw)}
+                          {isEn
+                            ? formatUsdCompact(row.cost.bareModuleUsd)
+                            : formatKrwReadable(row.cost.bareModuleKrw)}
                         </div>
                         <div style={{ fontSize: 11, color: '#64748B' }}>
-                          {formatUsdCompact(row.cost.bareModuleUsd)}
+                          {isEn
+                            ? formatKrwCompactEn(row.cost.bareModuleKrw)
+                            : formatUsdCompact(row.cost.bareModuleUsd)}
                         </div>
                       </td>
 
@@ -1745,10 +1932,14 @@ export default function CaseEquipmentDeliverables() {
                         }}
                       >
                         <div style={{ fontWeight: 800, color: '#0F172A' }}>
-                          {formatKrwReadable(row.cost.totalModuleKrw)}
+                          {isEn
+                            ? formatUsdCompact(row.cost.totalModuleUsd)
+                            : formatKrwReadable(row.cost.totalModuleKrw)}
                         </div>
                         <div style={{ fontSize: 11, color: '#64748B' }}>
-                          {formatUsdCompact(row.cost.totalModuleUsd)}
+                          {isEn
+                            ? formatKrwCompactEn(row.cost.totalModuleKrw)
+                            : formatUsdCompact(row.cost.totalModuleUsd)}
                         </div>
                       </td>
 
@@ -1777,7 +1968,13 @@ export default function CaseEquipmentDeliverables() {
                             cursor: 'pointer',
                           }}
                         >
-                          {row.override.datasheetSaved ? '📐 데이터시트 열기' : '📐 데이터시트 생성'}
+                          {row.override.datasheetSaved
+                            ? isEn
+                              ? '📐 Open Datasheet'
+                              : '📐 데이터시트 열기'
+                            : isEn
+                              ? '📐 Create Datasheet'
+                              : '📐 데이터시트 생성'}
                         </button>
                       </td>
                     </tr>
@@ -1792,13 +1989,16 @@ export default function CaseEquipmentDeliverables() {
                     }}
                   >
                     <td colSpan={5} style={{ padding: '12px', color: '#0F172A' }}>
-                      합계 ({totals.count}기 장치 · CEPCI {persistState.cepci} · ₩
-                      {persistState.fxKrwPerUsd.toLocaleString()}/$)
+                      {isEn
+                        ? `Total (${totals.count} units · CEPCI ${persistState.cepci} · ₩${persistState.fxKrwPerUsd.toLocaleString()}/$)`
+                        : `합계 (${totals.count}기 장치 · CEPCI ${persistState.cepci} · ₩${persistState.fxKrwPerUsd.toLocaleString()}/$)`}
                     </td>
                     <td style={{ padding: '12px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div>{formatKrwReadable(totals.cpKrw)}</div>
+                      <div>
+                        {isEn ? formatUsdCompact(totals.cpUsd) : formatKrwReadable(totals.cpKrw)}
+                      </div>
                       <div style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>
-                        {formatUsdCompact(totals.cpUsd)}
+                        {isEn ? formatKrwCompactEn(totals.cpKrw) : formatUsdCompact(totals.cpUsd)}
                       </div>
                     </td>
                     <td
@@ -1809,15 +2009,19 @@ export default function CaseEquipmentDeliverables() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      <div>{formatKrwReadable(totals.cbmKrw)}</div>
+                      <div>
+                        {isEn ? formatUsdCompact(totals.cbmUsd) : formatKrwReadable(totals.cbmKrw)}
+                      </div>
                       <div style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>
-                        {formatUsdCompact(totals.cbmUsd)}
+                        {isEn ? formatKrwCompactEn(totals.cbmKrw) : formatUsdCompact(totals.cbmUsd)}
                       </div>
                     </td>
                     <td style={{ padding: '12px 10px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <div>{formatKrwReadable(totals.ctmKrw)}</div>
+                      <div>
+                        {isEn ? formatUsdCompact(totals.ctmUsd) : formatKrwReadable(totals.ctmKrw)}
+                      </div>
                       <div style={{ fontSize: 11, color: '#475569', fontWeight: 600 }}>
-                        {formatUsdCompact(totals.ctmUsd)}
+                        {isEn ? formatKrwCompactEn(totals.ctmKrw) : formatUsdCompact(totals.ctmUsd)}
                       </div>
                     </td>
                     <td style={{ padding: '12px' }} />
@@ -1857,7 +2061,7 @@ export default function CaseEquipmentDeliverables() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: '#FFFFFF' }}>
-                [{displayCaseTitle}] › [{activeModalRow.def.tag}] 데이터시트
+                [{displayCaseTitle}] › [{activeModalRow.def.tag}] {isEn ? 'Datasheet' : '데이터시트'}
               </span>
               <span
                 style={{
@@ -1869,12 +2073,16 @@ export default function CaseEquipmentDeliverables() {
                   color: '#DBEAFE',
                 }}
               >
-                이 케이스 전용
+                {isEn ? 'Case-Scoped' : '이 케이스 전용'}
               </span>
               <button
                 type="button"
                 onClick={handleResetModalToSimHandoff}
-                title="저장된 숏컷 입력값 대신 현재 시뮬레이션 운전조건을 다시 불러옵니다"
+                title={
+                  isEn
+                    ? 'Reload current simulation operating conditions instead of saved shortcut inputs'
+                    : '저장된 숏컷 입력값 대신 현재 시뮬레이션 운전조건을 다시 불러옵니다'
+                }
                 style={{
                   padding: '3px 9px',
                   borderRadius: 6,
@@ -1886,7 +2094,7 @@ export default function CaseEquipmentDeliverables() {
                   cursor: 'pointer',
                 }}
               >
-                ↺ 시뮬레이션 값으로 초기화
+                {isEn ? '↺ Reset to Sim Values' : '↺ 시뮬레이션 값으로 초기화'}
               </button>
             </div>
 
@@ -1894,10 +2102,16 @@ export default function CaseEquipmentDeliverables() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <label style={{ fontSize: 11.5, color: '#CBD5E1', fontWeight: 600 }}>
                   {activeModalRow.sizingKind === 'area'
-                    ? '확정 면적 (m²)'
+                    ? isEn
+                      ? 'Design Area (m²)'
+                      : '확정 면적 (m²)'
                     : activeModalRow.sizingKind === 'power'
-                      ? '확정 동력 (kW)'
-                      : `확정 용량 (${activeModalRow.sizingUnit})`}
+                      ? isEn
+                        ? 'Design Power (kW)'
+                        : '확정 동력 (kW)'
+                      : isEn
+                        ? `Design Capacity (${activeModalRow.sizingUnit})`
+                        : `확정 용량 (${activeModalRow.sizingUnit})`}
                 </label>
                 <input
                   type="number"
@@ -1922,7 +2136,11 @@ export default function CaseEquipmentDeliverables() {
 
               <input
                 type="text"
-                placeholder="데이터시트 메모 (예: TEMA BEM, 설계 확정)"
+                placeholder={
+                  isEn
+                    ? 'Datasheet note (e.g., TEMA BEM, design finalized)'
+                    : '데이터시트 메모 (예: TEMA BEM, 설계 확정)'
+                }
                 value={modalSummaryInput}
                 onChange={e => setModalSummaryInput(e.target.value)}
                 style={{
@@ -1952,7 +2170,13 @@ export default function CaseEquipmentDeliverables() {
                   opacity: isSavingDatasheet ? 0.85 : 1,
                 }}
               >
-                {isSavingDatasheet ? '⏳ 저장 중...' : '✅ 이 케이스에 데이터시트 저장'}
+                {isSavingDatasheet
+                  ? isEn
+                    ? '⏳ Saving...'
+                    : '⏳ 저장 중...'
+                  : isEn
+                    ? '✅ Save Datasheet to Case'
+                    : '✅ 이 케이스에 데이터시트 저장'}
               </button>
 
               <button
@@ -1969,7 +2193,7 @@ export default function CaseEquipmentDeliverables() {
                   cursor: 'pointer',
                 }}
               >
-                닫기
+                {isEn ? 'Close' : '닫기'}
               </button>
             </div>
           </div>

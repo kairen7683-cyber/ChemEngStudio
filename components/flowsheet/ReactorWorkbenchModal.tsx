@@ -30,6 +30,7 @@ import {
 } from '../../lib/calculations/chemicalReactor';
 import { useAuth } from '@/components/auth/AuthContext';
 import { isSimulatorOnlyUser } from '@/lib/plantRegistry';
+import { useUnitStore } from '@/lib/stores/unitStore';
 
 const PRIVATE_PLANT_REACTION_IDS = new Set([
   'cms_aibn_liquid_chlorination',
@@ -79,47 +80,144 @@ function formatSignedDeltaT(dtC: number, tempUnitId: string): string {
 const MODEL_TABS: Array<{
   key: ReactorModelType;
   labelKo: string;
+  labelEn: string;
   shortTag: string;
   descKo: string;
+  descEn: string;
 }> = [
   {
     key: 'stoic',
     labelKo: '양론 전환',
+    labelEn: 'Stoichiometric',
     shortTag: 'STOIC',
     descKo: '화학양론 계수(ν_i)와 기준 반응물 전환율(X) 지정',
+    descEn: 'Specify stoichiometric coefficients (ν_i) and key reactant conversion (X)',
   },
   {
     key: 'equilibrium',
     labelKo: '화학 평형',
+    labelEn: 'Equilibrium',
     shortTag: 'EQUIL',
     descKo: 'ΔG°(T) 기반 Keq(T) 및 실제기체(φ_i)·액상(γ_i) 평형',
+    descEn: 'ΔG°(T)-based Keq(T) with real-gas (φ_i) and liquid-phase (γ_i) equilibrium',
   },
   {
     key: 'gibbs',
     labelKo: '깁스 최소화',
+    labelEn: 'Gibbs Minimization',
     shortTag: 'GIBBS',
     descKo: '반응식 없이 원소 보존 하 총 Gibbs 자유에너지 최소화',
+    descEn: 'Minimize total Gibbs free energy under element conservation without reaction equations',
   },
   {
     key: 'cstr',
     labelKo: '연속교반 CSTR',
+    labelEn: 'CSTR',
     shortTag: 'CSTR',
     descKo: '완전혼합 체류시간(V) + Arrhenius 속도식 + 자켓 UA',
+    descEn: 'Well-mixed residence time (V) + Arrhenius kinetics + Jacket UA',
   },
   {
     key: 'pfr',
     labelKo: '관형 PFR',
+    labelEn: 'Tubular PFR',
     shortTag: 'PFR',
     descKo: '60-구간 RK4 축방향 T(z)·X(z)·P(z) + Ergun 압력강하',
+    descEn: '60-step RK4 axial T(z)·X(z)·P(z) + Ergun pressure drop',
   },
 ];
 
-const THERMAL_OPTIONS: Array<{ key: ReactorThermalMode; labelKo: string }> = [
-  { key: 'isothermal', labelKo: '등온 운전 (T 지정)' },
-  { key: 'adiabatic', labelKo: '단열 운전 (Q = 0)' },
-  { key: 'specified_duty', labelKo: '열부하 지정 (Q 지정)' },
-  { key: 'jacket_ua', labelKo: '열매체 자켓 (UA 열전달)' },
+const THERMAL_OPTIONS: Array<{ key: ReactorThermalMode; labelKo: string; labelEn: string }> = [
+  { key: 'isothermal', labelKo: '등온 운전 (T 지정)', labelEn: 'Isothermal (Specify T)' },
+  { key: 'adiabatic', labelKo: '단열 운전 (Q = 0)', labelEn: 'Adiabatic (Q = 0)' },
+  { key: 'specified_duty', labelKo: '열부하 지정 (Q 지정)', labelEn: 'Specified Duty (Specify Q)' },
+  { key: 'jacket_ua', labelKo: '열매체 자켓 (UA 열전달)', labelEn: 'Thermal Jacket (UA Heat Transfer)' },
 ];
+
+const PROPERTY_METHOD_SHORT_EN: Record<ResolvedPropertyMethod, string> = {
+  ENRTL: 'Electrolytes · Acid/Base Aqueous',
+  NRTL: 'Polar Organic Solvents · Azeotrope/LLE',
+  PR: 'Hydrocarbons · Aromatics · Liquefied Gas',
+  SRK: 'Hydrogen · Syngas · Light Olefins',
+};
+
+const TEMPLATE_EN: Record<string, { category: string; label: string; desc: string }> = {
+  wgs_hts: {
+    category: 'Syngas · Hydrogen',
+    label: 'Water-Gas Shift Reaction (HTS)',
+    desc: 'CO + H₂O ⇌ CO₂ + H₂ high-temperature shift catalytic equilibrium (Fe₃O₄/Cr₂O₃, 350–450 °C)',
+  },
+  smr_reformer: {
+    category: 'Syngas · Hydrogen',
+    label: 'Steam Methane Reforming (SMR)',
+    desc: 'Simultaneous CH₄ + H₂O ⇌ CO + 3H₂ and WGS multi-equilibrium reformer (Ni/Al₂O₃, 800–900 °C)',
+  },
+  nh3_haber_bosch: {
+    category: 'Syngas · Fertilizer',
+    label: 'High-Pressure Ammonia Synthesis (NH₃)',
+    desc: 'N₂ + 3H₂ ⇌ 2NH₃ high-pressure real-gas (SRK) equilibrium reactor (Fe catalyst, 150–250 bar)',
+  },
+  meoh_synthesis: {
+    category: 'Syngas · C1 Chemistry',
+    label: 'Catalytic Methanol Synthesis',
+    desc: 'Simultaneous CO + 2H₂ ⇌ CH₃OH and CO₂ hydrogenation equilibrium (Cu/ZnO/Al₂O₃, 240–270 °C)',
+  },
+  styrene_eb_dehydro: {
+    category: 'Petrochemicals · Aromatics',
+    label: 'Ethylbenzene Dehydrogenation (EB → Styrene + H₂)',
+    desc: 'Steam-diluted adiabatic packed-bed PFR dehydrogenation (K-Fe₂O₃ catalyst, 600–650 °C, with Ergun ΔP)',
+  },
+  etoac_esterification: {
+    category: 'Fine Chemicals · Solvents',
+    label: 'Ethyl Acetate Esterification',
+    desc: 'CH₃COOH + C₂H₅OH ⇌ EtOAc + H₂O non-ideal liquid-phase (NRTL γ_i) reversible equilibrium',
+  },
+  so2_contact_oxidation: {
+    category: 'Inorganic Acids · Sulfuric Acid',
+    label: 'SO₂ Contact Oxidation (SO₂ + 0.5 O₂ ⇌ SO₃)',
+    desc: 'Exothermic oxidation and equilibrium limitation in V₂O₅ packed-bed catalytic reactor (with Ergun ΔP)',
+  },
+  cumene_alkylation: {
+    category: 'Petrochemicals · Aromatics',
+    label: 'Cumene Alkylation (Benzene + C₃H₆ → Cumene)',
+    desc: 'Multi-tube jacket-cooled (Jacket UA) packed-bed PFR exothermic reaction with axial hotspot peak analysis',
+  },
+  mtbe_etherification: {
+    category: 'Petrochemicals · Fuel Additives',
+    label: 'MTBE Liquid-Phase Etherification (C₄H₈ + MeOH ⇌ MTBE)',
+    desc: 'Ion-exchange resin catalytic cooled liquid CSTR reactor (NRTL activity & jacket cooling coupled)',
+  },
+  hcl_synthesis_burner: {
+    category: 'Chlor-Alkali · Inorganic Chlorine',
+    label: 'Anhydrous HCl Synthesis Adiabatic Burner (H₂ + Cl₂ → 2HCl)',
+    desc: 'Complete chlorine combustion in excess hydrogen adiabatic reactor (ΔH°₂₉₈ = -184.6 kJ/mol, adiabatic flame temp)',
+  },
+  cl2_caustic_scrubbing: {
+    category: 'Chlor-Alkali · Environmental Safety',
+    label: 'Chlorine Caustic Scrubbing · Hypochlorite Synthesis',
+    desc: 'Cl₂ + 2NaOH → NaOCl + NaCl + H₂O aqueous electrolyte exothermic neutralization (ENRTL heat balance)',
+  },
+  gte_glycerol_hydrochlorination: {
+    category: 'Bio-ECH · Fine Chemicals',
+    label: 'GTE Glycerol Hydrochlorination (Glycerol → MCH → DCH)',
+    desc: 'Two-stage series liquid-phase CSTR chlorination kinetics with glycerol + anhydrous HCl',
+  },
+  ech_saponification: {
+    category: 'Bio-ECH · Fine Chemicals',
+    label: 'Epichlorohydrin Saponification (DCH + NaOH → ECH)',
+    desc: 'Dichlorohydrin caustic saponification coupled with brine/organic VLE flash separation',
+  },
+  ipa_acetone_dehydro: {
+    category: 'Fine Chemicals · Solvents',
+    label: 'IPA Dehydrogenation to Acetone (IPA ⇌ Acetone + H₂)',
+    desc: 'Heated multi-tube catalytic PFR endothermic dehydrogenation (axial cold-spot and conversion profile)',
+  },
+  cms_aibn_liquid_chlorination: {
+    category: 'Chlorine Downstream · Chloromethanes (CMS)',
+    label: 'Methyl Chloride AIBN Liquid Chlorination (MC → MCL → CFM → CTC)',
+    desc: '24 kgf/cm²G · 120°C pressurized liquid PFR (AIBN radical-initiated consecutive chlorination: MCL/CFM/CTC/C₂Cl₄)',
+  },
+};
 
 function cloneConfig(
   cfg: ReactorConfig | undefined,
@@ -127,7 +225,8 @@ function cloneConfig(
   inletPressKgcm2g: number,
   propMethod: ResolvedPropertyMethod,
   activeComps: SimCompKey[],
-  isSimOnly = false
+  isSimOnly = false,
+  isEn = false
 ): ReactorConfig {
   if (!cfg) {
     return {
@@ -151,7 +250,7 @@ function cloneConfig(
         isSimOnly
           ? {
               id: 'R1',
-              name: '주반응 1 (수성가스 전환)',
+              name: isEn ? 'Main Reaction 1 (Water-Gas Shift)' : '주반응 1 (수성가스 전환)',
               stoic: { CO: -1, H2O: -1, CO2: 1, H2: 1 },
               keyComp: 'CO',
               conversion: 0.85,
@@ -161,7 +260,7 @@ function cloneConfig(
             }
           : {
               id: 'R1',
-              name: '주반응 1',
+              name: isEn ? 'Main Reaction 1' : '주반응 1',
               stoic: { H2: -1, Cl2: -1, HCl: 2 },
               keyComp: 'Cl2',
               conversion: 0.99,
@@ -188,7 +287,7 @@ function cloneConfig(
   };
 }
 
-function formatEquation(stoic: Partial<Record<SimCompKey, number>>, reversible?: boolean): string {
+function formatEquation(stoic: Partial<Record<SimCompKey, number>>, reversible?: boolean, isEn = false): string {
   const lhs: string[] = [];
   const rhs: string[] = [];
   for (const [k, nu] of Object.entries(stoic) as [SimCompKey, number][]) {
@@ -199,7 +298,9 @@ function formatEquation(stoic: Partial<Record<SimCompKey, number>>, reversible?:
     else rhs.push(`${coef}${k}`);
   }
   const arrow = reversible ? '⇌' : '→';
-  if (lhs.length === 0 && rhs.length === 0) return '(화학양론 계수 미입력)';
+  if (lhs.length === 0 && rhs.length === 0) {
+    return isEn ? '(No stoichiometric coefficients entered)' : '(화학양론 계수 미입력)';
+  }
   return `${lhs.join(' + ') || '∅'} ${arrow} ${rhs.join(' + ') || '∅'}`;
 }
 
@@ -235,6 +336,8 @@ function PfrAxialSvgChart({
   profile: ReactorAxialPoint[];
   hotspotTempC?: number;
 }) {
+  const lang = useUnitStore((s) => s.lang);
+  const isEn = lang === 'en';
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   if (!profile || profile.length < 2) return null;
 
@@ -296,12 +399,14 @@ function PfrAxialSvgChart({
         }}
       >
         <div style={{ fontSize: 12, fontWeight: 800, color: '#1A2F44' }}>
-          관형 PFR 축방향 프로파일 (60-Step RK4)
+          {isEn
+            ? 'Tubular PFR Axial Profile (60-Step RK4)'
+            : '관형 PFR 축방향 프로파일 (60-Step RK4)'}
         </div>
         <div style={{ display: 'flex', gap: 10, fontSize: 11, fontWeight: 700, fontFamily: MONO }}>
-          <span style={{ color: '#1D4ED8' }}>● T(z) 온도 [°C]</span>
-          <span style={{ color: '#0D9488' }}>● X(z) 전환율 [%]</span>
-          <span style={{ color: '#D97706' }}>-- P(z) 압력 [kg/cm²g]</span>
+          <span style={{ color: '#1D4ED8' }}>{isEn ? '● T(z) Temp [°C]' : '● T(z) 온도 [°C]'}</span>
+          <span style={{ color: '#0D9488' }}>{isEn ? '● X(z) Conv [%]' : '● X(z) 전환율 [%]'}</span>
+          <span style={{ color: '#D97706' }}>{isEn ? '-- P(z) Press [kg/cm²g]' : '-- P(z) 압력 [kg/cm²g]'}</span>
         </div>
       </div>
 
@@ -466,6 +571,8 @@ export function ReactorWorkbenchModal({
   onApplyConfig,
 }: ReactorWorkbenchModalProps) {
   const { user } = useAuth();
+  const lang = useUnitStore((s) => s.lang);
+  const isEn = lang === 'en';
   const isSimOnly = isSimulatorOnlyUser(user);
   const visibleTemplates = useMemo(
     () =>
@@ -479,7 +586,7 @@ export function ReactorWorkbenchModal({
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
   const [cfg, setCfg] = useState<ReactorConfig>(() =>
-    cloneConfig(initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, isSimOnly)
+    cloneConfig(initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, isSimOnly, isEn)
   );
   const [useSampleFeed, setUseSampleFeed] = useState<boolean>(false);
   const [compToAddByRxn, setCompToAddByRxn] = useState<Record<string, SimCompKey>>({});
@@ -494,14 +601,15 @@ export function ReactorWorkbenchModal({
         inletPressKgcm2g,
         propertyMethod,
         activeComponents,
-        isSimOnly
+        isSimOnly,
+        isEn
       );
       setCfg(next);
       let liveSum = 0;
       for (const v of Object.values(inletFlowsKgH)) liveSum += v ?? 0;
       setUseSampleFeed(liveSum <= 1e-9);
     }
-  }, [open, initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, inletFlowsKgH, isSimOnly]);
+  }, [open, initialConfig, inletTempC, inletPressKgcm2g, propertyMethod, activeComponents, inletFlowsKgH, isSimOnly, isEn]);
 
   // 반응형 브레이크포인트 감지
   useEffect(() => {
@@ -636,7 +744,7 @@ export function ReactorWorkbenchModal({
       const c2 = activeComponents[1] ?? 'H2O';
       list.push({
         id: nextId,
-        name: `반응 ${list.length + 1}`,
+        name: isEn ? `Reaction ${list.length + 1}` : `반응 ${list.length + 1}`,
         stoic: { [c1]: -1, [c2]: 1 },
         keyComp: c1,
         conversion: 0.8,
@@ -780,7 +888,9 @@ export function ReactorWorkbenchModal({
                 {unitTag}
               </span>
               <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 900 }}>
-                범용 화학 반응기 워크벤치 — {unitName}
+                {isEn
+                  ? `Universal Chemical Reactor Workbench — ${unitName}`
+                  : `범용 화학 반응기 워크벤치 — ${unitName}`}
               </span>
               <span
                 style={{
@@ -796,7 +906,9 @@ export function ReactorWorkbenchModal({
               </span>
             </div>
             <div style={{ fontSize: 11.5, color: '#93C5FD', marginTop: 3 }}>
-              양론 · 화학평형(Keq) · Gibbs 자유에너지 최소화 · CSTR · 다관식 충전층 PFR 통합 해석기
+              {isEn
+                ? 'Integrated Solver: Stoichiometric · Equilibrium (Keq) · Gibbs Minimization · CSTR · Multi-Tube Packed PFR'
+                : '양론 · 화학평형(Keq) · Gibbs 자유에너지 최소화 · CSTR · 다관식 충전층 PFR 통합 해석기'}
             </div>
           </div>
 
@@ -816,7 +928,7 @@ export function ReactorWorkbenchModal({
               cursor: 'pointer',
             }}
           >
-            ✕ 닫기
+            {isEn ? '✕ Close' : '✕ 닫기'}
           </button>
         </div>
 
@@ -847,7 +959,9 @@ export function ReactorWorkbenchModal({
                 }}
               >
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1A2F44' }}>
-                  산업 표준 반응 템플릿 ({visibleTemplates.length}종)
+                  {isEn
+                    ? `Industrial Standard Reaction Templates (${visibleTemplates.length})`
+                    : `산업 표준 반응 템플릿 (${visibleTemplates.length}종)`}
                 </span>
                 <label
                   style={{
@@ -865,7 +979,7 @@ export function ReactorWorkbenchModal({
                     checked={useSampleFeed}
                     onChange={(e) => setUseSampleFeed(e.target.checked)}
                   />
-                  프리뷰에 반응물 샘플 피드 사용
+                  {isEn ? 'Use sample reactant feed for preview' : '프리뷰에 반응물 샘플 피드 사용'}
                 </label>
               </div>
               <select
@@ -873,16 +987,25 @@ export function ReactorWorkbenchModal({
                 onChange={(e) => applyTemplate(e.target.value)}
                 style={selectStyle}
               >
-                <option value="">-- 직접 구성 또는 {visibleTemplates.length}종 산업 반응 템플릿 선택 --</option>
-                {visibleTemplates.map((tpl) => (
-                  <option key={tpl.id} value={tpl.id}>
-                    [{tpl.category}] {tpl.labelKo}
-                  </option>
-                ))}
+                <option value="">
+                  {isEn
+                    ? `-- Custom setup or select from ${visibleTemplates.length} industrial reaction templates --`
+                    : `-- 직접 구성 또는 ${visibleTemplates.length}종 산업 반응 템플릿 선택 --`}
+                </option>
+                {visibleTemplates.map((tpl) => {
+                  const enTpl = TEMPLATE_EN[tpl.id];
+                  return (
+                    <option key={tpl.id} value={tpl.id}>
+                      [{isEn && enTpl ? enTpl.category : tpl.category}] {isEn && enTpl ? enTpl.label : tpl.labelKo}
+                    </option>
+                  );
+                })}
               </select>
               {cfg.presetId && visibleTemplates.some((t) => t.id === cfg.presetId) && (
                 <div style={{ fontSize: 11, color: '#475569', marginTop: 6 }}>
-                  {visibleTemplates.find((t) => t.id === cfg.presetId)?.descKo}
+                  {isEn && TEMPLATE_EN[cfg.presetId]
+                    ? TEMPLATE_EN[cfg.presetId].desc
+                    : visibleTemplates.find((t) => t.id === cfg.presetId)?.descKo}
                 </div>
               )}
             </div>
@@ -890,7 +1013,7 @@ export function ReactorWorkbenchModal({
             {/* 2) 5종 반응기 모델 탭 */}
             <div style={cardStyle}>
               <div style={{ fontSize: 12.5, fontWeight: 900, marginBottom: 8 }}>
-                반응기 해석 모델 선택 (5종)
+                {isEn ? 'Reactor Solver Model Selection (5 Models)' : '반응기 해석 모델 선택 (5종)'}
               </div>
               <div
                 style={{
@@ -928,20 +1051,26 @@ export function ReactorWorkbenchModal({
                       <div style={{ fontSize: 10, fontWeight: 900, fontFamily: MONO, color: '#2563EB' }}>
                         {m.shortTag}
                       </div>
-                      <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>{m.labelKo}</div>
+                      <div style={{ fontSize: 11.5, fontWeight: 800, marginTop: 2 }}>
+                        {isEn ? m.labelEn : m.labelKo}
+                      </div>
                     </button>
                   );
                 })}
               </div>
               <div style={{ fontSize: 11, color: '#475569', marginTop: 7 }}>
-                {MODEL_TABS.find((t) => t.key === cfg.model)?.descKo}
+                {isEn
+                  ? MODEL_TABS.find((t) => t.key === cfg.model)?.descEn
+                  : MODEL_TABS.find((t) => t.key === cfg.model)?.descKo}
               </div>
             </div>
 
             {/* 3) 열수지 · 상모드 · 운전 조건 · 기하 치수 */}
             <div style={cardStyle}>
               <div style={{ fontSize: 12.5, fontWeight: 900, marginBottom: 9 }}>
-                열수지 모드 · 상평형 · 기하 구조 설정
+                {isEn
+                  ? 'Thermal Mode · Phase Equilibrium · Geometry Setup'
+                  : '열수지 모드 · 상평형 · 기하 구조 설정'}
               </div>
 
               <div
@@ -952,7 +1081,7 @@ export function ReactorWorkbenchModal({
                 }}
               >
                 <div>
-                  <label style={labelStyle}>열수지 모드</label>
+                  <label style={labelStyle}>{isEn ? 'Thermal Mode' : '열수지 모드'}</label>
                   <select
                     value={cfg.thermalMode}
                     onChange={(e) =>
@@ -964,14 +1093,14 @@ export function ReactorWorkbenchModal({
                       (opt) => opt.key !== 'jacket_ua' || cfg.model === 'cstr' || cfg.model === 'pfr'
                     ).map((opt) => (
                       <option key={opt.key} value={opt.key}>
-                        {opt.labelKo}
+                        {isEn ? opt.labelEn : opt.labelKo}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle}>반응 상 모드</label>
+                  <label style={labelStyle}>{isEn ? 'Reaction Phase Mode' : '반응 상 모드'}</label>
                   <select
                     value={cfg.phaseMode ?? 'vle'}
                     onChange={(e) =>
@@ -982,14 +1111,14 @@ export function ReactorWorkbenchModal({
                     }
                     style={selectStyle}
                   >
-                    <option value="vle">기액평형 (VLE 자동)</option>
-                    <option value="vapor">기상 반응 (Vapor)</option>
-                    <option value="liquid">액상 반응 (Liquid)</option>
+                    <option value="vle">{isEn ? 'Vapor-Liquid Equilibrium (Auto VLE)' : '기액평형 (VLE 자동)'}</option>
+                    <option value="vapor">{isEn ? 'Vapor Phase (Vapor)' : '기상 반응 (Vapor)'}</option>
+                    <option value="liquid">{isEn ? 'Liquid Phase (Liquid)' : '액상 반응 (Liquid)'}</option>
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle}>물성 패키지</label>
+                  <label style={labelStyle}>{isEn ? 'Property Package' : '물성 패키지'}</label>
                   <select
                     value={cfg.propertyMethod ?? propertyMethod}
                     onChange={(e) =>
@@ -1002,14 +1131,14 @@ export function ReactorWorkbenchModal({
                   >
                     {(['ENRTL', 'NRTL', 'PR', 'SRK'] as ResolvedPropertyMethod[]).map((m) => (
                       <option key={m} value={m}>
-                        {m} — {PROPERTY_METHOD_INFO[m]?.shortKo ?? m}
+                        {m} — {isEn ? (PROPERTY_METHOD_SHORT_EN[m] ?? m) : (PROPERTY_METHOD_INFO[m]?.shortKo ?? m)}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div>
-                  <label style={labelStyle}>운전 압력</label>
+                  <label style={labelStyle}>{isEn ? 'Operating Pressure' : '운전 압력'}</label>
                   <UnitNumberInput
                     quantity="pressG"
                     unitId={pressUnit}
@@ -1023,7 +1152,7 @@ export function ReactorWorkbenchModal({
 
                 {cfg.thermalMode === 'isothermal' && (
                   <div>
-                    <label style={labelStyle}>등온 운전 온도</label>
+                    <label style={labelStyle}>{isEn ? 'Isothermal Operating Temp' : '등온 운전 온도'}</label>
                     <UnitNumberInput
                       quantity="temp"
                       unitId={tempUnit}
@@ -1038,7 +1167,7 @@ export function ReactorWorkbenchModal({
 
                 {cfg.thermalMode === 'specified_duty' && (
                   <div>
-                    <label style={labelStyle}>지정 열부하 Q</label>
+                    <label style={labelStyle}>{isEn ? 'Specified Heat Duty Q' : '지정 열부하 Q'}</label>
                     <UnitNumberInput
                       quantity="heatDuty"
                       unitId={dutyUnit}
@@ -1056,7 +1185,7 @@ export function ReactorWorkbenchModal({
                 {cfg.thermalMode === 'jacket_ua' && (
                   <>
                     <div>
-                      <label style={labelStyle}>열매체 온도 T_jacket</label>
+                      <label style={labelStyle}>{isEn ? 'Jacket Medium Temp T_jacket' : '열매체 온도 T_jacket'}</label>
                       <UnitNumberInput
                         quantity="temp"
                         unitId={tempUnit}
@@ -1068,7 +1197,7 @@ export function ReactorWorkbenchModal({
                       />
                     </div>
                     <div>
-                      <label style={labelStyle}>총괄열전달계수 U</label>
+                      <label style={labelStyle}>{isEn ? 'Overall Heat Transfer Coeff U' : '총괄열전달계수 U'}</label>
                       <UnitNumberInput
                         quantity="htc"
                         unitId={htcUnit}
@@ -1096,7 +1225,7 @@ export function ReactorWorkbenchModal({
                   }}
                 >
                   <div>
-                    <label style={labelStyle}>반응기 부피 V</label>
+                    <label style={labelStyle}>{isEn ? 'Reactor Volume V' : '반응기 부피 V'}</label>
                     <UnitNumberInput
                       quantity="volume"
                       unitId={volUnit}
@@ -1117,7 +1246,7 @@ export function ReactorWorkbenchModal({
                   {cfg.model === 'pfr' && (
                     <>
                       <div>
-                        <label style={labelStyle}>병렬 튜브 수 N_tube</label>
+                        <label style={labelStyle}>{isEn ? 'Parallel Tube Count N_tube' : '병렬 튜브 수 N_tube'}</label>
                         <input
                           type="number"
                           min="1"
@@ -1133,7 +1262,7 @@ export function ReactorWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>튜브 내경 D</label>
+                        <label style={labelStyle}>{isEn ? 'Tube Inner Diameter D' : '튜브 내경 D'}</label>
                         <UnitNumberInput
                           quantity="length"
                           unitId={lenUnit}
@@ -1151,7 +1280,7 @@ export function ReactorWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>튜브 길이 L</label>
+                        <label style={labelStyle}>{isEn ? 'Tube Length L' : '튜브 길이 L'}</label>
                         <UnitNumberInput
                           quantity="length"
                           unitId={lenUnit}
@@ -1169,7 +1298,7 @@ export function ReactorWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>촉매 입경 d_p [mm] (Ergun)</label>
+                        <label style={labelStyle}>{isEn ? 'Catalyst Particle Dia d_p [mm] (Ergun)' : '촉매 입경 d_p [mm] (Ergun)'}</label>
                         <input
                           type="number"
                           min="0"
@@ -1185,7 +1314,7 @@ export function ReactorWorkbenchModal({
                         />
                       </div>
                       <div>
-                        <label style={labelStyle}>촉매 공극률 ε (0.2~0.9)</label>
+                        <label style={labelStyle}>{isEn ? 'Catalyst Bed Voidage ε (0.2~0.9)' : '촉매 공극률 ε (0.2~0.9)'}</label>
                         <input
                           type="number"
                           min="0.2"
@@ -1221,7 +1350,9 @@ export function ReactorWorkbenchModal({
                   }}
                 >
                   <span style={{ fontSize: 12.5, fontWeight: 900 }}>
-                    Gibbs 평형 탐색 화학종 풀 (Species Pool) & 불활성 성분
+                    {isEn
+                      ? 'Gibbs Equilibrium Species Pool & Inert Components'
+                      : 'Gibbs 평형 탐색 화학종 풀 (Species Pool) & 불활성 성분'}
                   </span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
@@ -1245,13 +1376,15 @@ export function ReactorWorkbenchModal({
                         cursor: 'pointer',
                       }}
                     >
-                      + 합성가스 풀 추가
+                      {isEn ? '+ Add Syngas Pool' : '+ 합성가스 풀 추가'}
                     </button>
                   </div>
                 </div>
 
                 <div style={{ fontSize: 11, color: '#475569', marginBottom: 8 }}>
-                  유입 원소(C, H, O, N, Cl, S, Na...)를 보존하면서 총 Gibbs 에너지를 최소화할 생성 가능 성분들을 선택하세요.
+                  {isEn
+                    ? 'Select possible product species to minimize total Gibbs free energy while conserving inlet elements (C, H, O, N, Cl, S, Na...).'
+                    : '유입 원소(C, H, O, N, Cl, S, Na...)를 보존하면서 총 Gibbs 에너지를 최소화할 생성 가능 성분들을 선택하세요.'}
                 </div>
 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
@@ -1283,7 +1416,7 @@ export function ReactorWorkbenchModal({
                 </div>
 
                 <div style={{ fontSize: 11, fontWeight: 800, color: '#475569', marginBottom: 5 }}>
-                  반응 제외 불활성 성분 (Inert 고정):
+                  {isEn ? 'Non-Reacting Inert Components (Fixed):' : '반응 제외 불활성 성분 (Inert 고정):'}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                   {(['N2', 'Ar', 'H2O', 'CH4', 'CO2'] as SimCompKey[]).map((k) => {
@@ -1305,7 +1438,7 @@ export function ReactorWorkbenchModal({
                           cursor: 'pointer',
                         }}
                       >
-                        {isInert ? '불활성 고정: ' : ''}
+                        {isInert ? (isEn ? 'Inert: ' : '불활성 고정: ') : ''}
                         {k}
                       </button>
                     );
@@ -1323,7 +1456,9 @@ export function ReactorWorkbenchModal({
                   }}
                 >
                   <span style={{ fontSize: 12.5, fontWeight: 900 }}>
-                    반응 화학양론 및 속도/평형 파라미터 ({(cfg.reactions ?? []).length}개 반응)
+                    {isEn
+                      ? `Reaction Stoichiometry & Kinetics/Equilibrium Parameters (${(cfg.reactions ?? []).length} ${(cfg.reactions ?? []).length === 1 ? 'Reaction' : 'Reactions'})`
+                      : `반응 화학양론 및 속도/평형 파라미터 (${(cfg.reactions ?? []).length}개 반응)`}
                   </span>
                   <button
                     type="button"
@@ -1339,7 +1474,7 @@ export function ReactorWorkbenchModal({
                       cursor: 'pointer',
                     }}
                   >
-                    + 반응 추가
+                    {isEn ? '+ Add Reaction' : '+ 반응 추가'}
                   </button>
                 </div>
 
@@ -1406,8 +1541,10 @@ export function ReactorWorkbenchModal({
                               }}
                             >
                               {bal.balanced
-                                ? '원소 균형 OK'
-                                : `불균형 ΔMW=${bal.mwResidualGmol.toFixed(2)}`}
+                                ? (isEn ? 'Atom Balance OK' : '원소 균형 OK')
+                                : (isEn
+                                    ? `Imbalance ΔMW=${bal.mwResidualGmol.toFixed(2)}`
+                                    : `불균형 ΔMW=${bal.mwResidualGmol.toFixed(2)}`)}
                             </span>
                           </div>
 
@@ -1426,7 +1563,7 @@ export function ReactorWorkbenchModal({
                                 cursor: 'pointer',
                               }}
                             >
-                              삭제
+                              {isEn ? 'Delete' : '삭제'}
                             </button>
                           )}
                         </div>
@@ -1452,7 +1589,8 @@ export function ReactorWorkbenchModal({
                           <span>
                             {formatEquation(
                               rxn.stoic,
-                              cfg.model === 'equilibrium' || rxn.reversible
+                              cfg.model === 'equilibrium' || rxn.reversible,
+                              isEn
                             )}
                           </span>
                           <span style={{ color: '#475569' }}>
@@ -1566,7 +1704,7 @@ export function ReactorWorkbenchModal({
                                 cursor: 'pointer',
                               }}
                             >
-                              + 계수 추가
+                              {isEn ? '+ Add Coeff' : '+ 계수 추가'}
                             </button>
                           </div>
                         </div>
@@ -1581,7 +1719,9 @@ export function ReactorWorkbenchModal({
                             }}
                           >
                             <div>
-                              <label style={labelStyle}>기준 반응물 (Key Component)</label>
+                              <label style={labelStyle}>
+                                {isEn ? 'Key Reactant (Key Component)' : '기준 반응물 (Key Component)'}
+                              </label>
                               <select
                                 value={rxn.keyComp ?? ''}
                                 onChange={(e) =>
@@ -1600,7 +1740,9 @@ export function ReactorWorkbenchModal({
                             </div>
                             <div>
                               <label style={labelStyle}>
-                                목표 전환율 X (0 ~ 1): {((rxn.conversion ?? 0.9) * 100).toFixed(1)}%
+                                {isEn
+                                  ? `Target Conversion X (0 ~ 1): ${((rxn.conversion ?? 0.9) * 100).toFixed(1)}%`
+                                  : `목표 전환율 X (0 ~ 1): ${((rxn.conversion ?? 0.9) * 100).toFixed(1)}%`}
                               </label>
                               <input
                                 type="number"
@@ -1628,7 +1770,9 @@ export function ReactorWorkbenchModal({
                             }}
                           >
                             <div>
-                              <label style={labelStyle}>빈도인자 k₀_fwd [kmol/m³·s 기준]</label>
+                              <label style={labelStyle}>
+                                {isEn ? 'Pre-exponential Factor k₀_fwd [kmol/m³·s]' : '빈도인자 k₀_fwd [kmol/m³·s 기준]'}
+                              </label>
                               <input
                                 type="number"
                                 step="100"
@@ -1640,7 +1784,9 @@ export function ReactorWorkbenchModal({
                               />
                             </div>
                             <div>
-                              <label style={labelStyle}>활성화 에너지 Ea_fwd [kJ/mol]</label>
+                              <label style={labelStyle}>
+                                {isEn ? 'Activation Energy Ea_fwd [kJ/mol]' : '활성화 에너지 Ea_fwd [kJ/mol]'}
+                              </label>
                               <input
                                 type="number"
                                 step="1"
@@ -1669,7 +1815,7 @@ export function ReactorWorkbenchModal({
                                     updateReaction(idx, { reversible: e.target.checked })
                                   }
                                 />
-                                가역 반응 (Keq 역반응 연동)
+                                {isEn ? 'Reversible Reaction (Keq Reverse Coupled)' : '가역 반응 (Keq 역반응 연동)'}
                               </label>
                             </div>
                           </div>
@@ -1714,7 +1860,7 @@ export function ReactorWorkbenchModal({
                     color: liveResult.atomBalanceMaxRelErr < 1e-6 ? '#166534' : '#92400E',
                   }}
                 >
-                  원소보존 오차: {liveResult.atomBalanceMaxRelErr.toExponential(2)}
+                  {isEn ? 'Atom Balance Error:' : '원소보존 오차:'} {liveResult.atomBalanceMaxRelErr.toExponential(2)}
                 </span>
                 <span
                   style={{
@@ -1724,7 +1870,7 @@ export function ReactorWorkbenchModal({
                     color: liveResult.massBalanceRelErr < 1e-6 ? '#166534' : '#92400E',
                   }}
                 >
-                  질량보존 오차: {liveResult.massBalanceRelErr.toExponential(2)}
+                  {isEn ? 'Mass Balance Error:' : '질량보존 오차:'} {liveResult.massBalanceRelErr.toExponential(2)}
                 </span>
                 {useSampleFeed && (
                   <span
@@ -1735,7 +1881,7 @@ export function ReactorWorkbenchModal({
                       color: '#1E40AF',
                     }}
                   >
-                    샘플 피드 프리뷰 활성
+                    {isEn ? 'Sample Feed Preview Active' : '샘플 피드 프리뷰 활성'}
                   </span>
                 )}
               </div>
@@ -1760,7 +1906,7 @@ export function ReactorWorkbenchModal({
               <div style={cardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                    출구 온도 T_out / ΔT
+                    {isEn ? 'Outlet Temp T_out / ΔT' : '출구 온도 T_out / ΔT'}
                   </span>
                   <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} />
                 </div>
@@ -1778,7 +1924,7 @@ export function ReactorWorkbenchModal({
                 </div>
                 {liveResult.hotspotTempC !== undefined && (
                   <div style={{ fontSize: 11, color: '#1D4ED8', fontFamily: MONO, fontWeight: 700 }}>
-                    최고점 Hotspot: {formatCanonicalValue('temp', liveResult.hotspotTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}
+                    {isEn ? 'Peak Hotspot:' : '최고점 Hotspot:'} {formatCanonicalValue('temp', liveResult.hotspotTempC, tempUnit, 1)} {getUnitLabel('temp', tempUnit)}
                   </div>
                 )}
               </div>
@@ -1786,7 +1932,9 @@ export function ReactorWorkbenchModal({
               <div style={cardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                    반응기 열부하 Q ({liveResult.heatDutyKcalH >= 0 ? '가열/흡열' : '냉각/발열'})
+                    {isEn
+                      ? `Reactor Heat Duty Q (${liveResult.heatDutyKcalH >= 0 ? 'Heating/Endo' : 'Cooling/Exo'})`
+                      : `반응기 열부하 Q (${liveResult.heatDutyKcalH >= 0 ? '가열/흡열' : '냉각/발열'})`}
                   </span>
                   <UnitSelect quantity="heatDuty" value={dutyUnit} onChange={setDutyUnit} />
                 </div>
@@ -1801,7 +1949,7 @@ export function ReactorWorkbenchModal({
               <div style={cardStyle}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                   <span style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                    출구 압력 / 충전층 ΔP
+                    {isEn ? 'Outlet Pressure / Packed Bed ΔP' : '출구 압력 / 충전층 ΔP'}
                   </span>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                     <UnitSelect quantity="pressG" value={pressUnit} onChange={setPressUnit} />
@@ -1818,7 +1966,7 @@ export function ReactorWorkbenchModal({
 
               <div style={cardStyle}>
                 <div style={{ fontSize: 11, color: '#64748B', fontWeight: 800 }}>
-                  주요 반응물 전환율 (X)
+                  {isEn ? 'Key Reactant Conversion (X)' : '주요 반응물 전환율 (X)'}
                 </div>
                 <div style={{ fontSize: 13, fontWeight: 900, fontFamily: MONO, marginTop: 4 }}>
                   {Object.keys(liveResult.keyConversions).length === 0
@@ -1843,7 +1991,7 @@ export function ReactorWorkbenchModal({
             <div style={cardStyle}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900 }}>
-                  입·출구 성분 물질수지 및 상분배 요약
+                  {isEn ? 'Inlet/Outlet Material Balance & Phase Split Summary' : '입·출구 성분 물질수지 및 상분배 요약'}
                 </span>
                 <UnitSelect quantity="massFlow" value={massUnit} onChange={setMassUnit} />
               </div>
@@ -1858,11 +2006,11 @@ export function ReactorWorkbenchModal({
                 >
                   <thead>
                     <tr style={{ borderBottom: '2px solid #CBD5E1', color: '#475569' }}>
-                      <th style={{ textAlign: 'left', padding: '5px 4px' }}>성분</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>유입 [{getUnitLabel('massFlow', massUnit)}]</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>출구 [{getUnitLabel('massFlow', massUnit)}]</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>출구 [mol%]</th>
-                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>기상/액상</th>
+                      <th style={{ textAlign: 'left', padding: '5px 4px' }}>{isEn ? 'Component' : '성분'}</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>{isEn ? 'Inlet' : '유입'} [{getUnitLabel('massFlow', massUnit)}]</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>{isEn ? 'Outlet' : '출구'} [{getUnitLabel('massFlow', massUnit)}]</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>{isEn ? 'Outlet [mol%]' : '출구 [mol%]'}</th>
+                      <th style={{ textAlign: 'right', padding: '5px 4px' }}>{isEn ? 'Vapor/Liquid' : '기상/액상'}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1921,7 +2069,9 @@ export function ReactorWorkbenchModal({
                   inletTempC,
                   inletPressKgcm2g,
                   propertyMethod,
-                  activeComponents
+                  activeComponents,
+                  isSimOnly,
+                  isEn
                 )
               )
             }
@@ -1936,7 +2086,7 @@ export function ReactorWorkbenchModal({
               cursor: 'pointer',
             }}
           >
-            초기값 복원
+            {isEn ? 'Reset Defaults' : '초기값 복원'}
           </button>
 
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1954,7 +2104,7 @@ export function ReactorWorkbenchModal({
                 cursor: 'pointer',
               }}
             >
-              취소
+              {isEn ? 'Cancel' : '취소'}
             </button>
             <button
               type="button"
@@ -1973,7 +2123,7 @@ export function ReactorWorkbenchModal({
                 cursor: 'pointer',
               }}
             >
-              반응기 설정 적용
+              {isEn ? 'Apply Reactor Config' : '반응기 설정 적용'}
             </button>
           </div>
         </div>
