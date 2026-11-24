@@ -1619,6 +1619,36 @@ def api_submit_feedback(
     return {"ok": True, "id": new_id, "attachment_saved": attachment_saved}
 
 
+@app.get("/api/feedback/my")
+def api_my_feedback(
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, category, message, status, admin_note, created_at
+            FROM feedback_items
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 30
+            """,
+            (int(user["id"]),),
+        ).fetchall()
+        return {
+            "items": [
+                {
+                    "id": int(r["id"]),
+                    "category": r["category"] or "bug",
+                    "message": r["message"] or "",
+                    "status": r["status"] or "open",
+                    "admin_note": r["admin_note"] or "",
+                    "created_at": r["created_at"] or "",
+                }
+                for r in rows
+            ]
+        }
+
+
 @app.get("/api/admin/feedback")
 def api_admin_list_feedback(
     _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),

@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/EngIcons';
 import ValidationReportModal from '@/components/validation/ValidationReportModal';
 import FeedbackModal from '@/components/feedback/FeedbackModal';
+import ResolvedFeedbackToast from '@/components/feedback/ResolvedFeedbackToast';
 
 function formatSavedDate(raw: string): string {
   if (!raw) return '';
@@ -1763,6 +1764,7 @@ export default function Header() {
         open={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
       />
+      <ResolvedFeedbackToast />
     </header>
   );
 }
