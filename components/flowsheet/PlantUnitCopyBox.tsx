@@ -35,6 +35,23 @@ const UNIT_TYPE_KO: Partial<Record<FlowUnitType, string>> = {
   feed: '원료 유입',
 };
 
+const UNIT_TYPE_EN: Partial<Record<FlowUnitType, string>> = {
+  distillation: 'Distillation',
+  absorber: 'Absorber / Dryer',
+  hex: 'Heat Exchanger',
+  cooler: 'Cooler',
+  liquefier: 'Liquefier',
+  pump: 'Pump',
+  compressor: 'Compressor',
+  reactor: 'Reactor',
+  electrolyzer: 'Electrolyzer',
+  evaporator: 'Evaporator',
+  separator: 'Separator',
+  extractor: 'Extractor',
+  valve: 'Valve',
+  feed: 'Feed Stream',
+};
+
 interface PlantUnitCopyBoxProps {
   unitType: FlowUnitType;
   nodeKey: string;
@@ -54,7 +71,11 @@ export default function PlantUnitCopyBox({
 }: PlantUnitCopyBoxProps) {
   const { user } = useAuth();
   const tagStandard = useUnitStore((s) => s.tagStandard);
-  const unitTypeLabel = UNIT_TYPE_KO[unitType] ?? unitType;
+  const lang = useUnitStore((s) => s.lang);
+  const isEn = lang === 'en';
+  const unitTypeLabel = isEn
+    ? (UNIT_TYPE_EN[unitType] ?? unitType)
+    : (UNIT_TYPE_KO[unitType] ?? unitType);
 
   const templates = useMemo(
     () =>
@@ -146,7 +167,9 @@ export default function PlantUnitCopyBox({
       scope: scopeKey,
       selectedPlant,
       selectedId: tplId,
-      copiedNotice: `✓ [${displayTag}] 복사 완료 (${found.summary})`,
+      copiedNotice: isEn
+        ? `✓ Copied [${displayTag}] (${found.summary})`
+        : `✓ [${displayTag}] 복사 완료 (${found.summary})`,
     });
   };
 
@@ -164,10 +187,12 @@ export default function PlantUnitCopyBox({
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-          동종 장치({unitTypeLabel}) 조건 불러오기
+          {isEn
+            ? `Load Reference ${unitTypeLabel} Conditions`
+            : `동종 장치(${unitTypeLabel}) 조건 불러오기`}
         </span>
         <span style={{ fontSize: 9.5, color: '#64748B', fontWeight: 600 }}>
-          {visibleCount}건
+          {isEn ? `${visibleCount}` : `${visibleCount}건`}
         </span>
       </div>
 
@@ -179,8 +204,8 @@ export default function PlantUnitCopyBox({
             const isCurrent = Boolean(activePlantId && pid === activePlantId);
             const btnText =
               pid === 'ALL'
-                ? '전체'
-                : `${grp?.displayLabel ?? pid}${isCurrent ? ' (현재)' : ''}`;
+                ? isEn ? 'All' : '전체'
+                : `${grp?.displayLabel ?? pid}${isCurrent ? (isEn ? ' (Current)' : ' (현재)') : ''}`;
             return (
               <button
                 key={pid}
@@ -228,7 +253,9 @@ export default function PlantUnitCopyBox({
           cursor: 'pointer',
         }}
       >
-        <option value="">— 참조 {unitTypeLabel} 선택 —</option>
+        <option value="">
+          {isEn ? `— Select reference ${unitTypeLabel} —` : `— 참조 ${unitTypeLabel} 선택 —`}
+        </option>
         {visibleEntries.map((grp) => (
           <optgroup key={grp.plantId} label={grp.displayLabel}>
             {grp.items.map((tpl) => (
@@ -258,17 +285,25 @@ export default function PlantUnitCopyBox({
           onChange={(e) => setIncludeInlet(e.target.checked)}
           style={{ margin: 0, cursor: 'pointer', accentColor: '#1E3A8A' }}
         />
-        <span>유입(Inlet) 조건 함께 복사</span>
+        <span>{isEn ? 'Include Inlet Conditions' : '유입(Inlet) 조건 함께 복사'}</span>
       </label>
 
       <div style={{ fontSize: 9.5, color: copiedNotice ? '#1E3A8A' : '#64748B', fontWeight: copiedNotice ? 700 : 500, lineHeight: 1.35 }}>
         {copiedNotice ||
-          (includeInlet ? '운전조건 + 유입 조건 동시 반영' : '장치 운전조건만 반영')}
+          (includeInlet
+            ? isEn
+              ? 'Apply operating & inlet conditions together'
+              : '운전조건 + 유입 조건 동시 반영'
+            : isEn
+              ? 'Apply unit operating conditions only'
+              : '장치 운전조건만 반영')}
       </div>
 
       {missingAllowedPlants.length > 0 && (
         <div style={{ fontSize: 9, color: '#94A3B8', lineHeight: 1.35 }}>
-          ※ {missingAllowedPlants.join(', ')}에는 등록된 {unitTypeLabel} 예제가 없습니다.
+          {isEn
+            ? `Note: No registered ${unitTypeLabel} templates in ${missingAllowedPlants.join(', ')}.`
+            : `※ ${missingAllowedPlants.join(', ')}에는 등록된 ${unitTypeLabel} 예제가 없습니다.`}
         </div>
       )}
     </div>

@@ -19,6 +19,111 @@ const LABEL_W = 186;
 const UNIT_W = 92;
 const COL_W = 98;
 
+const COMP_LABEL_EN: Record<SimCompKey, string> = {
+  H2O: 'H₂O (Water / Steam)',
+  NaCl: 'NaCl (Sodium Chloride)',
+  NaOH: 'NaOH (Caustic Soda)',
+  Cl2: 'Cl₂ (Chlorine)',
+  H2: 'H₂ (Hydrogen)',
+  HCl: 'HCl (Hydrogen Chloride)',
+  H2SO4: 'H₂SO₄ (Sulfuric Acid)',
+  O2: 'O₂ (Oxygen)',
+  NaOCl: 'NaOCl (Sodium Hypochlorite)',
+  N2: 'N₂ (Nitrogen / Inert)',
+  NaClO3: 'NaClO₃ (Sodium Chlorate)',
+  FeCl2: 'FeCl₂ (Ferrous Chloride)',
+  FeCl3: 'FeCl₃ (Ferric Chloride)',
+  PAC: 'PAC (Polyaluminum Chloride)',
+  Glycerol: 'Glycerol',
+  MCH: 'MCH (Monochlorohydrin)',
+  DCH: 'DCH (Dichlorohydrin)',
+  ECH: 'ECH (Epichlorohydrin)',
+  DCP: 'DCP (1,2-Dichloropropane)',
+  CH4: 'CH₄ (Methane / Natural Gas)',
+  CO: 'CO (Carbon Monoxide)',
+  CO2: 'CO₂ (Carbon Dioxide)',
+  NH3: 'NH₃ (Ammonia)',
+  C2H4: 'C₂H₄ (Ethylene)',
+  C2H6: 'C₂H₆ (Ethane)',
+  C3H6: 'C₃H₆ (Propylene)',
+  C3H8: 'C₃H₈ (Propane)',
+  nC4H10: 'n-C₄H₁₀ (n-Butane)',
+  nC6H14: 'n-C₆H₁₄ (n-Hexane)',
+  nC7H16: 'n-C₇H₁₆ (n-Heptane)',
+  Benzene: 'Benzene (C₆H₆)',
+  Toluene: 'Toluene (C₇H₈)',
+  pXylene: 'p-Xylene',
+  MeOH: 'MeOH (Methanol)',
+  EtOH: 'EtOH (Ethanol)',
+  IPA: 'IPA (Isopropanol)',
+  Acetone: 'Acetone',
+  AceticAcid: 'Acetic Acid (CH₃COOH)',
+  EtOAc: 'EtOAc (Ethyl Acetate)',
+  CHCl3: 'CHCl₃ (Chloroform / CFM)',
+  Ar: 'Ar (Argon)',
+  H2S: 'H₂S (Hydrogen Sulfide)',
+  SO2: 'SO₂ (Sulfur Dioxide)',
+  SO3: 'SO₃ (Sulfur Trioxide)',
+  iC4H10: 'i-C₄H₁₀ (Isobutane)',
+  C4H8_1: '1-C₄H₈ (1-Butene)',
+  nC5H12: 'n-C₅H₁₂ (n-Pentane)',
+  nC8H18: 'n-C₈H₁₈ (n-Octane)',
+  Cyclohexane: 'Cyclohexane (C₆H₁₂)',
+  Ethylbenzene: 'Ethylbenzene',
+  Styrene: 'Styrene Monomer',
+  Cumene: 'Cumene',
+  Phenol: 'Phenol',
+  THF: 'THF (Tetrahydrofuran)',
+  DMF: 'DMF (Dimethylformamide)',
+  DMSO: 'DMSO (Dimethyl Sulfoxide)',
+  MTBE: 'MTBE',
+  MEK: 'MEK (Methyl Ethyl Ketone)',
+  DMC: 'DMC (Dimethyl Carbonate)',
+  EG: 'EG (Ethylene Glycol)',
+  MEA: 'MEA (Monoethanolamine)',
+  MDEA: 'MDEA (Methyldiethanolamine)',
+  FormicAcid: 'Formic Acid (HCOOH)',
+  HNO3: 'HNO₃ (Nitric Acid)',
+  CH3Cl: 'CH₃Cl (Methyl Chloride / MC)',
+  CH2Cl2: 'CH₂Cl₂ (Methylene Chloride / MCL)',
+  CCl4: 'CCl₄ (Carbon Tetrachloride / CTC)',
+  C2Cl4: 'C₂Cl₄ (Perchloroethylene / Heavies)',
+  COCl2: 'COCl₂ (Phosgene)',
+  HCHO: 'HCHO (Formaldehyde / Formalin)',
+  MCB: 'MCB (Monochlorobenzene)',
+  Aniline: 'Aniline',
+  MDA: "MDA (4,4'-Methylenedianiline)",
+  MDI: "MDI (4,4'-Pure MDI)",
+  PMDI: 'PMDI (Polymeric MDI)',
+  CUSTOM_1: 'CUSTOM_1 (User / UNIFAC Comp 1)',
+  CUSTOM_2: 'CUSTOM_2 (User / UNIFAC Comp 2)',
+  H2O2: 'H₂O₂ (Hydrogen Peroxide)',
+  H3PO4: 'H₃PO₄ (Phosphoric Acid)',
+  HF: 'HF (Hydrofluoric Acid)',
+  KOH: 'KOH (Potassium Hydroxide)',
+  NH4OH: 'NH₄OH (Ammonia Water)',
+  TMAH: 'TMAH (Tetramethylammonium Hydroxide)',
+  NMP: 'NMP (N-Methyl-2-pyrrolidone)',
+  BCS: 'BCS (Butyl Cellosolve)',
+  Na2CO3: 'Na₂CO₃ (Sodium Carbonate)',
+  NaHSO3: 'NaHSO₃ (Sodium Bisulfite)',
+  CaOH2: 'Ca(OH)₂ (Calcium Hydroxide)',
+};
+
+function localizeKeyConcLabel(label: string, isEn: boolean): string {
+  if (!isEn) return label;
+  if (label === '▶ RUN 대기') return '▶ Pending RUN';
+  if (label === '기액혼합 Cl₂') return '2-Phase Cl₂';
+  if (label === '수증기') return 'Steam / Vapor';
+  if (label === '원염 NaCl') return 'Raw Salt NaCl';
+  if (label === '순수/응축수') return 'Pure Water / Condensate';
+  return label
+    .replace(/^습윤 Cl₂/, 'Wet Cl₂')
+    .replace(/^액화 Cl₂/, 'Liq Cl₂')
+    .replace(/^액화 AHCl/, 'Liq AHCl')
+    .replace(/글리세린/g, 'Glycerol');
+}
+
 export default function HorizontalFlowsheetStreamTable({
   streams,
   selectedEdgeId,
@@ -31,6 +136,7 @@ export default function HorizontalFlowsheetStreamTable({
   const [compViewMode, setCompViewMode] = useState<'active' | 'configured' | 'all'>('active');
   const dragStart = useRef({ x: 0, y: 0, left: 0, top: 0 });
   const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
 
   const [tempUnit, setTempUnit] = useLocalUnit('temp');
   const [pressUnit, setPressUnit] = useLocalUnit('pressG');
@@ -263,7 +369,7 @@ export default function HorizontalFlowsheetStreamTable({
                       [{s.streamNo}]{s.isTearStream ? '♻' : ''}
                     </span>
                     <button
-                      title={lang === 'en' ? `Delete stream [${s.streamNo}]` : `배관 [${s.streamNo}] 삭제`}
+                      title={isEn ? `Delete stream [${s.streamNo}]` : `배관 [${s.streamNo}] 삭제`}
                       onClick={ev => {
                         ev.stopPropagation();
                         onDeleteStream(s.edgeId);
@@ -306,22 +412,25 @@ export default function HorizontalFlowsheetStreamTable({
           <tr>
             <td style={stickyRowLabel('#FAF9F5', true)}>{t(lang, 'st_row_fluid')}</td>
             <td style={stickyRowUnit('#FAF9F5')}>—</td>
-            {streams.map(s => (
-              <td
-                key={s.edgeId}
-                onClick={() => onSelectStream(s.edgeId)}
-                style={{
-                  ...cellValStyle(s, '#FAF9F5', 'center'),
-                  fontFamily: "'Inter', sans-serif",
-                  fontSize: 9.5,
-                  fontWeight: 700,
-                  color: s.keyConcLabel.includes('액화 Cl₂') ? '#0284C7' : '#1A2F44',
-                }}
-                title={s.keyConcLabel}
-              >
-                {s.keyConcLabel}
-              </td>
-            ))}
+            {streams.map(s => {
+              const fluidLabel = localizeKeyConcLabel(s.keyConcLabel, isEn);
+              return (
+                <td
+                  key={s.edgeId}
+                  onClick={() => onSelectStream(s.edgeId)}
+                  style={{
+                    ...cellValStyle(s, '#FAF9F5', 'center'),
+                    fontFamily: "'Inter', sans-serif",
+                    fontSize: 9.5,
+                    fontWeight: 700,
+                    color: s.keyConcLabel.includes('액화 Cl₂') ? '#0284C7' : '#1A2F44',
+                  }}
+                  title={fluidLabel}
+                >
+                  {fluidLabel}
+                </td>
+              );
+            })}
           </tr>
 
           {/* 02. 상 (Phase) */}
@@ -505,14 +614,14 @@ export default function HorizontalFlowsheetStreamTable({
                   title={t(lang, 'st_comp_toggle_title')}
                 >
                   {compViewMode === 'all'
-                    ? lang === 'en'
+                    ? isEn
                       ? `All ${SIM_COMPS.length}`
                       : `전체 ${SIM_COMPS.length}종`
                     : compViewMode === 'configured'
-                      ? lang === 'en'
+                      ? isEn
                         ? `Configured ${mergedConfiguredComps.length}`
                         : `설정 ${mergedConfiguredComps.length}종`
-                      : lang === 'en'
+                      : isEn
                         ? `Active ${visibleComps.length}`
                         : `활성 ${visibleComps.length}종`}
                 </button>
@@ -564,9 +673,12 @@ export default function HorizontalFlowsheetStreamTable({
           {visibleComps.map((comp, idx) => {
             const bg = idx % 2 === 0 ? '#FFFFFF' : '#FAF9F5';
             const massLabel = getUnitLabel('massFlow', massUnit);
+            const compLabel = isEn ? COMP_LABEL_EN[comp] ?? COMP_META[comp].formula : COMP_META[comp].label;
             return (
               <tr key={comp}>
-                <td style={stickyRowLabel(bg, false, true)}>{COMP_META[comp].label}</td>
+                <td style={stickyRowLabel(bg, false, true)} title={compLabel}>
+                  {compLabel}
+                </td>
                 <td style={stickyRowUnit(bg)}>{massLabel}</td>
                 {streams.map(s => {
                   const rawKgH = s.flowsKgH[comp] || 0;

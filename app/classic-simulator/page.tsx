@@ -145,6 +145,87 @@ const CLASSIC_PROJECTS_KEY = 'chemplant-classic-sim-projects-v1';
 const NODE_TYPES = { classicBlock: ClassicBlockNode };
 const EDGE_TYPES = { classicStream: ClassicStreamEdge };
 
+const CLASSIC_EXAMPLE_LABELS_EN: Record<string, string> = {
+  ex_flash_loop: 'Vapor-Liquid Flash & Heat Exchanger Basics (Feed → Heater → Flash2)',
+  ex_bt_distill: 'Benzene–Toluene Rigorous Distillation Column (Peng-Robinson · 20 Stages)',
+  ex_ech_distill: 'ECH Dual Rigorous Distillation Columns (RadColumn × 2)',
+};
+
+const UNIT_EN_NAMES: Partial<Record<FlowUnitType, string>> = {
+  feed: 'Feed Stream',
+  product: 'Product Stream',
+  mixer: 'Stream Mixer',
+  splitter: 'Flow Splitter',
+  separator: '2-Phase Flash',
+  hex: '2-Stream HEX',
+  cooler: 'Heater / Cooler',
+  distillation: 'Rigorous Column',
+  absorber: 'Absorber / Stripper',
+  extractor: 'LLE Extractor',
+  reactor: 'Chemical Reactor',
+  pump: 'Centrifugal Pump',
+  compressor: 'Compressor',
+  valve: 'JT Expansion Valve',
+  evaporator: 'Multi-Effect Evap',
+  liquefier: 'Cryo Condenser',
+  desiccant_dryer: 'Desiccant Dryer',
+  saturator: 'Brine Saturator',
+  chelate_tower: 'Chelate Resin Tower',
+  electrolyzer: 'Membrane Cell',
+};
+
+const PROPERTY_METHOD_EN: Record<ResolvedPropertyMethod, { label: string; short: string; bestFor: string }> = {
+  ENRTL: {
+    label: 'ENRTL (Electrolyte Aqueous · Multi-Phase Activity)',
+    short: 'Electrolyte · Acid/Base Aqueous',
+    bestFor: 'Brine electrolysis (NaCl·NaOH), HCl azeotrope/absorption, H₂SO₄ drying, aqueous NH₃, chlorinated organics–brine LLE',
+  },
+  NRTL: {
+    label: 'NRTL (Non-Ideal Liquid Activity γ-φ)',
+    short: 'Polar Organics · Azeotrope/LLE',
+    bestFor: 'Alcohol (MeOH·EtOH·IPA)–water azeotropic distillation, acetone/acetic acid/EtOAc, chloroform, ECH/chlorohydrin, LLE',
+  },
+  PR: {
+    label: 'PR (Peng-Robinson Cubic EOS)',
+    short: 'Hydrocarbons · Aromatics · Liquefied Gas',
+    bestFor: 'Natural gas (CH₄), LPG (C2–C4), hexane/heptane, BTX aromatics (benzene/toluene/xylene), liquid Cl₂/CO₂/anhydrous HCl',
+  },
+  SRK: {
+    label: 'SRK (Soave-Redlich-Kwong Cubic EOS)',
+    short: 'Hydrogen · Syngas · Light Olefins',
+    bestFor: 'High-pressure H₂, syngas (CO·H₂·CH₄·N₂), ethylene/propylene olefin separation, petrochemical gas processing',
+  },
+};
+
+const PLANT_PRESET_SHORT_EN: Record<string, string> = {
+  clorsim_sim: 'Chlor-Alkali',
+  hcl_synth: '1A HCl/PSD',
+  ech_gte: 'ECH (GTE)',
+  cms_plant: 'CMS',
+  mdi_plant: 'MDI',
+};
+
+const GENERAL_PACK_LABEL_EN: Record<string, string> = {
+  polar_solvents: 'Alcohols · Ketones · Solvents',
+  btx_refinery: 'BTX Aromatics · Naphtha',
+  light_hc_lpg: 'Natural Gas · Olefins · LPG',
+  syngas_h2_nh3: 'Syngas · H₂ · NH₃ · CO₂',
+  chlorinated_org: 'Chlorinated Solvents · CMS · ECH',
+  sm_cumene_aromatics: 'Styrene (SM) · Cumene · Phenol',
+  amine_sour_gas: 'Amine Acid Gas (CO₂·H₂S)',
+  battery_semi_solvents: 'Battery Carbonates · Semi Solvents',
+  electronic_battery_water: 'Electronics · Battery · Water',
+};
+
+const ELECTROLYZER_NOTE_EN: Record<ElectrolyzerPresetId, string> = {
+  nacl_chlor_alkali: 'Ion-exchange membrane chlor-alkali cell for NaOH, Cl₂, and H₂ (E_rev ≈ 2.19 V)',
+  kcl_koh: 'Ion-exchange membrane cell for KOH production (E_rev ≈ 2.19 V, supports NaCl surrogate feed)',
+  awe_water: '30 wt% KOH circulating alkaline water electrolyzer (E_rev ≈ 1.23 V, ~50–52 kWh/kg H₂)',
+  pem_water: 'High-pressure PEM green hydrogen electrolyzer with ultrapure water feed (30 kG H₂, ~52–54 kWh/kg H₂)',
+  hcl_electrolysis: 'By-product HCl chlorine recovery electrolyzer (E_rev ≈ 1.36 V, low voltage / high efficiency)',
+  naclo3_chlorate: 'Diaphragm-free sodium chlorate (NaClO₃) cell (6e⁻/mol NaClO₃, by-product H₂ recovery)',
+};
+
 interface ClassicExampleCase {
   id: string;
   label: string;
@@ -528,6 +609,8 @@ export default function ClassicSimulatorPage() {
   const [mobilePane, setMobilePane] = useState<'pfd' | 'tree' | 'form' | 'summary'>('pfd');
 
   // 전역 기본 단위 연동 + 인라인 단위 선택 상태
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
   const tagStandard = useUnitStore(s => s.tagStandard);
   const [tempUnit, setTempUnit] = useLocalUnit('temp');
   const [pressUnit, setPressUnit] = useLocalUnit('pressG');
@@ -610,7 +693,7 @@ export default function ClassicSimulatorPage() {
       }
     ),
     elapsedMs: 0,
-    lastRunTime: '미실행 (▶ Run 대기)',
+    lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
   }));
   const [isDirty, setIsDirty] = useState(true);
   const skipDirtyRef = useRef(true);
@@ -675,7 +758,7 @@ export default function ClassicSimulatorPage() {
               propertyMethod: restoredMethod,
               activeComponents: restoredComps,
             });
-            setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: '미실행 (▶ Run 대기)' });
+            setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)' });
             setIsDirty(true);
             setSelectedId(rawProj.simDefs[0]?.id ?? null);
             setSelectedKind('block');
@@ -696,7 +779,7 @@ export default function ClassicSimulatorPage() {
               activeComponents: defaultComps,
             }),
             elapsedMs: 0,
-            lastRunTime: '미실행 (▶ Run 대기)',
+            lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
           });
           setIsDirty(true);
           setSelectedId(null);
@@ -736,7 +819,7 @@ export default function ClassicSimulatorPage() {
               setSolvedMeta({
                 result: parsed.lastSolvedMeta.result,
                 elapsedMs: parsed.lastSolvedMeta.elapsedMs ?? 1,
-                lastRunTime: parsed.lastSolvedMeta.lastRunTime ?? '저장본 복원',
+                lastRunTime: parsed.lastSolvedMeta.lastRunTime ?? (isEn ? 'Restored from save' : '저장본 복원'),
               });
               setIsDirty(Boolean(parsed.isDirty));
             } else {
@@ -744,7 +827,7 @@ export default function ClassicSimulatorPage() {
                 propertyMethod: restoredMethod,
                 activeComponents: restoredComps,
               });
-              setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: '미실행 (▶ Run 대기)' });
+              setSolvedMeta({ result: idleRes, elapsedMs: 0, lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)' });
               setIsDirty(true);
             }
             setSelectedId(parsed.simDefs[0]?.id ?? null);
@@ -1204,7 +1287,7 @@ export default function ClassicSimulatorPage() {
         activeComponents: nextComps,
       }),
       elapsedMs: 0,
-      lastRunTime: '모던 UI에서 인계됨 (▶ Run 대기)',
+      lastRunTime: isEn ? 'Handed off from Modern UI (▶ Ready to Run)' : '모던 UI에서 인계됨 (▶ Run 대기)',
     });
     setIsDirty(true);
     setSelectedKind('block');
@@ -1274,10 +1357,10 @@ export default function ClassicSimulatorPage() {
         activeComponents,
       }),
       elapsedMs: 0,
-      lastRunTime: '초기화됨 (▶ Run 대기)',
+      lastRunTime: isEn ? 'Reset (▶ Ready to Run)' : '초기화됨 (▶ Run 대기)',
     });
     setIsDirty(true);
-  }, [activeComponents, flowEdges, simDefs, thermoMethod]);
+  }, [activeComponents, flowEdges, isEn, simDefs, thermoMethod]);
 
   const handleNextStep = useCallback(() => {
     const emptyFeed = simDefs.find(d => {
@@ -1352,7 +1435,7 @@ export default function ClassicSimulatorPage() {
         setSolvedMeta({
           result: bEntry.result,
           elapsedMs: bEntry.elapsedMs ?? 1,
-          lastRunTime: bEntry.lastRunTime || '사전 수렴 기준케이스',
+          lastRunTime: bEntry.lastRunTime || (isEn ? 'Pre-converged baseline' : '사전 수렴 기준케이스'),
         });
         setIsDirty(false);
       } else {
@@ -1416,12 +1499,20 @@ export default function ClassicSimulatorPage() {
         hasMassErr || hasDistillErr ? 'error' : hasFlow ? 'ok' : 'idle';
       const statusTitle =
         hasMassErr
-          ? `물질수지 오차 (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`
+          ? isEn
+            ? `Mass balance error (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`
+            : `물질수지 오차 (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`
           : hasDistillErr
-            ? '증류탑 미수렴 또는 목표 스펙 미달'
+            ? isEn
+              ? 'Column not converged or spec not met'
+              : '증류탑 미수렴 또는 목표 스펙 미달'
             : hasFlow
-              ? '수렴 완료'
-              : '연결 대기';
+              ? isEn
+                ? 'Converged'
+                : '수렴 완료'
+              : isEn
+                ? 'Awaiting connection'
+                : '연결 대기';
       const resolvedType = def?.unitType ?? n.data.unitType;
       return {
         ...n,
@@ -1436,7 +1527,7 @@ export default function ClassicSimulatorPage() {
         },
       };
     });
-  }, [rfNodes, simDefs, unitResultMap, selectedKind, selectedId, tagStandard]);
+  }, [rfNodes, simDefs, unitResultMap, selectedKind, selectedId, tagStandard, isEn]);
 
   const displayEdges: Edge[] = useMemo(() => {
     return flowEdges.map(e => {
@@ -1483,7 +1574,7 @@ export default function ClassicSimulatorPage() {
       const newDef: FlowNodeDef = {
         id,
         tag,
-        name: item ? `${item.modelName} (${item.koName})` : unitType,
+        name: item ? `${item.modelName} (${isEn ? (UNIT_EN_NAMES[unitType] ?? item.modelName) : item.koName})` : unitType,
         unitType,
         params: defaultParamsForClassic(unitType),
       };
@@ -1505,7 +1596,7 @@ export default function ClassicSimulatorPage() {
       setSelectedKind('block');
       setSelectedId(id);
     },
-    [pushUndoSnapshot, simDefs, tagStandard]
+    [isEn, pushUndoSnapshot, simDefs, tagStandard]
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -1593,7 +1684,7 @@ export default function ClassicSimulatorPage() {
         activeComponents: nextComps,
       }),
       elapsedMs: 0,
-      lastRunTime: '미실행 (▶ Run 대기)',
+      lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
     });
     setIsDirty(true);
     setSelectedKind('block');
@@ -1619,7 +1710,7 @@ export default function ClassicSimulatorPage() {
         activeComponents: defaultComps,
       }),
       elapsedMs: 0,
-      lastRunTime: '미실행 (▶ Run 대기)',
+      lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
     });
     setIsDirty(true);
     setSelectedKind('block');
@@ -1715,7 +1806,7 @@ export default function ClassicSimulatorPage() {
         activeComponents: nextComps,
       }),
       elapsedMs: 0,
-      lastRunTime: '미실행 (▶ Run 대기)',
+      lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
     });
     setIsDirty(true);
     setSelectedKind('block');
@@ -1751,7 +1842,9 @@ export default function ClassicSimulatorPage() {
       if (importedDefs.length === 0) {
         setInteropNotice({
           kind: 'error',
-          text: `"${file.name}" 파일에서 가져올 수 있는 공정 장치 블록을 찾지 못했습니다.`,
+          text: isEn
+            ? `No importable process unit blocks were found in "${file.name}".`
+            : `"${file.name}" 파일에서 가져올 수 있는 공정 장치 블록을 찾지 못했습니다.`,
           warnings: res.warnings,
         });
         return;
@@ -1796,7 +1889,7 @@ export default function ClassicSimulatorPage() {
           activeComponents: nextComps,
         }),
         elapsedMs: 0,
-        lastRunTime: '미실행 (▶ Run 대기)',
+        lastRunTime: isEn ? 'Not run (▶ Ready to Run)' : '미실행 (▶ Run 대기)',
       });
       setIsDirty(true);
       setSelectedKind('block');
@@ -1808,19 +1901,23 @@ export default function ClassicSimulatorPage() {
       const unmapped = res.summary?.unmappedComps ?? [];
       const unmappedSuffix =
         unmapped.length > 0
-          ? ` · 미매핑 성분 ${unmapped.length}종(${unmapped.slice(0, 6).join(', ')}${unmapped.length > 6 ? ' 외' : ''})`
+          ? isEn
+            ? ` · ${unmapped.length} unmapped (${unmapped.slice(0, 6).join(', ')}${unmapped.length > 6 ? ' +' : ''})`
+            : ` · 미매핑 성분 ${unmapped.length}종(${unmapped.slice(0, 6).join(', ')}${unmapped.length > 6 ? ' 외' : ''})`
           : '';
       setInteropNotice({
         kind: 'success',
-        text: `"${importedTitle}" 가져오기 완료 — 장치 ${res.summary?.unitCount ?? res.defs.length}개 · 스트림 ${res.summary?.edgeCount ?? res.edges.length}개 · 성분 ${res.summary?.mappedCompCount ?? nextComps.length}종${unmappedSuffix}`,
+        text: isEn
+          ? `Imported "${importedTitle}" — ${res.summary?.unitCount ?? res.defs.length} units · ${res.summary?.edgeCount ?? res.edges.length} streams · ${res.summary?.mappedCompCount ?? nextComps.length} components${unmappedSuffix}`
+          : `"${importedTitle}" 가져오기 완료 — 장치 ${res.summary?.unitCount ?? res.defs.length}개 · 스트림 ${res.summary?.edgeCount ?? res.edges.length}개 · 성분 ${res.summary?.mappedCompCount ?? nextComps.length}종${unmappedSuffix}`,
         warnings: res.warnings && res.warnings.length > 0 ? res.warnings : undefined,
       });
       setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 220 }), 80);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : '알 수 없는 오류';
+      const errMsg = err instanceof Error ? err.message : (isEn ? 'Unknown error' : '알 수 없는 오류');
       setInteropNotice({
         kind: 'error',
-        text: `공정 텍스트 파일 가져오기 실패: ${errMsg}`,
+        text: isEn ? `Failed to import process text file: ${errMsg}` : `공정 텍스트 파일 가져오기 실패: ${errMsg}`,
       });
     } finally {
       e.target.value = '';
@@ -1848,13 +1945,15 @@ export default function ClassicSimulatorPage() {
       URL.revokeObjectURL(url);
       setInteropNotice({
         kind: 'success',
-        text: `"${safeName}.inp" 공정 텍스트 파일 내보내기 완료 (장치 ${simDefs.length}개 · 스트림 ${flowEdges.length}개)`,
+        text: isEn
+          ? `Exported "${safeName}.inp" (${simDefs.length} units · ${flowEdges.length} streams)`
+          : `"${safeName}.inp" 공정 텍스트 파일 내보내기 완료 (장치 ${simDefs.length}개 · 스트림 ${flowEdges.length}개)`,
       });
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : '알 수 없는 오류';
+      const errMsg = err instanceof Error ? err.message : (isEn ? 'Unknown error' : '알 수 없는 오류');
       setInteropNotice({
         kind: 'error',
-        text: `공정 텍스트 파일 내보내기 실패: ${errMsg}`,
+        text: isEn ? `Failed to export process text file: ${errMsg}` : `공정 텍스트 파일 내보내기 실패: ${errMsg}`,
       });
     }
   };
@@ -1872,7 +1971,7 @@ export default function ClassicSimulatorPage() {
         if (raw && Array.isArray(raw.simDefs) && Array.isArray(raw.flowEdges)) {
           loadSavedProject({
             id: String(pending.rawProject.id || `loaded_${Date.now()}`),
-            name: String(pending.caseName || pending.rawProject.name || '불러온 케이스'),
+            name: String(pending.caseName || pending.rawProject.name || (isEn ? 'Loaded Case' : '불러온 케이스')),
             savedAt: String(pending.rawProject.savedAt || ''),
             simDefs: raw.simDefs,
             positions: raw.positions ?? {},
@@ -1946,7 +2045,7 @@ export default function ClassicSimulatorPage() {
         flowEdges,
         solved.streams,
         selectedBlockRes,
-        '클래식 공정 시뮬레이터'
+        isEn ? 'Classic Process Simulator' : '클래식 공정 시뮬레이터'
       );
       if (payload) {
         saveChemProHandoffPayload({ ...payload, plantId: 'classic_sim' });
@@ -1974,7 +2073,7 @@ export default function ClassicSimulatorPage() {
       overwriteClassicProject(matched.id);
       setInteropNotice({
         kind: 'success',
-        text: `"${matched.name}" 케이스에 바로 저장되었습니다.`,
+        text: isEn ? `Saved directly to case "${matched.name}".` : `"${matched.name}" 케이스에 바로 저장되었습니다.`,
         warnings: [],
       });
       return true;
@@ -2109,7 +2208,10 @@ export default function ClassicSimulatorPage() {
         onOpenSaveBar={() => setShowProjectBar(v => !v)}
         onExportJson={exportJson}
         onSwitchToModernUi={switchToModernUi}
-        examples={CLASSIC_EXAMPLES.filter(x => !isSimulatorOnlyUser(user) || x.id !== 'ex_ech_distill').map(x => ({ id: x.id, label: x.label }))}
+        examples={CLASSIC_EXAMPLES.filter(x => !isSimulatorOnlyUser(user) || x.id !== 'ex_ech_distill').map(x => ({
+          id: x.id,
+          label: isEn ? (CLASSIC_EXAMPLE_LABELS_EN[x.id] ?? x.label) : x.label,
+        }))}
         onSelectExample={exId => {
           const found = CLASSIC_EXAMPLES.find(x => x.id === exId);
           if (found) loadExample(found);
@@ -2135,10 +2237,10 @@ export default function ClassicSimulatorPage() {
           <div style={{ display: 'flex', background: '#E2E8F0', padding: 2, borderRadius: 6, gap: 2 }}>
             {(
               [
-                { id: 'pfd', label: '도면' },
-                { id: 'tree', label: '트리' },
-                { id: 'form', label: '입력' },
-                { id: 'summary', label: '요약표' },
+                { id: 'pfd', label: isEn ? 'PFD' : '도면' },
+                { id: 'tree', label: isEn ? 'Tree' : '트리' },
+                { id: 'form', label: isEn ? 'Input' : '입력' },
+                { id: 'summary', label: isEn ? 'Summary' : '요약표' },
               ] as const
             ).map(t => (
               <button
@@ -2164,8 +2266,8 @@ export default function ClassicSimulatorPage() {
               type="button"
               onClick={handleUndo}
               disabled={!canUndo}
-              title="실행취소 (Ctrl+Z)"
-              aria-label="실행취소 (Ctrl+Z)"
+              title={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
+              aria-label={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
               style={{
                 height: 24,
                 minWidth: 26,
@@ -2190,8 +2292,8 @@ export default function ClassicSimulatorPage() {
               type="button"
               onClick={handleRedo}
               disabled={!canRedo}
-              title="다시실행 (Ctrl+Y)"
-              aria-label="다시실행 (Ctrl+Y)"
+              title={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
+              aria-label={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
               style={{
                 height: 24,
                 minWidth: 26,
@@ -2243,7 +2345,7 @@ export default function ClassicSimulatorPage() {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: '#1E293B', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <SaveArchiveIcon size={12} /> 다른 이름으로 저장
+              <SaveArchiveIcon size={12} /> {isEn ? 'Save As' : '다른 이름으로 저장'}
             </span>
             <input
               type="text"
@@ -2252,7 +2354,7 @@ export default function ClassicSimulatorPage() {
               onKeyDown={e => {
                 if (e.key === 'Enter') saveProject();
               }}
-              placeholder="새 케이스 이름 입력..."
+              placeholder={isEn ? 'Enter new case name...' : '새 케이스 이름 입력...'}
               style={{
                 height: 26,
                 padding: '0 8px',
@@ -2279,14 +2381,14 @@ export default function ClassicSimulatorPage() {
                 cursor: 'pointer',
               }}
             >
-              저장
+              {isEn ? 'Save' : '저장'}
             </button>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <button
               type="button"
               onClick={handleExportProcessText}
-              title="현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기"
+              title={isEn ? 'Export current process flowsheet as text (.inp)' : '현재 공정 플로우시트를 텍스트(.inp) 파일로 내보내기'}
               style={{
                 height: 26,
                 padding: '0 9px',
@@ -2303,7 +2405,7 @@ export default function ClassicSimulatorPage() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <DownloadFileIcon size={12} /> .inp 내보내기
+              <DownloadFileIcon size={12} /> {isEn ? 'Export .inp' : '.inp 내보내기'}
             </button>
             <button
               type="button"
@@ -2324,12 +2426,12 @@ export default function ClassicSimulatorPage() {
                 whiteSpace: 'nowrap',
               }}
             >
-              <DownloadFileIcon size={12} /> JSON 파일 내보내기
+              <DownloadFileIcon size={12} /> {isEn ? 'Export JSON' : 'JSON 파일 내보내기'}
             </button>
             <button
               type="button"
               onClick={() => setShowProjectBar(false)}
-              title="저장 바 닫기"
+              title={isEn ? 'Close save bar' : '저장 바 닫기'}
               style={{
                 height: 26,
                 padding: '0 8px',
@@ -2368,15 +2470,20 @@ export default function ClassicSimulatorPage() {
             <span style={{ fontWeight: 700 }}>{interopNotice.text}</span>
             {interopNotice.warnings && interopNotice.warnings.length > 0 && (
               <span style={{ fontSize: 10.5, color: '#92400E' }}>
-                참고: {interopNotice.warnings.slice(0, 3).join(' / ')}
-                {interopNotice.warnings.length > 3 ? ` 외 ${interopNotice.warnings.length - 3}건` : ''}
+                {isEn ? 'Note: ' : '참고: '}
+                {interopNotice.warnings.slice(0, 3).join(' / ')}
+                {interopNotice.warnings.length > 3
+                  ? isEn
+                    ? ` (+${interopNotice.warnings.length - 3} more)`
+                    : ` 외 ${interopNotice.warnings.length - 3}건`
+                  : ''}
               </span>
             )}
           </div>
           <button
             type="button"
             onClick={() => setInteropNotice(null)}
-            title="알림 닫기"
+            title={isEn ? 'Dismiss notice' : '알림 닫기'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -2549,8 +2656,8 @@ export default function ClassicSimulatorPage() {
                   type="button"
                   onClick={handleUndo}
                   disabled={!canUndo}
-                  title="실행취소 (Ctrl+Z)"
-                  aria-label="실행취소 (Ctrl+Z)"
+                  title={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
+                  aria-label={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
                   style={{
                     height: 24,
                     minWidth: 28,
@@ -2575,8 +2682,8 @@ export default function ClassicSimulatorPage() {
                   type="button"
                   onClick={handleRedo}
                   disabled={!canRedo}
-                  title="다시실행 (Ctrl+Y)"
-                  aria-label="다시실행 (Ctrl+Y)"
+                  title={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
+                  aria-label={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
                   style={{
                     height: 24,
                     minWidth: 28,
@@ -2713,10 +2820,12 @@ export default function ClassicSimulatorPage() {
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 4 }}>
-                      빈 플로우시트 캔버스
+                      {isEn ? 'Empty Flowsheet Canvas' : '빈 플로우시트 캔버스'}
                     </div>
                     <div style={{ fontSize: 11.5 }}>
-                      하단 Model Palette에서 블록을 클릭하거나 드래그하여 공정도를 구성하거나, 상단 Ribbon에서 상용 공정 케이스를 불러오세요.
+                      {isEn
+                        ? 'Click or drag blocks from the Model Palette below to build a flowsheet, or load a commercial process case from the Ribbon above.'
+                        : '하단 Model Palette에서 블록을 클릭하거나 드래그하여 공정도를 구성하거나, 상단 Ribbon에서 상용 공정 케이스를 불러오세요.'}
                     </div>
                   </div>
                 )}
@@ -2784,7 +2893,11 @@ export default function ClassicSimulatorPage() {
                     draggable
                     onDragStart={e => e.dataTransfer.setData('application/classic-unit', item.unitType)}
                     onClick={() => addBlockAt(item.unitType)}
-                    title={`${item.modelName} (${item.koName}): 클릭 또는 드래그하여 추가`}
+                    title={
+                      isEn
+                        ? `${item.modelName} (${UNIT_EN_NAMES[item.unitType] ?? item.modelName}): Click or drag to add`
+                        : `${item.modelName} (${item.koName}): 클릭 또는 드래그하여 추가`
+                    }
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -2803,7 +2916,9 @@ export default function ClassicSimulatorPage() {
                     <span style={{ fontSize: 10, fontWeight: 800, color: '#0F172A', marginTop: 2 }}>
                       {item.modelName}
                     </span>
-                    <span style={{ fontSize: 9, color: '#64748B' }}>{item.koName}</span>
+                    <span style={{ fontSize: 9, color: '#64748B' }}>
+                      {isEn ? (UNIT_EN_NAMES[item.unitType] ?? item.modelName) : item.koName}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -2816,7 +2931,7 @@ export default function ClassicSimulatorPage() {
           {((!isMobile && activeMdiKey === 'summary') || (isMobile && mobilePane === 'summary')) && (
           <div style={{ flex: 1, overflow: 'auto', background: '#FFFFFF', padding: 12 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A', marginBottom: 8 }}>
-              Stream Summary (전체 스트림 물질·열수지 일람표)
+              {isEn ? 'Stream Summary (Material & Energy Balance Table)' : 'Stream Summary (전체 스트림 물질·열수지 일람표)'}
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, fontFamily: 'JetBrains Mono, monospace' }}>
@@ -2958,9 +3073,9 @@ export default function ClassicSimulatorPage() {
                       {outEdges
                         .map(e =>
                           e.sourcePort === 'side_cut'
-                            ? `${e.streamNo}(측류 S)`
+                            ? `${e.streamNo}(${isEn ? 'Side-Cut S' : '측류 S'})`
                             : e.sourcePort === 'decanter'
-                              ? `${e.streamNo}(디캔터)`
+                              ? `${e.streamNo}(${isEn ? 'Decanter' : '디캔터'})`
                               : e.streamNo
                         )
                         .join(', ') || 'None'}
@@ -2994,7 +3109,9 @@ export default function ClassicSimulatorPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: '#475569' }}>
-                  세부 입력 파라미터는 우측 Inspector 패널에서 즉시 수정할 수 있습니다.
+                  {isEn
+                    ? 'Detailed input parameters can be edited directly in the Inspector panel on the right.'
+                    : '세부 입력 파라미터는 우측 Inspector 패널에서 즉시 수정할 수 있습니다.'}
                 </div>
               </div>
             );
@@ -3057,7 +3174,9 @@ export default function ClassicSimulatorPage() {
                     </table>
                   </div>
                 ) : (
-                  <div style={{ fontSize: 11.5, color: '#64748B' }}>아직 계산 결과가 없습니다. ▶ Run (F5)을 실행하세요.</div>
+                  <div style={{ fontSize: 11.5, color: '#64748B' }}>
+                    {isEn ? 'No calculation results yet. Press ▶ Run (F5) to solve.' : '아직 계산 결과가 없습니다. ▶ Run (F5)을 실행하세요.'}
+                  </div>
                 )}
               </div>
             );
@@ -3091,7 +3210,7 @@ export default function ClassicSimulatorPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
-                    Components ({activeComponents.length} / {SIM_COMPS.length}종)
+                    Components ({activeComponents.length} / {SIM_COMPS.length}{isEn ? '' : '종'})
                   </div>
                   <button
                     onClick={() => setCompModalOpen(true)}
@@ -3109,48 +3228,59 @@ export default function ClassicSimulatorPage() {
                       gap: 4,
                     }}
                   >
-                    <FlaskCompIcon size={12} /> 전체 설정 창 열기
+                    <FlaskCompIcon size={12} /> {isEn ? 'Open Full Setup' : '전체 설정 창 열기'}
                   </button>
                 </div>
                 <div style={{ fontSize: 10.5, color: '#475569', lineHeight: 1.45 }}>
-                  상용 공장 프리셋에서 성분을 가져오거나, 범용 공정용 검증 물질(40종)을 자유롭게 선택하세요.
+                  {isEn
+                    ? 'Import components from commercial plant presets or freely select from 40+ validated general process components.'
+                    : '상용 공장 프리셋에서 성분을 가져오거나, 범용 공정용 검증 물질(40종)을 자유롭게 선택하세요.'}
                 </div>
 
                 {/* 공장 프리셋 빠른 가져오기 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 7, borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>공장별 성분 가져오기</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>
+                    {isEn ? 'Import by Plant Preset' : '공장별 성분 가져오기'}
+                  </span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
-                    {PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)).map(p => (
-                      <button
-                        key={p.plantId}
-                        onClick={() => {
-                          const merged = mergeFeedComponents(simDefs, p.components);
-                          setActiveComponents(merged);
-                          runSimulation(simDefs, flowEdges, thermoMethod, merged);
-                        }}
-                        style={{
-                          padding: '4px 6px',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          borderRadius: 4,
-                          border: '1px solid #CBD5E1',
-                          background: '#FFFFFF',
-                          color: '#0F172A',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                      >
-                        {showPlantNumbersForUser(user)
-                          ? `${p.code.replace('PLANT ', 'P')} · ${p.labelKo.split(' ')[0]}`
-                          : p.labelKo.split(' ')[0]}
-                      </button>
-                    ))}
+                    {PLANT_COMPONENT_PRESETS.filter(p => isPlantAllowed(p.plantId, user)).map(p => {
+                      const shortName = isEn
+                        ? (PLANT_PRESET_SHORT_EN[p.plantId] ?? p.plantId)
+                        : p.labelKo.split(' ')[0];
+                      return (
+                        <button
+                          key={p.plantId}
+                          onClick={() => {
+                            const merged = mergeFeedComponents(simDefs, p.components);
+                            setActiveComponents(merged);
+                            runSimulation(simDefs, flowEdges, thermoMethod, merged);
+                          }}
+                          style={{
+                            padding: '4px 6px',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            borderRadius: 4,
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            color: '#0F172A',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {showPlantNumbersForUser(user)
+                            ? `${p.code.replace('PLANT ', 'P')} · ${shortName}`
+                            : shortName}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* 범용 스타터 팩 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 7, borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0' }}>
-                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>🌐 범용 물질 패키지</span>
+                  <span style={{ fontSize: 10, fontWeight: 800, color: '#334155' }}>
+                    {isEn ? '🌐 General Component Packs' : '🌐 범용 물질 패키지'}
+                  </span>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {GENERAL_COMPONENT_PACKS.filter(pk => !isSimulatorOnlyUser(user) || pk.id !== 'chlorinated_org').map(pk => (
                       <button
@@ -3171,7 +3301,7 @@ export default function ClassicSimulatorPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        {pk.labelKo.split(' (')[0]}
+                        {isEn ? (GENERAL_PACK_LABEL_EN[pk.id] ?? pk.id) : pk.labelKo.split(' (')[0]}
                       </button>
                     ))}
                   </div>
@@ -3214,7 +3344,7 @@ export default function ClassicSimulatorPage() {
                             <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>{c}</b>
                           </span>
                           <span style={{ color: '#475569', fontSize: 10, textAlign: 'right' }}>
-                            {COMP_META[c].label} · Tb {cat ? `${cat.tbC.toFixed(0)}°C` : '—'}
+                            {isEn ? COMP_META[c].formula : COMP_META[c].label} · Tb {cat ? `${cat.tbC.toFixed(0)}°C` : '—'}
                           </span>
                         </label>
                       );
@@ -3227,19 +3357,23 @@ export default function ClassicSimulatorPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
-                    Property Methods (열역학 모델)
+                    {isEn ? 'Property Methods (Thermodynamics)' : 'Property Methods (열역학 모델)'}
                   </div>
                   <span style={{ fontSize: 9.5, fontWeight: 800, padding: '2px 6px', borderRadius: 999, background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0' }}>
-                    엔진 실시간 적용
+                    {isEn ? 'Live Engine Sync' : '엔진 실시간 적용'}
                   </span>
                 </div>
 
                 {/* 자동 추천 근거 배너 */}
                 <div style={{ padding: '7px 9px', borderRadius: 6, background: '#EEF2FF', border: '1px solid #C7D2FE', fontSize: 10.5, lineHeight: 1.45 }}>
                   <div style={{ fontWeight: 800, color: '#3730A3', marginBottom: 2 }}>
-                    🤖 계(System) 추천: {PROPERTY_METHOD_INFO[autoRecommended.method].shortKo}
+                    {isEn
+                      ? `🤖 System Recommended: ${PROPERTY_METHOD_EN[autoRecommended.method].short}`
+                      : `🤖 계(System) 추천: ${PROPERTY_METHOD_INFO[autoRecommended.method].shortKo}`}
                   </div>
-                  <div style={{ color: '#334155', fontSize: 10 }}>{autoRecommended.reasonKo}</div>
+                  <div style={{ color: '#334155', fontSize: 10 }}>
+                    {isEn ? PROPERTY_METHOD_EN[autoRecommended.method].bestFor : autoRecommended.reasonKo}
+                  </div>
                 </div>
 
                 {(['AUTO', 'ENRTL', 'NRTL', 'PR', 'SRK'] as const).map(m => {
@@ -3270,12 +3404,22 @@ export default function ClassicSimulatorPage() {
                       />
                       <div>
                         <div style={{ fontWeight: 800, color: '#0F172A', fontSize: 11 }}>
-                          {m === 'AUTO' ? `자동 선택 (현재 → ${autoRecommended.method})` : info!.labelKo}
+                          {m === 'AUTO'
+                            ? isEn
+                              ? `Auto Select (Current → ${autoRecommended.method})`
+                              : `자동 선택 (현재 → ${autoRecommended.method})`
+                            : isEn
+                              ? PROPERTY_METHOD_EN[m].label
+                              : info!.labelKo}
                         </div>
                         <div style={{ fontSize: 9.8, color: '#475569', marginTop: 2, lineHeight: 1.4 }}>
                           {m === 'AUTO'
-                            ? '선택된 성분·조성·운전압력을 분석하여 최적 열역학 모델을 자동 선택합니다.'
-                            : info!.bestForKo}
+                            ? isEn
+                              ? 'Automatically selects the optimal thermodynamic model from active components, composition, and operating pressure.'
+                              : '선택된 성분·조성·운전압력을 분석하여 최적 열역학 모델을 자동 선택합니다.'
+                            : isEn
+                              ? PROPERTY_METHOD_EN[m].bestFor
+                              : info!.bestForKo}
                         </div>
                       </div>
                     </label>
@@ -3289,10 +3433,10 @@ export default function ClassicSimulatorPage() {
               const basePortOptions: Array<{ value: SourcePortId; label: string }> =
                 srcType === 'distillation'
                   ? [
-                      { value: 'vapor', label: '탑정 제품 (Distillate / Vapor)' },
-                      { value: 'side_cut', label: '사이드컷 (중간발출 Side-Cut)' },
-                      { value: 'liquid', label: '탑저 제품 (Bottoms / Liquid)' },
-                      { value: 'decanter', label: '공비 디캔터 수층 (Decanter Aqueous)' },
+                      { value: 'vapor', label: isEn ? 'Distillate / Vapor (Top)' : '탑정 제품 (Distillate / Vapor)' },
+                      { value: 'side_cut', label: isEn ? 'Side-Cut Draw (S)' : '사이드컷 (중간발출 Side-Cut)' },
+                      { value: 'liquid', label: isEn ? 'Bottoms / Liquid' : '탑저 제품 (Bottoms / Liquid)' },
+                      { value: 'decanter', label: isEn ? 'Decanter Aqueous' : '공비 디캔터 수층 (Decanter Aqueous)' },
                     ]
                   : srcType === 'separator' ||
                       srcType === 'absorber' ||
@@ -3302,34 +3446,34 @@ export default function ClassicSimulatorPage() {
                       srcType === 'saturator' ||
                       srcType === 'desiccant_dryer'
                     ? [
-                        { value: 'vapor', label: '경질 / 기상 / 추잔상 (Top)' },
-                        { value: 'liquid', label: '중질 / 액상 / 추출상 (Bottom)' },
+                        { value: 'vapor', label: isEn ? 'Light / Vapor / Raffinate (Top)' : '경질 / 기상 / 추잔상 (Top)' },
+                        { value: 'liquid', label: isEn ? 'Heavy / Liquid / Extract (Bottom)' : '중질 / 액상 / 추출상 (Bottom)' },
                         ...(srcType === 'separator'
-                          ? [{ value: 'decanter' as SourcePortId, label: '수층 분리 (Aqueous)' }]
+                          ? [{ value: 'decanter' as SourcePortId, label: isEn ? 'Aqueous Layer (Decanter)' : '수층 분리 (Aqueous)' }]
                           : []),
                       ]
                     : srcType === 'splitter'
                       ? [
-                          { value: 'vapor', label: '분기 1 (Top / Ratio)' },
-                          { value: 'liquid', label: '분기 2 (Bottom / 1-Ratio)' },
+                          { value: 'vapor', label: isEn ? 'Branch 1 (Top / Ratio)' : '분기 1 (Top / Ratio)' },
+                          { value: 'liquid', label: isEn ? 'Branch 2 (Bottom / 1-Ratio)' : '분기 2 (Bottom / 1-Ratio)' },
                         ]
                       : srcType === 'electrolyzer'
                         ? [
-                            { value: 'anode_out', label: '양극 유출 (Anode Out)' },
-                            { value: 'cathode_out', label: '음극 유출 (Cathode Out)' },
+                            { value: 'anode_out', label: isEn ? 'Anode Out' : '양극 유출 (Anode Out)' },
+                            { value: 'cathode_out', label: isEn ? 'Cathode Out' : '음극 유출 (Cathode Out)' },
                           ]
                         : srcType === 'hex' || srcType === 'cooler'
                           ? [
-                              { value: 'out', label: '주 출구 (Process Out)' },
-                              { value: 'util_out', label: '유틸리티 출구 (Utility Out)' },
-                              { value: 'vapor', label: '기상 출구 (Vapor)' },
-                              { value: 'liquid', label: '액상 출구 (Liquid)' },
+                              { value: 'out', label: isEn ? 'Process Out' : '주 출구 (Process Out)' },
+                              { value: 'util_out', label: isEn ? 'Utility Out' : '유틸리티 출구 (Utility Out)' },
+                              { value: 'vapor', label: isEn ? 'Vapor Out' : '기상 출구 (Vapor)' },
+                              { value: 'liquid', label: isEn ? 'Liquid Out' : '액상 출구 (Liquid)' },
                             ]
-                          : [{ value: 'out', label: '주 출구 (Main Outlet)' }];
+                          : [{ value: 'out', label: isEn ? 'Main Outlet' : '주 출구 (Main Outlet)' }];
               const curPort = (selectedEdge.sourcePort ?? basePortOptions[0]?.value ?? 'out') as SourcePortId;
               const portOptions = basePortOptions.some(o => o.value === curPort)
                 ? basePortOptions
-                : [...basePortOptions, { value: curPort, label: `현재 포트 (${curPort})` }];
+                : [...basePortOptions, { value: curPort, label: isEn ? `Current Port (${curPort})` : `현재 포트 (${curPort})` }];
 
               return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3337,9 +3481,9 @@ export default function ClassicSimulatorPage() {
                   <span style={{ fontSize: 12.5, fontWeight: 900, color: '#1D4ED8' }}>
                     Stream [{selectedEdge.streamNo}]
                     {selectedEdge.sourcePort === 'side_cut'
-                      ? ' · 사이드컷 측류(S)'
+                      ? isEn ? ' · Side-Cut (S)' : ' · 사이드컷 측류(S)'
                       : selectedEdge.sourcePort === 'decanter'
-                        ? ' · 디캔터 수층'
+                        ? isEn ? ' · Decanter Aqueous' : ' · 디캔터 수층'
                         : ''}
                   </span>
                   <button
@@ -3355,7 +3499,7 @@ export default function ClassicSimulatorPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    삭제
+                    {isEn ? 'Delete' : '삭제'}
                   </button>
                 </div>
 
@@ -3371,7 +3515,7 @@ export default function ClassicSimulatorPage() {
                   }}
                 >
                   <label style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-                    출구 포트 역할 변경 (Source Port)
+                    {isEn ? 'Source Port Assignment' : '출구 포트 역할 변경 (Source Port)'}
                   </label>
                   <select
                     value={curPort}
@@ -3395,7 +3539,7 @@ export default function ClassicSimulatorPage() {
                           ...(baseDistCfg.sideCut ?? {}),
                           id: baseDistCfg.sideCut?.id ?? 'SC-1',
                           enabled: true,
-                          label: baseDistCfg.sideCut?.label ?? '사이드컷 S',
+                          label: baseDistCfg.sideCut?.label ?? (isEn ? 'Side-Cut S' : '사이드컷 S'),
                           phase: baseDistCfg.sideCut?.phase ?? 'liquid',
                           autoOptimizeStage: false,
                           stage: baseDistCfg.sideCut?.stage ?? Math.max(3, Math.round(totalSt * 0.45)),
@@ -3443,7 +3587,8 @@ export default function ClassicSimulatorPage() {
                   </select>
                   {selectedEdgeSourceNode && (
                     <div style={{ fontSize: 9.8, color: '#64748B' }}>
-                      연결 블록: <b>{formatEquipmentTag(selectedEdgeSourceNode.tag, selectedEdgeSourceNode.unitType, tagStandard)}</b> ({getModelName(selectedEdgeSourceNode.unitType)})
+                      {isEn ? 'Connected Block: ' : '연결 블록: '}
+                      <b>{formatEquipmentTag(selectedEdgeSourceNode.tag, selectedEdgeSourceNode.unitType, tagStandard)}</b> ({getModelName(selectedEdgeSourceNode.unitType)})
                     </div>
                   )}
                 </div>
@@ -3461,11 +3606,13 @@ export default function ClassicSimulatorPage() {
                     }}
                   >
                     <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1E293B' }}>
-                      원료 공급 조건 ({formatEquipmentTag(selectedEdgeSourceFeed.tag, selectedEdgeSourceFeed.unitType, tagStandard)} 연동 입력)
+                      {isEn
+                        ? `Feed Conditions (${formatEquipmentTag(selectedEdgeSourceFeed.tag, selectedEdgeSourceFeed.unitType, tagStandard)} linked)`
+                        : `원료 공급 조건 (${formatEquipmentTag(selectedEdgeSourceFeed.tag, selectedEdgeSourceFeed.unitType, tagStandard)} 연동 입력)`}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <div style={{ fontSize: 10, color: '#475569' }}>
-                        <div style={{ marginBottom: 2 }}>온도</div>
+                        <div style={{ marginBottom: 2 }}>{isEn ? 'Temperature' : '온도'}</div>
                         <UnitNumberInput
                           quantity="temp"
                           syncKey={`${selectedEdgeSourceFeed.id}:feedTempC`}
@@ -3480,7 +3627,7 @@ export default function ClassicSimulatorPage() {
                         />
                       </div>
                       <div style={{ fontSize: 10, color: '#475569' }}>
-                        <div style={{ marginBottom: 2 }}>압력</div>
+                        <div style={{ marginBottom: 2 }}>{isEn ? 'Pressure' : '압력'}</div>
                         <UnitNumberInput
                           quantity="pressG"
                           syncKey={`${selectedEdgeSourceFeed.id}:feedPress`}
@@ -3513,7 +3660,7 @@ export default function ClassicSimulatorPage() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                       <div style={{ fontFamily: 'Inter, sans-serif', fontWeight: 800, fontSize: 11, color: '#0F172A' }}>
-                        계산된 스트림 결과
+                        {isEn ? 'Calculated Stream Results' : '계산된 스트림 결과'}
                       </div>
                       <div style={{ display: 'inline-flex', gap: 3 }}>
                         <UnitSelect quantity="temp" value={tempUnit} onChange={setTempUnit} size="xs" />
@@ -3535,10 +3682,10 @@ export default function ClassicSimulatorPage() {
                         }}
                       >
                         {selectedEdge.sourcePort === 'side_cut'
-                          ? '사이드컷 측류(S)'
+                          ? isEn ? 'Side-Cut (S)' : '사이드컷 측류(S)'
                           : selectedEdge.sourcePort === 'decanter'
-                            ? '공비 디캔터 수층'
-                            : selectedStreamRes.portRole || '주배관'}
+                            ? isEn ? 'Decanter Aqueous' : '공비 디캔터 수층'
+                            : selectedStreamRes.portRole || (isEn ? 'Main Line' : '주배관')}
                       </b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -3559,7 +3706,7 @@ export default function ClassicSimulatorPage() {
                     </div>
                     <div style={{ borderTop: '1px dashed #CBD5E1', marginTop: 4, paddingTop: 4 }}>
                       <div style={{ fontFamily: 'Inter, sans-serif', fontSize: 10, color: '#475569', marginBottom: 3 }}>
-                        성분별 유량 ({getUnitLabel('massFlow', massFlowUnit)})
+                        {isEn ? `Component Flows (${getUnitLabel('massFlow', massFlowUnit)})` : `성분별 유량 (${getUnitLabel('massFlow', massFlowUnit)})`}
                       </div>
                       {(Object.entries(selectedStreamRes.flowsKgH) as [string, number][])
                         .filter(([, v]) => v > 0.01)
@@ -3575,7 +3722,7 @@ export default function ClassicSimulatorPage() {
                   </div>
                 ) : (
                   <div style={{ fontSize: 11, color: '#64748B' }}>
-                    ▶ Run을 실행하면 계산 결과가 표시됩니다.
+                    {isEn ? 'Press ▶ Run to display calculation results.' : '▶ Run을 실행하면 계산 결과가 표시됩니다.'}
                   </div>
                 )}
               </div>
@@ -3606,13 +3753,13 @@ export default function ClassicSimulatorPage() {
                       cursor: 'pointer',
                     }}
                   >
-                    블록 삭제
+                    {isEn ? 'Delete Block' : '블록 삭제'}
                   </button>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                   <label style={{ fontSize: 10, color: '#475569' }}>
-                    태그 (Tag)
+                    {isEn ? 'Tag' : '태그 (Tag)'}
                     <input
                       type="text"
                       value={selectedBlock.tag}
@@ -3621,7 +3768,7 @@ export default function ClassicSimulatorPage() {
                     />
                   </label>
                   <label style={{ fontSize: 10, color: '#475569' }}>
-                    명칭
+                    {isEn ? 'Name' : '명칭'}
                     <input
                       type="text"
                       value={selectedBlock.name}
@@ -3732,7 +3879,7 @@ export default function ClassicSimulatorPage() {
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Feed Specifications</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <label style={{ fontSize: 10, color: '#475569' }}>
-                        열역학 지정 모드
+                        {isEn ? 'Thermal Spec Mode' : '열역학 지정 모드'}
                         <select
                           value={feedThermalMode}
                           onChange={e =>
@@ -3744,13 +3891,13 @@ export default function ClassicSimulatorPage() {
                           style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 10.5 }}
                         >
                           {THERMAL_SPEC_MODE_OPTIONS.map(opt => (
-                            <option key={opt.id} value={opt.id}>{opt.labelKo}</option>
+                            <option key={opt.id} value={opt.id}>{isEn ? opt.labelEn : opt.labelKo}</option>
                           ))}
                         </select>
                       </label>
                       {feedThermalMode === 'tp' && (
                         <div style={{ fontSize: 10, color: '#475569' }}>
-                          <div style={{ marginBottom: 2 }}>온도</div>
+                          <div style={{ marginBottom: 2 }}>{isEn ? 'Temperature' : '온도'}</div>
                           <UnitNumberInput
                             quantity="temp"
                             syncKey={`${selectedBlock.id}:feedTempC`}
@@ -3767,7 +3914,7 @@ export default function ClassicSimulatorPage() {
                       )}
                       {feedThermalMode === 'subcool' && (
                         <label style={{ fontSize: 10, color: '#475569' }}>
-                          과냉도 ΔT (°C, Bubble - ΔT)
+                          {isEn ? 'Subcooling ΔT (°C, Bubble - ΔT)' : '과냉도 ΔT (°C, Bubble - ΔT)'}
                           <input
                             type="number"
                             step="0.5"
@@ -3785,7 +3932,7 @@ export default function ClassicSimulatorPage() {
                       )}
                       {feedThermalMode === 'superheat' && (
                         <label style={{ fontSize: 10, color: '#475569' }}>
-                          과열도 ΔT (°C, Dew + ΔT)
+                          {isEn ? 'Superheat ΔT (°C, Dew + ΔT)' : '과열도 ΔT (°C, Dew + ΔT)'}
                           <input
                             type="number"
                             step="0.5"
@@ -3803,7 +3950,7 @@ export default function ClassicSimulatorPage() {
                       )}
                       {feedThermalMode === 'vf' && (
                         <label style={{ fontSize: 10, color: '#475569' }}>
-                          목표 기상분율 VF (0~1)
+                          {isEn ? 'Target Vapor Fraction VF (0–1)' : '목표 기상분율 VF (0~1)'}
                           <input
                             type="number"
                             step="0.05"
@@ -3823,12 +3970,16 @@ export default function ClassicSimulatorPage() {
                       {(feedThermalMode === 'sat_liq' || feedThermalMode === 'sat_vap') && (
                         <div style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: '1px solid #BAE6FD', borderRadius: 4, padding: '4px 6px' }}>
                           {feedThermalMode === 'sat_liq'
-                            ? '포화액 (Bubble Point): 압력 P 기준 자동 산출'
-                            : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
+                            ? isEn
+                              ? 'Saturated Liquid (Bubble Point): auto-calculated at P'
+                              : '포화액 (Bubble Point): 압력 P 기준 자동 산출'
+                            : isEn
+                              ? 'Saturated Vapor (Dew Point): auto-calculated at P'
+                              : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
                         </div>
                       )}
                       <div style={{ fontSize: 10, color: '#475569' }}>
-                        <div style={{ marginBottom: 2 }}>압력</div>
+                        <div style={{ marginBottom: 2 }}>{isEn ? 'Pressure' : '압력'}</div>
                         <UnitNumberInput
                           quantity="pressG"
                           syncKey={`${selectedBlock.id}:feedPress`}
@@ -3845,7 +3996,7 @@ export default function ClassicSimulatorPage() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginTop: 2 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10.5, fontWeight: 700, color: '#334155' }}>
-                        성분별 질량유량
+                        {isEn ? 'Component Mass Flows' : '성분별 질량유량'}
                         <UnitSelect quantity="massFlow" value={feedFlowUnit} onChange={setFeedFlowUnit} size="xs" />
                       </span>
                       <button
@@ -3862,7 +4013,7 @@ export default function ClassicSimulatorPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        + 성분 추가/설정 ({activeComponents.length}종)
+                        {isEn ? `+ Add/Setup Components (${activeComponents.length})` : `+ 성분 추가/설정 (${activeComponents.length}종)`}
                       </button>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 240, overflowY: 'auto' }}>
@@ -3871,7 +4022,7 @@ export default function ClassicSimulatorPage() {
                       ).map(comp => {
                         const val = selectedBlock.params.feedFlowsKgH?.[comp] ?? 0;
                         return (
-                          <div key={comp} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#475569' }} title={COMP_META[comp].label}>
+                          <div key={comp} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#475569' }} title={isEn ? COMP_META[comp].formula : COMP_META[comp].label}>
                             <span style={{ width: 64, flexShrink: 0, fontWeight: 700, color: val > 0 ? '#0F172A' : '#64748B', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {comp}
                             </span>
@@ -3927,7 +4078,7 @@ export default function ClassicSimulatorPage() {
                     {showThermalSpec && (
                       <>
                         <label style={{ fontSize: 10, color: '#475569' }}>
-                          열역학 지정 모드
+                          {isEn ? 'Thermal Spec Mode' : '열역학 지정 모드'}
                           <select
                             value={unitThermalMode}
                             onChange={e =>
@@ -3939,13 +4090,13 @@ export default function ClassicSimulatorPage() {
                             style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', background: '#FFFFFF', fontSize: 10.5 }}
                           >
                             {THERMAL_SPEC_MODE_OPTIONS.map(opt => (
-                              <option key={opt.id} value={opt.id}>{opt.labelKo}</option>
+                              <option key={opt.id} value={opt.id}>{isEn ? opt.labelEn : opt.labelKo}</option>
                             ))}
                           </select>
                         </label>
                         {unitThermalMode === 'tp' && (
                           <div style={{ fontSize: 10, color: '#475569' }}>
-                            <div style={{ marginBottom: 2 }}>목표 온도</div>
+                            <div style={{ marginBottom: 2 }}>{isEn ? 'Target Temperature' : '목표 온도'}</div>
                             <UnitNumberInput
                               quantity="temp"
                               syncKey={`${selectedBlock.id}:operTempC`}
@@ -3962,7 +4113,7 @@ export default function ClassicSimulatorPage() {
                         )}
                         {unitThermalMode === 'subcool' && (
                           <label style={{ fontSize: 10, color: '#475569' }}>
-                            과냉도 ΔT (°C, Bubble - ΔT)
+                            {isEn ? 'Subcooling ΔT (°C, Bubble - ΔT)' : '과냉도 ΔT (°C, Bubble - ΔT)'}
                             <input
                               type="number"
                               step="0.5"
@@ -3980,7 +4131,7 @@ export default function ClassicSimulatorPage() {
                         )}
                         {unitThermalMode === 'superheat' && (
                           <label style={{ fontSize: 10, color: '#475569' }}>
-                            과열도 ΔT (°C, Dew + ΔT)
+                            {isEn ? 'Superheat ΔT (°C, Dew + ΔT)' : '과열도 ΔT (°C, Dew + ΔT)'}
                             <input
                               type="number"
                               step="0.5"
@@ -3998,7 +4149,7 @@ export default function ClassicSimulatorPage() {
                         )}
                         {unitThermalMode === 'vf' && (
                           <label style={{ fontSize: 10, color: '#475569' }}>
-                            목표 기상분율 VF (0~1)
+                            {isEn ? 'Target Vapor Fraction VF (0–1)' : '목표 기상분율 VF (0~1)'}
                             <input
                               type="number"
                               step="0.05"
@@ -4018,15 +4169,19 @@ export default function ClassicSimulatorPage() {
                         {(unitThermalMode === 'sat_liq' || unitThermalMode === 'sat_vap') && (
                           <div style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', background: '#E0F2FE', border: '1px solid #BAE6FD', borderRadius: 4, padding: '4px 6px' }}>
                             {unitThermalMode === 'sat_liq'
-                              ? '포화액 (Bubble Point): 압력 P 기준 자동 산출'
-                              : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
+                              ? isEn
+                                ? 'Saturated Liquid (Bubble Point): auto-calculated at P'
+                                : '포화액 (Bubble Point): 압력 P 기준 자동 산출'
+                              : isEn
+                                ? 'Saturated Vapor (Dew Point): auto-calculated at P'
+                                : '포화증기 (Dew Point): 압력 P 기준 자동 산출'}
                           </div>
                         )}
                       </>
                     )}
                     {selectedBlock.unitType === 'separator' && (
                       <div style={{ fontSize: 10, color: '#475569' }}>
-                        <div style={{ marginBottom: 2 }}>운전 압력</div>
+                        <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Pressure' : '운전 압력'}</div>
                         <UnitNumberInput
                           quantity="pressG"
                           syncKey={`${selectedBlock.id}:operPress`}
@@ -4061,7 +4216,7 @@ export default function ClassicSimulatorPage() {
                           cursor: 'pointer',
                         }}
                       >
-                        열교환기 정밀 설계 & TEMA 열기 →
+                        {isEn ? 'Open Rigorous HX Design & TEMA →' : '열교환기 정밀 설계 & TEMA 열기 →'}
                       </button>
                     )}
                   </div>
@@ -4073,7 +4228,7 @@ export default function ClassicSimulatorPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7, padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#1E293B' }}>Pressure / Efficiency</div>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>토출 압력</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Discharge Pressure' : '토출 압력'}</div>
                       <UnitNumberInput
                         quantity="pressG"
                         syncKey={`${selectedBlock.id}:outletPress`}
@@ -4088,7 +4243,7 @@ export default function ClassicSimulatorPage() {
                       />
                     </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      효율 (0~1)
+                      {isEn ? 'Efficiency (0–1)' : '효율 (0~1)'}
                       <input
                         type="number"
                         step="0.02"
@@ -4111,7 +4266,7 @@ export default function ClassicSimulatorPage() {
                 {selectedBlock.unitType === 'splitter' && (
                   <div style={{ padding: 8, background: '#F8FAFC', borderRadius: 6, border: '1px solid #CBD5E1' }}>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      상부(Top) 분배율 (0~1)
+                      {isEn ? 'Top Split Fraction (0–1)' : '상부(Top) 분배율 (0~1)'}
                       <input
                         type="number"
                         step="0.05"
@@ -4138,7 +4293,9 @@ export default function ClassicSimulatorPage() {
                     </div>
                     {selectedBlockRes?.distillResult && (
                       <div style={{ fontSize: 10.5, fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
-                        단수: {selectedBlockRes.distillResult.totalStagesUsed}단 (F:{selectedBlockRes.distillResult.feedStageUsed}단) · RR={selectedBlockRes.distillResult.actualRefluxRatio.toFixed(2)}
+                        {isEn
+                          ? `Stages: ${selectedBlockRes.distillResult.totalStagesUsed} (F:${selectedBlockRes.distillResult.feedStageUsed}) · RR=${selectedBlockRes.distillResult.actualRefluxRatio.toFixed(2)}`
+                          : `단수: ${selectedBlockRes.distillResult.totalStagesUsed}단 (F:${selectedBlockRes.distillResult.feedStageUsed}단) · RR=${selectedBlockRes.distillResult.actualRefluxRatio.toFixed(2)}`}
                       </div>
                     )}
                     {selectedBlock.params.distillConfig?.sideCut?.enabled && (() => {
@@ -4147,8 +4304,8 @@ export default function ClassicSimulatorPage() {
                       const scMass = dr?.sideCutMassKgH ?? 0;
                       const scStage = dr?.sideCutStageUsed ?? sc.stage;
                       const scPhase = dr?.sideCutPhase
-                        ? (dr.sideCutPhase === 'G' ? '기상' : '액상')
-                        : (sc.phase === 'vapor' ? '기상' : '액상');
+                        ? (dr.sideCutPhase === 'G' ? (isEn ? 'Vapor' : '기상') : (isEn ? 'Liquid' : '액상'))
+                        : (sc.phase === 'vapor' ? (isEn ? 'Vapor' : '기상') : (isEn ? 'Liquid' : '액상'));
                       return (
                         <div
                           style={{
@@ -4162,7 +4319,7 @@ export default function ClassicSimulatorPage() {
                             padding: '4px 6px',
                           }}
                         >
-                          사이드컷 측류 S: {scStage}단 ({scPhase})
+                          {isEn ? `Side-Cut S: Stage ${scStage} (${scPhase})` : `사이드컷 측류 S: ${scStage}단 (${scPhase})`}
                           {scMass > 1e-4
                             ? ` · ${formatCanonicalValue('massFlow', scMass, massFlowUnit)} ${getUnitLabel('massFlow', massFlowUnit)} (S/F ${((dr?.actualSOverFMass ?? 0) * 100).toFixed(1)}%)`
                             : ` · ${sc.specType}=${sc.specValue}`}
@@ -4182,7 +4339,7 @@ export default function ClassicSimulatorPage() {
                         cursor: 'pointer',
                       }}
                     >
-                      다단 증류 시뮬레이터 & 인터널 설계 열기 →
+                      {isEn ? 'Open Rigorous Column & Internals Workbench →' : '다단 증류 시뮬레이터 & 인터널 설계 열기 →'}
                     </button>
                   </div>
                 )}
@@ -4200,7 +4357,9 @@ export default function ClassicSimulatorPage() {
                     {selectedBlock.params.reactorConfig && (
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#991B1B', fontWeight: 800 }}>
                         <span>
-                          정밀 반응기 활성 ({String(selectedBlock.params.reactorConfig.model ?? 'stoic').toUpperCase()})
+                          {isEn
+                            ? `Rigorous Reactor Active (${String(selectedBlock.params.reactorConfig.model ?? 'stoic').toUpperCase()})`
+                            : `정밀 반응기 활성 (${String(selectedBlock.params.reactorConfig.model ?? 'stoic').toUpperCase()})`}
                         </span>
                         <button
                           type="button"
@@ -4221,12 +4380,12 @@ export default function ClassicSimulatorPage() {
                             cursor: 'pointer',
                           }}
                         >
-                          프리셋 복귀
+                          {isEn ? 'Revert to Preset' : '프리셋 복귀'}
                         </button>
                       </div>
                     )}
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      반응 프리셋
+                      {isEn ? 'Reaction Preset' : '반응 프리셋'}
                       <select
                         value={selectedBlock.params.reactionPreset ?? 'hcl_burner'}
                         onChange={e =>
@@ -4240,15 +4399,15 @@ export default function ClassicSimulatorPage() {
                         }
                         style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #FCA5A5', background: '#FFFFFF', fontSize: 10.5 }}
                       >
-                        <optgroup label="범용 화학 반응 프리셋 (6종)">
+                        <optgroup label={isEn ? 'General Chemical Reaction Presets (6)' : '범용 화학 반응 프리셋 (6종)'}>
                           {PUBLIC_REACTOR_PRESET_SPECS.map(spec => (
-                            <option key={spec.id} value={spec.id}>{spec.labelKo}</option>
+                            <option key={spec.id} value={spec.id}>{isEn ? spec.labelEn : spec.labelKo}</option>
                           ))}
                         </optgroup>
-                        <optgroup label="기본 공정 반응">
-                          <option value="hcl_burner">염산 합성로 (Cl₂ + H₂ → 2HCl)</option>
-                          <option value="caustic_scrub">가성소다 중화 스크러버</option>
-                          <option value="brine_electrolysis">염수 전해 반응 (NaCl → NaOH+Cl₂+H₂)</option>
+                        <optgroup label={isEn ? 'Core Process Reactions' : '기본 공정 반응'}>
+                          <option value="hcl_burner">{isEn ? 'HCl Synthesis Burner (Cl₂ + H₂ → 2HCl)' : '염산 합성로 (Cl₂ + H₂ → 2HCl)'}</option>
+                          <option value="caustic_scrub">{isEn ? 'Caustic Neutralization Scrubber' : '가성소다 중화 스크러버'}</option>
+                          <option value="brine_electrolysis">{isEn ? 'Brine Electrolysis (NaCl → NaOH+Cl₂+H₂)' : '염수 전해 반응 (NaCl → NaOH+Cl₂+H₂)'}</option>
                         </optgroup>
                       </select>
                     </label>
@@ -4288,7 +4447,7 @@ export default function ClassicSimulatorPage() {
                               flexShrink: 0,
                             }}
                           >
-                            권장 조건 적용
+                            {isEn ? 'Apply Recommended' : '권장 조건 적용'}
                           </button>
                         </div>
                       </div>
@@ -4311,10 +4470,10 @@ export default function ClassicSimulatorPage() {
                         gap: 5,
                       }}
                     >
-                      <FlaskCompIcon size={12} /> 반응기 정밀설계 워크벤치 열기 →
+                      <FlaskCompIcon size={12} /> {isEn ? 'Open Rigorous Reactor Workbench →' : '반응기 정밀설계 워크벤치 열기 →'}
                     </button>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Temperature' : '운전 온도'}</div>
                       <UnitNumberInput
                         quantity="temp"
                         syncKey={`${selectedBlock.id}:reactorOperTempC`}
@@ -4329,7 +4488,7 @@ export default function ClassicSimulatorPage() {
                       />
                     </div>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>운전 압력</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Pressure' : '운전 압력'}</div>
                       <UnitNumberInput
                         quantity="pressG"
                         syncKey={`${selectedBlock.id}:reactorOperPress`}
@@ -4344,7 +4503,7 @@ export default function ClassicSimulatorPage() {
                       />
                     </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      전환율 (0~1)
+                      {isEn ? 'Conversion (0–1)' : '전환율 (0~1)'}
                       <input
                         type="number"
                         step="0.01"
@@ -4376,7 +4535,7 @@ export default function ClassicSimulatorPage() {
                       Electrolyzer Specifications
                     </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      전해 공정 프리셋 (6종)
+                      {isEn ? 'Electrolysis Process Presets (6)' : '전해 공정 프리셋 (6종)'}
                       <select
                         value={presetId}
                         onChange={e =>
@@ -4391,7 +4550,7 @@ export default function ClassicSimulatorPage() {
                         style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #93C5FD', background: '#FFFFFF', fontSize: 10.5 }}
                       >
                         {ELECTROLYZER_PRESET_SPECS.map(spec => (
-                          <option key={spec.id} value={spec.id}>{spec.labelKo}</option>
+                          <option key={spec.id} value={spec.id}>{isEn ? spec.labelEn : spec.labelKo}</option>
                         ))}
                       </select>
                     </label>
@@ -4400,11 +4559,11 @@ export default function ClassicSimulatorPage() {
                         {presetSpec.reactionEq}
                       </div>
                       <div style={{ fontSize: 9.5, color: '#475569', lineHeight: 1.35 }}>
-                        {presetSpec.noteKo}
+                        {isEn ? ELECTROLYZER_NOTE_EN[presetSpec.id] : presetSpec.noteKo}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <span style={{ fontSize: 9.5, color: '#64748B', fontFamily: 'JetBrains Mono, monospace' }}>
-                          {presetSpec.defaultVoltageV}V · {presetSpec.defaultCurrentKA}kA · {presetSpec.defaultCells}셀 · {presetSpec.defaultEffPct}%
+                          {presetSpec.defaultVoltageV}V · {presetSpec.defaultCurrentKA}kA · {presetSpec.defaultCells}{isEn ? ' cells' : '셀'} · {presetSpec.defaultEffPct}%
                         </span>
                         <button
                           type="button"
@@ -4435,13 +4594,13 @@ export default function ClassicSimulatorPage() {
                             flexShrink: 0,
                           }}
                         >
-                          권장 조건 적용
+                          {isEn ? 'Apply Recommended' : '권장 조건 적용'}
                         </button>
                       </div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                       <label style={{ fontSize: 10, color: '#475569' }}>
-                        셀 전압 (V)
+                        {isEn ? 'Cell Voltage (V)' : '셀 전압 (V)'}
                         <input
                           type="number"
                           step="0.05"
@@ -4458,7 +4617,7 @@ export default function ClassicSimulatorPage() {
                         />
                       </label>
                       <label style={{ fontSize: 10, color: '#475569' }}>
-                        전류 (kA)
+                        {isEn ? 'Current (kA)' : '전류 (kA)'}
                         <input
                           type="number"
                           step="0.2"
@@ -4474,7 +4633,7 @@ export default function ClassicSimulatorPage() {
                         />
                       </label>
                       <label style={{ fontSize: 10, color: '#475569' }}>
-                        셀 수 (cells)
+                        {isEn ? 'Cell Count (cells)' : '셀 수 (cells)'}
                         <input
                           type="number"
                           step="1"
@@ -4490,7 +4649,7 @@ export default function ClassicSimulatorPage() {
                         />
                       </label>
                       <label style={{ fontSize: 10, color: '#475569' }}>
-                        전류 효율 (%)
+                        {isEn ? 'Current Efficiency (%)' : '전류 효율 (%)'}
                         <input
                           type="number"
                           step="0.5"
@@ -4508,7 +4667,7 @@ export default function ClassicSimulatorPage() {
                       </label>
                     </div>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Temperature' : '운전 온도'}</div>
                       <UnitNumberInput
                         quantity="temp"
                         syncKey={`${selectedBlock.id}:elOperTempC`}
@@ -4523,7 +4682,7 @@ export default function ClassicSimulatorPage() {
                       />
                     </div>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>운전 압력</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Pressure' : '운전 압력'}</div>
                       <UnitNumberInput
                         quantity="pressG"
                         syncKey={`${selectedBlock.id}:elOperPress`}
@@ -4548,7 +4707,7 @@ export default function ClassicSimulatorPage() {
                       Absorber / Stripper Specifications
                     </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      해석 알고리즘
+                      {isEn ? 'Calculation Algorithm' : '해석 알고리즘'}
                       <select
                         value={selectedBlock.params.absorberCalcMode ?? 'kremser'}
                         onChange={e =>
@@ -4562,12 +4721,12 @@ export default function ClassicSimulatorPage() {
                         }
                         style={{ width: '100%', height: 26, marginTop: 2, padding: '0 6px', borderRadius: 4, border: '1px solid #CBD5E1', fontSize: 10.5 }}
                       >
-                        <option value="kremser">Kremser / 화학흡수 수지</option>
-                        <option value="rigorous_mesh">엄밀 다단 MESH 향류 기액평형</option>
+                        <option value="kremser">{isEn ? 'Kremser / Chemical Absorption Balance' : 'Kremser / 화학흡수 수지'}</option>
+                        <option value="rigorous_mesh">{isEn ? 'Rigorous Multi-Stage MESH Counter-Current VLE' : '엄밀 다단 MESH 향류 기액평형'}</option>
                       </select>
                     </label>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      이론 단수 N (단)
+                      {isEn ? 'Theoretical Stages N' : '이론 단수 N (단)'}
                       <input
                         type="number"
                         step="1"
@@ -4593,7 +4752,7 @@ export default function ClassicSimulatorPage() {
                       LLE Extractor Specifications
                     </div>
                     <label style={{ fontSize: 10, color: '#475569' }}>
-                      이론 추출 단수 N
+                      {isEn ? 'Theoretical Extraction Stages N' : '이론 추출 단수 N'}
                       <input
                         type="number"
                         step="1"
@@ -4610,7 +4769,7 @@ export default function ClassicSimulatorPage() {
                       />
                     </label>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>운전 온도</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Operating Temperature' : '운전 온도'}</div>
                       <UnitNumberInput
                         quantity="temp"
                         syncKey={`${selectedBlock.id}:extractorOperTempC`}
@@ -4634,7 +4793,7 @@ export default function ClassicSimulatorPage() {
                       JT Expansion Valve (H_out = H_in)
                     </div>
                     <div style={{ fontSize: 10, color: '#475569' }}>
-                      <div style={{ marginBottom: 2 }}>후단 토출 압력 P_out</div>
+                      <div style={{ marginBottom: 2 }}>{isEn ? 'Outlet Pressure P_out' : '후단 토출 압력 P_out'}</div>
                       <UnitNumberInput
                         quantity="pressG"
                         syncKey={`${selectedBlock.id}:valveOutletPress`}
@@ -4675,7 +4834,7 @@ export default function ClassicSimulatorPage() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>유입 / 유출</span>
+                      <span>{isEn ? 'Inlet / Outlet' : '유입 / 유출'}</span>
                       <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                         {formatCanonicalValue('massFlow', selectedBlockRes.inletMassKgH, massFlowUnit)} /{' '}
                         {formatCanonicalValue('massFlow', selectedBlockRes.outletMassKgH, massFlowUnit)}{' '}
@@ -4683,7 +4842,7 @@ export default function ClassicSimulatorPage() {
                       </b>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>열부하 (Duty)</span>
+                      <span>{isEn ? 'Heat Duty' : '열부하 (Duty)'}</span>
                       <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                         {formatCanonicalValue('heatDuty', selectedBlockRes.heatDutyKcalH / 1000, heatDutyUnit)}{' '}
                         {getUnitLabel('heatDuty', heatDutyUnit)}
@@ -4691,7 +4850,7 @@ export default function ClassicSimulatorPage() {
                     </div>
                     {selectedBlockRes.shaftPowerKW > 0 && (
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span>축동력 (Power)</span>
+                        <span>{isEn ? 'Shaft Power' : '축동력 (Power)'}</span>
                         <b style={{ fontFamily: 'JetBrains Mono, monospace' }}>
                           {formatCanonicalValue('power', selectedBlockRes.shaftPowerKW, powerUnit)}{' '}
                           {getUnitLabel('power', powerUnit)}
@@ -4708,7 +4867,9 @@ export default function ClassicSimulatorPage() {
 
             {!selectedBlock && !selectedEdge && selectedKind !== 'setup_comp' && selectedKind !== 'setup_method' && (
               <div style={{ fontSize: 11, color: '#64748B', padding: 12 }}>
-                좌측 탐색 트리 또는 캔버스에서 스트림이나 블록을 선택하면 입력·결과 폼이 표시됩니다.
+                {isEn
+                  ? 'Select a stream or block from the Explorer Tree or Canvas to view and edit specifications and results.'
+                  : '좌측 탐색 트리 또는 캔버스에서 스트림이나 블록을 선택하면 입력·결과 폼이 표시됩니다.'}
               </div>
             )}
           </aside>
