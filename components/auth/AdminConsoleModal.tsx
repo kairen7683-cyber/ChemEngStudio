@@ -20,6 +20,7 @@ import {
   adminUpdateSettings,
   adminUpdateUser,
   changeMyPassword,
+  deleteMyAccount,
   fetchMySessions,
   revokeMySession,
 } from '@/lib/auth/authClient';
@@ -366,6 +367,7 @@ export default function AdminConsoleModal() {
   } = useAuth();
 
   // 내 비밀번호 변경 상태 & 활성 기기 목록
+  const isEn = useUnitStore(s => s.lang) === 'en';
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [showNewPw, setShowNewPw] = useState(false);
@@ -373,6 +375,9 @@ export default function AdminConsoleModal() {
   const [mySessions, setMySessions] = useState<ActiveDeviceSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [revokingSessionId, setRevokingSessionId] = useState<string | null>(null);
+  const [deletePanelOpen, setDeletePanelOpen] = useState(false);
+  const [deletePw, setDeletePw] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   // 관리자 콘솔 상태
   const [adminLoading, setAdminLoading] = useState(false);
@@ -1112,6 +1117,150 @@ export default function AdminConsoleModal() {
                   </div>
                 )}
               </div>
+
+              {/* 회원 탈퇴 (일반 사용자 전용 — 개인정보보호법·전자상거래법 준수) */}
+              {user.role !== 'admin' && (
+                <div
+                  style={{
+                    padding: 14,
+                    borderRadius: 10,
+                    border: '1px solid #E2E8F0',
+                    background: '#F8FAFC',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0F172A' }}>
+                        {isEn ? 'Delete Account' : '회원 탈퇴'}
+                      </div>
+                      <div style={{ fontSize: 10.8, color: '#64748B', marginTop: 2 }}>
+                        {isEn
+                          ? 'Permanently delete your account, active sessions, and saved cloud cases.'
+                          : '계정 정보, 로그인 세션, 클라우드에 저장된 모든 작업 케이스를 즉시 영구 삭제합니다.'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletePanelOpen(v => !v);
+                        setDeletePw('');
+                        setProfileMsg(null);
+                      }}
+                      style={{
+                        padding: '5px 10px',
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#475569',
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {deletePanelOpen
+                        ? isEn ? 'Cancel' : '닫기'
+                        : isEn ? 'Delete Account...' : '탈퇴 진행...'}
+                    </button>
+                  </div>
+
+                  {deletePanelOpen && (
+                    <form
+                      onSubmit={async e => {
+                        e.preventDefault();
+                        if (!deletePw.trim()) {
+                          setProfileMsg({
+                            type: 'err',
+                            text: isEn ? 'Please enter your current password to confirm.' : '확인을 위해 현재 비밀번호를 입력해 주세요.',
+                          });
+                          return;
+                        }
+                        const confirmed = window.confirm(
+                          isEn
+                            ? 'Are you sure you want to permanently delete your account and all saved cloud cases? This cannot be undone.'
+                            : '정말로 회원 탈퇴하시겠습니까? 계정 및 클라우드에 저장된 모든 케이스가 즉시 영구 삭제되며 복구할 수 없습니다.'
+                        );
+                        if (!confirmed) return;
+                        setDeletingAccount(true);
+                        setProfileMsg(null);
+                        try {
+                          await deleteMyAccount(deletePw);
+                          setDeletePw('');
+                          setDeletePanelOpen(false);
+                          closeAccountModal();
+                          await refreshAuthAndHydrate();
+                          if (typeof window !== 'undefined') {
+                            window.location.href = '/';
+                          }
+                        } catch (err) {
+                          setProfileMsg({
+                            type: 'err',
+                            text:
+                              err instanceof Error
+                                ? err.message
+                                : isEn
+                                  ? 'Failed to delete account.'
+                                  : '회원 탈퇴 처리에 실패했습니다.',
+                          });
+                        } finally {
+                          setDeletingAccount(false);
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        paddingTop: 8,
+                        borderTop: '1px dashed #CBD5E1',
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: '#991B1B', lineHeight: 1.45 }}>
+                        {isEn
+                          ? 'This action is immediate and irreversible. Enter your password below to permanently delete your account.'
+                          : '탈퇴 즉시 계정과 저장 케이스가 영구 파기되며 복구할 수 없습니다. 본인 확인을 위해 현재 비밀번호를 입력해 주세요.'}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          type="password"
+                          value={deletePw}
+                          onChange={e => setDeletePw(e.target.value)}
+                          placeholder={isEn ? 'Current password' : '현재 비밀번호 입력'}
+                          style={{
+                            flex: 1,
+                            padding: '7px 10px',
+                            borderRadius: 7,
+                            border: '1px solid #CBD5E1',
+                            background: '#FFFFFF',
+                            fontSize: 12,
+                          }}
+                        />
+                        <button
+                          type="submit"
+                          disabled={deletingAccount}
+                          style={{
+                            padding: '7px 12px',
+                            borderRadius: 7,
+                            border: '1px solid #DC2626',
+                            background: '#DC2626',
+                            color: '#FFFFFF',
+                            fontSize: 11.5,
+                            fontWeight: 800,
+                            cursor: deletingAccount ? 'wait' : 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {deletingAccount
+                            ? isEn ? 'Deleting...' : '처리 중...'
+                            : isEn ? 'Confirm Delete' : '회원 탈퇴 확정'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

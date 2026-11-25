@@ -1047,6 +1047,43 @@ def api_change_password(
     return {"ok": True}
 
 
+class DeleteAccountPayload(BaseModel):
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+@app.post("/api/auth/delete-account")
+def api_delete_my_account(
+    payload: DeleteAccountPayload,
+    request: Request,
+    response: Response,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    if user["role"] == "admin":
+        raise HTTPException(status_code=400, detail="관리자 계정은 자가 탈퇴할 수 없습니다.")
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="비밀번호가 일치하지 않습니다.")
+    uid = user["id"]
+    with get_db() as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+        conn.execute("DELETE FROM user_workspaces WHERE user_id = ?", (uid,))
+        # 검토 대기 중인 본인 요청 성분은 삭제, 이미 공용 DB로 승격된 물질은 개인식별정보만 익명화
+        conn.execute(
+            "DELETE FROM custom_components WHERE requested_by_user_id = ? AND status != 'approved'",
+            (uid,),
+        )
+        conn.execute(
+            "UPDATE custom_components SET requested_by_user_id = NULL, requested_by_username = '' WHERE requested_by_user_id = ?",
+            (uid,),
+        )
+        conn.execute(
+            "UPDATE feedback_items SET user_id = NULL, username = 'deleted_user', contact_email = '' WHERE user_id = ?",
+            (uid,),
+        )
+        conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+    clear_session_cookie(response, request)
+    return {"ok": True}
+
+
 # ── Per-User Workspace Isolation Endpoints ──────────────────────────────
 def _validate_ws_key(workspace_key: str) -> None:
     if not WS_KEY_RE.match(workspace_key):

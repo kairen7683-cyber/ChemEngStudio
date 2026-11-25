@@ -486,6 +486,17 @@ export async function changeMyPassword(currentPassword: string, newPassword: str
   if (!res.ok) throw new Error(data.detail || '비밀번호 변경 실패');
 }
 
+export async function deleteMyAccount(password: string): Promise<void> {
+  const res = await fetch('/api/auth/delete-account', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '회원 탈퇴 처리 실패');
+}
+
 // ── Admin API ──────────────────────────────────────────────────────────
 export async function adminFetchOverview(): Promise<{
   registration_mode: RegistrationMode;
