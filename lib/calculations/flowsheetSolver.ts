@@ -929,6 +929,10 @@ export interface FlowUnitParams {
   // 도면 전용 장치 메모/차압
   pressureDropKgcm2?: number;
   visualSpecNote?: string;
+
+  // 블록 도면 방향 (좌우 반전 및 90° 단위 회전)
+  flipX?: boolean;
+  rotateDeg?: 0 | 90 | 180 | 270;
 }
 
 export interface FlowNodeDef {

@@ -1331,7 +1331,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         name: '1효 급액 합류 (L10 · 157.2°C)',
         unitType: 'mixer',
         position: { x: 350, y: 280 },
-        params: { multiplier: 1 },
+        params: { multiplier: 1, flipX: true },
       },
       {
         id: 'ev_e332',
@@ -1344,6 +1344,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
           refrigerantPreset: 'steam_lp',
           hexSpecMode: 'proc_temp',
           operTempC: 156.2,
+          flipX: true,
         },
       },
       {
@@ -1352,7 +1353,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         name: '2효 출구 분기 (L7 · 75.5% / 24.5%)',
         unitType: 'splitter',
         position: { x: 690, y: 395 },
-        params: { splitRatioTop: 0.755 },
+        params: { splitRatioTop: 0.755, flipX: true },
       },
       {
         id: 'ev_mx340',
@@ -1360,7 +1361,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         name: '2효 급액 합류 (L5 · 109.6°C)',
         unitType: 'mixer',
         position: { x: 850, y: 280 },
-        params: { multiplier: 1 },
+        params: { multiplier: 1, flipX: true },
       },
       {
         id: 'ev_e342',
@@ -1373,6 +1374,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
           refrigerantPreset: 'steam_lp',
           hexSpecMode: 'proc_temp',
           operTempC: 108.2,
+          flipX: true,
         },
       },
       {
@@ -1381,7 +1383,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         name: '3효 출구 분기 (L2 · 75.5% / 24.5%)',
         unitType: 'splitter',
         position: { x: 1190, y: 395 },
-        params: { splitRatioTop: 0.755 },
+        params: { splitRatioTop: 0.755, flipX: true },
       },
       {
         id: 'ev_e352',
@@ -1417,6 +1419,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
           refrigerantPreset: 'steam_lp',
           hexSpecMode: 'proc_temp',
           operTempC: 160.0,
+          flipX: true,
         },
       },
       {
@@ -1430,6 +1433,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
           refrigerantPreset: 'steam_lp',
           hexSpecMode: 'proc_temp',
           operTempC: 114.0,
+          flipX: true,
         },
       },
       {

@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { Handle, Position, type NodeProps } from 'reactflow';
+import React, { useEffect } from 'react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from 'reactflow';
 import type { FlowUnitType } from '@/lib/calculations/flowsheetSolver';
 
 export interface ClassicBlockNodeData {
@@ -12,6 +12,66 @@ export interface ClassicBlockNodeData {
   status?: 'ok' | 'error' | 'warn' | 'idle';
   statusTitle?: string;
   liveMetric?: string;
+  flipX?: boolean;
+  rotateDeg?: 0 | 90 | 180 | 270;
+  refrigerantPreset?: string;
+}
+
+const PORT_CW_ORDER: Position[] = [
+  Position.Left,
+  Position.Top,
+  Position.Right,
+  Position.Bottom,
+];
+
+export function transformPortPos(
+  base: Position,
+  flipX?: boolean,
+  rotateDeg?: number
+): Position {
+  let pos = base;
+  if (flipX) {
+    if (pos === Position.Left) pos = Position.Right;
+    else if (pos === Position.Right) pos = Position.Left;
+  }
+  const steps = ((Math.round((rotateDeg ?? 0) / 90) % 4) + 4) % 4;
+  if (steps === 0) return pos;
+  const idx = PORT_CW_ORDER.indexOf(pos);
+  return idx >= 0 ? PORT_CW_ORDER[(idx + steps) % 4] : pos;
+}
+
+function transformPort(
+  base: Position,
+  offsetPct: number,
+  flipX?: boolean,
+  rotateDeg?: number
+): { position: Position; pct: number } {
+  let pos = base;
+  let pct = offsetPct;
+  if (flipX) {
+    if (pos === Position.Left) {
+      pos = Position.Right;
+    } else if (pos === Position.Right) {
+      pos = Position.Left;
+    } else {
+      pct = 100 - pct;
+    }
+  }
+  const steps = ((Math.round((rotateDeg ?? 0) / 90) % 4) + 4) % 4;
+  for (let i = 0; i < steps; i++) {
+    if (pos === Position.Left) {
+      pos = Position.Top;
+      pct = 100 - pct;
+    } else if (pos === Position.Top) {
+      pos = Position.Right;
+    } else if (pos === Position.Right) {
+      pos = Position.Bottom;
+      pct = 100 - pct;
+    } else {
+      pos = Position.Left;
+    }
+  }
+  return { position: pos, pct };
 }
 
 export interface ClassicModelCatalogItem {
@@ -523,7 +583,15 @@ export function ClassicUnitSvg({
   }
 }
 
-export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBlockNodeData>) {
+export default function ClassicBlockNode({ id, data, selected }: NodeProps<ClassicBlockNodeData>) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  const flipX = Boolean(data.flipX);
+  const rotateDeg = data.rotateDeg ?? 0;
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, flipX, rotateDeg, updateNodeInternals]);
+
   const isFeed = data.unitType === 'feed';
   const isProduct = data.unitType === 'product';
   const isElectrolyzer = data.unitType === 'electrolyzer';
@@ -539,6 +607,16 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
   const isSplitter = data.unitType === 'splitter';
   const isHex = data.unitType === 'hex' || data.unitType === 'cooler' || data.unitType === 'liquefier';
   const hasSolventPort = data.unitType === 'absorber' || data.unitType === 'extractor';
+  const isHeatingUtility = Boolean(data.refrigerantPreset && data.refrigerantPreset.startsWith('steam_'));
+
+  // HEX / Cooler / Liquefier: Hot (#DC2626) vs Cold (#2563EB) role assignment
+  const procIsHot = !isHeatingUtility;
+  const procColor = procIsHot ? '#DC2626' : '#2563EB';
+  const procBg = procIsHot ? '#FEF2F2' : '#EFF6FF';
+  const procBorder = procIsHot ? '#FCA5A5' : '#93C5FD';
+  const utilColor = procIsHot ? '#2563EB' : '#DC2626';
+  const utilBg = procIsHot ? '#EFF6FF' : '#FEF2F2';
+  const utilBorder = procIsHot ? '#93C5FD' : '#FCA5A5';
 
   const handleStyle: React.CSSProperties = {
     width: 8,
@@ -547,6 +625,71 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
     border: '1.8px solid #003399',
     borderRadius: 999,
   };
+
+  const portProps = (
+    base: Position,
+    offsetPct: number,
+    extraStyle?: React.CSSProperties
+  ): { position: Position; style: React.CSSProperties } => {
+    const { position, pct } = transformPort(base, offsetPct, flipX, rotateDeg);
+    const axisStyle: React.CSSProperties =
+      position === Position.Left || position === Position.Right
+        ? { top: `${pct}%` }
+        : { left: `${pct}%` };
+    return {
+      position,
+      style: { ...handleStyle, ...axisStyle, ...extraStyle },
+    };
+  };
+
+  const renderPortBadge = (
+    basePos: Position,
+    offsetPct: number,
+    label: string,
+    color: string,
+    bg: string,
+    border: string
+  ) => {
+    const { position, pct } = transformPort(basePos, offsetPct, flipX, rotateDeg);
+    const posStyle: React.CSSProperties =
+      position === Position.Left
+        ? { right: 'calc(100% + 5px)', top: `${pct}%`, transform: 'translateY(-50%)' }
+        : position === Position.Right
+          ? { left: 'calc(100% + 5px)', top: `${pct}%`, transform: 'translateY(-50%)' }
+          : position === Position.Top
+            ? { bottom: 'calc(100% + 5px)', left: `${pct}%`, transform: 'translateX(-50%)' }
+            : { top: 'calc(100% + 5px)', left: `${pct}%`, transform: 'translateX(-50%)' };
+    return (
+      <span
+        style={{
+          position: 'absolute',
+          ...posStyle,
+          fontSize: 7.5,
+          fontWeight: 800,
+          lineHeight: 1.15,
+          letterSpacing: '0.02em',
+          color,
+          background: bg,
+          border: `1px solid ${border}`,
+          borderRadius: 3,
+          padding: '0.5px 3px',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          fontFamily: 'JetBrains Mono, monospace',
+          zIndex: 4,
+        }}
+      >
+        {label}
+      </span>
+    );
+  };
+
+  const iconTransform = [
+    rotateDeg ? `rotate(${rotateDeg}deg)` : '',
+    flipX ? 'scaleX(-1)' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div
@@ -571,22 +714,19 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="anode_in"
             type="target"
-            position={Position.Left}
             title="양극 유입 (Anode In)"
-            style={{ ...handleStyle, top: '34%' }}
+            {...portProps(Position.Left, 34)}
           />
           <Handle
             id="cathode_in"
             type="target"
-            position={Position.Left}
             title="음극 순수 유입 (Cathode In)"
-            style={{ ...handleStyle, top: '68%', borderColor: '#0D9488' }}
+            {...portProps(Position.Left, 68, { borderColor: '#0D9488' })}
           />
           <Handle
             id="in"
             type="target"
-            position={Position.Left}
-            style={{ ...handleStyle, top: '50%', opacity: 0, pointerEvents: 'none' }}
+            {...portProps(Position.Left, 50, { opacity: 0, pointerEvents: 'none' })}
           />
         </>
       ) : (
@@ -594,8 +734,12 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="in"
             type="target"
-            position={Position.Left}
-            style={{ ...handleStyle, top: isHex ? '38%' : hasSolventPort ? '34%' : '48%' }}
+            title={isHex ? (procIsHot ? '고온 공정 유입 (HOT IN)' : '저온 공정 유입 (COLD IN)') : undefined}
+            {...portProps(
+              Position.Left,
+              isHex ? 38 : hasSolventPort ? 34 : 48,
+              isHex ? { borderColor: procColor, background: procBg } : undefined
+            )}
           />
         )
       )}
@@ -605,9 +749,8 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
         <Handle
           id="solvent"
           type="target"
-          position={Position.Left}
           title="흡수액 / 추출용매 유입 포트 (solvent)"
-          style={{ ...handleStyle, top: '70%', borderColor: '#0D9488' }}
+          {...portProps(Position.Left, 70, { borderColor: '#0D9488' })}
         />
       )}
 
@@ -617,27 +760,36 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="cold_in"
             type="target"
-            position={Position.Left}
-            style={{ ...handleStyle, top: '72%', borderColor: '#475569' }}
+            title={procIsHot ? '냉매/저온 유입 (COLD IN)' : '가열 유틸리티 유입 (HOT IN)'}
+            {...portProps(Position.Left, 72, { borderColor: utilColor, background: utilBg })}
           />
           <Handle
             id="util_in"
             type="target"
-            position={Position.Left}
-            style={{ ...handleStyle, top: '72%', opacity: 0, pointerEvents: 'none' }}
+            {...portProps(Position.Left, 72, { opacity: 0, pointerEvents: 'none' })}
           />
           <Handle
             id="cold_out"
             type="source"
-            position={Position.Right}
-            style={{ ...handleStyle, top: '72%', borderColor: '#475569' }}
+            title={procIsHot ? '냉매/저온 유출 (COLD OUT)' : '가열 유틸리티 유출 (HOT OUT)'}
+            {...portProps(Position.Right, 72, { borderColor: utilColor, background: utilBg })}
           />
           <Handle
             id="util_out"
             type="source"
-            position={Position.Right}
-            style={{ ...handleStyle, top: '72%', opacity: 0, pointerEvents: 'none' }}
+            {...portProps(Position.Right, 72, { opacity: 0, pointerEvents: 'none' })}
           />
+          {renderPortBadge(Position.Left, 38, procIsHot ? 'HOT IN' : 'COLD IN', procColor, procBg, procBorder)}
+          {renderPortBadge(
+            Position.Right,
+            data.unitType === 'liquefier' ? 26 : 38,
+            procIsHot ? 'HOT OUT' : 'COLD OUT',
+            procColor,
+            procBg,
+            procBorder
+          )}
+          {renderPortBadge(Position.Left, 72, procIsHot ? 'COLD IN' : 'HOT IN', utilColor, utilBg, utilBorder)}
+          {renderPortBadge(Position.Right, 72, procIsHot ? 'COLD OUT' : 'HOT OUT', utilColor, utilBg, utilBorder)}
         </>
       )}
 
@@ -646,17 +798,17 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="util_in"
             type="target"
-            position={Position.Top}
             title="가열 스팀/증기 유입 (Steam Chest)"
-            style={{ ...handleStyle, left: '50%', borderColor: '#0284C7' }}
+            {...portProps(Position.Top, 50, { borderColor: '#DC2626', background: '#FEF2F2' })}
           />
           <Handle
             id="util_out"
             type="source"
-            position={Position.Bottom}
             title="스팀 응축수 배출 (Condensate Out)"
-            style={{ ...handleStyle, left: '50%', borderColor: '#DC2626' }}
+            {...portProps(Position.Bottom, 50, { borderColor: '#B45309', background: '#FFFBEB' })}
           />
+          {renderPortBadge(Position.Top, 50, 'STM', '#DC2626', '#FEF2F2', '#FCA5A5')}
+          {renderPortBadge(Position.Bottom, 50, 'COND', '#B45309', '#FFFBEB', '#FCD34D')}
         </>
       )}
 
@@ -666,22 +818,19 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="anode_out"
             type="source"
-            position={Position.Right}
             title="양극 유출 (Cl₂ / 감손염수)"
-            style={{ ...handleStyle, top: '34%' }}
+            {...portProps(Position.Right, 34)}
           />
           <Handle
             id="cathode_out"
             type="source"
-            position={Position.Right}
             title="음극 유출 (H₂ / 가성소다)"
-            style={{ ...handleStyle, top: '68%', borderColor: '#0D9488' }}
+            {...portProps(Position.Right, 68, { borderColor: '#0D9488' })}
           />
           <Handle
             id="out"
             type="source"
-            position={Position.Right}
-            style={{ ...handleStyle, top: '50%', opacity: 0, pointerEvents: 'none' }}
+            {...portProps(Position.Right, 50, { opacity: 0, pointerEvents: 'none' })}
           />
         </>
       ) : !isProduct && (isColumnOrSep || isSplitter) ? (
@@ -689,81 +838,70 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
           <Handle
             id="vapor"
             type="source"
-            position={Position.Right}
             title="상부 / 기상 / 탑정 유출"
-            style={{
-              ...handleStyle,
-              top: data.unitType === 'distillation' ? '18%' : '26%',
-            }}
+            {...portProps(
+              Position.Right,
+              data.unitType === 'distillation' ? 18 : 26,
+              isHex ? { borderColor: procColor, background: procBg } : undefined
+            )}
           />
           <Handle
             id="top"
             type="source"
-            position={Position.Right}
-            style={{
-              ...handleStyle,
-              top: data.unitType === 'distillation' ? '18%' : '26%',
+            {...portProps(Position.Right, data.unitType === 'distillation' ? 18 : 26, {
               opacity: 0,
               pointerEvents: 'none',
-            }}
+            })}
           />
           <Handle
             id="out"
             type="source"
-            position={Position.Right}
-            style={{
-              ...handleStyle,
-              top: '48%',
+            {...portProps(Position.Right, 48, {
               opacity: 0,
               pointerEvents: 'none',
-            }}
+            })}
           />
           {data.unitType === 'distillation' && (
             <>
               <Handle
                 id="decanter"
                 type="source"
-                position={Position.Right}
                 title="공비 디캔터 수층 분리 배출 (Decanter Aqueous)"
-                style={{ ...handleStyle, top: '38%', borderColor: '#0284C7' }}
+                {...portProps(Position.Right, 38, { borderColor: '#0284C7' })}
               />
               <Handle
                 id="side_cut"
                 type="source"
-                position={Position.Right}
                 title="사이드컷 측류 출구 (Side-Cut S)"
-                style={{ ...handleStyle, top: '58%', borderColor: '#7C3AED' }}
+                {...portProps(Position.Right, 58, { borderColor: '#7C3AED' })}
               />
             </>
           )}
           <Handle
             id="liquid"
             type="source"
-            position={Position.Right}
             title="하부 / 액상 / 탑저 유출"
-            style={{
-              ...handleStyle,
-              top: data.unitType === 'distillation' ? '80%' : '70%',
-            }}
+            {...portProps(Position.Right, data.unitType === 'distillation' ? 80 : 70)}
           />
           <Handle
             id="bot"
             type="source"
-            position={Position.Right}
-            style={{
-              ...handleStyle,
-              top: data.unitType === 'distillation' ? '80%' : '70%',
+            {...portProps(Position.Right, data.unitType === 'distillation' ? 80 : 70, {
               opacity: 0,
               pointerEvents: 'none',
-            }}
+            })}
           />
         </>
       ) : !isProduct ? (
         <Handle
           id="out"
           type="source"
-          position={Position.Right}
-          style={{ ...handleStyle, top: isHex ? '38%' : '48%' }}
+          title={isHex ? (procIsHot ? '고온 공정 유출 (HOT OUT)' : '저온 공정 유출 (COLD OUT)') : undefined}
+          {...portProps(
+            Position.Right,
+            isHex ? 38 : 48,
+            isHex ? { borderColor: procColor, background: procBg } : undefined
+          )}
         />
       ) : null}
 
@@ -841,8 +979,18 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
         </span>
       )}
 
-      {/* 아이콘 */}
-      <ClassicUnitSvg unitType={data.unitType} size={50} />
+      {/* 아이콘 (좌우 반전 / 90° 회전은 심볼에만 적용하여 태그·텍스트 정방향 유지) */}
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: iconTransform || undefined,
+          transition: 'transform 140ms ease',
+        }}
+      >
+        <ClassicUnitSvg unitType={data.unitType} size={50} />
+      </div>
 
       {/* 블록 태그 & 모델명 */}
       <div

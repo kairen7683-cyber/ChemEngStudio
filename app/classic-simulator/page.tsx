@@ -582,7 +582,14 @@ export default function ClassicSimulatorPage() {
       id: n.id,
       type: 'classicBlock',
       position: { ...n.position },
-      data: { tag: n.tag, modelName: getModelName(n.unitType), unitType: n.unitType },
+      data: {
+        tag: n.tag,
+        modelName: getModelName(n.unitType),
+        unitType: n.unitType,
+        flipX: n.params.flipX,
+        rotateDeg: n.params.rotateDeg,
+        refrigerantPreset: n.params.refrigerantPreset,
+      },
     }))
   );
   const [flowEdges, setFlowEdges] = useState<FlowEdgeDef[]>(() => initialEx.edges.map(e => ({ ...e })));
@@ -774,7 +781,14 @@ export default function ClassicSimulatorPage() {
                 id: d.id,
                 type: 'classicBlock',
                 position: rawProj.positions?.[d.id] ?? { x: 80 + i * 170, y: 140 },
-                data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+                data: {
+                  tag: d.tag,
+                  modelName: getModelName(d.unitType),
+                  unitType: d.unitType,
+                  flipX: d.params?.flipX,
+                  rotateDeg: d.params?.rotateDeg,
+                  refrigerantPreset: d.params?.refrigerantPreset,
+                },
               }))
             );
             setThermoMethod(restoredMethod);
@@ -831,7 +845,14 @@ export default function ClassicSimulatorPage() {
                 id: d.id,
                 type: 'classicBlock',
                 position: parsed.positions?.[d.id] ?? { x: 80 + i * 170, y: 140 },
-                data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+                data: {
+                  tag: d.tag,
+                  modelName: getModelName(d.unitType),
+                  unitType: d.unitType,
+                  flipX: d.params?.flipX,
+                  rotateDeg: d.params?.rotateDeg,
+                  refrigerantPreset: d.params?.refrigerantPreset,
+                },
               }))
             );
             setThermoMethod(restoredMethod);
@@ -1079,7 +1100,14 @@ export default function ClassicSimulatorPage() {
       id: d.id,
       type: 'classicBlock',
       position: snap.positions[d.id] ? { ...snap.positions[d.id] } : { x: 80 + i * 170, y: 140 },
-      data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+      data: {
+        tag: d.tag,
+        modelName: getModelName(d.unitType),
+        unitType: d.unitType,
+        flipX: d.params?.flipX,
+        rotateDeg: d.params?.rotateDeg,
+        refrigerantPreset: d.params?.refrigerantPreset,
+      },
     }));
     lastParamPushRef.current = { nodeId: '', ts: 0 };
     setSimDefs(nextDefs);
@@ -1315,7 +1343,14 @@ export default function ClassicSimulatorPage() {
         id: d.id,
         type: 'classicBlock',
         position: handoff.positions?.[d.id] ?? { x: 80 + idx * 170, y: 140 },
-        data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+        data: {
+          tag: d.tag,
+          modelName: getModelName(d.unitType),
+          unitType: d.unitType,
+          flipX: d.params?.flipX,
+          rotateDeg: d.params?.rotateDeg,
+          refrigerantPreset: d.params?.refrigerantPreset,
+        },
       }))
     );
     setSolvedMeta({
@@ -1450,7 +1485,14 @@ export default function ClassicSimulatorPage() {
             id: n.id,
             type: 'classicBlock',
             position: n.position ?? { x: 80 + idx * 170, y: 140 },
-            data: { tag: n.tag, modelName: getModelName(n.unitType), unitType: n.unitType },
+            data: {
+              tag: n.tag,
+              modelName: getModelName(n.unitType),
+              unitType: n.unitType,
+              flipX: n.params?.flipX,
+              rotateDeg: n.params?.rotateDeg,
+              refrigerantPreset: n.params?.refrigerantPreset,
+            },
           }))
         );
         runSimulation(nextDefs, nextEdges, nextMethod, nextComps, tearMethod);
@@ -1500,7 +1542,14 @@ export default function ClassicSimulatorPage() {
           id: d.id,
           type: 'classicBlock',
           position: rawSheet.positions?.[d.id] ?? { x: 80 + idx * 170, y: 140 },
-          data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+          data: {
+            tag: d.tag,
+            modelName: getModelName(d.unitType),
+            unitType: d.unitType,
+            flipX: d.params?.flipX,
+            rotateDeg: d.params?.rotateDeg,
+            refrigerantPreset: d.params?.refrigerantPreset,
+          },
         }))
       );
       if (bEntry?.result && !bEntry.result.convergence?.isIdle) {
@@ -1596,6 +1645,9 @@ export default function ClassicSimulatorPage() {
           status,
           statusTitle,
           liveMetric: metric,
+          flipX: def?.params?.flipX,
+          rotateDeg: def?.params?.rotateDeg,
+          refrigerantPreset: def?.params?.refrigerantPreset,
         },
       };
     });
@@ -1662,7 +1714,14 @@ export default function ClassicSimulatorPage() {
           type: 'classicBlock',
           position: finalPos,
           selected: true,
-          data: { tag, modelName: getModelName(unitType), unitType },
+          data: {
+            tag,
+            modelName: getModelName(unitType),
+            unitType,
+            flipX: newDef.params.flipX,
+            rotateDeg: newDef.params.rotateDeg,
+            refrigerantPreset: newDef.params.refrigerantPreset,
+          },
         },
       ]);
       setSelectedKind('block');
@@ -1746,7 +1805,14 @@ export default function ClassicSimulatorPage() {
         id: n.id,
         type: 'classicBlock',
         position: { ...n.position },
-        data: { tag: n.tag, modelName: getModelName(n.unitType), unitType: n.unitType },
+        data: {
+          tag: n.tag,
+          modelName: getModelName(n.unitType),
+          unitType: n.unitType,
+          flipX: n.params?.flipX,
+          rotateDeg: n.params?.rotateDeg,
+          refrigerantPreset: n.params?.refrigerantPreset,
+        },
       }))
     );
     setFlowEdges(nextEdges);
@@ -1869,7 +1935,14 @@ export default function ClassicSimulatorPage() {
         id: d.id,
         type: 'classicBlock',
         position: p.positions?.[d.id] ?? { x: 80 + i * 170, y: 130 },
-        data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+        data: {
+          tag: d.tag,
+          modelName: getModelName(d.unitType),
+          unitType: d.unitType,
+          flipX: d.params?.flipX,
+          rotateDeg: d.params?.rotateDeg,
+          refrigerantPreset: d.params?.refrigerantPreset,
+        },
       }))
     );
     setSolvedMeta({
@@ -1943,7 +2016,14 @@ export default function ClassicSimulatorPage() {
           id: d.id,
           type: 'classicBlock',
           position: { x: Math.round(pos.x), y: Math.round(pos.y) },
-          data: { tag: d.tag, modelName: getModelName(d.unitType), unitType: d.unitType },
+          data: {
+            tag: d.tag,
+            modelName: getModelName(d.unitType),
+            unitType: d.unitType,
+            flipX: d.params?.flipX,
+            rotateDeg: d.params?.rotateDeg,
+            refrigerantPreset: d.params?.refrigerantPreset,
+          },
         };
       });
 
@@ -3826,6 +3906,65 @@ export default function ClassicSimulatorPage() {
                     }}
                   >
                     {isEn ? 'Delete Block' : '블록 삭제'}
+                  </button>
+                </div>
+
+                {/* 블록 심볼/포트 좌우 반전 및 90° 회전 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateBlockDef(selectedBlock.id, d => ({
+                        ...d,
+                        params: { ...d.params, flipX: !d.params.flipX },
+                      }))
+                    }
+                    title={isEn ? 'Flip block symbol & ports horizontally' : '블록 심볼 및 포트 좌우 반전'}
+                    style={{
+                      flex: 1,
+                      padding: '4px 8px',
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      borderRadius: 4,
+                      border: selectedBlock.params.flipX ? '1px solid #64748B' : '1px solid #CBD5E1',
+                      background: selectedBlock.params.flipX ? '#E2E8F0' : '#F8FAFC',
+                      color: selectedBlock.params.flipX ? '#0F172A' : '#334155',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isEn ? '⇄ Flip' : '⇄ 좌우 반전'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateBlockDef(selectedBlock.id, d => {
+                        const cur = d.params.rotateDeg ?? 0;
+                        const next = (((cur + 90) % 360) as 0 | 90 | 180 | 270);
+                        return {
+                          ...d,
+                          params: { ...d.params, rotateDeg: next },
+                        };
+                      })
+                    }
+                    title={
+                      isEn
+                        ? `Rotate block clockwise 90° (current: ${selectedBlock.params.rotateDeg ?? 0}°)`
+                        : `블록 시계방향 90° 회전 (현재: ${selectedBlock.params.rotateDeg ?? 0}°)`
+                    }
+                    style={{
+                      flex: 1,
+                      padding: '4px 8px',
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      borderRadius: 4,
+                      border: (selectedBlock.params.rotateDeg ?? 0) !== 0 ? '1px solid #64748B' : '1px solid #CBD5E1',
+                      background: (selectedBlock.params.rotateDeg ?? 0) !== 0 ? '#E2E8F0' : '#F8FAFC',
+                      color: (selectedBlock.params.rotateDeg ?? 0) !== 0 ? '#0F172A' : '#334155',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isEn ? '↻ 90°' : '↻ 90° 회전'}
+                    {(selectedBlock.params.rotateDeg ?? 0) !== 0 ? ` (${selectedBlock.params.rotateDeg}°)` : ''}
                   </button>
                 </div>
 

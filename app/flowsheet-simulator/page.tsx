@@ -18,6 +18,7 @@ import ReactFlow, {
   applyNodeChanges,
   NodeChange,
   ReactFlowInstance,
+  useUpdateNodeInternals,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
@@ -664,6 +665,57 @@ function PfdEquipmentSvg({
   }
 }
 
+// ── 블록 좌우 반전(flipX) 및 90° 시계방향 회전(rotateDeg) 포트 위치 변환 헬퍼 ──
+function transformPortPos(base: Position, flipX?: boolean, rotateDeg?: number): Position {
+  let pos = base;
+  if (flipX) {
+    if (pos === Position.Left) pos = Position.Right;
+    else if (pos === Position.Right) pos = Position.Left;
+  }
+  const steps = ((((rotateDeg ?? 0) / 90) % 4) + 4) % 4;
+  if (steps > 0) {
+    const order: Position[] = [Position.Left, Position.Top, Position.Right, Position.Bottom];
+    const idx = order.indexOf(pos);
+    if (idx >= 0) {
+      pos = order[(idx + steps) % 4];
+    }
+  }
+  return pos;
+}
+
+function getHandleAnchorStyle(pos: Position, offsetPct = 50): React.CSSProperties {
+  if (pos === Position.Left) return { left: -7, top: `${offsetPct}%` };
+  if (pos === Position.Right) return { right: -7, top: `${offsetPct}%` };
+  if (pos === Position.Top) return { top: -7, left: `${offsetPct}%` };
+  return { bottom: -7, left: `${offsetPct}%` };
+}
+
+function getInsidePortLabelStyle(pos: Position, offsetPct = 50): React.CSSProperties {
+  if (pos === Position.Left) {
+    return { position: 'absolute', left: 5, top: `${Math.max(4, offsetPct - 8)}%`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  if (pos === Position.Right) {
+    return { position: 'absolute', right: 5, top: `${Math.max(4, offsetPct - 8)}%`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  if (pos === Position.Top) {
+    return { position: 'absolute', top: 4, left: `${offsetPct}%`, transform: 'translateX(-50%)', pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  return { position: 'absolute', bottom: 4, left: `${offsetPct}%`, transform: 'translateX(-50%)', pointerEvents: 'none', whiteSpace: 'nowrap' };
+}
+
+function getOutsidePortBadgeStyle(pos: Position, offsetPct = 50): React.CSSProperties {
+  if (pos === Position.Left) {
+    return { position: 'absolute', right: 'calc(100% + 5px)', top: `calc(${offsetPct}% - 15px)`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  if (pos === Position.Right) {
+    return { position: 'absolute', left: 'calc(100% + 5px)', top: `calc(${offsetPct}% - 15px)`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  if (pos === Position.Top) {
+    return { position: 'absolute', bottom: 'calc(100% + 4px)', left: `calc(${offsetPct}% + 9px)`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+  }
+  return { position: 'absolute', top: 'calc(100% + 4px)', left: `calc(${offsetPct}% + 9px)`, pointerEvents: 'none', whiteSpace: 'nowrap' };
+}
+
 // ── 커스텀 ReactFlow 노드 (전해 PFD CAD 심볼 + 양방향 넉넉한 연결 포트 + 더블클릭 하위공정 진입) ──
 interface FlowCanvasNodeData {
   tag: string;
@@ -677,12 +729,23 @@ interface FlowCanvasNodeData {
   subSheetId?: string;
   subSheetBadge?: string;
   onOpenSubSheet?: (subSheetId: string) => void;
+  flipX?: boolean;
+  rotateDeg?: 0 | 90 | 180 | 270;
+  refrigerantPreset?: RefrigerantPresetKey;
 }
 
-function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
+function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
   const lang = useUnitStore(s => s.lang);
   const isEn = lang === 'en';
+  const updateNodeInternals = useUpdateNodeInternals();
   const unitType = data.unitType;
+  const flipX = Boolean(data.flipX);
+  const rotateDeg = data.rotateDeg ?? 0;
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, flipX, rotateDeg, updateNodeInternals]);
+
   const meta = UNIT_CATALOG.find(u => u.type === unitType) ?? UNIT_CATALOG[2];
   const visualOnly = isVisualOnlyUnit(unitType);
   const supportsRigorous =
@@ -697,6 +760,7 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
   const isFeed = unitType === 'feed';
   const isElectrolyzer = unitType === 'electrolyzer';
   const isHexOrLiq = unitType === 'hex' || unitType === 'cooler' || unitType === 'liquefier';
+  const isEvaporator = unitType === 'evaporator';
   const isAbsorber = unitType === 'absorber';
   const isExtractor = unitType === 'extractor';
   const hasDualPhaseOut =
@@ -709,6 +773,45 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
     unitType === 'splitter' ||
     unitType === 'saturator' ||
     unitType === 'desiccant_dryer';
+
+  // 열교환기/냉각기/액화기 Hot/Cold 판별 (가열·열회수 모드 vs 냉각 모드)
+  const refPreset = data.refrigerantPreset;
+  const isHexHeatingMode =
+    isHexOrLiq && (refPreset ? refPreset.startsWith('steam') : unitType === 'hex');
+  const hexProcColor = isHexHeatingMode ? '#2563EB' : '#DC2626';
+  const hexUtilColor = isHexHeatingMode ? '#DC2626' : '#2563EB';
+  const hexProcInBadge = isHexHeatingMode ? 'COLD IN' : 'HOT IN';
+  const hexProcOutBadge = isHexHeatingMode ? 'COLD OUT' : 'HOT OUT';
+  const hexUtilInBadge = isHexHeatingMode
+    ? 'HOT IN'
+    : refPreset === 'cw'
+      ? 'CW IN'
+      : 'COLD IN';
+  const hexUtilOutBadge = isHexHeatingMode
+    ? 'HOT OUT'
+    : refPreset === 'cw'
+      ? 'CW OUT'
+      : 'COLD OUT';
+
+  const portBadgeStyle = (color: string): React.CSSProperties => ({
+    fontSize: 7.5,
+    fontWeight: 800,
+    fontFamily: 'JetBrains Mono, monospace',
+    color,
+    background: 'rgba(255, 255, 255, 0.92)',
+    border: `1px solid ${color}40`,
+    borderRadius: 3,
+    padding: '0.5px 3px',
+    lineHeight: 1.15,
+    letterSpacing: '-0.02em',
+    zIndex: 40,
+  });
+
+  const posLeft = transformPortPos(Position.Left, flipX, rotateDeg);
+  const posRight = transformPortPos(Position.Right, flipX, rotateDeg);
+  const posTop = transformPortPos(Position.Top, flipX, rotateDeg);
+  const posBottom = transformPortPos(Position.Bottom, flipX, rotateDeg);
+  const iconTransform = `${flipX ? 'scaleX(-1) ' : ''}${rotateDeg ? `rotate(${rotateDeg}deg)` : ''}`.trim() || undefined;
 
   // ConnectionMode.Loose에서는 모든 Handle을 type="source"로 통일하면
   // 어느 방향(출구→입구 또는 입구→출구)으로 드래그해도 항상 배관이 매끄럽게 연결됩니다!
@@ -857,8 +960,17 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
         </span>
       )}
 
-      {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 ── */}
-      <div style={{ padding: '2px 2px 1px 2px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+      {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 (Flip/Rotate는 심볼에만 적용하여 텍스트 가독성 유지) ── */}
+      <div
+        style={{
+          padding: '2px 2px 1px 2px',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          transform: iconTransform,
+          transition: 'transform 120ms ease',
+        }}
+      >
         {useClassicIcon ? (
           <ClassicUnitSvg unitType={unitType} size={46} />
         ) : (
@@ -938,27 +1050,27 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
         </button>
       )}
 
-      {/* ── 좌측 유입 포트 (모두 type="source" + ConnectionMode.Loose로 양방향 연결 지원) ── */}
+      {/* ── 유입 포트 (모두 type="source" + ConnectionMode.Loose로 양방향 연결 지원) ── */}
       {isElectrolyzer ? (
         <>
           <Handle
             type="source"
-            position={Position.Left}
+            position={posLeft}
             id="anode_in"
             title={isEn ? 'Anode Inlet (Saturated Brine)' : '양극 입구 (포화염수 Anode In)'}
-            style={{ ...portStyle('#0F766E'), left: -7, top: '36%' }}
+            style={{ ...portStyle('#0F766E'), ...getHandleAnchorStyle(posLeft, 36) }}
           />
-          <span style={{ position: 'absolute', left: 5, top: '28%', fontSize: 7.5, fontWeight: 800, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posLeft, 36), fontSize: 7.5, fontWeight: 800, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace' }}>
             {isEn ? 'AnIn' : '양극In'}
           </span>
           <Handle
             type="source"
-            position={Position.Left}
+            position={posLeft}
             id="cathode_in"
             title={isEn ? 'Cathode Inlet (Caustic / Pure Water)' : '음극 입구 (가성소다/순수 Cathode In)'}
-            style={{ ...portStyle('#EA580C'), left: -7, top: '74%' }}
+            style={{ ...portStyle('#EA580C'), ...getHandleAnchorStyle(posLeft, 74) }}
           />
-          <span style={{ position: 'absolute', left: 5, top: '66%', fontSize: 7.5, fontWeight: 800, color: '#C2410C', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posLeft, 74), fontSize: 7.5, fontWeight: 800, color: '#C2410C', fontFamily: 'JetBrains Mono, monospace' }}>
             {isEn ? 'CaIn' : '음극In'}
           </span>
         </>
@@ -966,111 +1078,138 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
         <>
           <Handle
             type="source"
-            position={Position.Left}
+            position={posLeft}
             id={isExtractor ? 'solvent' : 'liq_in'}
             title={isExtractor ? (isEn ? 'Solvent Inlet' : '추출 용매 유입 (Solvent Inlet)') : (isEn ? 'Top Liquid/Solvent Inlet (Optional)' : '상부 흡수액/황산 유입 (선택사항)')}
-            style={{ ...portStyle(isExtractor ? '#7C3AED' : '#0284C7'), left: -7, top: '30%' }}
+            style={{ ...portStyle(isExtractor ? '#7C3AED' : '#0284C7'), ...getHandleAnchorStyle(posLeft, 30) }}
           />
-          <span style={{ position: 'absolute', left: 5, top: '22%', fontSize: 7.5, fontWeight: 800, color: isExtractor ? '#7C3AED' : '#0284C7', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posLeft, 30), fontSize: 7.5, fontWeight: 800, color: isExtractor ? '#7C3AED' : '#0284C7', fontFamily: 'JetBrains Mono, monospace' }}>
             {isExtractor ? (isEn ? 'Solv' : '용매In') : (isEn ? 'LiqIn' : '액In')}
           </span>
           <Handle
             type="source"
-            position={Position.Left}
+            position={posLeft}
             id="in"
             title={isExtractor ? (isEn ? 'Feed Inlet' : '추출 대상 원료액 유입 (Feed Inlet)') : (isEn ? 'Bottom Gas Inlet' : '하부 원료가스 유입 (Gas Inlet)')}
-            style={{ ...portStyle('#5B21B6'), left: -7, top: '72%' }}
+            style={{ ...portStyle('#5B21B6'), ...getHandleAnchorStyle(posLeft, 72) }}
           />
-          <span style={{ position: 'absolute', left: 5, top: '64%', fontSize: 7.5, fontWeight: 800, color: '#5B21B6', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posLeft, 72), fontSize: 7.5, fontWeight: 800, color: '#5B21B6', fontFamily: 'JetBrains Mono, monospace' }}>
             {isExtractor ? (isEn ? 'Feed' : '원료In') : (isEn ? 'GasIn' : '가스In')}
           </span>
         </>
       ) : !isFeed ? (
-        <Handle
-          type="source"
-          position={Position.Left}
-          id="in"
-          title="유입 배관 연결점 (Inlet — 드래그하여 연결)"
-          style={{ ...portStyle(meta.color), left: -7, top: '52%' }}
-        />
-      ) : null}
-
-      {/* ── 열교환기·액화기·증발관·포화조·압축기·증류탑 상/하단 보조 포트 (선택 연결) ── */}
-      {(isHexOrLiq || unitType === 'evaporator') && (
         <>
           <Handle
             type="source"
-            position={Position.Top}
-            id="util_in"
+            position={posLeft}
+            id="in"
             title={
-              unitType === 'evaporator'
-                ? '가열 스팀/증기 유입 (Steam Chest)'
-                : '냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)'
+              isHexOrLiq
+                ? `${hexProcInBadge} — ${isEn ? 'Process Side Inlet' : '공정측 유입 배관 연결점'}`
+                : '유입 배관 연결점 (Inlet — 드래그하여 연결)'
             }
-            style={{ ...portStyle('#0284C7'), top: -7, left: '50%' }}
+            style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posLeft, 52) }}
           />
+          {isHexOrLiq && (
+            <span style={{ ...getOutsidePortBadgeStyle(posLeft, 52), ...portBadgeStyle(hexProcColor) }}>
+              {hexProcInBadge}
+            </span>
+          )}
+        </>
+      ) : null}
+
+      {/* ── 열교환기·액화기·증발관·포화조·압축기·증류탑 상/하단 보조 포트 (선택 연결) ── */}
+      {(isHexOrLiq || isEvaporator) && (
+        <>
           <Handle
             type="source"
-            position={Position.Bottom}
+            position={posTop}
+            id="util_in"
+            title={
+              isEvaporator
+                ? '가열 스팀/증기 유입 (Steam Chest — STM)'
+                : `${hexUtilInBadge} — 냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)`
+            }
+            style={{ ...portStyle(isEvaporator ? '#DC2626' : hexUtilColor), ...getHandleAnchorStyle(posTop, 50) }}
+          />
+          <span
+            style={{
+              ...getOutsidePortBadgeStyle(posTop, 50),
+              ...portBadgeStyle(isEvaporator ? '#DC2626' : hexUtilColor),
+            }}
+          >
+            {isEvaporator ? 'STM' : hexUtilInBadge}
+          </span>
+          <Handle
+            type="source"
+            position={posBottom}
             id="util_out"
             title={
-              unitType === 'evaporator'
-                ? '스팀 응축수 배출 (Condensate Out)'
-                : '냉매/열매 배출 (선택사항)'
+              isEvaporator
+                ? '스팀 응축수 배출 (Condensate Out — COND)'
+                : `${hexUtilOutBadge} — 냉매/열매 배출 (선택사항)`
             }
-            style={{ ...portStyle('#DC2626'), bottom: -7, left: '50%' }}
+            style={{ ...portStyle(isEvaporator ? '#B45309' : hexUtilColor), ...getHandleAnchorStyle(posBottom, 50) }}
           />
+          <span
+            style={{
+              ...getOutsidePortBadgeStyle(posBottom, 50),
+              ...portBadgeStyle(isEvaporator ? '#B45309' : hexUtilColor),
+            }}
+          >
+            {isEvaporator ? 'COND' : hexUtilOutBadge}
+          </span>
         </>
       )}
       {unitType === 'saturator' && (
         <Handle
           type="source"
-          position={Position.Top}
+          position={posTop}
           id="solvent"
           title="원염(NaCl) / 약품 투입 포트"
-          style={{ ...portStyle('#0284C7'), top: -7, left: '50%' }}
+          style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posTop, 50) }}
         />
       )}
       {unitType === 'compressor' && (
         <Handle
           type="source"
-          position={Position.Bottom}
+          position={posBottom}
           id="liquid"
           title="단간·후단 응축수 녹아웃 드레인 (KO Liquid)"
-          style={{ ...portStyle('#0284C7'), bottom: -7, left: '50%' }}
+          style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posBottom, 50) }}
         />
       )}
       {unitType === 'distillation' && (
         <Handle
           type="source"
-          position={Position.Top}
+          position={posTop}
           id="decanter"
           title="공비 디캔터 수층 분리 배출 (Decanter Water)"
-          style={{ ...portStyle('#0284C7'), top: -7, left: '50%' }}
+          style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posTop, 50) }}
         />
       )}
 
-      {/* ── 우측 유출 포트 (제품/헤더단 포함 모든 장치에 후단 연결점 제공!) ── */}
+      {/* ── 유출 포트 (제품/헤더단 포함 모든 장치에 후단 연결점 제공!) ── */}
       {isElectrolyzer ? (
         <>
           <Handle
             type="source"
-            position={Position.Right}
+            position={posRight}
             id="anode_out"
             title="양극 출구 (습윤 Cl₂ + 묽은 브라인)"
-            style={{ ...portStyle('#0F766E'), right: -7, top: '36%' }}
+            style={{ ...portStyle('#0F766E'), ...getHandleAnchorStyle(posRight, 36) }}
           />
-          <span style={{ position: 'absolute', right: 5, top: '28%', fontSize: 7.5, fontWeight: 800, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posRight, 36), fontSize: 7.5, fontWeight: 800, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace' }}>
             {isEn ? 'Cl₂' : 'Cl₂출'}
           </span>
           <Handle
             type="source"
-            position={Position.Right}
+            position={posRight}
             id="cathode_out"
             title={isEn ? 'Cathode Outlet (Wet H₂ + 32% NaOH)' : '음극 출구 (습윤 H₂ + 32% 가성소다)'}
-            style={{ ...portStyle('#EA580C'), right: -7, top: '74%' }}
+            style={{ ...portStyle('#EA580C'), ...getHandleAnchorStyle(posRight, 74) }}
           />
-          <span style={{ position: 'absolute', right: 5, top: '66%', fontSize: 7.5, fontWeight: 800, color: '#C2410C', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posRight, 74), fontSize: 7.5, fontWeight: 800, color: '#C2410C', fontFamily: 'JetBrains Mono, monospace' }}>
             {isEn ? 'H₂' : 'H₂출'}
           </span>
         </>
@@ -1078,7 +1217,7 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
         <>
           <Handle
             type="source"
-            position={Position.Right}
+            position={posRight}
             id="vapor"
             title={
               unitType === 'splitter'
@@ -1087,28 +1226,28 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
                   ? (isEn ? 'Overhead Sniff Gas Outlet (G↑)' : '상부 미응축 스니프 가스 출구 (Sniff Gas G↑)')
                   : (isEn ? 'Overhead Vapor Outlet (G↑)' : '상부 정제가스/기상 출구 (Vapor G↑ — 압축기·후단 연결점)')
             }
-            style={{ ...portStyle('#0F766E'), right: -7, top: unitType === 'distillation' ? '26%' : '30%' }}
+            style={{ ...portStyle(unitType === 'liquefier' ? hexProcColor : '#0F766E'), ...getHandleAnchorStyle(posRight, unitType === 'distillation' ? 26 : 30) }}
           />
-          <span style={{ position: 'absolute', right: 5, top: unitType === 'distillation' ? '18%' : '22%', fontSize: 7.5, fontWeight: 900, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posRight, unitType === 'distillation' ? 26 : 30), fontSize: 7.5, fontWeight: 900, color: unitType === 'liquefier' ? hexProcColor : '#0F766E', fontFamily: 'JetBrains Mono, monospace' }}>
             {topPortLabel}
           </span>
           {unitType === 'distillation' && (
             <>
               <Handle
                 type="source"
-                position={Position.Right}
+                position={posRight}
                 id="side_cut"
                 title={isEn ? 'Side-Cut Draw Outlet (S→)' : '사이드컷 측류 출구 (Side-Cut S→ — 액상/기상 중간단 인출)'}
-                style={{ ...portStyle('#7C3AED'), right: -7, top: '52%' }}
+                style={{ ...portStyle('#7C3AED'), ...getHandleAnchorStyle(posRight, 52) }}
               />
-              <span style={{ position: 'absolute', right: 5, top: '44%', fontSize: 7.2, fontWeight: 900, color: '#7C3AED', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+              <span style={{ ...getInsidePortLabelStyle(posRight, 52), fontSize: 7.2, fontWeight: 900, color: '#7C3AED', fontFamily: 'JetBrains Mono, monospace' }}>
                 {isEn ? 'Side S→' : '측류S→'}
               </span>
             </>
           )}
           <Handle
             type="source"
-            position={Position.Right}
+            position={posRight}
             id="liquid"
             title={
               unitType === 'splitter'
@@ -1119,20 +1258,31 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
                     ? '하부 액화염소/응축액 출구 (Liquid Cl₂ L↓)'
                     : '하부 액상/배출액 출구 (Liquid L↓)'
             }
-            style={{ ...portStyle('#0284C7'), right: -7, top: unitType === 'distillation' ? '78%' : '74%' }}
+            style={{ ...portStyle(unitType === 'liquefier' ? hexProcColor : '#0284C7'), ...getHandleAnchorStyle(posRight, unitType === 'distillation' ? 78 : 74) }}
           />
-          <span style={{ position: 'absolute', right: 5, top: unitType === 'distillation' ? '70%' : '66%', fontSize: 7.5, fontWeight: 900, color: '#0284C7', fontFamily: 'JetBrains Mono, monospace', pointerEvents: 'none' }}>
+          <span style={{ ...getInsidePortLabelStyle(posRight, unitType === 'distillation' ? 78 : 74), fontSize: 7.5, fontWeight: 900, color: unitType === 'liquefier' ? hexProcColor : '#0284C7', fontFamily: 'JetBrains Mono, monospace' }}>
             {botPortLabel}
           </span>
         </>
       ) : (
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="out"
-          title="후단 배관 연결점 (Outlet — 드래그하여 다음 장치와 연결)"
-          style={{ ...portStyle(meta.color), right: -7, top: '52%' }}
-        />
+        <>
+          <Handle
+            type="source"
+            position={posRight}
+            id="out"
+            title={
+              isHexOrLiq
+                ? `${hexProcOutBadge} — ${isEn ? 'Process Side Outlet' : '공정측 출구 배관 연결점'}`
+                : '후단 배관 연결점 (Outlet — 드래그하여 다음 장치와 연결)'
+            }
+            style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posRight, 52) }}
+          />
+          {isHexOrLiq && (
+            <span style={{ ...getOutsidePortBadgeStyle(posRight, 52), ...portBadgeStyle(hexProcColor) }}>
+              {hexProcOutBadge}
+            </span>
+          )}
+        </>
       )}
     </div>
   );
@@ -2195,7 +2345,7 @@ export function FlowsheetWorkspace({
       id: d.id,
       type: 'flowUnit',
       position: { ...(initialSheets.master.positions[d.id] ?? { x: 100, y: 120 }) },
-      data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+      data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
     }))
   );
   const [flowEdges, setFlowEdges] = useState<FlowEdgeDef[]>(() =>
@@ -2547,7 +2697,7 @@ export function FlowsheetWorkspace({
           id: d.id,
           type: 'flowUnit',
           position: cloned.positions[d.id] ?? { x: 80 + idx * 175, y: 140 },
-          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
         }))
       );
       setFlowEdges(cloned.flowEdges);
@@ -2845,7 +2995,7 @@ export function FlowsheetWorkspace({
           id: d.id,
           type: 'flowUnit',
           position: { ...(targetSheet.positions[d.id] ?? { x: 80 + idx * 175, y: 140 }) },
-          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
         }))
       );
       setFlowEdges(nextEdges);
@@ -2982,7 +3132,7 @@ export function FlowsheetWorkspace({
           id: d.id,
           type: 'flowUnit',
           position: { ...(master.positions[d.id] ?? { x: 80 + idx * 175, y: 140 }) },
-          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
         }))
       );
       setFlowEdges(nextEdges);
@@ -3103,7 +3253,7 @@ export function FlowsheetWorkspace({
           id: d.id,
           type: 'flowUnit',
           position: { ...customSubSheet.positions[d.id] },
-          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
         }))
       );
       setFlowEdges(customSubSheet.flowEdges);
@@ -3219,7 +3369,7 @@ export function FlowsheetWorkspace({
                 id: d.id,
                 type: 'flowUnit',
                 position: parsed.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
-                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
               }))
             );
             setFlowEdges(parsed.flowEdges);
@@ -3332,7 +3482,7 @@ export function FlowsheetWorkspace({
               id: d.id,
               type: 'flowUnit',
               position: handoff.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
-              data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+              data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
             }))
           );
           setFlowEdges(handoff.flowEdges);
@@ -3407,7 +3557,7 @@ export function FlowsheetWorkspace({
                 id: d.id,
                 type: 'flowUnit',
                 position: parsed.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
-                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+                data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
               }))
             );
             setFlowEdges(parsed.flowEdges);
@@ -4528,7 +4678,7 @@ export function FlowsheetWorkspace({
         id: d.id,
         type: 'flowUnit',
         position: st.positions?.[d.id] ?? { x: 80 + idx * 180, y: 120 },
-        data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+        data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
       }))
     );
     setFlowEdges(st.flowEdges);
@@ -4632,7 +4782,7 @@ export function FlowsheetWorkspace({
           id: d.id,
           type: 'flowUnit',
           position: { x: Math.round(pos.x), y: Math.round(pos.y) },
-          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '' },
+          data: { tag: d.tag, name: d.name, unitType: d.unitType, liveSummary: '', flipX: d.params.flipX, rotateDeg: d.params.rotateDeg, refrigerantPreset: d.params.refrigerantPreset },
         };
       });
 
@@ -4809,7 +4959,7 @@ export function FlowsheetWorkspace({
         id: n.id,
         type: 'flowUnit',
         position: { ...n.position },
-        data: { tag: n.tag, name: n.name, unitType: n.unitType, liveSummary: '' },
+        data: { tag: n.tag, name: n.name, unitType: n.unitType, liveSummary: '', flipX: n.params.flipX, rotateDeg: n.params.rotateDeg, refrigerantPreset: n.params.refrigerantPreset },
       }))
     );
     setFlowEdges(cachedEntry ? cachedEntry.flowEdges.map(e => ({ ...e })) : nextEdges);
@@ -5010,6 +5160,9 @@ export function FlowsheetWorkspace({
           subSheetId: allowSubSheet ? def?.subSheetId : undefined,
           subSheetBadge: def?.subSheetBadge,
           onOpenSubSheet: allowSubSheet ? navigateToHierarchySheet : undefined,
+          flipX: def?.params.flipX,
+          rotateDeg: def?.params.rotateDeg,
+          refrigerantPreset: def?.params.refrigerantPreset,
         },
       };
     });
@@ -8815,7 +8968,7 @@ export function FlowsheetWorkspace({
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A' }}>
                   {isVisualOnlyUnit(selectedDef.unitType)
                     ? (isEn ? 'PFD Symbol Properties' : '도면 장치 속성')
@@ -8823,21 +8976,64 @@ export function FlowsheetWorkspace({
                       ? (isEn ? '➔ Material Stream & Balance' : '➔ 물질 스트림 조건 · 발란스')
                       : (isEn ? 'Unit Operating Conditions' : '장치 운전조건 · 발란스')}
                 </span>
-                <button
-                  onClick={deleteSelectedNode}
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    color: '#B91C1C',
-                    background: '#FFFFFF',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: 5,
-                    padding: '3px 8px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {isEn ? 'Delete' : '삭제'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => updateParam('flipX', !selectedDef.params.flipX)}
+                    title={isEn ? 'Flip block horizontally (mirror ports Left ↔ Right)' : '블록 좌우 반전 (포트 좌↔우 대칭)'}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: selectedDef.params.flipX ? '#0F172A' : '#475569',
+                      background: selectedDef.params.flipX ? '#E2E8F0' : '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 5,
+                      padding: '3px 7px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isEn ? '⇄ Flip' : '⇄ 좌우 반전'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextDeg = (((selectedDef.params.rotateDeg ?? 0) + 90) % 360) as 0 | 90 | 180 | 270;
+                      updateParam('rotateDeg', nextDeg);
+                    }}
+                    title={isEn ? 'Rotate block 90° clockwise' : '블록 시계방향 90° 회전'}
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: selectedDef.params.rotateDeg ? '#0F172A' : '#475569',
+                      background: selectedDef.params.rotateDeg ? '#E2E8F0' : '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 5,
+                      padding: '3px 7px',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {isEn
+                      ? `↻ 90°${selectedDef.params.rotateDeg ? ` (${selectedDef.params.rotateDeg}°)` : ''}`
+                      : `↻ 90° 회전${selectedDef.params.rotateDeg ? ` (${selectedDef.params.rotateDeg}°)` : ''}`}
+                  </button>
+                  <button
+                    onClick={deleteSelectedNode}
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      color: '#B91C1C',
+                      background: '#FFFFFF',
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 5,
+                      padding: '3px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isEn ? 'Delete' : '삭제'}
+                  </button>
+                </div>
               </div>
 
               {/* ── 우측 패널 상단 즉시 [▶ RUN 시뮬레이션 실행] 알림 바 ── */}
