@@ -641,6 +641,25 @@ export default function ClassicBlockNode({ data, selected }: NodeProps<ClassicBl
         </>
       )}
 
+      {data.unitType === 'evaporator' && (
+        <>
+          <Handle
+            id="util_in"
+            type="target"
+            position={Position.Top}
+            title="가열 스팀/증기 유입 (Steam Chest)"
+            style={{ ...handleStyle, left: '50%', borderColor: '#0284C7' }}
+          />
+          <Handle
+            id="util_out"
+            type="source"
+            position={Position.Bottom}
+            title="스팀 응축수 배출 (Condensate Out)"
+            style={{ ...handleStyle, left: '50%', borderColor: '#DC2626' }}
+          />
+        </>
+      )}
+
       {/* 우측 유출 포트 */}
       {isElectrolyzer ? (
         <>

@@ -3906,19 +3906,27 @@ export function solveFlowsheet(
 
       // ── 8) 강하막 증발관 (Evaporator — 가성소다 등 농축 수지) ──────────────
       else if (node.unitType === 'evaporator') {
+        const procInEdges = inEdges.filter(e => e.targetPort !== 'util_in');
+        const utilInEdges = inEdges.filter(e => e.targetPort === 'util_in');
+        const utilOutEdges = outEdges.filter(e => e.sourcePort === 'util_out');
+        const procIn = sumEdgeGroup(procInEdges);
+        const utilIn = sumEdgeGroup(utilInEdges);
+
         const targetWt = Math.min(75, Math.max(10, p.evapTargetConcWt ?? 50.0)) / 100;
         const T_out = p.operTempC ?? 110.0;
         const P_out = p.operPressKgcm2g ?? 0.0;
-        const soluteMass = totalIn.NaOH + totalIn.NaCl;
-        const reqLiqMass = soluteMass > 0 ? soluteMass / targetWt : sumMassIn;
+        const procFlows = utilInEdges.length > 0 ? procIn.flows : totalIn;
+        const procMassIn = sumFlows(procFlows);
+        const soluteMass = procFlows.NaOH + procFlows.NaCl;
+        const reqLiqMass = soluteMass > 0 ? soluteMass / targetWt : procMassIn;
         const reqWaterInLiq = Math.max(0, reqLiqMass - soluteMass);
-        const evapWater = Math.max(0, totalIn.H2O - reqWaterInLiq);
+        const evapWater = Math.max(0, procFlows.H2O - reqWaterInLiq);
         removedKgH = evapWater;
 
         const vap = emptyFlows();
-        const liq = { ...totalIn };
+        const liq = { ...procFlows };
         vap.H2O = evapWater;
-        liq.H2O = Math.max(0, totalIn.H2O - evapWater);
+        liq.H2O = Math.max(0, procFlows.H2O - evapWater);
 
         // 정밀 모드 시 Dühring 비점오름(BPR) 보정 (농축액 출구 온도)
         const bpr = isRigorous ? 0.24 * (targetWt * 100) + 0.0128 * Math.pow(targetWt * 100, 2) : 0;
@@ -3929,27 +3937,61 @@ export function solveFlowsheet(
           vapEdges.forEach(e => assignEdge(e, vap, T_out, P_out, 'G'));
           liqEdges.forEach(e => assignEdge(e, liq, T_out + bpr * 0.2, P_out, 'L'));
         } else {
-          if (outEdges[0]) assignEdge(outEdges[0], liq, T_out, P_out, 'L');
+          const fallbackProcOut = outEdges.filter(e => e.sourcePort !== 'util_out');
+          if (fallbackProcOut[0]) assignEdge(fallbackProcOut[0], liq, T_out, P_out, 'L');
           else pushUnrouted('liquid', '농축액 출구 (L↓ 미연결)', liq, T_out, P_out, 'L');
-          if (outEdges[1]) assignEdge(outEdges[1], vap, T_out, P_out, 'G');
+          if (fallbackProcOut[1]) assignEdge(fallbackProcOut[1], vap, T_out, P_out, 'G');
         }
-        if ((vapEdges.length > 0 || liqEdges.length > 0) ? vapEdges.length === 0 : !outEdges[1]) {
+        if ((vapEdges.length > 0 || liqEdges.length > 0) ? vapEdges.length === 0 : outEdges.filter(e => e.sourcePort !== 'util_out').length < 2) {
           pushUnrouted('vapor', '증발 수증기 (G↑ 미연결 — 대기/응축 배출)', vap, T_out, P_out, 'G');
         }
         if ((vapEdges.length > 0 || liqEdges.length > 0) && liqEdges.length === 0) {
           pushUnrouted('liquid', '농축액 출구 (L↓ 미연결)', liq, T_out + bpr * 0.2, P_out, 'L');
         }
-        // 가열 열량 = 엔탈피 수지 (증발잠열 + NaOH 농축열(적분 용해열 차) + 급액 현열 자동 포함)
-        heatDutyKcalH = derivedDutyKcalH();
+
+        // 가열실(Steam Chest) 스팀/증기 응축 처리 (util_in → util_out)
+        const utilMassIn = sumFlows(utilIn.flows);
+        let steamCondTempC = Math.max(T_out + 6, utilIn.T - 4);
+        if (utilInEdges.length > 0 && utilMassIn > 0) {
+          const P_cond = Math.max(-0.95, utilIn.P - 0.05);
+          // 포화 수증기 응축수 출구 온도 (가열측 압력 기준 포화온도 근사 또는 입구온도 - 3°C)
+          const P_abs_bar = Math.max(0.08, (utilIn.P + 1.03323) * 0.980665);
+          const T_sat_est = 100.0 * Math.pow(P_abs_bar / 1.01325, 0.242);
+          steamCondTempC = Math.min(utilIn.T, Math.max(T_out + 5, T_sat_est - 2.0));
+          if (utilOutEdges.length > 0) {
+            utilOutEdges.forEach(e => {
+              const sf = emptyFlows();
+              SIM_COMPS.forEach(k => { sf[k] = utilIn.flows[k] / utilOutEdges.length; });
+              assignEdge(e, sf, steamCondTempC, P_cond, 'L');
+            });
+          } else {
+            pushUnrouted('util_out', '가열 스팀 응축수 (미연결)', utilIn.flows, steamCondTempC, P_cond, 'L');
+          }
+        }
+
+        // 공정측 필요 가열 열량 (증발잠열 + NaOH 농축열 + 급액 현열)
+        const hProcIn = streamEnthalpyKcalH({}, procFlows, utilInEdges.length > 0 ? procIn.T : T_in, P_out);
+        const hProcOut =
+          streamEnthalpyKcalH(vap, {}, T_out, P_out) +
+          streamEnthalpyKcalH({}, liq, T_out + bpr * 0.2, P_out);
+        heatDutyKcalH = utilInEdges.length > 0 ? (hProcOut - hProcIn) : derivedDutyKcalH();
         dutyFromEnthalpy = true;
 
         extraMetrics = {
           ...(isRigorous ? { '계산 모드': `🔬 정밀 (Dühring 비점오름 +${bpr.toFixed(1)}°C 반영)` } : {}),
           '증발 수증기량 (G↑)': `${evapWater.toFixed(1)} kg/h`,
           '농축액 배출량 (L↓)': `${sumFlows(liq).toFixed(1)} kg/h (${detectKeyConc(liq, 'L')})`,
+          ...(utilInEdges.length > 0 && utilMassIn > 0
+            ? {
+                '가열 스팀/증기 유입': `${utilMassIn.toFixed(1)} kg/h (${utilIn.T.toFixed(1)}°C)`,
+                '스팀 응축수 배출': `${utilMassIn.toFixed(1)} kg/h (${steamCondTempC.toFixed(1)}°C)`,
+              }
+            : {}),
           '필요 가열열량': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
         };
-        note = `${isRigorous ? '[정밀] ' : ''}증발수분 ${evapWater.toFixed(1)} kg/h | 농축액 ${detectKeyConc(liq, 'L')}`;
+        note = `${isRigorous ? '[정밀] ' : ''}증발수분 ${evapWater.toFixed(1)} kg/h | 농축액 ${detectKeyConc(liq, 'L')}${
+          utilInEdges.length > 0 && utilMassIn > 0 ? ` | 가열증기 ${utilMassIn.toFixed(0)} kg/h 응축` : ''
+        }`;
       }
 
       // ── 9) 배관 믹서 & 분기기 & 화학반응기 ─────────────────────────────────

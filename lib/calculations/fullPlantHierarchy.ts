@@ -1218,14 +1218,14 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
     ],
   },
 
-  // ── [300 SEC] 가성소다 3중 효용 강하막식 증발농축 (E-340 3효 → E-330 2효 → E-320 1효) ──
+  // ── [300 SEC] 가성소다 3중 효용 강하막식 증발농축 (역류 급액 3효→2효→1효 · 순류 증기열원 1효→2효→3효 · 1효 스팀응축수 예열회수) ──
   {
     id: 'sub_300_evap',
     sectionCode: '300 SEC',
     shortTabLabel: '🔥 300 3효 증발농축',
-    title: '[300 세부공정] 가성소다 3중 효용 강하막 증발농축 (E-340 3효[36.4%] → E-330 2효[42.1%] → E-320 1효[50.0%])',
+    title: '[300 세부공정] 가성소다 역류식 3중 효용 증발농축 (1효증기→2효스팀→3효스팀 · 1효응축수 예열회수)',
     subtitle:
-      '역류 급액(3효→2효→1효)과 열회수 예열기(E-342·E-332), 제품 냉각기(E-352), 진공 표면응축기(E-350)를 통해 32.3% NaOH를 50.0 wt%로 고효율 농축합니다.',
+      '액상 역류(3효[36.4%]→2효[42.1%]→1효[50.0%])와 증기 순류 캐스케이드(13K 생스팀→1효→2효→3효→표면응축기), 1효 고온 스팀 콘덴세이트의 급액 예열기(E-332→E-342) 열회수를 반영한 표준 3중효용 공정입니다.',
     parentMasterNodeIds: ['fp_ev300'],
     nodes: [
       {
@@ -1233,7 +1233,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         tag: 'BOUND-32%NaOH',
         name: '32.3% 가성소다 급액 (상위연동)',
         unitType: 'feed',
-        position: { x: 30, y: 215 },
+        position: { x: 20, y: 240 },
         params: {
           boundaryFromMasterNodeId: 'fp_ev300',
           boundaryPortRole: 'in',
@@ -1243,11 +1243,23 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         },
       },
       {
+        id: 'ev_steam_in',
+        tag: 'FEED-13K-STM',
+        name: '13K 고압 생스팀 (1효 열원)',
+        unitType: 'feed',
+        position: { x: 1120, y: 25 },
+        params: {
+          feedTempC: 195.0,
+          feedPressKgcm2g: 13.0,
+          feedFlowsKgH: zeroFlows({ H2O: 11200 }),
+        },
+      },
+      {
         id: 'ev_e340',
         tag: 'E-340 (3효)',
         name: '3효 강하막 증발관 (-0.94 kG)',
         unitType: 'evaporator',
-        position: { x: 255, y: 205 },
+        position: { x: 250, y: 230 },
         params: {
           calcMode: 'rigorous',
           evapTargetConcWt: 36.4,
@@ -1258,9 +1270,9 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       {
         id: 'ev_e342',
         tag: 'E-342',
-        name: '2효 급액 열회수 예열기',
+        name: '2효 급액 예열기 (1효 응축수 열회수)',
         unitType: 'hex',
-        position: { x: 475, y: 245 },
+        position: { x: 480, y: 310 },
         params: {
           calcMode: 'rigorous',
           refrigerantPreset: 'steam_lp',
@@ -1273,7 +1285,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         tag: 'E-330 (2효)',
         name: '2효 강하막 증발관 (-0.68 kG)',
         unitType: 'evaporator',
-        position: { x: 690, y: 205 },
+        position: { x: 700, y: 230 },
         params: {
           calcMode: 'rigorous',
           evapTargetConcWt: 42.1,
@@ -1284,9 +1296,9 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       {
         id: 'ev_e332',
         tag: 'E-332',
-        name: '1효 급액 열회수 예열기',
+        name: '1효 급액 예열기 (1효 고온응축수 열회수)',
         unitType: 'hex',
-        position: { x: 910, y: 245 },
+        position: { x: 930, y: 310 },
         params: {
           calcMode: 'rigorous',
           refrigerantPreset: 'steam_lp',
@@ -1297,9 +1309,9 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       {
         id: 'ev_e320',
         tag: 'E-320 (1효)',
-        name: '1효 고온 강하막 증발관 (13K 스팀)',
+        name: '1효 고온 강하막 증발관 (13K 생스팀)',
         unitType: 'evaporator',
-        position: { x: 1125, y: 205 },
+        position: { x: 1150, y: 230 },
         params: {
           calcMode: 'rigorous',
           evapTargetConcWt: 50.0,
@@ -1312,7 +1324,7 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         tag: 'E-352',
         name: '50% NaOH 최종 제품냉각기',
         unitType: 'hex',
-        position: { x: 1365, y: 265 },
+        position: { x: 1410, y: 245 },
         params: {
           calcMode: 'rigorous',
           refrigerantPreset: 'cw',
@@ -1325,23 +1337,15 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         tag: 'OUT-50%NaOH',
         name: '50.0 wt% 고순도 가성소다 제품',
         unitType: 'product',
-        position: { x: 1590, y: 265 },
+        position: { x: 1640, y: 245 },
         params: {},
-      },
-      {
-        id: 'ev_m_vap',
-        tag: 'A-350',
-        name: '1·2·3효 증발수증기 포집헤더',
-        unitType: 'mixer',
-        position: { x: 1125, y: 35 },
-        params: { multiplier: 1 },
       },
       {
         id: 'ev_e350',
         tag: 'E-350',
-        name: '진공 표면응축기 (Surface Cond.)',
+        name: '진공 표면응축기 (3효 증기 응축)',
         unitType: 'hex',
-        position: { x: 1365, y: 35 },
+        position: { x: 250, y: 35 },
         params: {
           calcMode: 'rigorous',
           refrigerantPreset: 'cw',
@@ -1350,15 +1354,32 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
         },
       },
       {
+        id: 'ev_m_vap',
+        tag: 'A-350',
+        name: '2·3효·표면응축수 회수헤더',
+        unitType: 'mixer',
+        position: { x: 520, y: 45 },
+        params: { multiplier: 1 },
+      },
+      {
         id: 'ev_out_cond',
         tag: 'OUT-CONDENSATE',
         name: '회수 공정응축수 (→ 순수조)',
         unitType: 'product',
-        position: { x: 1590, y: 35 },
+        position: { x: 760, y: 45 },
+        params: {},
+      },
+      {
+        id: 'ev_out_stm_cond',
+        tag: 'OUT-STM-COND',
+        name: '1효 생스팀 응축수 회수 (→ 보일러)',
+        unitType: 'product',
+        position: { x: 250, y: 465 },
         params: {},
       },
     ],
     edges: [
+      // 액상 역류 농축 라인 (3효 → E-342 → 2효 → E-332 → 1효 → E-352 → 50% NaOH)
       { id: 'eve1', streamNo: 'EV-01', source: 'ev_in', target: 'ev_e340', sourcePort: 'out', targetPort: 'in' },
       { id: 'eve2', streamNo: 'EV-02', source: 'ev_e340', target: 'ev_e342', sourcePort: 'liquid', targetPort: 'in' },
       { id: 'eve3', streamNo: 'EV-03', source: 'ev_e342', target: 'ev_e330', sourcePort: 'out', targetPort: 'in' },
@@ -1366,11 +1387,20 @@ export const SUB_FLOWSHEET_TEMPLATES: SubSheetTemplate[] = [
       { id: 'eve5', streamNo: 'EV-05', source: 'ev_e332', target: 'ev_e320', sourcePort: 'out', targetPort: 'in' },
       { id: 'eve6', streamNo: 'EV-06', source: 'ev_e320', target: 'ev_e352', sourcePort: 'liquid', targetPort: 'in' },
       { id: 'eve7', streamNo: 'EV-07', source: 'ev_e352', target: 'ev_out_50', sourcePort: 'out', targetPort: 'in' },
-      { id: 'eve8', streamNo: 'EV-08', source: 'ev_e340', target: 'ev_m_vap', sourcePort: 'vapor', targetPort: 'in' },
-      { id: 'eve9', streamNo: 'EV-09', source: 'ev_e330', target: 'ev_m_vap', sourcePort: 'vapor', targetPort: 'in' },
-      { id: 'eve10', streamNo: 'EV-10', source: 'ev_e320', target: 'ev_m_vap', sourcePort: 'vapor', targetPort: 'in' },
-      { id: 'eve11', streamNo: 'EV-11', source: 'ev_m_vap', target: 'ev_e350', sourcePort: 'out', targetPort: 'in' },
-      { id: 'eve12', streamNo: 'EV-12', source: 'ev_e350', target: 'ev_out_cond', sourcePort: 'out', targetPort: 'in' },
+      // 증기 순류 열원 캐스케이드 (13K 생스팀 → 1효, 1효 증기 → 2효 스팀, 2효 증기 → 3효 스팀, 3효 증기 → E-350 표면응축기)
+      { id: 'eve8', streamNo: 'STM-01', source: 'ev_steam_in', target: 'ev_e320', sourcePort: 'out', targetPort: 'util_in' },
+      { id: 'eve9', streamNo: 'VAP-1→2', source: 'ev_e320', target: 'ev_e330', sourcePort: 'vapor', targetPort: 'util_in' },
+      { id: 'eve10', streamNo: 'VAP-2→3', source: 'ev_e330', target: 'ev_e340', sourcePort: 'vapor', targetPort: 'util_in' },
+      { id: 'eve11', streamNo: 'VAP-3→SC', source: 'ev_e340', target: 'ev_e350', sourcePort: 'vapor', targetPort: 'in' },
+      // 1효 고온 생스팀 콘덴세이트 → E-332(1효 급액 예열) → E-342(2효 급액 예열) → 보일러 응축수 회수
+      { id: 'eve12', streamNo: 'COND-1H', source: 'ev_e320', target: 'ev_e332', sourcePort: 'util_out', targetPort: 'util_in' },
+      { id: 'eve13', streamNo: 'COND-1M', source: 'ev_e332', target: 'ev_e342', sourcePort: 'util_out', targetPort: 'util_in' },
+      { id: 'eve14', streamNo: 'COND-BLR', source: 'ev_e342', target: 'ev_out_stm_cond', sourcePort: 'util_out', targetPort: 'in' },
+      // 2효·3효 가열증기 응축수 + E-350 표면응축수 → A-350 회수헤더 → 순수조
+      { id: 'eve15', streamNo: 'COND-E2', source: 'ev_e330', target: 'ev_m_vap', sourcePort: 'util_out', targetPort: 'in' },
+      { id: 'eve16', streamNo: 'COND-E3', source: 'ev_e340', target: 'ev_m_vap', sourcePort: 'util_out', targetPort: 'in' },
+      { id: 'eve17', streamNo: 'COND-SC', source: 'ev_e350', target: 'ev_m_vap', sourcePort: 'out', targetPort: 'in' },
+      { id: 'eve18', streamNo: 'COND-OUT', source: 'ev_m_vap', target: 'ev_out_cond', sourcePort: 'out', targetPort: 'in' },
     ],
   },
 

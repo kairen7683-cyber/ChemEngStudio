@@ -995,21 +995,29 @@ function FlowUnitNode({ data, selected }: NodeProps<FlowCanvasNodeData>) {
         />
       ) : null}
 
-      {/* ── 열교환기·액화기·포화조·압축기·증류탑 상/하단 보조 포트 (선택 연결) ── */}
-      {isHexOrLiq && (
+      {/* ── 열교환기·액화기·증발관·포화조·압축기·증류탑 상/하단 보조 포트 (선택 연결) ── */}
+      {(isHexOrLiq || unitType === 'evaporator') && (
         <>
           <Handle
             type="source"
             position={Position.Top}
             id="util_in"
-            title="냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)"
+            title={
+              unitType === 'evaporator'
+                ? '가열 스팀/증기 유입 (Steam Chest)'
+                : '냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)'
+            }
             style={{ ...portStyle('#0284C7'), top: -7, left: '50%' }}
           />
           <Handle
             type="source"
             position={Position.Bottom}
             id="util_out"
-            title="냉매/열매 배출 (선택사항)"
+            title={
+              unitType === 'evaporator'
+                ? '스팀 응축수 배출 (Condensate Out)'
+                : '냉매/열매 배출 (선택사항)'
+            }
             style={{ ...portStyle('#DC2626'), bottom: -7, left: '50%' }}
           />
         </>
