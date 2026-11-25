@@ -1779,16 +1779,29 @@ export default function DistillationWorkbenchModal({
         eqPts.push({ x: px(1), y: py(1) });
         const eqPath = buildMonotoneSvgPath(eqPts);
 
-        // McCabe-Thiele stage-by-stage staircase: (x_j, y_j) -> (x_{j+1}, y_j) -> (x_{j+1}, y_{j+1})
+        // McCabe-Thiele stage-by-stage staircase (between equilibrium curve and operating line, ABOVE y=x):
+        // Stage j equilibrium (x_j, y_j) -> vertical down to operating line (x_j, y_{j+1}) -> horizontal left to (x_{j+1}, y_{j+1})
         const stairPts: string[] = [];
+        const opLinePts: string[] = [];
         if (stageVle.length >= 2) {
-          stairPts.push(`${px(stageVle[0].xRel).toFixed(1)},${py(stageVle[0].yRel).toFixed(1)}`);
+          const first = stageVle[0];
+          const last = stageVle[stageVle.length - 1];
+          // Start on y=x at distillate (x_D ≈ y_1), step left to stage 1 equilibrium (x_1, y_1)
+          stairPts.push(`${px(first.yRel).toFixed(1)},${py(first.yRel).toFixed(1)}`);
+          stairPts.push(`${px(first.xRel).toFixed(1)},${py(first.yRel).toFixed(1)}`);
+          opLinePts.push(`${px(first.yRel).toFixed(1)},${py(first.yRel).toFixed(1)}`);
           for (let j = 0; j < stageVle.length - 1; j++) {
             const cur = stageVle[j];
             const nxt = stageVle[j + 1];
-            stairPts.push(`${px(nxt.xRel).toFixed(1)},${py(cur.yRel).toFixed(1)}`);
+            // Vertical drop to operating line (x_j, y_{j+1})
+            stairPts.push(`${px(cur.xRel).toFixed(1)},${py(nxt.yRel).toFixed(1)}`);
+            opLinePts.push(`${px(cur.xRel).toFixed(1)},${py(nxt.yRel).toFixed(1)}`);
+            // Horizontal step left to next stage equilibrium (x_{j+1}, y_{j+1})
             stairPts.push(`${px(nxt.xRel).toFixed(1)},${py(nxt.yRel).toFixed(1)}`);
           }
+          // Final vertical drop to bottoms on y=x (x_B, x_B)
+          stairPts.push(`${px(last.xRel).toFixed(1)},${py(last.xRel).toFixed(1)}`);
+          opLinePts.push(`${px(last.xRel).toFixed(1)},${py(last.xRel).toFixed(1)}`);
         }
 
         const feedPt = stageVle.find((p) => p.stage === primaryFeedStage) ?? stageVle[Math.floor(stageVle.length / 2)];
@@ -1894,6 +1907,17 @@ export default function DistillationWorkbenchModal({
                 strokeWidth={1.2}
                 strokeDasharray="4 3"
               />
+
+              {/* Operating line (connecting stage-to-stage (x_j, y_{j+1}) pairs) */}
+              {opLinePts.length > 0 && (
+                <polyline
+                  fill="none"
+                  stroke="#64748B"
+                  strokeWidth={1.25}
+                  strokeDasharray="3 2"
+                  points={opLinePts.join(' ')}
+                />
+              )}
 
               {/* McCabe-Thiele staircase */}
               {stairPts.length > 0 && (
