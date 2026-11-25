@@ -23,6 +23,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
 import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
+import PidCrossingEdge from '@/components/flowsheet/PidCrossingEdge';
 
 import {
   SIM_COMPS,
@@ -1289,6 +1290,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
 }
 
 const NODE_TYPES = { flowUnit: FlowUnitNode };
+const EDGE_TYPES = { smoothstep: PidCrossingEdge };
 
 // ── 프리셋 시나리오 ──────────────────────────────────────────
 interface PresetScenario {
@@ -5219,6 +5221,14 @@ export function FlowsheetWorkspace({
   }, [flowEdges, streamResultMap, selectedEdgeId, globalUnits.massFlow, globalUnits.temp, globalUnits.pressG]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
+    const newlySelected = changes.find(
+      (c): c is { id: string; type: 'select'; selected: boolean } =>
+        c.type === 'select' && c.selected
+    );
+    if (newlySelected) {
+      setSelectedNodeId(newlySelected.id);
+      setSelectedEdgeId(null);
+    }
     setRfNodes(nds => applyNodeChanges(changes, nds));
   }, []);
 
@@ -7465,6 +7475,7 @@ export function FlowsheetWorkspace({
                 nodes={displayNodes}
                 edges={displayEdges}
                 nodeTypes={NODE_TYPES}
+                edgeTypes={EDGE_TYPES}
                 connectionMode={ConnectionMode.Loose}
                 selectionKeyCode={['Control', 'Meta', 'Shift']}
                 multiSelectionKeyCode={['Control', 'Meta', 'Shift']}

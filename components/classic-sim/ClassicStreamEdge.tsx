@@ -47,6 +47,16 @@ export default function ClassicStreamEdge({
 
   return (
     <>
+      {/* P&ID 교차 배관 끊김 마스크 (교차 지점에서 아래쪽 배관이 깔끔하게 끊겨 보이도록 배경색 Halo) */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="#FFFFFF"
+        strokeWidth={11}
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+        style={{ pointerEvents: 'none' }}
+      />
       <BaseEdge
         id={id}
         path={edgePath}
