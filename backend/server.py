@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -23,6 +24,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -308,6 +310,39 @@ def init_db() -> str:
             missing_searches TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS custom_components (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comp_key TEXT UNIQUE NOT NULL,
+            name_ko TEXT NOT NULL,
+            name_en TEXT NOT NULL,
+            formula TEXT NOT NULL,
+            cas_no TEXT DEFAULT '',
+            smiles TEXT DEFAULT '',
+            mw REAL NOT NULL,
+            tb_c REAL NOT NULL,
+            tm_c REAL DEFAULT 0.0,
+            tc_c REAL NOT NULL,
+            pc_bar REAL NOT NULL,
+            omega REAL NOT NULL,
+            rho_l_25 REAL NOT NULL,
+            cp_liq_kj_kgk REAL NOT NULL,
+            cp_gas_kj_kgk REAL NOT NULL,
+            hvap_tb_kj_kg REAL NOT NULL,
+            antoine_a REAL NOT NULL,
+            antoine_b REAL NOT NULL,
+            antoine_c REAL NOT NULL,
+            family TEXT DEFAULT 'polar_solvent',
+            is_gas_std INTEGER DEFAULT 0,
+            source_summary TEXT DEFAULT '',
+            calibration_note TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_by_user_id INTEGER,
+            requested_by_username TEXT DEFAULT '',
+            admin_note TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
 
@@ -326,6 +361,9 @@ def init_db() -> str:
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_feedback_status_created ON feedback_items(status, created_at DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_custom_components_status_created ON custom_components(status, created_at DESC)"
     )
 
     defaults = {
@@ -1861,6 +1899,818 @@ def api_admin_get_interop_gaps(
 ):
     with get_db() as conn:
         return _aggregate_interop_gaps(conn)
+
+
+# ── Community Custom Component Request & Auto-Calibration ───────────────
+_ATOMIC_WEIGHTS: dict[str, float] = {
+    "H": 1.008,
+    "He": 4.0026,
+    "Li": 6.94,
+    "B": 10.81,
+    "C": 12.011,
+    "N": 14.007,
+    "O": 15.999,
+    "F": 18.998,
+    "Ne": 20.180,
+    "Na": 22.990,
+    "Mg": 24.305,
+    "Al": 26.982,
+    "Si": 28.085,
+    "P": 30.974,
+    "S": 32.06,
+    "Cl": 35.45,
+    "Ar": 39.948,
+    "K": 39.098,
+    "Ca": 40.078,
+    "Ti": 47.867,
+    "Cr": 51.996,
+    "Mn": 54.938,
+    "Fe": 55.845,
+    "Co": 58.933,
+    "Ni": 58.693,
+    "Cu": 63.546,
+    "Zn": 65.38,
+    "Br": 79.904,
+    "Kr": 83.798,
+    "Ag": 107.868,
+    "Sn": 118.710,
+    "I": 126.904,
+    "Xe": 131.293,
+    "Ba": 137.327,
+    "Pt": 195.084,
+    "Au": 196.967,
+    "Pb": 207.2,
+}
+
+_CAS_RN_RE = re.compile(r"\b(\d{2,7}-\d{2}-\d)\b")
+_FORMULA_TOKEN_RE = re.compile(r"([A-Z][a-z]?|\(|\)|\[|\]|\d+(?:\.\d+)?)")
+_REDUCED_PRESSURE_RE = re.compile(
+    r"(?:\bmm\s*hg\b|\btorr\b|\bpa\b|\bmbar\b|\bhpa\b|\bat\s+\d+(?:\.\d+)?\s*(?:mm|torr|kpa|pa))",
+    re.IGNORECASE,
+)
+
+
+def _clamp(val: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, val))
+
+
+def _parse_chemical_formula(formula: str) -> tuple[dict[str, float], Optional[float]]:
+    """Parse chemical formula (including parentheses & dot-hydrates) into element counts and MW."""
+    raw = (formula or "").strip()
+    if not raw:
+        return {}, None
+    # Strip trailing charge notation like +, -, 2+, 2-
+    cleaned = re.sub(r"[\s]+", "", raw)
+    if not cleaned:
+        return {}, None
+
+    total_counts: dict[str, float] = {}
+    parts = re.split(r"[·•.]", cleaned)
+    for part in parts:
+        if not part:
+            continue
+        m_lead = re.match(r"^(\d+(?:\.\d+)?)(.+)$", part)
+        part_mult = 1.0
+        body = part
+        if m_lead:
+            part_mult = float(m_lead.group(1))
+            body = m_lead.group(2)
+
+        tokens = _FORMULA_TOKEN_RE.findall(body)
+        if not tokens:
+            continue
+
+        stack: list[dict[str, float]] = [{}]
+        i = 0
+        valid_part = True
+        while i < len(tokens):
+            tok = tokens[i]
+            if tok in ("(", "["):
+                stack.append({})
+                i += 1
+            elif tok in (")", "]"):
+                if len(stack) <= 1:
+                    valid_part = False
+                    break
+                group = stack.pop()
+                mult = 1.0
+                if i + 1 < len(tokens) and re.match(r"^\d+(?:\.\d+)?$", tokens[i + 1]):
+                    mult = float(tokens[i + 1])
+                    i += 2
+                else:
+                    i += 1
+                for el, cnt in group.items():
+                    stack[-1][el] = stack[-1].get(el, 0.0) + cnt * mult
+            elif tok in _ATOMIC_WEIGHTS:
+                mult = 1.0
+                if i + 1 < len(tokens) and re.match(r"^\d+(?:\.\d+)?$", tokens[i + 1]):
+                    mult = float(tokens[i + 1])
+                    i += 2
+                else:
+                    i += 1
+                stack[-1][tok] = stack[-1].get(tok, 0.0) + mult
+            else:
+                # Unknown symbol or stray number
+                i += 1
+
+        if not valid_part:
+            continue
+        while len(stack) > 1:
+            top = stack.pop()
+            for el, cnt in top.items():
+                stack[-1][el] = stack[-1].get(el, 0.0) + cnt
+        for el, cnt in stack[0].items():
+            total_counts[el] = total_counts.get(el, 0.0) + cnt * part_mult
+
+    if not total_counts:
+        return {}, None
+
+    mw = sum(cnt * _ATOMIC_WEIGHTS[el] for el, cnt in total_counts.items() if el in _ATOMIC_WEIGHTS)
+    if mw <= 0.0:
+        return total_counts, None
+    return total_counts, round(mw, 4)
+
+
+def _extract_temp_c(text: str) -> Optional[float]:
+    """Extract a temperature in °C from a PubChem property string (°C, K, or °F)."""
+    if not text:
+        return None
+    # Prefer °C
+    m_c = re.search(r"(-?\d+(?:\.\d+)?)\s*(?:°\s*C|℃|deg\s*C|\bC\b)", text)
+    if m_c:
+        val = float(m_c.group(1))
+        if -270.0 <= val <= 1200.0:
+            return val
+    # Try Kelvin
+    m_k = re.search(r"(\d+(?:\.\d+)?)\s*K\b", text)
+    if m_k:
+        val = float(m_k.group(1)) - 273.15
+        if -270.0 <= val <= 1200.0:
+            return val
+    # Try °F
+    m_f = re.search(r"(-?\d+(?:\.\d+)?)\s*(?:°\s*F|℉|deg\s*F|\bF\b)", text)
+    if m_f:
+        val = (float(m_f.group(1)) - 32.0) * 5.0 / 9.0
+        if -270.0 <= val <= 1200.0:
+            return val
+    return None
+
+
+def _extract_density_kg_m3(text: str) -> Optional[float]:
+    """Extract liquid density in kg/m³ from a PubChem property string."""
+    if not text:
+        return None
+    m_gcm3 = re.search(
+        r"(\d+(?:\.\d+)?)\s*(?:g\s*/\s*(?:cm3|cm³|cu\s*cm|mL|ml|cc)|g·cm-3)",
+        text,
+        re.IGNORECASE,
+    )
+    if m_gcm3:
+        val = float(m_gcm3.group(1))
+        if 0.25 <= val <= 5.0:
+            return val * 1000.0
+    m_kgm3 = re.search(r"(\d+(?:\.\d+)?)\s*kg\s*/\s*(?:m3|m³)", text, re.IGNORECASE)
+    if m_kgm3:
+        val = float(m_kgm3.group(1))
+        if 250.0 <= val <= 5000.0:
+            return val
+    # Bare decimal density like "0.789 at 20 °C"
+    m_bare = re.match(r"^\s*(\d+\.\d+)\b", text)
+    if m_bare:
+        val = float(m_bare.group(1))
+        if 0.35 <= val <= 3.5:
+            return val * 1000.0
+    return None
+
+
+def _collect_pug_view_experimental(record_json: dict[str, Any]) -> dict[str, Any]:
+    """Parse PubChem PUG-View Experimental Properties JSON for Tb, Tm, density, and CAS RN."""
+    tb_atm: list[float] = []
+    tb_any: list[float] = []
+    tm_vals: list[float] = []
+    rho_vals: list[float] = []
+    cas_found: Optional[str] = None
+
+    def _extract_info_strings(info_obj: dict[str, Any]) -> list[str]:
+        out: list[str] = []
+        val = info_obj.get("Value")
+        if not isinstance(val, dict):
+            return out
+        for swm in val.get("StringWithMarkup") or []:
+            if isinstance(swm, dict) and isinstance(swm.get("String"), str):
+                out.append(swm["String"])
+        nums = val.get("Number")
+        unit = val.get("Unit") or ""
+        if isinstance(nums, list) and nums:
+            for n in nums:
+                if isinstance(n, (int, float)):
+                    out.append(f"{n} {unit}".strip())
+        return out
+
+    def _walk(sections: list[Any], heading_path: str = "") -> None:
+        nonlocal cas_found
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            toc = str(sec.get("TOCHeading") or "").strip()
+            path = f"{heading_path}/{toc}".lower()
+            for info in sec.get("Information") or []:
+                if not isinstance(info, dict):
+                    continue
+                for s in _extract_info_strings(info):
+                    if not cas_found:
+                        m_cas = _CAS_RN_RE.search(s)
+                        if m_cas:
+                            cas_found = m_cas.group(1)
+                    if "boiling point" in path:
+                        t_c = _extract_temp_c(s)
+                        if t_c is not None:
+                            if not _REDUCED_PRESSURE_RE.search(s) or "760" in s or "1 atm" in s.lower():
+                                tb_atm.append(t_c)
+                            else:
+                                tb_any.append(t_c)
+                    elif "melting point" in path:
+                        t_c = _extract_temp_c(s)
+                        if t_c is not None:
+                            tm_vals.append(t_c)
+                    elif "density" in path:
+                        rho = _extract_density_kg_m3(s)
+                        if rho is not None:
+                            rho_vals.append(rho)
+            sub = sec.get("Section")
+            if isinstance(sub, list):
+                _walk(sub, path)
+
+    rec = record_json.get("Record") if isinstance(record_json, dict) else None
+    if isinstance(rec, dict) and isinstance(rec.get("Section"), list):
+        _walk(rec["Section"])
+
+    return {
+        "tb_c": tb_atm[0] if tb_atm else (tb_any[0] if tb_any else None),
+        "tm_c": tm_vals[0] if tm_vals else None,
+        "rho_l_25": rho_vals[0] if rho_vals else None,
+        "cas_no": cas_found,
+    }
+
+
+def calibrate_antoine_bar_c(
+    tb_c: float, tc_c: float, pc_bar: float
+) -> tuple[float, float, float, float, float]:
+    """Fit exact 2-point Antoine parameters log10(P_bar) = A - B / (T_C + C)
+    anchored at (Tb_C, 1.01325 barA) and (Tc_C, Pc_bar).
+    Returns (A, B, C, P_calc_at_Tb_bar, rel_err_pct).
+    """
+    tb_k = tb_c + 273.15
+    tc_c_eff = max(tc_c, tb_c + 40.0)
+    pc_bar_eff = max(pc_bar, 2.0)
+
+    c_val = _clamp(273.15 - 0.19 * tb_k, 150.0, 265.0)
+    if tb_c + c_val <= 5.0:
+        c_val = 5.0 - tb_c
+
+    y1 = math.log10(1.01325)
+    y2 = math.log10(pc_bar_eff)
+    inv1 = 1.0 / (tb_c + c_val)
+    inv2 = 1.0 / (tc_c_eff + c_val)
+    b_val = (y2 - y1) / (inv1 - inv2)
+    a_val = y1 + b_val * inv1
+
+    p_calc_tb = 10.0 ** (a_val - b_val / (tb_c + c_val))
+    rel_err_pct = abs(p_calc_tb - 1.01325) / 1.01325 * 100.0
+    return (
+        round(a_val, 6),
+        round(b_val, 4),
+        round(c_val, 4),
+        p_calc_tb,
+        rel_err_pct,
+    )
+
+
+async def lookup_and_calibrate_component(
+    query: str,
+    name_ko: Optional[str] = None,
+    formula: Optional[str] = None,
+    cas_no: Optional[str] = None,
+    user_tb_c: Optional[float] = None,
+    user_rho_25: Optional[float] = None,
+) -> dict[str, Any]:
+    """Query PubChem (with graceful offline fallback) and calibrate engineering properties."""
+    clean_query = (query or "").strip()
+    clean_name_ko = (name_ko or "").strip()
+    clean_formula = (formula or "").strip()
+    clean_cas = (cas_no or "").strip()
+
+    pubchem_cid: Optional[int] = None
+    pubchem_formula = ""
+    pubchem_mw: Optional[float] = None
+    pubchem_smiles = ""
+    pubchem_iupac = ""
+    pubchem_exp: dict[str, Any] = {}
+    sources: list[str] = []
+
+    search_candidates: list[str] = []
+    for cand in (clean_cas, clean_query, clean_formula):
+        if cand and cand not in search_candidates:
+            search_candidates.append(cand)
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            for cand in search_candidates:
+                url = (
+                    f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/"
+                    f"{quote(cand, safe='')}/property/"
+                    f"MolecularFormula,MolecularWeight,CanonicalSMILES,IUPACName/JSON"
+                )
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        props_list = (data.get("PropertyTable") or {}).get("Properties") or []
+                        if props_list:
+                            p0 = props_list[0]
+                            pubchem_cid = int(p0["CID"]) if p0.get("CID") is not None else None
+                            pubchem_formula = str(p0.get("MolecularFormula") or "").strip()
+                            if p0.get("MolecularWeight") is not None:
+                                try:
+                                    pubchem_mw = float(p0["MolecularWeight"])
+                                except (TypeError, ValueError):
+                                    pubchem_mw = None
+                            pubchem_smiles = str(
+                                p0.get("CanonicalSMILES")
+                                or p0.get("ConnectivitySMILES")
+                                or p0.get("SMILES")
+                                or ""
+                            ).strip()
+                            pubchem_iupac = str(p0.get("IUPACName") or "").strip()
+                            sources.append(f"PubChem CID {pubchem_cid}" if pubchem_cid else "PubChem PUG")
+                            break
+                except Exception:
+                    continue
+
+            if pubchem_cid is not None:
+                exp_url = (
+                    f"https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/"
+                    f"{pubchem_cid}/JSON?heading=Experimental+Properties"
+                )
+                try:
+                    exp_resp = await client.get(exp_url, timeout=6.0)
+                    if exp_resp.status_code == 200:
+                        pubchem_exp = _collect_pug_view_experimental(exp_resp.json())
+                        if any(pubchem_exp.get(k) is not None for k in ("tb_c", "tm_c", "rho_l_25")):
+                            sources.append("PubChem Experimental")
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    final_formula = pubchem_formula or clean_formula or clean_query
+    el_counts, parsed_mw = _parse_chemical_formula(final_formula)
+    if not el_counts and clean_formula and clean_formula != final_formula:
+        el_counts, parsed_mw = _parse_chemical_formula(clean_formula)
+
+    # 1. Molecular Weight
+    if pubchem_mw is not None and pubchem_mw > 0:
+        mw = round(pubchem_mw, 4)
+    elif parsed_mw is not None and parsed_mw > 0:
+        mw = round(parsed_mw, 4)
+        sources.append("Formula MW")
+    else:
+        mw = 100.0
+        sources.append("Default MW(100)")
+    mw = max(2.0, mw)
+
+    # 2. Normal Boiling Point (Tb)
+    tb_source = "MW correlation"
+    if user_tb_c is not None:
+        tb_c = float(user_tb_c)
+        tb_source = "User Tb"
+    elif pubchem_exp.get("tb_c") is not None:
+        tb_c = float(pubchem_exp["tb_c"])
+        tb_source = "PubChem Tb"
+    else:
+        tb_k_est = 198.0 + 18.5 * (mw ** 0.52)
+        tb_c = _clamp(tb_k_est - 273.15, -160.0, 480.0)
+        tb_source = "MW correlation"
+    tb_c = round(_clamp(tb_c, -250.0, 900.0), 2)
+    tb_k = tb_c + 273.15
+
+    # 3. Melting Point (Tm)
+    if pubchem_exp.get("tm_c") is not None:
+        tm_c = round(float(pubchem_exp["tm_c"]), 2)
+    else:
+        tm_c = round(tb_c - 95.0, 2)
+
+    # 4. Polarity & Family classification
+    n_o = el_counts.get("O", 0.0)
+    n_n = el_counts.get("N", 0.0)
+    n_f = el_counts.get("F", 0.0)
+    n_cl = el_counts.get("Cl", 0.0)
+    n_hal = n_f + n_cl + el_counts.get("Br", 0.0) + el_counts.get("I", 0.0)
+    is_polar = (n_o + n_n + n_f) > 0.0
+    is_gas_std = 1 if tb_c < 20.0 else 0
+
+    if is_gas_std:
+        family = "light_gas"
+    elif el_counts and set(el_counts.keys()).issubset({"C", "H"}) and el_counts.get("C", 0.0) > 0:
+        family = "hydrocarbon"
+    elif n_hal > 0:
+        family = "halogenated"
+    else:
+        family = "polar_solvent"
+
+    # 5. Critical Temperature (Tc) via Guldberg/polarity ratio
+    trb = 0.655 if is_polar else 0.675
+    tc_k = max(tb_k / trb, tb_k + 40.0)
+    tc_c = round(tc_k - 273.15, 2)
+    trb_eff = _clamp(tb_k / tc_k, 0.35, 0.90)
+
+    # 6. Critical Pressure (Pc) via Lydersen/MW correlation
+    pc_bar = round(_clamp(12.0 + 3800.0 / (mw + 45.0), 15.0, 95.0), 2)
+
+    # 7. Acentric factor (omega) via Edmister approximation
+    omega_raw = (3.0 / 7.0) * (trb_eff / (1.0 - trb_eff)) * math.log10(pc_bar / 1.01325) - 1.0
+    omega = round(_clamp(omega_raw, 0.01, 0.95), 4)
+
+    # 8. Heat of vaporization at Tb via Riedel equation
+    dhv_mol = (
+        1.093
+        * 8.31446e-3
+        * tc_k
+        * (math.log(pc_bar / 1.01325) - 1.013)
+        / max(0.08, 0.930 - trb_eff)
+    )
+    hvap_tb_kj_kg = round(_clamp(dhv_mol * 1000.0 / mw, 80.0, 2600.0), 2)
+
+    # 9. Liquid density at 25 °C
+    rho_source = "Rackett-like est."
+    if user_rho_25 is not None and user_rho_25 > 0:
+        rho_l_25 = round(float(user_rho_25), 2)
+        rho_source = "User rho25"
+    elif pubchem_exp.get("rho_l_25") is not None:
+        rho_l_25 = round(float(pubchem_exp["rho_l_25"]), 2)
+        rho_source = "PubChem rho"
+    else:
+        total_heavy = sum(v for k, v in el_counts.items() if k != "H")
+        polar_hal = n_o + n_n + n_f + n_cl
+        polar_ratio = (polar_hal / total_heavy) if total_heavy > 0 else 0.0
+        rho_l_25 = round(_clamp(650.0 + 220.0 * polar_ratio + 1.1 * mw, 520.0, 2200.0), 2)
+
+    # 10. Liquid & Gas heat capacities (kJ/kg·K)
+    cp_liq_kj_kgk = round(_clamp(2.35 - 0.0035 * mw + (0.25 if is_polar else 0.0), 1.4, 2.6), 3)
+    cp_gas_kj_kgk = round(_clamp(cp_liq_kj_kgk * 0.68, 0.9, 1.8), 3)
+
+    # 11. Exact 2-point Antoine Calibration (barA / °C)
+    ant_a, ant_b, ant_c, p_calc_tb, err_pct = calibrate_antoine_bar_c(tb_c, tc_c, pc_bar)
+
+    final_cas = clean_cas or str(pubchem_exp.get("cas_no") or "")
+    final_name_en = clean_query if re.search(r"[A-Za-z]", clean_query) else (pubchem_iupac or final_formula or clean_query)
+    if pubchem_iupac and not re.search(r"[A-Za-z]", clean_query):
+        final_name_en = pubchem_iupac
+    final_name_ko = clean_name_ko or clean_query
+
+    if not sources:
+        sources.append("Offline Engineering Estimation")
+    source_summary = f"{', '.join(sources)} | Tb: {tb_source}, rho25: {rho_source}"
+    calibration_note = (
+        f"Antoine(barA,°C) 2-pt fit [(Tb={tb_c:.2f}°C, 1.01325 barA), (Tc={tc_c:.2f}°C, {pc_bar:.2f} barA)] "
+        f"-> P_calc(Tb)={p_calc_tb:.5f} barA (err={err_pct:.4f}%)"
+    )
+
+    return {
+        "name_ko": final_name_ko,
+        "name_en": final_name_en,
+        "formula": final_formula or clean_query,
+        "cas_no": final_cas,
+        "smiles": pubchem_smiles,
+        "mw": mw,
+        "tb_c": tb_c,
+        "tm_c": tm_c,
+        "tc_c": tc_c,
+        "pc_bar": pc_bar,
+        "omega": omega,
+        "rho_l_25": rho_l_25,
+        "cp_liq_kj_kgk": cp_liq_kj_kgk,
+        "cp_gas_kj_kgk": cp_gas_kj_kgk,
+        "hvap_tb_kj_kg": hvap_tb_kj_kg,
+        "antoine_a": ant_a,
+        "antoine_b": ant_b,
+        "antoine_c": ant_c,
+        "family": family,
+        "is_gas_std": is_gas_std,
+        "source_summary": source_summary,
+        "calibration_note": calibration_note,
+    }
+
+
+def _generate_unique_comp_key(conn: sqlite3.Connection, query: str, formula: str) -> str:
+    raw_slug = re.sub(r"[^A-Za-z0-9]+", "", (query or "").upper())
+    if not raw_slug:
+        raw_slug = re.sub(r"[^A-Za-z0-9]+", "", (formula or "").upper())
+    if not raw_slug:
+        raw_slug = secrets.token_hex(4).upper()
+    base_slug = raw_slug[:16]
+    candidate = f"CUS_{base_slug}"[:20]
+
+    existing = {
+        r["comp_key"]
+        for r in conn.execute("SELECT comp_key FROM custom_components").fetchall()
+    }
+    if candidate not in existing:
+        return candidate
+
+    idx = 2
+    while True:
+        suffix = f"_{idx}"
+        trimmed = base_slug[: max(1, 20 - 4 - len(suffix))]
+        cand = f"CUS_{trimmed}{suffix}"
+        if cand not in existing:
+            return cand
+        idx += 1
+
+
+def serialize_custom_component(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "comp_key": row["comp_key"],
+        "name_ko": row["name_ko"],
+        "name_en": row["name_en"],
+        "formula": row["formula"],
+        "cas_no": row["cas_no"] or "",
+        "smiles": row["smiles"] or "",
+        "mw": row["mw"],
+        "tb_c": row["tb_c"],
+        "tm_c": row["tm_c"],
+        "tc_c": row["tc_c"],
+        "pc_bar": row["pc_bar"],
+        "omega": row["omega"],
+        "rho_l_25": row["rho_l_25"],
+        "cp_liq_kj_kgk": row["cp_liq_kj_kgk"],
+        "cp_gas_kj_kgk": row["cp_gas_kj_kgk"],
+        "hvap_tb_kj_kg": row["hvap_tb_kj_kg"],
+        "antoine_a": row["antoine_a"],
+        "antoine_b": row["antoine_b"],
+        "antoine_c": row["antoine_c"],
+        "family": row["family"] or "polar_solvent",
+        "is_gas_std": bool(row["is_gas_std"]),
+        "source_summary": row["source_summary"] or "",
+        "calibration_note": row["calibration_note"] or "",
+        "status": row["status"],
+        "requested_by_user_id": row["requested_by_user_id"],
+        "requested_by_username": row["requested_by_username"] or "",
+        "admin_note": row["admin_note"] or "",
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+class ComponentRequestPayload(BaseModel):
+    query: str = Field(min_length=1, max_length=120)
+    name_ko: Optional[str] = Field(default=None, max_length=120)
+    formula: Optional[str] = Field(default=None, max_length=80)
+    cas_no: Optional[str] = Field(default=None, max_length=40)
+    user_tb_c: Optional[float] = None
+    user_rho_25: Optional[float] = None
+    note: Optional[str] = Field(default=None, max_length=500)
+    auto_approve: bool = False
+
+
+class ComponentReviewPayload(BaseModel):
+    status: Literal["approved", "rejected", "pending"]
+    admin_note: Optional[str] = Field(default=None, max_length=500)
+    tb_c: Optional[float] = None
+    tc_c: Optional[float] = None
+    pc_bar: Optional[float] = None
+    omega: Optional[float] = None
+    rho_l_25: Optional[float] = None
+
+
+@app.get("/api/components/custom")
+def api_list_custom_components(
+    request: Request,
+    x_admin_master_key: Optional[str] = Header(default=None, alias="X-Admin-Master-Key"),
+):
+    is_master = bool(
+        x_admin_master_key and hmac.compare_digest(x_admin_master_key.strip(), ADMIN_MASTER_KEY)
+    )
+    with get_db() as conn:
+        user = resolve_session_user(request, conn)
+        if is_master or (user and user["role"] == "admin"):
+            rows = conn.execute(
+                """
+                SELECT * FROM custom_components
+                WHERE status IN ('approved', 'pending')
+                ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC
+                """
+            ).fetchall()
+        elif user:
+            rows = conn.execute(
+                """
+                SELECT * FROM custom_components
+                WHERE status = 'approved'
+                   OR (status = 'pending' AND requested_by_user_id = ?)
+                ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, created_at DESC
+                """,
+                (user["id"],),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT * FROM custom_components
+                WHERE status = 'approved'
+                ORDER BY created_at DESC
+                """
+            ).fetchall()
+
+    return {
+        "components": [serialize_custom_component(r) for r in rows],
+        "count": len(rows),
+    }
+
+
+@app.post("/api/components/request")
+async def api_request_custom_component(
+    payload: ComponentRequestPayload,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    calibrated = await lookup_and_calibrate_component(
+        query=payload.query,
+        name_ko=payload.name_ko,
+        formula=payload.formula,
+        cas_no=payload.cas_no,
+        user_tb_c=payload.user_tb_c,
+        user_rho_25=payload.user_rho_25,
+    )
+
+    user_note = (payload.note or "").strip()
+    source_summary = calibrated["source_summary"]
+    if user_note:
+        source_summary = f"{source_summary} | Note: {user_note}"
+
+    status = "approved" if (payload.auto_approve and user["role"] == "admin") else "pending"
+    now_iso = iso_now()
+
+    with get_db() as conn:
+        comp_key = _generate_unique_comp_key(conn, payload.query, calibrated["formula"])
+        cur = conn.execute(
+            """
+            INSERT INTO custom_components(
+                comp_key, name_ko, name_en, formula, cas_no, smiles,
+                mw, tb_c, tm_c, tc_c, pc_bar, omega, rho_l_25,
+                cp_liq_kj_kgk, cp_gas_kj_kgk, hvap_tb_kj_kg,
+                antoine_a, antoine_b, antoine_c,
+                family, is_gas_std, source_summary, calibration_note,
+                status, requested_by_user_id, requested_by_username,
+                admin_note, created_at, updated_at
+            )
+            VALUES (
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?,
+                '', ?, ?
+            )
+            """,
+            (
+                comp_key,
+                calibrated["name_ko"],
+                calibrated["name_en"],
+                calibrated["formula"],
+                calibrated["cas_no"],
+                calibrated["smiles"],
+                calibrated["mw"],
+                calibrated["tb_c"],
+                calibrated["tm_c"],
+                calibrated["tc_c"],
+                calibrated["pc_bar"],
+                calibrated["omega"],
+                calibrated["rho_l_25"],
+                calibrated["cp_liq_kj_kgk"],
+                calibrated["cp_gas_kj_kgk"],
+                calibrated["hvap_tb_kj_kg"],
+                calibrated["antoine_a"],
+                calibrated["antoine_b"],
+                calibrated["antoine_c"],
+                calibrated["family"],
+                calibrated["is_gas_std"],
+                source_summary,
+                calibrated["calibration_note"],
+                status,
+                user["id"],
+                user["username"],
+                now_iso,
+                now_iso,
+            ),
+        )
+        new_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM custom_components WHERE id = ?", (new_id,)).fetchone()
+
+    return {"ok": True, "component": serialize_custom_component(row)}
+
+
+@app.post("/api/components/{comp_id}/review")
+def api_review_custom_component(
+    comp_id: int,
+    payload: ComponentReviewPayload,
+    _admin: Optional[sqlite3.Row] = Depends(require_admin_or_master),
+):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM custom_components WHERE id = ?", (comp_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="해당 커스텀 성분을 찾을 수 없습니다.")
+
+        tb_c = float(payload.tb_c) if payload.tb_c is not None else float(row["tb_c"])
+        tc_c = float(payload.tc_c) if payload.tc_c is not None else float(row["tc_c"])
+        pc_bar = float(payload.pc_bar) if payload.pc_bar is not None else float(row["pc_bar"])
+        omega = float(payload.omega) if payload.omega is not None else float(row["omega"])
+        rho_l_25 = float(payload.rho_l_25) if payload.rho_l_25 is not None else float(row["rho_l_25"])
+        admin_note = (
+            payload.admin_note.strip()
+            if payload.admin_note is not None
+            else (row["admin_note"] or "")
+        )
+
+        ant_a = float(row["antoine_a"])
+        ant_b = float(row["antoine_b"])
+        ant_c = float(row["antoine_c"])
+        cal_note = row["calibration_note"] or ""
+        is_gas_std = int(row["is_gas_std"] or 0)
+
+        recalibrated = any(v is not None for v in (payload.tb_c, payload.tc_c, payload.pc_bar))
+        if recalibrated:
+            tc_c = round(max(tc_c, tb_c + 40.0), 2)
+            pc_bar = round(max(pc_bar, 2.0), 2)
+            ant_a, ant_b, ant_c, p_calc_tb, err_pct = calibrate_antoine_bar_c(tb_c, tc_c, pc_bar)
+            is_gas_std = 1 if tb_c < 20.0 else 0
+            cal_note = (
+                f"Admin re-calibrated Antoine(barA,°C) [(Tb={tb_c:.2f}°C, 1.01325 barA), "
+                f"(Tc={tc_c:.2f}°C, {pc_bar:.2f} barA)] -> P_calc(Tb)={p_calc_tb:.5f} barA (err={err_pct:.4f}%)"
+            )
+
+        conn.execute(
+            """
+            UPDATE custom_components
+            SET status = ?,
+                admin_note = ?,
+                tb_c = ?,
+                tc_c = ?,
+                pc_bar = ?,
+                omega = ?,
+                rho_l_25 = ?,
+                antoine_a = ?,
+                antoine_b = ?,
+                antoine_c = ?,
+                is_gas_std = ?,
+                calibration_note = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                payload.status,
+                admin_note,
+                tb_c,
+                tc_c,
+                pc_bar,
+                omega,
+                rho_l_25,
+                ant_a,
+                ant_b,
+                ant_c,
+                is_gas_std,
+                cal_note,
+                iso_now(),
+                comp_id,
+            ),
+        )
+        updated = conn.execute("SELECT * FROM custom_components WHERE id = ?", (comp_id,)).fetchone()
+
+    return {"ok": True, "component": serialize_custom_component(updated)}
+
+
+@app.delete("/api/components/{comp_id}")
+def api_delete_custom_component(
+    comp_id: int,
+    user: sqlite3.Row = Depends(require_active_user),
+):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM custom_components WHERE id = ?", (comp_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="해당 커스텀 성분을 찾을 수 없습니다.")
+
+        is_admin = user["role"] == "admin"
+        is_owner_pending = (
+            row["requested_by_user_id"] == user["id"] and row["status"] == "pending"
+        )
+        if not (is_admin or is_owner_pending):
+            raise HTTPException(
+                status_code=403,
+                detail="삭제 권한이 없습니다. (관리자 또는 본인 대기중 요청만 삭제 가능)",
+            )
+
+        conn.execute("DELETE FROM custom_components WHERE id = ?", (comp_id,))
+
+    return {"ok": True, "deleted_id": comp_id}
 
 
 # ── Protected Proprietary Data + Next.js Static Export Hosting ──────────

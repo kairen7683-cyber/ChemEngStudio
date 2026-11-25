@@ -29,6 +29,7 @@ import {
   getPlantRegistryItem,
   isPlantAllowed,
 } from '@/lib/plantRegistry';
+import { fetchAndRegisterCustomComponents } from '@/lib/calculations/dynamicComponents';
 
 export type SyncState = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -135,6 +136,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAuthenticated(false);
         setSyncStatus('idle');
       }
+      void fetchAndRegisterCustomComponents().catch(() => undefined);
     } catch (err) {
       setUser(null);
       setAuthenticated(false);

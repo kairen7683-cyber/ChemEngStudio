@@ -61,6 +61,10 @@ import {
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
 import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
 import {
+  ADD_COMPONENT_TO_SIM_EVENT,
+  CUSTOM_COMPONENTS_UPDATED_EVENT,
+} from '@/lib/calculations/dynamicComponents';
+import {
   SaveArchiveIcon,
   FolderOpenIcon,
   DownloadFileIcon,
@@ -585,6 +589,25 @@ export default function ClassicSimulatorPage() {
   const [activeComponents, setActiveComponents] = useState<SimCompKey[]>(() =>
     mergeFeedComponents(initialEx.nodes, CLASSIC_GENERIC_DEFAULT_COMPS)
   );
+  const [, setCustomCompVersion] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onCustomUpdated = () => setCustomCompVersion(v => v + 1);
+    const onAddComp = (e: Event) => {
+      const compKey = (e as CustomEvent<{ compKey?: string }>).detail?.compKey as
+        | SimCompKey
+        | undefined;
+      if (!compKey || !SIM_COMPS.includes(compKey)) return;
+      setActiveComponents(prev => (prev.includes(compKey) ? prev : [...prev, compKey]));
+    };
+    window.addEventListener(CUSTOM_COMPONENTS_UPDATED_EVENT, onCustomUpdated);
+    window.addEventListener(ADD_COMPONENT_TO_SIM_EVENT, onAddComp);
+    return () => {
+      window.removeEventListener(CUSTOM_COMPONENTS_UPDATED_EVENT, onCustomUpdated);
+      window.removeEventListener(ADD_COMPONENT_TO_SIM_EVENT, onAddComp);
+    };
+  }, []);
   const [thermoMethod, setThermoMethod] = useState<SimPropertyMethod>('AUTO');
   const [compModalOpen, setCompModalOpen] = useState(false);
 

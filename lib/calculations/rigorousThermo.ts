@@ -540,10 +540,21 @@ function zeroRigRecord(defaultVal = 0): Record<SimCompKey, number> {
 }
 
 /**
+ * 동적 등록(커뮤니티/사용자 요청) 성분의 Antoine 증기압 계수
+ * log10(P_bar) = A - B / (T_C + C)
+ */
+export const DYNAMIC_ANTOINE: Record<string, { A: number; B: number; C: number }> = {};
+
+/**
  * 성분별 순수 포화 증기압 P_sat (barA) — NIST / Perry Antoine 상관식 (순환 참조 방지 공유 헬퍼)
  */
 export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
   if (NON_VOLATILE_RIG_SET.has(comp)) return 1e-10;
+  const dynAnt = DYNAMIC_ANTOINE[comp as string];
+  if (dynAnt) {
+    const denom = Math.max(15.0, T_C + dynAnt.C);
+    return Math.max(1e-8, Math.min(5000, Math.pow(10, dynAnt.A - dynAnt.B / denom)));
+  }
   const T = Math.max(-110, Math.min(500, T_C));
   const Tc = Math.max(-185, Math.min(500, T_C));
   switch (comp) {

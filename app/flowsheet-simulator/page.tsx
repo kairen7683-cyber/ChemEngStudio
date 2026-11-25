@@ -77,6 +77,10 @@ import {
   recommendPropertyMethod,
 } from '@/lib/calculations/componentCatalog';
 import {
+  ADD_COMPONENT_TO_SIM_EVENT,
+  CUSTOM_COMPONENTS_UPDATED_EVENT,
+} from '@/lib/calculations/dynamicComponents';
+import {
   SheetRuntimeData,
   createInitialHierarchySheets,
   applyMasterBoundaryToSubDefs,
@@ -2229,6 +2233,25 @@ export function FlowsheetWorkspace({
   const [activeComponents, setActiveComponents] = useState<SimCompKey[]>(() =>
     mergeSheetFeedComponents(initialSheets.master.simDefs, getPlantDefaultComponents(workspaceMode))
   );
+  const [, setCustomCompVersion] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onCustomUpdated = () => setCustomCompVersion(v => v + 1);
+    const onAddComp = (e: Event) => {
+      const compKey = (e as CustomEvent<{ compKey?: string }>).detail?.compKey as
+        | SimCompKey
+        | undefined;
+      if (!compKey || !SIM_COMPS.includes(compKey)) return;
+      setActiveComponents(prev => (prev.includes(compKey) ? prev : [...prev, compKey]));
+    };
+    window.addEventListener(CUSTOM_COMPONENTS_UPDATED_EVENT, onCustomUpdated);
+    window.addEventListener(ADD_COMPONENT_TO_SIM_EVENT, onAddComp);
+    return () => {
+      window.removeEventListener(CUSTOM_COMPONENTS_UPDATED_EVENT, onCustomUpdated);
+      window.removeEventListener(ADD_COMPONENT_TO_SIM_EVENT, onAddComp);
+    };
+  }, []);
   const [propertyMethod, setPropertyMethod] = useState<SimPropertyMethod>(defaultModePropertyMethod);
   const [compSetupModalOpen, setCompSetupModalOpen] = useState<boolean>(false);
   const [optModalOpen, setOptModalOpen] = useState<boolean>(false);

@@ -59,6 +59,7 @@ import {
 import ValidationReportModal from '@/components/validation/ValidationReportModal';
 import FeedbackModal from '@/components/feedback/FeedbackModal';
 import ResolvedFeedbackToast from '@/components/feedback/ResolvedFeedbackToast';
+import ComponentRequestModal from '@/components/flowsheet/ComponentRequestModal';
 
 function formatSavedDate(raw: string): string {
   if (!raw) return '';
@@ -83,6 +84,7 @@ export default function Header() {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [compReqModalOpen, setCompReqModalOpen] = useState(false);
 
   const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
   const [toolsMenuPos, setToolsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 320 });
@@ -1507,6 +1509,32 @@ export default function Header() {
                   type="button"
                   onClick={() => {
                     setToolsMenuOpen(false);
+                    setCompReqModalOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 6,
+                    border: '1px solid transparent',
+                    background: '#F8FAFC',
+                    color: '#0F172A',
+                    fontSize: 11.3,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    textAlign: 'left',
+                  }}
+                >
+                  <FlaskCompIcon size={13} />
+                  <span>{lang === 'en' ? 'Request Component' : '물질등록 요청'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsMenuOpen(false);
                     setValidationModalOpen(true);
                   }}
                   style={{
@@ -1607,6 +1635,22 @@ export default function Header() {
             }}
           >
             {lang === 'en' ? 'Refresh' : '새로고침'}
+          </button>
+
+          {/* 물질등록 요청 (상단 바 상시 노출 — 데스크톱/모바일 공용) */}
+          <button
+            type="button"
+            onClick={() => {
+              setCaseMenuOpen(false);
+              setToolsMenuOpen(false);
+              setSettingsMenuOpen(false);
+              setCompReqModalOpen(true);
+            }}
+            title={lang === 'en' ? 'Request New Component / Community DB' : '물질등록 요청 · 커뮤니티 물성 DB'}
+            style={navBtnStyle}
+          >
+            <FlaskCompIcon size={12} />
+            <span>{lang === 'en' ? 'Request Component' : '물질등록 요청'}</span>
           </button>
 
           {/* 피드백 (상단 바 상시 노출) */}
@@ -1905,6 +1949,10 @@ export default function Header() {
       <FeedbackModal
         open={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
+      />
+      <ComponentRequestModal
+        open={compReqModalOpen}
+        onClose={() => setCompReqModalOpen(false)}
       />
       <ResolvedFeedbackToast />
     </header>
