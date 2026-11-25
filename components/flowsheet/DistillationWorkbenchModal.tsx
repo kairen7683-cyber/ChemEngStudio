@@ -81,7 +81,7 @@ interface DistillationWorkbenchModalProps {
 }
 
 type LeftTabId = 'specs' | 'tower' | 'pressure';
-type RightChartId = 'comp' | 'temp' | 'traffic';
+type RightChartId = 'comp' | 'temp' | 'traffic' | 'xy' | 'txy' | 'alpha';
 
 const DEFAULT_SPEC1: DistillDesignSpec = {
   enabled: false,
@@ -209,6 +209,64 @@ function fmtConc(wtPct: number): string {
   return wtPct >= 99.9 ? `${wtPct.toFixed(3)} wt%` : `${wtPct.toFixed(2)} wt%`;
 }
 
+function buildMonotoneSvgPath(points: Array<{ x: number; y: number }>): string {
+  if (points.length === 0) return '';
+  if (points.length === 1) return `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`;
+  // Deduplicate near-identical x values to keep strictly increasing x
+  const pts: Array<{ x: number; y: number }> = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    if (points[i].x - pts[pts.length - 1].x > 1e-4) {
+      pts.push(points[i]);
+    } else if (i === points.length - 1) {
+      pts[pts.length - 1] = points[i];
+    }
+  }
+  const n = pts.length;
+  if (n === 1) return `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+  if (n === 2) {
+    return `M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)} L ${pts[1].x.toFixed(1)},${pts[1].y.toFixed(1)}`;
+  }
+
+  const d: number[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    d.push((pts[i + 1].y - pts[i].y) / (pts[i + 1].x - pts[i].x));
+  }
+  const m: number[] = new Array(n).fill(0);
+  m[0] = d[0];
+  m[n - 1] = d[n - 2];
+  for (let i = 1; i < n - 1; i++) {
+    m[i] = d[i - 1] * d[i] <= 0 ? 0 : 0.5 * (d[i - 1] + d[i]);
+  }
+  for (let i = 0; i < n - 1; i++) {
+    if (Math.abs(d[i]) < 1e-12) {
+      m[i] = 0;
+      m[i + 1] = 0;
+    } else {
+      const a = m[i] / d[i];
+      const b = m[i + 1] / d[i];
+      const h2 = a * a + b * b;
+      if (h2 > 9) {
+        const tau = 3 / Math.sqrt(h2);
+        m[i] = tau * a * d[i];
+        m[i + 1] = tau * b * d[i];
+      }
+    }
+  }
+
+  const segs: string[] = [`M ${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`];
+  for (let i = 0; i < n - 1; i++) {
+    const h = pts[i + 1].x - pts[i].x;
+    const cp1x = pts[i].x + h / 3;
+    const cp1y = pts[i].y + (h / 3) * m[i];
+    const cp2x = pts[i + 1].x - h / 3;
+    const cp2y = pts[i + 1].y - (h / 3) * m[i + 1];
+    segs.push(
+      `C ${cp1x.toFixed(1)},${cp1y.toFixed(1)} ${cp2x.toFixed(1)},${cp2y.toFixed(1)} ${pts[i + 1].x.toFixed(1)},${pts[i + 1].y.toFixed(1)}`
+    );
+  }
+  return segs.join(' ');
+}
+
 export default function DistillationWorkbenchModal({
   open,
   onClose,
@@ -229,6 +287,8 @@ export default function DistillationWorkbenchModal({
   const [rightChart, setRightChart] = useState<RightChartId>('comp');
   const [logScalePpm, setLogScalePpm] = useState<boolean>(false);
   const [phaseBasis, setPhaseBasis] = useState<'liq' | 'vap'>('liq');
+  const [vleLkOverride, setVleLkOverride] = useState<SimCompKey | null>(null);
+  const [vleHkOverride, setVleHkOverride] = useState<SimCompKey | null>(null);
   const [isRunningFeedback, setIsRunningFeedback] = useState<boolean>(false);
   const [lastRunStamp, setLastRunStamp] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState<boolean>(() =>
@@ -311,6 +371,8 @@ export default function DistillationWorkbenchModal({
       setAiReport(null);
       setSelectedAiOptionId(null);
       setAiStepLabel('');
+      setVleLkOverride(null);
+      setVleHkOverride(null);
     }
   }, [open, initialView, unitTag]);
 
@@ -436,6 +498,43 @@ export default function DistillationWorkbenchModal({
     const others = SIM_COMPS.filter((k) => !feedSet.has(k)).sort(sortByTb);
     return { feedSortedComps: feedPresent, otherSortedComps: others };
   }, [feeds, activeComps]);
+
+  const vleCandidateComps = useMemo(() => {
+    const sortByTb = (a: SimCompKey, b: SimCompKey) =>
+      (COMP_CATALOG_META[a]?.tbC ?? 999) - (COMP_CATALOG_META[b]?.tbC ?? 999);
+    const majorSet = new Set<SimCompKey>();
+    if (totalFeedKgH > 1e-6) {
+      for (const k of SIM_COMPS) {
+        const flow = feeds.reduce((s, f) => s + (f.flowsKgH[k] || 0), 0);
+        if (flow / totalFeedKgH > 0.001) majorSet.add(k);
+      }
+    }
+    if (result?.stages?.length) {
+      for (const k of SIM_COMPS) {
+        for (const st of result.stages) {
+          if ((st.xMol[k] || 0) > 0.001 || (st.yMol[k] || 0) > 0.001) {
+            majorSet.add(k);
+            break;
+          }
+        }
+      }
+    }
+    const list = Array.from(majorSet).sort(sortByTb);
+    if (list.length >= 2) return list;
+    const fallback = Array.from(new Set([...feedSortedComps, ...activeComps])).sort(sortByTb);
+    return fallback.length >= 2 ? fallback : (['HCl', 'H2O'] as SimCompKey[]);
+  }, [feeds, totalFeedKgH, result, feedSortedComps, activeComps]);
+
+  const vleLk: SimCompKey =
+    vleLkOverride && vleCandidateComps.includes(vleLkOverride)
+      ? vleLkOverride
+      : vleCandidateComps[0] ?? activeComps[0] ?? 'HCl';
+  const vleHk: SimCompKey =
+    vleHkOverride && vleCandidateComps.includes(vleHkOverride) && vleHkOverride !== vleLk
+      ? vleHkOverride
+      : vleCandidateComps.find((c) => c !== vleLk) ??
+        activeComps.find((c) => c !== vleLk) ??
+        vleLk;
 
   const calcMode: DistillCalcMode = config.columnCalcMode ?? 'rigorous_mesh';
   const isFixedStages = calcMode !== 'design_stages';
@@ -1640,6 +1739,573 @@ export default function DistillationWorkbenchModal({
             {isEn ? '┅ Internal Vapor V (kg/h)' : '┅ 내부 기상유량 V (kg/h)'}
           </text>
         </svg>
+      );
+    }
+
+    if (rightChart === 'xy' || rightChart === 'txy' || rightChart === 'alpha') {
+      const lkName = COMP_META[vleLk]?.formula ?? vleLk;
+      const hkName = COMP_META[vleHk]?.formula ?? vleHk;
+      const stageVle = stages.map((s) => {
+        const xLk = Math.max(0, s.xMol[vleLk] ?? 0);
+        const xHk = Math.max(0, s.xMol[vleHk] ?? 0);
+        const yLk = Math.max(0, s.yMol[vleLk] ?? 0);
+        const yHk = Math.max(0, s.yMol[vleHk] ?? 0);
+        const xSum = xLk + xHk;
+        const ySum = yLk + yHk;
+        const xRel = xSum > 1e-12 ? Math.max(0, Math.min(1, xLk / xSum)) : 0;
+        const yRel = ySum > 1e-12 ? Math.max(0, Math.min(1, yLk / ySum)) : 0;
+        const kLk = yLk / Math.max(xLk, 1e-9);
+        const kHk = yHk / Math.max(xHk, 1e-9);
+        const alpha = kHk > 1e-9 ? kLk / kHk : 1;
+        const hasBoth = xLk > 1e-6 && xHk > 1e-6;
+        return { stage: s.stage, tempC: s.tempC, xRel, yRel, kLk, kHk, alpha, hasBoth };
+      });
+
+      if (rightChart === 'xy') {
+        const xyH = 306;
+        const sqSize = 236;
+        const sqX = 54;
+        const sqY = 24;
+        const px = (x: number) => sqX + Math.max(0, Math.min(1, x)) * sqSize;
+        const py = (y: number) => sqY + (1 - Math.max(0, Math.min(1, y))) * sqSize;
+
+        const sortedEq = [...stageVle].sort((a, b) => a.xRel - b.xRel);
+        const eqPts: Array<{ x: number; y: number }> = [{ x: px(0), y: py(0) }];
+        for (const p of sortedEq) {
+          if (p.xRel > 0.002 && p.xRel < 0.998) {
+            eqPts.push({ x: px(p.xRel), y: py(p.yRel) });
+          }
+        }
+        eqPts.push({ x: px(1), y: py(1) });
+        const eqPath = buildMonotoneSvgPath(eqPts);
+
+        // McCabe-Thiele stage-by-stage staircase: (x_j, y_j) -> (x_{j+1}, y_j) -> (x_{j+1}, y_{j+1})
+        const stairPts: string[] = [];
+        if (stageVle.length >= 2) {
+          stairPts.push(`${px(stageVle[0].xRel).toFixed(1)},${py(stageVle[0].yRel).toFixed(1)}`);
+          for (let j = 0; j < stageVle.length - 1; j++) {
+            const cur = stageVle[j];
+            const nxt = stageVle[j + 1];
+            stairPts.push(`${px(nxt.xRel).toFixed(1)},${py(cur.yRel).toFixed(1)}`);
+            stairPts.push(`${px(nxt.xRel).toFixed(1)},${py(nxt.yRel).toFixed(1)}`);
+          }
+        }
+
+        const feedPt = stageVle.find((p) => p.stage === primaryFeedStage) ?? stageVle[Math.floor(stageVle.length / 2)];
+        const pinchCandidates = stageVle.filter(
+          (p) => p.xRel > 0.05 && p.xRel < 0.95 && Math.abs(p.yRel - p.xRel) < 0.02
+        );
+        const pinchStage =
+          pinchCandidates.length > 0
+            ? pinchCandidates.reduce((best, cur) =>
+                Math.abs(cur.yRel - cur.xRel) < Math.abs(best.yRel - best.xRel) ? cur : best
+              )
+            : null;
+        const topVle = stageVle[0];
+        const botVle = stageVle[stageVle.length - 1];
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {pinchStage && (
+              <div
+                style={{
+                  padding: '5px 9px',
+                  borderRadius: 6,
+                  background: '#FFFBEB',
+                  border: '1px solid #FDE68A',
+                  color: '#92400E',
+                  fontSize: 10.5,
+                  fontWeight: 800,
+                  fontFamily: MONO,
+                }}
+              >
+                {isEn
+                  ? `⚠ Azeotrope / Pinch detected (x ≈ ${pinchStage.xRel.toFixed(2)}, Stage ${pinchStage.stage})`
+                  : `⚠ 공비/핀치 구간 감지 (x ≈ ${pinchStage.xRel.toFixed(2)}, ${pinchStage.stage}단)`}
+              </div>
+            )}
+            <svg
+              viewBox={`0 0 ${W} ${xyH}`}
+              style={{
+                width: '100%',
+                height: 'auto',
+                display: 'block',
+                background: '#FFFFFF',
+                borderRadius: 8,
+                border: '1px solid #E2E8F0',
+              }}
+            >
+              {/* Gridlines at 0.2 intervals */}
+              {[0, 0.2, 0.4, 0.6, 0.8, 1].map((v) => (
+                <g key={`xy-g-${v}`}>
+                  <line
+                    x1={px(v)}
+                    x2={px(v)}
+                    y1={sqY}
+                    y2={sqY + sqSize}
+                    stroke={v === 0 || v === 1 ? '#CBD5E1' : '#F1F5F9'}
+                  />
+                  <line
+                    x1={sqX}
+                    x2={sqX + sqSize}
+                    y1={py(v)}
+                    y2={py(v)}
+                    stroke={v === 0 || v === 1 ? '#CBD5E1' : '#F1F5F9'}
+                  />
+                  <text x={px(v)} y={sqY + sqSize + 13} fontSize={9.5} textAnchor="middle" fill="#64748B" fontFamily={MONO}>
+                    {v.toFixed(1)}
+                  </text>
+                  <text x={sqX - 6} y={py(v) + 3.5} fontSize={9.5} textAnchor="end" fill="#64748B" fontFamily={MONO}>
+                    {v.toFixed(1)}
+                  </text>
+                </g>
+              ))}
+
+              {/* Axis labels */}
+              <text
+                x={sqX + sqSize / 2}
+                y={xyH - 8}
+                fontSize={10.5}
+                textAnchor="middle"
+                fill="#334155"
+                fontWeight={800}
+              >
+                {`x_LK (${lkName})`}
+              </text>
+              <text
+                x={14}
+                y={sqY + sqSize / 2}
+                fontSize={10.5}
+                textAnchor="middle"
+                fill="#334155"
+                fontWeight={800}
+                transform={`rotate(-90 14 ${sqY + sqSize / 2})`}
+              >
+                {`y_LK (${lkName})`}
+              </text>
+
+              {/* 45° diagonal y = x */}
+              <line
+                x1={px(0)}
+                y1={py(0)}
+                x2={px(1)}
+                y2={py(1)}
+                stroke="#94A3B8"
+                strokeWidth={1.2}
+                strokeDasharray="4 3"
+              />
+
+              {/* McCabe-Thiele staircase */}
+              {stairPts.length > 0 && (
+                <polyline
+                  fill="none"
+                  stroke="#0F766E"
+                  strokeWidth={1.35}
+                  points={stairPts.join(' ')}
+                />
+              )}
+
+              {/* Smooth equilibrium curve */}
+              <path fill="none" stroke="#1E3A8A" strokeWidth={2.2} d={eqPath} />
+
+              {/* Stage dots */}
+              {stageVle.map((p) => (
+                <circle
+                  key={`xy-pt-${p.stage}`}
+                  cx={px(p.xRel)}
+                  cy={py(p.yRel)}
+                  r={1.9}
+                  fill="#1E3A8A"
+                  opacity={0.75}
+                />
+              ))}
+
+              {/* Feed stage highlight */}
+              {feedPt && (
+                <g>
+                  <circle
+                    cx={px(feedPt.xRel)}
+                    cy={py(feedPt.yRel)}
+                    r={4.5}
+                    fill="#D97706"
+                    stroke="#FFFFFF"
+                    strokeWidth={1.5}
+                  />
+                  <text
+                    x={feedPt.xRel > 0.72 ? px(feedPt.xRel) - 7 : px(feedPt.xRel) + 7}
+                    y={feedPt.yRel > 0.85 ? py(feedPt.yRel) + 12 : py(feedPt.yRel) - 6}
+                    fontSize={9.5}
+                    textAnchor={feedPt.xRel > 0.72 ? 'end' : 'start'}
+                    fill="#B45309"
+                    fontWeight={800}
+                    fontFamily={MONO}
+                  >
+                    {`F:${primaryFeedStage}`}
+                  </text>
+                </g>
+              )}
+
+              {/* Right-side compact legend & readout */}
+              <text x={sqX + sqSize + 14} y={sqY + 12} fontSize={10.5} fill="#0F172A" fontWeight={800}>
+                {isEn ? 'McCabe-Thiele VLE' : 'McCabe-Thiele 평형'}
+              </text>
+              <text x={sqX + sqSize + 14} y={sqY + 27} fontSize={9.5} fill="#475569" fontWeight={700} fontFamily={MONO}>
+                {`LK: ${lkName}`}
+              </text>
+              <text x={sqX + sqSize + 14} y={sqY + 41} fontSize={9.5} fill="#64748B" fontWeight={700} fontFamily={MONO}>
+                {`HK: ${hkName}`}
+              </text>
+
+              <line x1={sqX + sqSize + 14} x2={sqX + sqSize + 30} y1={sqY + 62} y2={sqY + 62} stroke="#1E3A8A" strokeWidth={2.2} />
+              <text x={sqX + sqSize + 34} y={sqY + 65} fontSize={9.5} fill="#334155" fontWeight={700}>
+                {isEn ? 'Equilibrium y(x)' : '기액평형곡선'}
+              </text>
+
+              <line x1={sqX + sqSize + 14} x2={sqX + sqSize + 30} y1={sqY + 80} y2={sqY + 80} stroke="#0F766E" strokeWidth={1.5} />
+              <text x={sqX + sqSize + 34} y={sqY + 83} fontSize={9.5} fill="#334155" fontWeight={700}>
+                {isEn ? 'Stage Steps' : '이론단 계단'}
+              </text>
+
+              <line x1={sqX + sqSize + 14} x2={sqX + sqSize + 30} y1={sqY + 98} y2={sqY + 98} stroke="#94A3B8" strokeWidth={1.2} strokeDasharray="4 3" />
+              <text x={sqX + sqSize + 34} y={sqY + 101} fontSize={9.5} fill="#64748B" fontWeight={700}>
+                {isEn ? 'y = x Line' : 'y = x 대각선'}
+              </text>
+
+              <circle cx={sqX + sqSize + 22} cy={sqY + 116} r={3.8} fill="#D97706" />
+              <text x={sqX + sqSize + 34} y={sqY + 119} fontSize={9.5} fill="#92400E" fontWeight={800}>
+                {isEn ? `Feed (F:${primaryFeedStage})` : `원료단 (F:${primaryFeedStage})`}
+              </text>
+
+              <line x1={sqX + sqSize + 14} x2={W - 14} y1={sqY + 136} y2={sqY + 136} stroke="#E2E8F0" />
+              <text x={sqX + sqSize + 14} y={sqY + 153} fontSize={9.5} fill="#475569" fontWeight={700} fontFamily={MONO}>
+                {`x_Top : ${topVle.xRel.toFixed(3)}`}
+              </text>
+              <text x={sqX + sqSize + 14} y={sqY + 168} fontSize={9.5} fill="#475569" fontWeight={700} fontFamily={MONO}>
+                {`x_Bot : ${botVle.xRel.toFixed(3)}`}
+              </text>
+              <text x={sqX + sqSize + 14} y={sqY + 183} fontSize={9.5} fill="#64748B" fontWeight={700} fontFamily={MONO}>
+                {isEn ? `Stages: ${stages.length}` : `총 단수: ${stages.length}단`}
+              </text>
+            </svg>
+          </div>
+        );
+      }
+
+      if (rightChart === 'txy') {
+        const tPadL = 56;
+        const tPadR = 20;
+        const tPadT = 26;
+        const tPadB = 34;
+        const tPlotW = W - tPadL - tPadR;
+        const tPlotH = H - tPadT - tPadB;
+        const tUnitLabel = getUnitLabel('temp', tempUnit);
+        const fmtT = (tC: number) => formatCanonicalValue('temp', tC, tempUnit, 1);
+
+        const temps = stageVle.map((p) => p.tempC);
+        const tMin = Math.floor(Math.min(...temps) - 2);
+        const tMax = Math.ceil(Math.max(...temps, tMin + 5) + 2);
+        const xOfF = (f: number) => tPadL + Math.max(0, Math.min(1, f)) * tPlotW;
+        const yOfT = (tC: number) =>
+          tPadT + (1 - (tC - tMin) / Math.max(1e-6, tMax - tMin)) * tPlotH;
+
+        const bubblePts = [...stageVle]
+          .sort((a, b) => a.xRel - b.xRel)
+          .map((p) => ({ x: xOfF(p.xRel), y: yOfT(p.tempC) }));
+        const dewPts = [...stageVle]
+          .sort((a, b) => a.yRel - b.yRel)
+          .map((p) => ({ x: xOfF(p.yRel), y: yOfT(p.tempC) }));
+        const bubblePath = buildMonotoneSvgPath(bubblePts);
+        const dewPath = buildMonotoneSvgPath(dewPts);
+
+        const topPt = stageVle[0];
+        const botPt = stageVle[stageVle.length - 1];
+        const feedPt = stageVle.find((p) => p.stage === primaryFeedStage);
+        const callouts = [
+          {
+            key: 'top',
+            x: xOfF(topPt.xRel),
+            y: yOfT(topPt.tempC),
+            frac: topPt.xRel,
+            color: '#1E3A8A',
+            label: isEn
+              ? `Top(1) ${fmtT(topPt.tempC)}${tUnitLabel}`
+              : `탑정(1) ${fmtT(topPt.tempC)}${tUnitLabel}`,
+            dy: topPt.tempC < (tMin + tMax) / 2 ? -7 : 12,
+          },
+          ...(feedPt
+            ? [
+                {
+                  key: 'feed',
+                  x: xOfF(feedPt.xRel),
+                  y: yOfT(feedPt.tempC),
+                  frac: feedPt.xRel,
+                  color: '#D97706',
+                  label: `F:${primaryFeedStage} (${fmtT(feedPt.tempC)}${tUnitLabel})`,
+                  dy: -8,
+                },
+              ]
+            : []),
+          {
+            key: 'bot',
+            x: xOfF(botPt.xRel),
+            y: yOfT(botPt.tempC),
+            frac: botPt.xRel,
+            color: '#475569',
+            label: isEn
+              ? `Bot(${botPt.stage}) ${fmtT(botPt.tempC)}${tUnitLabel}`
+              : `탑저(${botPt.stage}) ${fmtT(botPt.tempC)}${tUnitLabel}`,
+            dy: botPt.tempC > (tMin + tMax) / 2 ? 13 : -7,
+          },
+        ];
+
+        return (
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            style={{
+              width: '100%',
+              height: 'auto',
+              display: 'block',
+              background: '#FFFFFF',
+              borderRadius: 8,
+              border: '1px solid #E2E8F0',
+            }}
+          >
+            {/* Horizontal temperature gridlines */}
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+              const tv = tMin + f * (tMax - tMin);
+              const yp = yOfT(tv);
+              return (
+                <g key={`txy-t-${f}`}>
+                  <line
+                    x1={tPadL}
+                    x2={W - tPadR}
+                    y1={yp}
+                    y2={yp}
+                    stroke={f === 0 || f === 1 ? '#CBD5E1' : '#F1F5F9'}
+                  />
+                  <text x={tPadL - 6} y={yp + 3.5} fontSize={9.5} textAnchor="end" fill="#64748B" fontFamily={MONO}>
+                    {fmtT(tv)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Vertical composition gridlines */}
+            {[0, 0.2, 0.4, 0.6, 0.8, 1].map((v) => {
+              const xp = xOfF(v);
+              return (
+                <g key={`txy-x-${v}`}>
+                  <line
+                    x1={xp}
+                    x2={xp}
+                    y1={tPadT}
+                    y2={H - tPadB}
+                    stroke={v === 0 || v === 1 ? '#CBD5E1' : '#F1F5F9'}
+                  />
+                  <text x={xp} y={H - 18} fontSize={9.5} textAnchor="middle" fill="#64748B" fontFamily={MONO}>
+                    {v.toFixed(1)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Axis labels */}
+            <text x={tPadL + tPlotW / 2} y={H - 5} fontSize={10} textAnchor="middle" fill="#334155" fontWeight={800}>
+              {`x_${lkName}, y_${lkName} (mol/mol)`}
+            </text>
+            <text x={8} y={16} fontSize={9.5} fill="#475569" fontWeight={800}>
+              {`T (${tUnitLabel})`}
+            </text>
+
+            {/* Legend */}
+            <text x={tPadL + 4} y={16} fontSize={10} fill="#1E3A8A" fontWeight={800}>
+              {isEn ? '━ Bubble T-x' : '━ 액상 기포선 T-x'}
+            </text>
+            <text x={tPadL + 125} y={16} fontSize={10} fill="#D97706" fontWeight={800}>
+              {isEn ? '┅ Dew T-y' : '┅ 기상 이슬선 T-y'}
+            </text>
+            <text x={W - tPadR} y={16} fontSize={9.5} textAnchor="end" fill="#64748B" fontWeight={700} fontFamily={MONO}>
+              {`${lkName} / ${hkName}`}
+            </text>
+
+            {/* Bubble and Dew curves */}
+            <path fill="none" stroke="#1E3A8A" strokeWidth={2.3} d={bubblePath} />
+            <path fill="none" stroke="#D97706" strokeWidth={2.2} strokeDasharray="5 3" d={dewPath} />
+
+            {stageVle.map((p) => (
+              <g key={`txy-pt-${p.stage}`}>
+                <circle cx={xOfF(p.xRel)} cy={yOfT(p.tempC)} r={1.8} fill="#1E3A8A" opacity={0.7} />
+                <circle cx={xOfF(p.yRel)} cy={yOfT(p.tempC)} r={1.8} fill="#D97706" opacity={0.7} />
+              </g>
+            ))}
+
+            {/* Condenser / Feed / Reboiler callouts */}
+            {callouts.map((c) => {
+              const anchor = c.frac > 0.68 ? 'end' : c.frac < 0.32 ? 'start' : 'middle';
+              const dx = anchor === 'end' ? -6 : anchor === 'start' ? 6 : 0;
+              return (
+                <g key={c.key}>
+                  <circle cx={c.x} cy={c.y} r={4.2} fill={c.color} stroke="#FFFFFF" strokeWidth={1.4} />
+                  <text
+                    x={c.x + dx}
+                    y={Math.max(tPadT + 10, Math.min(H - tPadB - 4, c.y + c.dy))}
+                    fontSize={9.5}
+                    textAnchor={anchor}
+                    fill={c.color}
+                    fontWeight={800}
+                    fontFamily={MONO}
+                  >
+                    {c.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        );
+      }
+
+      // rightChart === 'alpha': Relative Volatility (α = K_LK / K_HK) & K-Values
+      const validStages = stageVle.filter((p) => p.hasBoth && Number.isFinite(p.alpha) && p.alpha > 0);
+      const statStages = validStages.length > 0 ? validStages : stageVle;
+      const avgAlpha =
+        statStages.reduce((acc, p) => acc + p.alpha, 0) / Math.max(1, statStages.length);
+      const minAlphaStage = statStages.reduce((best, cur) =>
+        cur.alpha < best.alpha ? cur : best
+      );
+      const topStg = stageVle[0];
+      const botStg = stageVle[stageVle.length - 1];
+      const fmtK = (v: number) =>
+        !Number.isFinite(v) ? '-' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+
+      const alphasForScale = statStages.map((p) => p.alpha).filter((v) => Number.isFinite(v) && v > 0);
+      const rawMaxA = Math.max(1.5, ...(alphasForScale.length ? alphasForScale : [2.0]));
+      const rawMinA = Math.min(1.0, ...(alphasForScale.length ? alphasForScale : [1.0]));
+      const aMin = Math.max(0, Math.min(0.8, rawMinA * 0.85));
+      const aMax = Math.max(aMin + 0.8, Math.min(Math.max(1.6, rawMaxA * 1.12), Math.max(50, rawMaxA * 1.05)));
+      const xOfA = (a: number) =>
+        padL + ((Math.max(aMin, Math.min(aMax, a)) - aMin) / Math.max(1e-6, aMax - aMin)) * plotW;
+
+      const alphaPts = stageVle
+        .map((p) => `${xOfA(p.alpha).toFixed(1)},${yOfStage(p.stage).toFixed(1)}`)
+        .join(' ');
+      const xPinch = xOfA(1.0);
+
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div
+            style={{
+              padding: '5px 9px',
+              borderRadius: 6,
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              fontSize: 10.5,
+              fontFamily: MONO,
+              color: '#334155',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '4px 12px',
+              alignItems: 'center',
+            }}
+          >
+            <span>
+              <strong style={{ color: '#1E3A8A' }}>{isEn ? 'Avg α' : '평균 α'}</strong> = {avgAlpha.toFixed(2)}
+            </span>
+            <span>
+              <strong style={{ color: '#0F766E' }}>{isEn ? 'Min α' : '최소 α'}</strong> = {minAlphaStage.alpha.toFixed(2)}{' '}
+              ({isEn ? `Stg ${minAlphaStage.stage}` : `${minAlphaStage.stage}단`})
+            </span>
+            <span style={{ color: '#475569' }}>
+              {isEn ? 'Top K' : '탑정 K'} ({lkName}/{hkName}): {fmtK(topStg.kLk)} / {fmtK(topStg.kHk)} ·{' '}
+              {isEn ? 'Bot K' : '탑저 K'}: {fmtK(botStg.kLk)} / {fmtK(botStg.kHk)}
+            </span>
+          </div>
+
+          <svg
+            viewBox={`0 0 ${W} ${H}`}
+            style={{
+              width: '100%',
+              height: 'auto',
+              display: 'block',
+              background: '#FFFFFF',
+              borderRadius: 8,
+              border: '1px solid #E2E8F0',
+            }}
+          >
+            {[1, primaryFeedStage, stages.length].map((stNum, idx) => (
+              <g key={`ag-${idx}`}>
+                <line
+                  x1={padL}
+                  x2={W - padR}
+                  y1={yOfStage(stNum)}
+                  y2={yOfStage(stNum)}
+                  stroke={stNum === primaryFeedStage ? '#F59E0B' : '#E2E8F0'}
+                  strokeDasharray={stNum === primaryFeedStage ? '4 2' : undefined}
+                />
+                <text x={5} y={yOfStage(stNum) + 4} fontSize={10} fill="#475569" fontWeight={700}>
+                  {isEn
+                    ? stNum === 1 ? '1(Top)' : stNum === stages.length ? `${stNum}(Bot)` : `F:${stNum}`
+                    : stNum === 1 ? '1(탑정)' : stNum === stages.length ? `${stNum}(탑저)` : `F:${stNum}단`}
+                </text>
+              </g>
+            ))}
+            {renderSideCutSvgMarker()}
+
+            {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+              const av = aMin + f * (aMax - aMin);
+              const xp = padL + f * plotW;
+              return (
+                <g key={`at-${f}`}>
+                  <line x1={xp} x2={xp} y1={padT} y2={H - padB} stroke="#F1F5F9" />
+                  <text x={xp} y={H - 10} fontSize={10} textAnchor="middle" fill="#64748B" fontFamily={MONO}>
+                    {av.toFixed(av >= 10 ? 1 : 2)}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Reference line α = 1.0 */}
+            <line
+              x1={xPinch}
+              x2={xPinch}
+              y1={padT}
+              y2={H - padB}
+              stroke="#DC2626"
+              strokeWidth={1.4}
+              strokeDasharray="4 3"
+            />
+            <text
+              x={xPinch + 4}
+              y={padT + 11}
+              fontSize={9.5}
+              fill="#DC2626"
+              fontWeight={800}
+            >
+              {isEn ? 'α=1.0 (Pinch)' : 'α=1.0 (분리 한계)'}
+            </text>
+
+            {/* Relative volatility profile */}
+            <polyline fill="none" stroke="#1E3A8A" strokeWidth={2.3} points={alphaPts} />
+            {stageVle.map((p) => (
+              <circle
+                key={`ap-${p.stage}`}
+                cx={xOfA(p.alpha)}
+                cy={yOfStage(p.stage)}
+                r={p.stage === primaryFeedStage || p.stage === minAlphaStage.stage ? 3.8 : 2.2}
+                fill={
+                  p.stage === primaryFeedStage
+                    ? '#D97706'
+                    : p.stage === minAlphaStage.stage
+                    ? '#0F766E'
+                    : '#1E3A8A'
+                }
+              />
+            ))}
+
+            <text x={W - padR} y={15} fontSize={10} textAnchor="end" fill="#1E3A8A" fontWeight={800} fontFamily={MONO}>
+              {`α = K(${lkName}) / K(${hkName})`}
+            </text>
+          </svg>
+        </div>
       );
     }
 
@@ -5350,14 +6016,17 @@ export default function DistillationWorkbenchModal({
               boxSizing: 'border-box',
             }}
           >
-            {/* 차트 종류 전환 + 액상/기상 & 선형/ppm 로그 토글 */}
+            {/* 차트 종류 전환 + 액상/기상 & 선형/ppm 로그 토글 & LK/HK 선택 */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 4 }}>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                 {(
                   [
                     { id: 'comp', label: isEn ? 'Composition Profile' : '조성 프로파일' },
                     { id: 'temp', label: isEn ? 'Temp. Profile' : '온도 프로파일' },
                     { id: 'traffic', label: isEn ? 'L/V Traffic' : '기액유량(L/V)' },
+                    { id: 'xy', label: isEn ? 'x-y VLE' : 'x-y 기액평형' },
+                    { id: 'txy', label: isEn ? 'T-x-y' : 'T-x-y 상평형' },
+                    { id: 'alpha', label: isEn ? 'α & K-Value' : '상대휘발도(α·K)' },
                   ] as { id: RightChartId; label: string }[]
                 ).map((ct) => {
                   const active = rightChart === ct.id;
@@ -5367,7 +6036,7 @@ export default function DistillationWorkbenchModal({
                       type="button"
                       onClick={() => setRightChart(ct.id)}
                       style={{
-                        padding: '5px 10px',
+                        padding: '5px 9px',
                         borderRadius: 6,
                         border: active ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
                         background: active ? '#1E3A8A' : '#FFFFFF',
@@ -5382,6 +6051,74 @@ export default function DistillationWorkbenchModal({
                   );
                 })}
               </div>
+
+              {(rightChart === 'xy' || rightChart === 'txy' || rightChart === 'alpha') &&
+                vleCandidateComps.length >= 3 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <span>LK</span>
+                      <select
+                        value={vleLk}
+                        onChange={(e) => {
+                          const nextLk = e.target.value as SimCompKey;
+                          if (nextLk === vleHk) {
+                            setVleHkOverride(vleLk);
+                          }
+                          setVleLkOverride(nextLk);
+                        }}
+                        style={{
+                          height: 24,
+                          padding: '1px 5px',
+                          borderRadius: 5,
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          color: '#1E3A8A',
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          fontFamily: MONO,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {vleCandidateComps.map((ck) => (
+                          <option key={`vle-lk-${ck}`} value={ck}>
+                            {COMP_META[ck]?.formula ?? ck}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                      <span>HK</span>
+                      <select
+                        value={vleHk}
+                        onChange={(e) => {
+                          const nextHk = e.target.value as SimCompKey;
+                          if (nextHk === vleLk) {
+                            setVleLkOverride(vleHk);
+                          }
+                          setVleHkOverride(nextHk);
+                        }}
+                        style={{
+                          height: 24,
+                          padding: '1px 5px',
+                          borderRadius: 5,
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          color: '#334155',
+                          fontSize: 10.5,
+                          fontWeight: 800,
+                          fontFamily: MONO,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {vleCandidateComps.map((ck) => (
+                          <option key={`vle-hk-${ck}`} value={ck}>
+                            {COMP_META[ck]?.formula ?? ck}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
 
               {rightChart === 'comp' && (
                 <div style={{ display: 'flex', gap: 4 }}>

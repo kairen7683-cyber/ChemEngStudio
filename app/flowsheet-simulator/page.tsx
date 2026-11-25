@@ -6835,6 +6835,7 @@ export function FlowsheetWorkspace({
             </button>
           ) : (
             <>
+              {!isSimulatorOnlyUser(user) && (
               <select
                 value={getAllPresets().some(p => p.id === presetId) ? presetId : ''}
                 onChange={e => {
@@ -6921,6 +6922,7 @@ export function FlowsheetWorkspace({
                   </optgroup>
                 )}
               </select>
+              )}
 
               <button
                 onClick={clearCanvas}
