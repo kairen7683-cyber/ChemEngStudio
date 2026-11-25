@@ -3175,7 +3175,24 @@ export function FlowsheetWorkspace({
             setActiveComponents(restoredComps);
             setPresetId(parsed.presetId || defaultModePresetId);
             if (parsed.hierarchySheets && Object.keys(parsed.hierarchySheets).length > 0) {
-              setHierarchySheets(parsed.hierarchySheets);
+              const upgradedSheets = { ...parsed.hierarchySheets };
+              if (
+                workspaceMode === 'electrolyzer_plant' &&
+                upgradedSheets.sub_300_evap &&
+                !upgradedSheets.sub_300_evap.simDefs?.some(d => d.id === 'ev_e333')
+              ) {
+                const freshEvap = createInitialHierarchySheets().sub_300_evap;
+                if (freshEvap) {
+                  upgradedSheets.sub_300_evap = freshEvap;
+                  if (restoredSheetId === 'sub_300_evap') {
+                    parsed.simDefs = freshEvap.simDefs;
+                    parsed.flowEdges = freshEvap.flowEdges;
+                    parsed.positions = freshEvap.positions;
+                    parsed.isSimDirty = true;
+                  }
+                }
+              }
+              setHierarchySheets(upgradedSheets);
             } else if (!isPlantSimMode) {
               setHierarchySheets({
                 master: {
@@ -3359,7 +3376,24 @@ export function FlowsheetWorkspace({
             setActiveComponents(restoredComps);
             setPresetId(parsed.presetId || defaultModePresetId);
             if (parsed.hierarchySheets && Object.keys(parsed.hierarchySheets).length > 0) {
-              setHierarchySheets(parsed.hierarchySheets);
+              const upgradedSheets = { ...parsed.hierarchySheets };
+              if (
+                workspaceMode === 'electrolyzer_plant' &&
+                upgradedSheets.sub_300_evap &&
+                !upgradedSheets.sub_300_evap.simDefs?.some(d => d.id === 'ev_e333')
+              ) {
+                const freshEvap = createInitialHierarchySheets().sub_300_evap;
+                if (freshEvap) {
+                  upgradedSheets.sub_300_evap = freshEvap;
+                  if (restoredSheetId === 'sub_300_evap') {
+                    parsed.simDefs = freshEvap.simDefs;
+                    parsed.flowEdges = freshEvap.flowEdges;
+                    parsed.positions = freshEvap.positions;
+                    parsed.isSimDirty = true;
+                  }
+                }
+              }
+              setHierarchySheets(upgradedSheets);
             }
             if (parsed.activeSheetId) {
               setActiveSheetId(parsed.activeSheetId);
