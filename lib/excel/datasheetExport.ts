@@ -10,6 +10,7 @@
 // ExcelJS는 브라우저에서도 동작하며, 셀 스타일을 완벽히 지원합니다.
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { applyA4PrintFit } from './a4PrintHelper';
 import type { ColumnInternalsSolveResult } from '@/lib/calculations/columnInternalsDesign';
 import type {
   DistillColumnParams,
@@ -673,8 +674,8 @@ export async function exportPumpDatasheet(inp: PumpDsInputs): Promise<void> {
     fi: fill.ltGray(), al: align.lc, bo: border.inner,
   });
 
-  // 인쇄 영역 설정
-  ws.pageSetup.printArea = `A1:Z${R}`;
+  // A4 인쇄 영역 및 행 높이 자동 보정
+  applyA4PrintFit(ws, colWidths, R, { orientation: 'portrait', fitToHeight: 1 });
 
   // ── 파일 저장 (브라우저 다운로드) ──────────────────────────────────────────
   const buf = await wb.xlsx.writeBuffer();
@@ -899,7 +900,7 @@ export async function exportTowerDatasheet(inp: TowerDsInputs): Promise<void> {
     fi: fill.ltGray(), al: align.lc, bo: border.inner,
   });
 
-  ws.pageSetup.printArea = `A1:Z${R}`;
+  applyA4PrintFit(ws, colWidths, R, { orientation: 'portrait', fitToHeight: 1 });
 
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -1044,7 +1045,7 @@ export async function exportHXDatasheet(inp: HXDsInputs): Promise<void> {
     R++;
   }
 
-  ws.pageSetup.printArea = `A1:Z${R}`;
+  applyA4PrintFit(ws, colWidths, Math.max(1, R - 1), { orientation: 'portrait', fitToHeight: 1 });
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   saveAs(blob, `PDS_HX_${inp.tag || 'HX'}_${today()}.xlsx`);
@@ -1097,7 +1098,8 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
   const ws1 = wb.addWorksheet('1_VESSEL_SHELL_DS', {
     pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
   });
-  [5, 34, 14, 24, 24, 28].forEach((w, i) => {
+  const ws1ColWidths = [5, 34, 14, 24, 24, 28];
+  ws1ColWidths.forEach((w, i) => {
     ws1.getColumn(i + 1).width = w;
   });
 
@@ -1231,7 +1233,7 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
     sc(ws1, `F${r1}`, { value: 'Hinged Swing-Bolt Manway', f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
     r1++;
   }
-  ws1.pageSetup.printArea = `A1:F${r1 - 1}`;
+  applyA4PrintFit(ws1, ws1ColWidths, r1 - 1, { orientation: 'portrait', fitToHeight: 1 });
 
   // =========================================================================
   // SHEET 2: 2_TRAY_INTERNALS_DS vs 2_PACKING_INTERNALS_DS (엄격 분리!)
@@ -1240,7 +1242,8 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
     const ws2 = wb.addWorksheet('2_TRAY_INTERNALS_DS', {
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
     });
-    [5, 36, 14, 24, 24, 24].forEach((w, i) => {
+    const ws2TrayWidths = [5, 36, 14, 24, 24, 24];
+    ws2TrayWidths.forEach((w, i) => {
       ws2.getColumn(i + 1).width = w;
     });
     let r2 = 1;
@@ -1346,12 +1349,13 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
       ['Avg Tray ΔP / Section Total ΔP', 'mbar', `${rSec.avgTrayDpMbar} / ${rSec.sectionDpMbar}`, `${sSec.avgTrayDpMbar} / ${sSec.sectionDpMbar}`, `Total Col ΔP = ${design.totalInternalsDpMbar} mbar`],
       ['Chan–Fair Stage Efficiency (E_MV)', '%', `${rSec.avgChanFairEffPct}%`, `${sSec.avgChanFairEffPct}%`, `O'Connell Avg ${design.avgOconnellEffPct}%`],
     ], lnT);
-    ws2.pageSetup.printArea = `A1:F${r2 - 1}`;
+    applyA4PrintFit(ws2, ws2TrayWidths, r2 - 1, { orientation: 'portrait', fitToHeight: 1 });
   } else {
     const ws2 = wb.addWorksheet('2_PACKING_INTERNALS_DS', {
       pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
     });
-    [5, 34, 14, 24, 24, 26].forEach((w, i) => {
+    const ws2PackWidths = [5, 34, 14, 24, 24, 26];
+    ws2PackWidths.forEach((w, i) => {
       ws2.getColumn(i + 1).width = w;
     });
     let r2 = 1;
@@ -1496,7 +1500,7 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
       sc(ws2, `F${r2}`, { value: note, f: font.remark(), fi: fill.white(), al: align.lc, bo: border.inner });
       r2++;
     }
-    ws2.pageSetup.printArea = `A1:F${r2 - 1}`;
+    applyA4PrintFit(ws2, ws2PackWidths, r2 - 1, { orientation: 'portrait', fitToHeight: 1 });
   }
 
   // =========================================================================
@@ -1508,8 +1512,9 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
   const s3Headers = isTray
     ? ['Stage', 'Section', 'Temp (°C)', 'Press (barA)', 'Vap (kg/h)', 'Liq (kg/h)', 'F_s (Pa^0.5)', 'Flood (%)', 'Jet (%)', 'DC Choke (%)', 'DC Backup (%)', 'Weep Ratio', 'ΔP (mbar)', 'Chan-Fair Eff (%)', 'Status']
     : ['Stage', 'Section', 'Temp (°C)', 'Press (barA)', 'Vap (kg/h)', 'Liq (kg/h)', 'F_s (Pa^0.5)', 'B-S Flood (%)', 'GPDC Flood (%)', 'Dry ΔP (mbar/m)', 'Irrig ΔP (mbar/m)', 'Wetting (m³/m²h)', 'Holdup (%)', 'HETP (m)', 'Status'];
-  s3Headers.forEach((_, idx) => {
-    ws3.getColumn(idx + 1).width = idx === 1 ? 14 : idx === s3Headers.length - 1 ? 13 : 12;
+  const ws3ColWidths = s3Headers.map((_, idx) => (idx === 1 ? 14 : idx === s3Headers.length - 1 ? 13 : 12));
+  ws3ColWidths.forEach((w, idx) => {
+    ws3.getColumn(idx + 1).width = w;
   });
   ws3.getRow(1).height = 20;
   merge(ws3, 'A1', `${String.fromCharCode(64 + s3Headers.length)}1`, {
@@ -1571,6 +1576,8 @@ export async function exportColumnEpcDatasheet(params: ColumnEpcDsParams): Promi
       });
     });
   });
+
+  applyA4PrintFit(ws3, ws3ColWidths, design.stageRows.length + 2, { orientation: 'landscape', fitToHeight: 0 });
 
   const rawBuf = await wb.xlsx.writeBuffer();
   return rawBuf instanceof Uint8Array ? rawBuf : new Uint8Array(rawBuf as ArrayBuffer);

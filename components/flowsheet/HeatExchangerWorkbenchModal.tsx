@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
+import { applyA4PrintFit } from '@/lib/excel/a4PrintHelper';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
@@ -602,10 +603,10 @@ export default function HeatExchangerWorkbenchModal({
     };
 
     const ws1 = wb.addWorksheet('TEMA_HX_Datasheet', {
-      pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+      pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 1 },
       views: [{ state: 'frozen', ySplit: 3 }],
     });
-    const ws1Widths = [7, 36, 13, 22, 20, 22, 20, 28];
+    const ws1Widths = [6, 32, 11, 18, 17, 18, 17, 24];
     ws1Widths.forEach((w, i) => { ws1.getColumn(i + 1).width = w; });
 
     sheet1Rows.forEach((rawRow, rIdx) => {
@@ -685,6 +686,8 @@ export default function HeatExchangerWorkbenchModal({
       }
     });
 
+    applyA4PrintFit(ws1, ws1Widths, ws1.rowCount, { orientation: 'portrait', fitToHeight: 1, defaultRowHeight: 18 });
+
     const ws2 = wb.addWorksheet('TQ_Profile_Nozzles', {
       pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     });
@@ -732,6 +735,8 @@ export default function HeatExchangerWorkbenchModal({
         });
       }
     });
+
+    applyA4PrintFit(ws2, ws2Widths, ws2.rowCount, { orientation: 'landscape', fitToHeight: 1, defaultRowHeight: 18 });
 
     const safeTag = (unitTag || 'E-101').replace(/[^A-Za-z0-9_-]/g, '_');
     const stdTag = isPhe ? 'API662_PHE' : `TEMA_${dRes.temaType}`;

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
+import { applyA4PrintFit } from '@/lib/excel/a4PrintHelper';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import { useUnitStore } from '@/lib/stores/unitStore';
 import { useAuth } from '@/components/auth/AuthContext';
@@ -671,6 +672,14 @@ export default function PurificationWorkbenchModal({
             cell.border = thinBorder;
           });
         }
+      });
+
+      applyA4PrintFit(ws, [8, 34, 16, 22, 28], ws.rowCount, {
+        orientation: 'portrait',
+        fitToHeight: 1,
+        defaultRowHeight: 19,
+        maxRowScale: 2.0,
+        maxRowHeight: 34,
       });
 
       const buf = await wb.xlsx.writeBuffer();
