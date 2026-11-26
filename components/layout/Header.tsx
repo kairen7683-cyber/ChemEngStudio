@@ -133,6 +133,13 @@ export default function Header() {
   }, [refreshCaseState]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOpenCompReq = () => setCompReqModalOpen(true);
+    window.addEventListener('chemeng:open-component-request', onOpenCompReq);
+    return () => window.removeEventListener('chemeng:open-component-request', onOpenCompReq);
+  }, []);
+
+  useEffect(() => {
     if (!caseMenuOpen && !toolsMenuOpen && !settingsMenuOpen) return;
     const onDocDown = (e: MouseEvent) => {
       const target = e.target as Node;

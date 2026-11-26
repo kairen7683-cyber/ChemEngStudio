@@ -55,6 +55,19 @@ export default function Sidebar() {
     return () => window.removeEventListener('resize', checkViewport);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOpenPlantBasis = () => {
+      if (window.innerWidth <= 768) {
+        setMobileDrawerOpen(true);
+      } else {
+        setCollapsed(false);
+      }
+    };
+    window.addEventListener('chemeng:open-plant-basis', onOpenPlantBasis);
+    return () => window.removeEventListener('chemeng:open-plant-basis', onOpenPlantBasis);
+  }, []);
+
   const isPfdLikeRoute = pathname === '/' || pathname.startsWith('/material-balance');
   const hasMacroControls =
     activePlantId === 'clorsim_sim' ||

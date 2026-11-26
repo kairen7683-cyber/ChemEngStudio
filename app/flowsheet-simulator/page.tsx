@@ -63,6 +63,8 @@ import type { DesignSpecDef } from '@/lib/calculations/flowsheetOptimization';
 import PlantUnitCopyBox from '@/components/flowsheet/PlantUnitCopyBox';
 import FlowsheetBalanceSummary from '@/components/flowsheet/FlowsheetBalanceSummary';
 import ConvergenceReportPanel from '@/components/flowsheet/ConvergenceReportPanel';
+import WorkbenchRibbon from '@/components/flowsheet/WorkbenchRibbon';
+import WorkbenchExplorer from '@/components/flowsheet/WorkbenchExplorer';
 import HeatExchangerWorkbenchModal, {
   type HxWorkbenchView,
 } from '@/components/flowsheet/HeatExchangerWorkbenchModal';
@@ -2362,6 +2364,7 @@ export function FlowsheetWorkspace({
   const [paletteOpen, setPaletteOpen] = useState<boolean>(true);
   const [paletteCategory, setPaletteCategory] = useState<PaletteGroupKey>('column_sep');
   const [inspectorOpen, setInspectorOpen] = useState<boolean>(true);
+  const [explorerOpen, setExplorerOpen] = useState<boolean>(false);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [mobileCardView, setMobileCardView] = useState<boolean>(true);
   const [mobileSearch, setMobileSearch] = useState<string>('');
@@ -6634,625 +6637,259 @@ export function FlowsheetWorkspace({
           <CaseOutputsMenu compact unitCount={simDefs.length} />
         </div>
       ) : (
-      <div
-        className="no-scrollbar"
-        style={{
-          height: 36,
-          minHeight: 36,
-          padding: '0 10px',
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E5E2DC',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'nowrap',
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
-          gap: 6,
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0 }}>
-          {/* 세부공정 진입 상태일 때 마스터 복귀 버튼 + 현재 시트 위치 표시 */}
-          {activeSheetId !== 'master' && (
-            <>
-              <button
-                onClick={() => navigateToHierarchySheet('master')}
-                title={isEn ? 'Apply updated results to the master flowsheet and return.' : '변경된 운전 결과를 상위 전공정 마스터 도면에 반영하고 복귀합니다.'}
-                style={{
-                  padding: '3px 8px',
-                  fontSize: 10.5,
-                  fontWeight: 800,
-                  borderRadius: 5,
-                  cursor: 'pointer',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  whiteSpace: 'nowrap',
+        (() => {
+          const colUnits = solved.units.filter(u => u.unitType === 'distillation' && u.inletMassKgH > 0.01);
+          const allColsOk = colUnits.every(u => {
+            const dr = u.distillResult;
+            if (!dr) return true;
+            if (!dr.converged) return false;
+            if (dr.shortcutDesign && !dr.shortcutDesign.designMet) return false;
+            if (dr.spec1Status?.enabled && !dr.spec1Status.met) return false;
+            if (dr.spec2Status?.enabled && !dr.spec2Status.met) return false;
+            return true;
+          });
+          const convOverall = solved.convergence.overallStatus ?? (solved.convergence.converged ? 'converged' : 'failed');
+          const hasColIssue = !allColsOk;
+          const effectiveStatus: 'dirty' | 'converged' | 'warning' | 'failed' =
+            isSimDirty || solved.convergence.isIdle
+              ? 'dirty'
+              : convOverall === 'failed'
+                ? 'failed'
+                : convOverall === 'converged_with_warnings' || hasColIssue
+                  ? 'warning'
+                  : 'converged';
+
+          const activeSheetTitle =
+            hierarchySheets[activeSheetId]?.title ||
+            hierarchySheets[activeSheetId]?.shortTabLabel ||
+            activeCaseName ||
+            activeSheetId;
+
+          const displayPropertyMethod =
+            propertyMethod === 'AUTO'
+              ? isEn
+                ? `Auto(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})`
+                : `자동(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})`
+              : propertyMethod;
+
+          const enabledSpecsCount = designSpecs.filter(s => s.enabled).length;
+
+          return (
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <WorkbenchRibbon
+                lang={lang}
+                isPlantSimMode={isPlantSimMode}
+                activeSheetTitle={activeSheetTitle}
+                activeSheetId={activeSheetId}
+                hasMultipleSheets={Object.keys(hierarchySheets).length > 1}
+                onGoMasterSheet={() => navigateToHierarchySheet('master')}
+                isSimRunning={isSimRunning}
+                isSimDirty={isSimDirty}
+                isIdle={Boolean(solved.convergence.isIdle)}
+                effectiveStatus={effectiveStatus}
+                iterations={solved.convergence.iterations}
+                elapsedMs={solvedMeta.elapsedMs}
+                warningCount={solved.convergence.warningUnitCount ?? 0}
+                failedCount={solved.convergence.failedUnitCount ?? 1}
+                onRunSim={() => runSimulationNow()}
+                onToggleConvDiag={() => setShowConvDiag(v => !v)}
+                propertyMethod={displayPropertyMethod}
+                activeCompCount={activeComponents.length}
+                onOpenCompSetup={() => setCompSetupModalOpen(true)}
+                layoutMode={layoutMode}
+                onChangeLayoutMode={mode => {
+                  setLayoutMode(mode);
+                  if (mode === 'canvas') {
+                    setInspectorOpen(false);
+                    setPaletteOpen(false);
+                    setExplorerOpen(false);
+                    setTimeout(() => rfInstance?.fitView({ padding: 0.08, duration: 200 }), 80);
+                  } else if (mode === 'split') {
+                    setInspectorOpen(true);
+                    setPaletteOpen(true);
+                  } else if (mode === 'table') {
+                    setInspectorOpen(false);
+                    setPaletteOpen(false);
+                  }
                 }}
-              >
-                {isEn ? '⬅ Master PFD' : '⬅ 마스터 도면'}
-              </button>
-              <span
-                title={boundarySyncBanner.length > 0 ? `${isEn ? 'Boundary Sync' : '경계 동기화'}: ${boundarySyncBanner.join(' | ')}` : undefined}
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: '#334155',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {hierarchySheets[activeSheetId]?.shortTabLabel ?? activeSheetId}
-              </span>
-            </>
-          )}
+                explorerOpen={explorerOpen}
+                onToggleExplorer={() => setExplorerOpen(v => !v)}
+                paletteOpen={paletteOpen}
+                onTogglePalette={() => setPaletteOpen(v => !v)}
+                inspectorOpen={inspectorOpen}
+                onToggleInspector={() => setInspectorOpen(v => !v)}
+                onFitView={() => rfInstance?.fitView({ padding: 0.1, duration: 220 })}
+                canUndo={canUndo}
+                canRedo={canRedo}
+                onUndo={handleUndo}
+                onRedo={handleRedo}
+                onResetOrClear={isPlantSimMode ? () => activateFullPlantPackage(true) : clearCanvas}
+                boundarySyncEnabled={boundarySyncEnabled}
+                onToggleBoundarySync={() => setBoundarySyncEnabled(v => !v)}
+                onNavigateRoute={href => router.push(href)}
+                onSwitchClassicUi={() => router.push('/classic-simulator')}
+                rightExtraSlot={
+                  <>
+                    {!isPlantSimMode && !isSimulatorOnlyUser(user) && (
+                      <select
+                        value={getAllPresets().some(p => p.id === presetId) ? presetId : ''}
+                        onChange={e => {
+                          const found = getAllPresets().find(p => p.id === e.target.value);
+                          if (found) loadPreset(found);
+                        }}
+                        style={{
+                          height: 26,
+                          padding: '0 7px',
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          borderRadius: 4,
+                          maxWidth: 215,
+                          border: '1px solid #CBD5E1',
+                          background: '#FFFFFF',
+                          color: '#1E293B',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <option value="" disabled>
+                          {isEn ? 'Load Process Preset...' : '공정 프리셋 불러오기...'}
+                        </option>
+                        <optgroup label={isEn ? 'Public Mini Examples' : '공개용 미니 예제 · 기본 템플릿'}>
+                          {getAllPresets()
+                            .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
+                            .map(p => (
+                              <option key={p.id} value={p.id}>
+                                {isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel}
+                              </option>
+                            ))}
+                        </optgroup>
+                        {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
+                          <optgroup label={formatPlantLabelForUser('PLANT 01 전해공장 — 단위공정 단독 프리셋', user)}>
+                            {getAllPresets()
+                              .filter(p => p.group === 'plant02')
+                              .map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.btnLabel}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
+                          <optgroup label={formatPlantLabelForUser('PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋', user)}>
+                            {getAllPresets()
+                              .filter(p => p.group === 'plant03')
+                              .map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.btnLabel}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
+                          <optgroup label={formatPlantLabelForUser('PLANT 03 바이오 ECH — 단위공정 단독 프리셋', user)}>
+                            {getAllPresets()
+                              .filter(p => p.group === 'plant04')
+                              .map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.btnLabel}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
+                          <optgroup label={formatPlantLabelForUser('PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋', user)}>
+                            {getAllPresets()
+                              .filter(p => p.group === 'plant05')
+                              .map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.btnLabel}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                        {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
+                          <optgroup label={formatPlantLabelForUser('PLANT 05 · MDI 통합 공정 — 단위공정 단독 프리셋', user)}>
+                            {getAllPresets()
+                              .filter(p => p.group === 'plant06')
+                              .map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.btnLabel}
+                                </option>
+                              ))}
+                          </optgroup>
+                        )}
+                      </select>
+                    )}
 
-          {/* 화면 분할 모드 전환 (박스 없이 깔끔한 텍스트/밑줄 탭) */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 2,
-              background: '#F1F5F9',
-              padding: 2,
-              borderRadius: 6,
-              border: '1px solid #CBD5E1',
-            }}
-          >
-            {([
-              { id: 'canvas', label: isEn ? 'Full Canvas' : '도면만 크게' },
-              { id: 'split', label: isEn ? 'Split' : '도면+스트림' },
-              { id: 'table', label: isEn ? 'Streams' : '스트림 전체' },
-            ] as const).map(v => {
-              const active = layoutMode === v.id;
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  onClick={() => {
-                    setLayoutMode(v.id);
-                    if (v.id === 'canvas') {
-                      setInspectorOpen(false);
-                      setPaletteOpen(false);
-                      setTimeout(() => rfInstance?.fitView({ padding: 0.08, duration: 200 }), 80);
-                    } else if (v.id === 'split') {
-                      setInspectorOpen(true);
-                      setPaletteOpen(true);
-                    } else if (v.id === 'table') {
-                      setInspectorOpen(false);
-                      setPaletteOpen(false);
-                    }
-                  }}
-                  style={{
-                    fontSize: 11,
-                    fontWeight: active ? 800 : 700,
-                    padding: '3px 8px',
-                    border: 'none',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    background: active ? '#1E3A8A' : 'transparent',
-                    color: active ? '#FFFFFF' : '#475569',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {v.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* ── 명시적 [▶ RUN 시뮬레이션 실행] 버튼 & 수렴 진단 배지/팝오버 ── */}
-          {(() => {
-            const colUnits = solved.units.filter(u => u.unitType === 'distillation' && u.inletMassKgH > 0.01);
-            const allColsOk = colUnits.every(u => {
-              const dr = u.distillResult;
-              if (!dr) return true;
-              if (!dr.converged) return false;
-              if (dr.shortcutDesign && !dr.shortcutDesign.designMet) return false;
-              if (dr.spec1Status?.enabled && !dr.spec1Status.met) return false;
-              if (dr.spec2Status?.enabled && !dr.spec2Status.met) return false;
-              return true;
-            });
-            const convOverall = solved.convergence.overallStatus ?? (solved.convergence.converged ? 'converged' : 'failed');
-            const hasColIssue = !allColsOk;
-            const effectiveStatus: 'dirty' | 'converged' | 'warning' | 'failed' =
-              isSimDirty || solved.convergence.isIdle
-                ? 'dirty'
-                : convOverall === 'failed'
-                  ? 'failed'
-                  : convOverall === 'converged_with_warnings' || hasColIssue
-                    ? 'warning'
-                    : 'converged';
-
-            return (
-              <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <button
-                  type="button"
-                  disabled={isSimRunning}
-                  onClick={() => runSimulationNow()}
-                  title={isEn ? 'Run full flowsheet mass/energy balance & rigorous MESH distillation (F5 or Ctrl+Enter)' : '변경된 유량·온도·순도·환류비 조건으로 공정 전체 물질수지 및 다단 MESH 증류를 수렴 실행합니다 (단축키: F5 또는 Ctrl+Enter)'}
-                  style={{
-                    padding: '4px 11px',
-                    borderRadius: 5,
-                    border: '1px solid #1E3A8A',
-                    background: isSimRunning ? '#475569' : '#1E3A8A',
-                    color: '#FFFFFF',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    cursor: isSimRunning ? 'wait' : 'pointer',
-                    whiteSpace: 'nowrap',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  {isSimRunning ? (
-                    (isEn ? 'Running...' : '계산 중...')
-                  ) : (
-                    <>
-                      <span>{isEn ? '▶ Run (F5)' : '▶ RUN (F5)'}</span>
-                      {isSimDirty && (
+                    <button
+                      type="button"
+                      onClick={() => setOptModalOpen(true)}
+                      title={
+                        isEn
+                          ? 'Design Spec controller, Sensitivity analysis, and Broyden/Wegstein recycle convergence settings'
+                          : '플로우시트 목표역산 제어기(Design Spec), 다변수 민감도 분석(Sensitivity), Broyden/Wegstein 리사이클 수렴기 설정'
+                      }
+                      style={{
+                        height: 26,
+                        padding: '0 8px',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        borderRadius: 4,
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#1E293B',
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <SpecControlIcon size={11} /> {isEn ? 'Specs · Sensitivity' : '목표역산 · 민감도'}
+                      </span>
+                      {enabledSpecsCount > 0 && (
                         <span
                           style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: '#F59E0B',
-                            display: 'inline-block',
-                            flexShrink: 0,
+                            padding: '0 5px',
+                            borderRadius: 999,
+                            background: '#1E3A8A',
+                            color: '#FFFFFF',
+                            fontSize: 9.5,
+                            fontWeight: 900,
                           }}
-                        />
+                        >
+                          {enabledSpecsCount}
+                        </span>
                       )}
-                    </>
-                  )}
-                </button>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => setShowConvDiag(v => !v)}
-                  title={isEn ? 'Click to view unit convergence status, tear-stream residuals, and overall balance diagnostics.' : '클릭하여 장치별 수렴 판정, 순환 루프(Tear) 잔차, 보충 유입 및 종합 수지 상세 보고서를 확인합니다.'}
+                    <CaseOutputsMenu compact unitCount={simDefs.length} />
+                  </>
+                }
+              />
+
+              {showConvDiag && (
+                <div
                   style={{
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    color: '#1E293B',
-                    background: '#F8FAFC',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: 5,
-                    padding: '3px 8px',
-                    fontFamily: 'JetBrains Mono, monospace',
-                    whiteSpace: 'nowrap',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 16,
+                    zIndex: 1200,
+                    width: 'min(92vw, 440px)',
                   }}
                 >
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background:
-                        effectiveStatus === 'converged'
-                          ? '#10B981'
-                          : effectiveStatus === 'failed'
-                            ? '#DC2626'
-                            : '#D97706',
-                      display: 'inline-block',
-                      flexShrink: 0,
-                    }}
+                  <ConvergenceReportPanel
+                    convergence={solved.convergence}
+                    balance={solved.balance}
+                    elapsedMs={solvedMeta.elapsedMs}
+                    onClose={() => setShowConvDiag(false)}
+                    onSelectNode={id => setSelectedNodeId(id)}
                   />
-                  <span>
-                    {effectiveStatus === 'dirty'
-                      ? solved.convergence.isIdle
-                        ? (isEn ? 'Ready (▶ Run)' : '실행 대기 (▶ RUN)')
-                        : (isEn ? 'Modified (Run Needed)' : '조건 변경됨')
-                      : effectiveStatus === 'converged'
-                        ? (isEn ? `Converged (${solved.convergence.iterations} iter · ${solvedMeta.elapsedMs}ms) ▾` : `수렴 (${solved.convergence.iterations}회·${solvedMeta.elapsedMs}ms) ▾`)
-                        : effectiveStatus === 'warning'
-                          ? (isEn ? `Converged w/ Warnings (${solved.convergence.warningUnitCount ?? 0}) ▾` : `경고 동반 수렴 (${solved.convergence.warningUnitCount ?? 0}건) ▾`)
-                          : (isEn ? `Failed (${solved.convergence.failedUnitCount ?? 1}) ▾` : `미수렴 (${solved.convergence.failedUnitCount ?? 1}건 실패) ▾`)}
-                  </span>
-                </button>
-
-                {showConvDiag && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: 'calc(100% + 6px)',
-                      left: 0,
-                      zIndex: 1200,
-                      width: 'min(92vw, 440px)',
-                    }}
-                  >
-                    <ConvergenceReportPanel
-                      convergence={solved.convergence}
-                      balance={solved.balance}
-                      elapsedMs={solvedMeta.elapsedMs}
-                      onClose={() => setShowConvDiag(false)}
-                      onSelectNode={id => setSelectedNodeId(id)}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* 전체 장치 일괄 모드 전환 스위치 */}
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 2,
-            }}
-            title={isEn ? 'Switch all calculation units between Simple Balance and Rigorous Thermodynamics' : '모든 공정 계산 장치를 간편 발란스 모드 또는 정밀 열역학(Rigorous) 모드로 일괄 전환합니다'}
-          >
-            <button
-              onClick={() => setAllUnitsCalcMode('simple')}
-              style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                padding: '3px 6px',
-                borderRadius: 4,
-                border: 'none',
-                cursor: 'pointer',
-                background: 'transparent',
-                color: '#475569',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isEn ? 'Simple' : '간편'}
-            </button>
-            <span style={{ color: '#CBD5E1', fontSize: 10 }}>|</span>
-            <button
-              onClick={() => setAllUnitsCalcMode('rigorous')}
-              style={{
-                fontSize: 10.5,
-                fontWeight: 700,
-                padding: '3px 6px',
-                borderRadius: 4,
-                border: 'none',
-                cursor: 'pointer',
-                background: 'transparent',
-                color: '#1E3A8A',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isEn ? 'Rigorous' : '정밀'}
-            </button>
-          </div>
-
-          {(isPlantSimMode || Object.keys(hierarchySheets).length > 1) && (
-            <label
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                fontSize: 10.5,
-                fontWeight: 700,
-                color: boundarySyncEnabled ? '#0F172A' : '#64748B',
-                padding: '2px 4px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-              }}
-              title={isEn ? 'When enabled, master flowsheet boundary streams automatically sync to sub-process inlets.' : '활성화 시 상위 도면의 유입 유량·온도·압력이 하위 세부공정 입구(BOUND-*)에 실시간 주입됩니다.'}
-            >
-              <input
-                type="checkbox"
-                checked={boundarySyncEnabled}
-                onChange={e => setBoundarySyncEnabled(e.target.checked)}
-                style={{ margin: 0 }}
-              />
-              {isEn ? 'Sync Bounds' : '상하위연동'}
-            </label>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'nowrap', flexShrink: 0 }}>
-          {/* 실행취소(↶) / 다시실행(↷) 버튼 */}
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <button
-              type="button"
-              disabled={!canUndo}
-              onClick={handleUndo}
-              title={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
-              aria-label={isEn ? 'Undo (Ctrl+Z)' : '실행취소 (Ctrl+Z)'}
-              style={{
-                padding: '3px 7px',
-                fontSize: 13,
-                lineHeight: 1.1,
-                fontWeight: 700,
-                borderRadius: 5,
-                border: '1px solid #CBD5E1',
-                background: canUndo ? '#FFFFFF' : '#F8FAFC',
-                color: canUndo ? '#1E293B' : '#94A3B8',
-                opacity: canUndo ? 1 : 0.45,
-                cursor: canUndo ? 'pointer' : 'not-allowed',
-              }}
-            >
-              ↶
-            </button>
-            <button
-              type="button"
-              disabled={!canRedo}
-              onClick={handleRedo}
-              title={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
-              aria-label={isEn ? 'Redo (Ctrl+Y)' : '다시실행 (Ctrl+Y)'}
-              style={{
-                padding: '3px 7px',
-                fontSize: 13,
-                lineHeight: 1.1,
-                fontWeight: 700,
-                borderRadius: 5,
-                border: '1px solid #CBD5E1',
-                background: canRedo ? '#FFFFFF' : '#F8FAFC',
-                color: canRedo ? '#1E293B' : '#94A3B8',
-                opacity: canRedo ? 1 : 0.45,
-                cursor: canRedo ? 'pointer' : 'not-allowed',
-              }}
-            >
-              ↷
-            </button>
-          </div>
-
-          {lastSavedTime && (
-            <span
-              title={isEn ? `Auto-saved locally (${lastSavedTime})` : `로컬 자동저장 완료 (${lastSavedTime})`}
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#64748B',
-                fontFamily: 'JetBrains Mono, monospace',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isEn ? 'Saved' : '저장됨'}
-            </span>
-          )}
-
-          <button
-            onClick={() => setPaletteOpen(v => !v)}
-            title={isEn ? 'Toggle bottom unit model palette dock.' : '공정도 하단에 종류별로 정리된 가로형 장치 모델 팔레트 바를 열거나 접습니다.'}
-            style={{
-              padding: '3px 8px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 5,
-              cursor: 'pointer',
-              border: paletteOpen ? '1px solid #64748B' : '1px solid #CBD5E1',
-              background: paletteOpen ? '#F1F5F9' : '#FFFFFF',
-              color: '#1E293B',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {paletteOpen ? (isEn ? '▼ Palette' : '▼ 팔레트') : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><PlusSquareIcon size={11} /> {isEn ? 'Palette' : '팔레트'}</span>}
-          </button>
-
-          {isPlantSimMode ? (
-            <button
-              onClick={() => activateFullPlantPackage(true)}
-              title={
-                isHcl1AMode
-                  ? '1A 초고순도·무수 염산 및 폐염산 PSD 회수 전공정 도면을 초기 설계값으로 복원합니다.'
-                  : isEchGteMode
-                    ? '70,000 TPA (8.75 t/h) ECH (GTE 글리세린 공정) 전공정 도면을 초기 설계값으로 복원합니다.'
-                    : isCmsMode
-                      ? '66,000 TPA (MCL 120 + CFM 80 T/D) 클로로메탄(CMS) 전공정 도면을 초기 설계값으로 복원합니다.'
-                      : isMdiMode
-                        ? '100,000 TPA (Pure MDI 108 + PMDI 192 T/D) MDI 전공정 도면을 초기 설계값으로 복원합니다.'
-                        : '468 T/D 전해공장 마스터 및 10개 세부 공정 도면을 초기 설계값으로 복원합니다.'
-              }
-              style={{
-                padding: '3px 8px',
-                fontSize: 10.5,
-                fontWeight: 700,
-                borderRadius: 5,
-                cursor: 'pointer',
-                border: '1px solid #CBD5E1',
-                background: '#FFFFFF',
-                color: '#1E293B',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {isEn ? '↺ Reset' : '↺ 초기값 복원'}
-            </button>
-          ) : (
-            <>
-              {!isSimulatorOnlyUser(user) && (
-              <select
-                value={getAllPresets().some(p => p.id === presetId) ? presetId : ''}
-                onChange={e => {
-                  const found = getAllPresets().find(p => p.id === e.target.value);
-                  if (found) loadPreset(found);
-                }}
-                style={{
-                  padding: '3px 7px',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  maxWidth: 235,
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  cursor: 'pointer',
-                }}
-              >
-                <option value="" disabled>
-                  {isEn ? 'Load Process Preset...' : '공정 프리셋 불러오기...'}
-                </option>
-                <optgroup label={isEn ? 'Public Mini Examples' : '공개용 미니 예제 · 기본 템플릿'}>
-                  {getAllPresets()
-                    .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
-                    .map(p => (
-                      <option key={p.id} value={p.id}>
-                        {isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel}
-                      </option>
-                    ))}
-                </optgroup>
-                {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
-                  <optgroup label={formatPlantLabelForUser('PLANT 01 전해공장 — 단위공정 단독 프리셋', user)}>
-                    {getAllPresets()
-                      .filter(p => p.group === 'plant02')
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.btnLabel}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-                {isPlantAllowed(PLANT_GROUP_TO_ID.hcl1A, user) && (
-                  <optgroup label={formatPlantLabelForUser('PLANT 02 1A 염산·회수 — 단위공정 단독 프리셋', user)}>
-                    {getAllPresets()
-                      .filter(p => p.group === 'plant03')
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.btnLabel}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-                {isPlantAllowed(PLANT_GROUP_TO_ID.ech, user) && (
-                  <optgroup label={formatPlantLabelForUser('PLANT 03 바이오 ECH — 단위공정 단독 프리셋', user)}>
-                    {getAllPresets()
-                      .filter(p => p.group === 'plant04')
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.btnLabel}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-                {isPlantAllowed(PLANT_GROUP_TO_ID.cms, user) && (
-                  <optgroup label={formatPlantLabelForUser('PLANT 04 클로로메탄(CMS) — 단위공정 단독 프리셋', user)}>
-                    {getAllPresets()
-                      .filter(p => p.group === 'plant05')
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.btnLabel}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-                {isPlantAllowed(PLANT_GROUP_TO_ID.mdi, user) && (
-                  <optgroup label={formatPlantLabelForUser('PLANT 05 · MDI 통합 공정 — 단위공정 단독 프리셋', user)}>
-                    {getAllPresets()
-                      .filter(p => p.group === 'plant06')
-                      .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.btnLabel}
-                        </option>
-                      ))}
-                  </optgroup>
-                )}
-              </select>
+                </div>
               )}
-
-              <button
-                onClick={clearCanvas}
-                style={{
-                  padding: '3px 8px',
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  borderRadius: 5,
-                  cursor: 'pointer',
-                  border: '1px solid #CBD5E1',
-                  background: '#FFFFFF',
-                  color: '#1E293B',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {isEn ? '+ Clear All' : '+ 빈 캔버스'}
-              </button>
-            </>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setCompSetupModalOpen(true)}
-            title={isEn ? `Components & Thermodynamic Package — Recommended: ${autoPropertyRecommendation.method}` : `공정 성분 및 열역학 모델 설정 — 추천: ${autoPropertyRecommendation.method} (${autoPropertyRecommendation.reasonKo})`}
-            style={{
-              padding: '3px 9px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 5,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#1E293B',
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FlaskCompIcon size={11} /> {isEn ? `Components (${activeComponents.length})` : `성분 (${activeComponents.length}종)`}</span>
-            <span style={{ color: '#CBD5E1' }}>|</span>
-            <span>
-              <SlidersParamIcon size={11} style={{ display: 'inline-block', verticalAlign: '-2px', marginRight: 4 }} />
-              {propertyMethod === 'AUTO'
-                ? (isEn ? `Auto(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})` : `자동(${solved.propertyMethodUsed ?? autoPropertyRecommendation.method})`)
-                : propertyMethod}{' '}
-              ▾
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setOptModalOpen(true)}
-            title={isEn ? 'Design Spec controller, Sensitivity analysis, and Broyden/Wegstein recycle convergence settings' : '플로우시트 목표역산 제어기(Design Spec), 다변수 민감도 분석(Sensitivity), Broyden/Wegstein 리사이클 수렴기 설정'}
-            style={{
-              padding: '3px 9px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 5,
-              border: '1px solid #CBD5E1',
-              background: '#FFFFFF',
-              color: '#1E293B',
-              whiteSpace: 'nowrap',
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><SpecControlIcon size={11} /> {isEn ? 'Specs · Sensitivity' : '목표역산 · 민감도'}</span>
-            {designSpecs.filter(s => s.enabled).length > 0 && (
-              <span
-                style={{
-                  padding: '0 5px',
-                  borderRadius: 999,
-                  background: '#1E3A8A',
-                  color: '#FFFFFF',
-                  fontSize: 9.5,
-                  fontWeight: 900,
-                }}
-              >
-                {designSpecs.filter(s => s.enabled).length}
-              </span>
-            )}
-          </button>
-
-          <CaseOutputsMenu compact unitCount={simDefs.length} />
-
-          <button
-            onClick={() => setInspectorOpen(v => !v)}
-            title={isEn ? 'Toggle right unit/stream inspector panel.' : '우측 장치/배관 상세 속성 편집 패널을 열거나 접어 도면 화면을 넓힙니다.'}
-            style={{
-              padding: '3px 8px',
-              fontSize: 10.5,
-              fontWeight: 700,
-              borderRadius: 5,
-              cursor: 'pointer',
-              border: inspectorOpen ? '1px solid #64748B' : '1px solid #CBD5E1',
-              background: inspectorOpen ? '#F1F5F9' : '#FFFFFF',
-              color: '#1E293B',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {inspectorOpen ? (isEn ? 'Inspector ▸' : '속성창 ▸') : (isEn ? '◂ Inspector' : '◂ 속성창')}
-          </button>
-        </div>
-      </div>
+            </div>
+          );
+        })()
       )}
 
       {/* ── 단독 플로우시트 빌더에서만 사용자가 커스텀 하위시트를 만든 경우 1줄 탭 표시 (PLANT 02는 좌측 사이드 패널과 중복되므로 생략!) ── */}
@@ -7473,8 +7110,44 @@ export function FlowsheetWorkspace({
         </div>
       )}
 
-      {/* ── 메인 워크스페이스 (중앙 풀폭 캔버스 + 하단 가로형 장치모델 팔레트 + 스트림표 | 우측 슬림 속성창) ── */}
+      {/* ── 메인 워크스페이스 (좌측 탐색기 + 중앙 풀폭 캔버스 + 하단 가로형 장치모델 팔레트 + 스트림표 | 우측 슬림 속성창) ── */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+        {!isMobile && (
+          <WorkbenchExplorer
+            lang={lang}
+            open={explorerOpen}
+            onToggleOpen={() => setExplorerOpen(v => !v)}
+            sheets={Object.values(hierarchySheets)
+              .sort((a, b) => (a.id === 'master' ? -1 : b.id === 'master' ? 1 : 0))
+              .map(sh => ({
+                id: sh.id,
+                shortLabel: sh.shortTabLabel || sh.title || sh.id,
+                title: sh.title || sh.shortTabLabel || sh.id,
+                unitCount: sh.simDefs?.length ?? 0,
+              }))}
+            activeSheetId={activeSheetId}
+            onSelectSheet={navigateToHierarchySheet}
+            blocks={simDefs.map(d => ({
+              id: d.id,
+              tag: d.tag,
+              name: d.name,
+              unitType: d.unitType,
+            }))}
+            selectedNodeId={selectedNodeId}
+            onSelectBlock={nodeId => {
+              setSelectedNodeId(nodeId);
+              setSelectedEdgeId(null);
+              setInspectorOpen(true);
+              const n = rfNodes.find(x => x.id === nodeId);
+              if (n && rfInstance) {
+                rfInstance.setCenter(n.position.x + 80, n.position.y + 50, { zoom: 1.0, duration: 220 });
+              }
+            }}
+            hasPlantBasisControls={isPlantSimMode}
+            onOpenPlantBasis={() => window.dispatchEvent(new CustomEvent('chemeng:open-plant-basis'))}
+          />
+        )}
+
         {/* 1) 중앙: 플로우시트 캔버스 + 하단 가로형 카테고리 장치 팔레트 + 드래그 분할바 + 스트림 테이블 */}
         <div
           ref={centerSplitRef}
