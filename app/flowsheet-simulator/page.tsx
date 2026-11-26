@@ -5398,10 +5398,15 @@ export function FlowsheetWorkspace({
           ? '#7C3AED'
           : '#475569';
 
-      const labelText =
-        streamLabelMode === 'compact' || !s
-          ? `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}]`
-          : `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`;
+      const flowText = s
+        ? `${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)}`
+        : undefined;
+      const tempText = s
+        ? `${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)}`
+        : undefined;
+      const pressText = s
+        ? `${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 1)}${getUnitLabel('pressG', globalUnits.pressG)}`
+        : undefined;
 
       return {
         id: e.id,
@@ -5412,21 +5417,20 @@ export function FlowsheetWorkspace({
         type: 'smoothstep',
         animated: isTear || s?.phase === 'G' || s?.phase === 'L/G',
         selected: isSelected,
-        label: labelText,
-        labelStyle: {
-          fontSize: 9.5,
-          fontWeight: 800,
-          fill: isSelected ? '#92400E' : isTear ? '#5B21B6' : '#1A2F44',
-          fontFamily: 'JetBrains Mono, monospace',
+        data: {
+          streamNo: e.streamNo,
+          flowText,
+          tempText,
+          pressText,
+          phase: s?.phase,
+          isTear,
+          compact: streamLabelMode === 'compact',
+          onSelect: (edgeId: string) => {
+            setSelectedEdgeId(edgeId);
+            setSelectedNodeId(null);
+            setInspectorOpen(true);
+          },
         },
-        labelBgStyle: {
-          fill: isSelected ? '#FEF3C7' : isTear ? '#F5F3FF' : '#FFFFFF',
-          fillOpacity: 0.95,
-          stroke: isSelected ? '#D97706' : isTear ? '#8B5CF6' : '#CBD5E1',
-          strokeWidth: isSelected || isTear ? 1.5 : 1,
-        },
-        labelBgPadding: [5, 3] as [number, number],
-        labelBgBorderRadius: 4,
         style: {
           stroke: phaseColor,
           strokeWidth: isSelected ? 3.4 : isTear ? 2.8 : 2.3,

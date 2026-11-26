@@ -718,3 +718,112 @@ html[data-wb-theme="dark"] .react-flow__minimap {
   background: #0F172A !important;
   border: 1px solid #334155 !important;
 }
+
+/* ============================================================
+   Compact Stream Telemetry Card (ChemPlant Studio Signature)
+   ============================================================ */
+.cp-stream-card {
+  min-width: 88px;
+  max-width: 132px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #CBD5E1;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.25;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.cp-stream-card.compact {
+  min-width: auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+.cp-stream-card.tear {
+  border-color: #C4B5FD;
+  background: rgba(245, 243, 255, 0.96);
+}
+.cp-stream-card.selected {
+  border-color: #1E3A8A;
+  box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.2);
+}
+.cp-stream-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  padding-bottom: 2px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid #E2E8F0;
+}
+.cp-stream-no {
+  font-size: 9px;
+  font-weight: 800;
+  color: #1E3A8A;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cp-stream-tear-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: #7C3AED;
+  display: inline-block;
+}
+.cp-stream-phase {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.cp-stream-card-flow {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #0F172A;
+  white-space: nowrap;
+}
+.cp-stream-card-tp {
+  font-size: 8.5px;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+.cp-stream-card-compact {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #0F172A;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+/* Dark Mode for Stream Telemetry Card */
+html[data-wb-theme="dark"] .cp-stream-card {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-color: #334155 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45) !important;
+}
+html[data-wb-theme="dark"] .cp-stream-card.tear {
+  border-color: #7C3AED !important;
+}
+html[data-wb-theme="dark"] .cp-stream-card.selected {
+  border-color: #60A5FA !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3) !important;
+}
+html[data-wb-theme="dark"] .cp-stream-card-head {
+  border-bottom-color: #1E293B;
+}
+html[data-wb-theme="dark"] .cp-stream-no {
+  color: #93C5FD !important;
+}
+html[data-wb-theme="dark"] .cp-stream-card-flow,
+html[data-wb-theme="dark"] .cp-stream-card-compact {
+  color: #F1F5F9 !important;
+}
+html[data-wb-theme="dark"] .cp-stream-card-tp {
+  color: #94A3B8 !important;
+}
