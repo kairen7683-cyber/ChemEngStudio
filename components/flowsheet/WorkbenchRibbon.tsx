@@ -445,7 +445,7 @@ export default function WorkbenchRibbon({
           })}
         </div>
 
-        {/* Right contextual quick actions on tab bar (always visible Undo/Redo + active sheet) */}
+        {/* Right contextual quick actions on tab bar */}
         <div
           style={{
             display: 'flex',
@@ -454,28 +454,6 @@ export default function WorkbenchRibbon({
             flexShrink: 0,
           }}
         >
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginRight: 2 }}>
-            <button
-              type="button"
-              className="wb-icon-btn"
-              onClick={onUndo}
-              disabled={!canUndo}
-              title={t('실행 취소 (Ctrl+Z)', 'Undo (Ctrl+Z)')}
-              style={{ height: 22, minWidth: 24, fontSize: 12, padding: '0 5px' }}
-            >
-              ↶
-            </button>
-            <button
-              type="button"
-              className="wb-icon-btn"
-              onClick={onRedo}
-              disabled={!canRedo}
-              title={t('다시 실행 (Ctrl+Y)', 'Redo (Ctrl+Y)')}
-              style={{ height: 22, minWidth: 24, fontSize: 12, padding: '0 5px' }}
-            >
-              ↷
-            </button>
-          </div>
           {activeSheetTitle && (
             <span
               title={activeSheetTitle}
@@ -671,13 +649,6 @@ export default function WorkbenchRibbon({
                 >
                   {t('도면+스트림', 'Split')}
                 </button>
-                <button
-                  type="button"
-                  className={`wb-seg-btn${layoutMode === 'table' ? ' active' : ''}`}
-                  onClick={() => onChangeLayoutMode('table')}
-                >
-                  {t('스트림 전체', 'Streams')}
-                </button>
               </div>
               <button
                 type="button"
@@ -697,7 +668,29 @@ export default function WorkbenchRibbon({
               </button>
             </RibbonGroup>
 
-            <RibbonGroup label={t('제어 · 초기화', 'Controls')} noDivider={!rightExtraSlot}>
+            <RibbonGroup label={t('제어 · 편집', 'Edit & Controls')} noDivider={!rightExtraSlot}>
+              <button
+                type="button"
+                className="wb-icon-btn"
+                onClick={onUndo}
+                disabled={!canUndo}
+                title={t('실행 취소 (Ctrl+Z)', 'Undo (Ctrl+Z)')}
+                aria-label={t('실행 취소', 'Undo')}
+                style={{ fontSize: 14, fontWeight: 700 }}
+              >
+                ↩
+              </button>
+              <button
+                type="button"
+                className="wb-icon-btn"
+                onClick={onRedo}
+                disabled={!canRedo}
+                title={t('다시 실행 (Ctrl+Y)', 'Redo (Ctrl+Y)')}
+                aria-label={t('다시 실행', 'Redo')}
+                style={{ fontSize: 14, fontWeight: 700 }}
+              >
+                ↪
+              </button>
               <button
                 type="button"
                 className="wb-cmd-btn"
