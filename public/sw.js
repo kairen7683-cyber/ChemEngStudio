@@ -1,4 +1,4 @@
-const CACHE_NAME = 'chemeng-shell-v92';
+const CACHE_NAME = 'chemeng-shell-v93';
 const PRECACHE_URLS = [
   '/manifest.json',
   '/icon-192-v2.png',

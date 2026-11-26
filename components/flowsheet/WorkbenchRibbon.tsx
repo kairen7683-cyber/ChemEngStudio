@@ -659,15 +659,6 @@ export default function WorkbenchRibbon({
                   {t('스트림 전체', 'Streams')}
                 </button>
               </div>
-
-              <button
-                type="button"
-                className={`wb-cmd-btn${explorerOpen ? ' active' : ''}`}
-                onClick={onToggleExplorer}
-                title={t('좌측 탐색기 열기/닫기', 'Toggle Simulation Explorer')}
-              >
-                {t('탐색기', 'Explorer')}
-              </button>
               <button
                 type="button"
                 className={`wb-cmd-btn${paletteOpen ? ' active' : ''}`}
@@ -891,15 +882,6 @@ export default function WorkbenchRibbon({
                 onClick={() => onChangeLayoutMode('canvas')}
               >
                 {t('도면만 크게', 'Canvas Only')}
-              </button>
-              <button
-                type="button"
-                className={`wb-cmd-btn${explorerOpen ? ' active' : ''}`}
-                onClick={onToggleExplorer}
-              >
-                {explorerOpen
-                  ? t('탐색기 닫기', 'Hide Explorer')
-                  : t('탐색기 열기', 'Show Explorer')}
               </button>
             </RibbonGroup>
 

@@ -7176,6 +7176,22 @@ export function FlowsheetWorkspace({
                 rfInstance.setCenter(n.position.x + 80, n.position.y + 50, { zoom: 1.0, duration: 220 });
               }
             }}
+            streams={flowEdges.map(e => {
+              const sRes = streamResultMap.get(e.id);
+              return {
+                id: e.id,
+                streamNo: e.streamNo,
+                summary: sRes
+                  ? `${sRes.totalMassKgH.toFixed(1)} kg/h · ${sRes.tempC.toFixed(1)}°C · ${sRes.phase}`
+                  : undefined,
+              };
+            })}
+            selectedEdgeId={selectedEdgeId}
+            onSelectStream={edgeId => {
+              setSelectedEdgeId(edgeId);
+              setSelectedNodeId(null);
+              setInspectorOpen(true);
+            }}
             hasPlantBasisControls={isPlantSimMode}
             onOpenPlantBasis={() => window.dispatchEvent(new CustomEvent('chemeng:open-plant-basis'))}
           />
@@ -7273,31 +7289,6 @@ export function FlowsheetWorkspace({
                 }}
               >
                 {isEn ? 'Stream Summary' : '스트림 요약'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setBottomTab('units');
-                  setLayoutMode('table');
-                  setInspectorOpen(false);
-                  setPaletteOpen(false);
-                }}
-                style={{
-                  height: 25,
-                  padding: '0 11px',
-                  borderRadius: '5px 5px 0 0',
-                  border: layoutMode === 'table' && bottomTab === 'units' ? '1px solid #CBD5E1' : '1px solid transparent',
-                  borderBottom: layoutMode === 'table' && bottomTab === 'units' ? '1px solid #FFFFFF' : 'none',
-                  background: layoutMode === 'table' && bottomTab === 'units' ? '#FFFFFF' : 'transparent',
-                  color: layoutMode === 'table' && bottomTab === 'units' ? '#1E3A8A' : '#475569',
-                  fontSize: 11,
-                  fontWeight: layoutMode === 'table' && bottomTab === 'units' ? 800 : 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  marginBottom: layoutMode === 'table' && bottomTab === 'units' ? -1 : 0,
-                }}
-              >
-                {isEn ? 'Unit Summary' : '장치 요약'}
               </button>
             </div>
           )}
@@ -7933,25 +7924,6 @@ export function FlowsheetWorkspace({
                   }}
                 >
                   {isEn ? `Horizontal H&MB Stream Table (${solved.streams.length})` : `가로형 H&MB 스트림 테이블 (${solved.streams.length})`}
-                </button>
-                <button
-                  onClick={() => {
-                    setBottomTab('units');
-                    if (layoutMode === 'canvas') setLayoutMode('split');
-                  }}
-                  style={{
-                    padding: '3px 10px',
-                    fontSize: 11,
-                    fontWeight: 800,
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    border: 'none',
-                    background: bottomTab === 'units' ? '#1A2F44' : 'transparent',
-                    color: bottomTab === 'units' ? '#FFFFFF' : '#475569',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {isEn ? `Unit Summary (${solved.units.length})` : `장치 요약 (${solved.units.length})`}
                 </button>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
