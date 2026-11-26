@@ -33,10 +33,16 @@ import { fetchAndRegisterCustomComponents } from '@/lib/calculations/dynamicComp
 
 export type SyncState = 'idle' | 'saving' | 'saved' | 'error';
 
+const GUEST_DEMO_KEY = 'chemplant-guest-demo-v1';
+
 interface AuthContextValue {
   loading: boolean;
   authenticated: boolean;
   user: UserProfile | null;
+  isGuestDemo: boolean;
+  enterGuestDemo: () => void;
+  exitGuestDemo: () => void;
+  promptGuestAuth: (reason?: string, defaultTab?: 'login' | 'register') => void;
   registrationMode: RegistrationMode;
   dailyAiLimit: number;
   hasServerGemini: boolean;
@@ -60,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [authenticated, setAuthenticated] = useState(false);
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [isGuestDemo, setIsGuestDemo] = useState(false);
   const [registrationMode, setRegistrationMode] = useState<RegistrationMode>('invite_only');
   const [dailyAiLimit, setDailyAiLimit] = useState(30);
   const [hasServerGemini, setHasServerGemini] = useState(false);
@@ -127,11 +134,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch {
           // ignore
         }
+        try {
+          if (typeof window !== 'undefined') {
+            window.sessionStorage.removeItem(GUEST_DEMO_KEY);
+          }
+        } catch {
+          // ignore
+        }
+        setIsGuestDemo(false);
         setUser(st.user);
         setAuthenticated(true);
         setSyncStatus('saved');
       } else {
         purgeUserLocalStorageKeys();
+        let guestActive = false;
+        try {
+          if (typeof window !== 'undefined') {
+            guestActive = window.sessionStorage.getItem(GUEST_DEMO_KEY) === '1';
+          }
+        } catch {
+          guestActive = false;
+        }
+        if (guestActive) {
+          try {
+            const balState = useBalanceStore.getState();
+            const curMeta = getPlantRegistryItem(balState.activePlantId);
+            if (!curMeta.isSandbox) {
+              balState.setActivePlantId('new_builder');
+            }
+          } catch {
+            // ignore
+          }
+        }
+        setIsGuestDemo(guestActive);
         setUser(null);
         setAuthenticated(false);
         setSyncStatus('idle');
@@ -177,6 +212,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await saveAllLocalWorkspacesToServer();
   }, [localDevBypass]);
 
+  const enterGuestDemo = useCallback(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(GUEST_DEMO_KEY, '1');
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      useBalanceStore.getState().setActivePlantId('new_builder');
+    } catch {
+      // ignore
+    }
+    setIsGuestDemo(true);
+    if (typeof window !== 'undefined' && window.location.pathname === '/') {
+      window.location.assign('/flowsheet-simulator');
+    }
+  }, []);
+
+  const exitGuestDemo = useCallback(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.removeItem(GUEST_DEMO_KEY);
+      }
+    } catch {
+      // ignore
+    }
+    setIsGuestDemo(false);
+  }, []);
+
+  const promptGuestAuth = useCallback(
+    (reason?: string, defaultTab?: 'login' | 'register') => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('chemeng:prompt-guest-auth', {
+            detail: { reason, defaultTab: defaultTab ?? 'register' },
+          })
+        );
+      }
+    },
+    []
+  );
+
   const openAccountModal = useCallback((tab: 'profile' | 'admin' = 'profile') => {
     setAccountModalTab(tab);
     setAccountModalOpen(true);
@@ -192,6 +270,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         authenticated,
         user,
+        isGuestDemo,
+        enterGuestDemo,
+        exitGuestDemo,
+        promptGuestAuth,
         registrationMode,
         dailyAiLimit,
         hasServerGemini,

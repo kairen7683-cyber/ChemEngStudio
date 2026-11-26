@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
 import { ENGINEERING_DISCLAIMER_ROWS } from '@/lib/legal/engineeringDisclaimer';
 import { useUnitStore } from '@/lib/stores/unitStore';
+import { useAuth } from '@/components/auth/AuthContext';
 import type { FlowUnitParams } from '@/lib/calculations/flowsheetSolver';
 
 export interface PurificationWorkbenchModalProps {
@@ -94,6 +95,7 @@ export default function PurificationWorkbenchModal({
 }: PurificationWorkbenchModalProps) {
   const lang = useUnitStore((s) => s.lang);
   const isEn = lang === 'en';
+  const { user, isGuestDemo, promptGuestAuth } = useAuth();
 
   // ── 1) Saturator & Clarifier state ──
   const [satType, setSatType] = useState<SatType>('conventional_bed');
@@ -490,6 +492,10 @@ export default function PurificationWorkbenchModal({
 
   // ── ExcelJS Datasheet Export ──
   const handleExportExcel = async () => {
+    if (!user && isGuestDemo) {
+      promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+      return;
+    }
     setExporting(true);
     try {
       const wb = new ExcelJS.Workbook();

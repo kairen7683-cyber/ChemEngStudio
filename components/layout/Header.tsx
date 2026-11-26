@@ -75,7 +75,7 @@ function formatSavedDate(raw: string): string {
 export default function Header() {
   const pathname = usePathname() || '/';
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, isGuestDemo, promptGuestAuth } = useAuth();
 
   const [isMobile, setIsMobile] = useState(false);
   const [simUiMode, setSimUiMode] = useState<SimUiMode>('modern');
@@ -201,7 +201,7 @@ export default function Header() {
 
   // 계정에 할당된 공장 목록 기준으로 허용되지 않은 예제 공장에 머무르지 않도록 자동 전환
   useEffect(() => {
-    if (!user) return;
+    if (!user && !isGuestDemo) return;
     const curMeta = getPlantRegistryItem(activePlantId);
     if (!curMeta.isSandbox && !isPlantAllowed(activePlantId, user)) {
       const firstAllowed = PLANT_REGISTRY.find(
@@ -213,7 +213,7 @@ export default function Header() {
         setActivePlantId('new_builder');
       }
     }
-  }, [user, activePlantId, setActivePlantId]);
+  }, [user, isGuestDemo, activePlantId, setActivePlantId]);
 
   const plantMeta = getPlantRegistryItem(activePlantId);
   const isSimulatorMode = activePlantId === 'new_builder' || activePlantId === 'classic_sim';
@@ -319,6 +319,15 @@ export default function Header() {
     setCaseMenuOpen(false);
     setToolsMenuOpen(false);
     setSettingsMenuOpen(false);
+    if (isGuestDemo && !user) {
+      promptGuestAuth(
+        lang === 'en'
+          ? 'Sign up for free to save your process cases.'
+          : '무료 가입 후 작업 케이스를 저장할 수 있습니다.',
+        'register'
+      );
+      return;
+    }
     if (typeof window === 'undefined') return;
     if (isFlowsheetOrClassicRoute) {
       window.dispatchEvent(new CustomEvent(OPEN_SAVE_CASE_EVENT, { detail: { mode } }));
@@ -424,6 +433,15 @@ export default function Header() {
   };
 
   const importJsonFile = (file: File) => {
+    if (isGuestDemo && !user) {
+      promptGuestAuth(
+        lang === 'en'
+          ? 'Sign up for free to import .json, .bkp, or .inp files.'
+          : '무료 가입 후 .json / .bkp / .inp 파일을 불러올 수 있습니다.',
+        'register'
+      );
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -466,6 +484,15 @@ export default function Header() {
   };
 
   const importProcessTextFile = (file: File) => {
+    if (isGuestDemo && !user) {
+      promptGuestAuth(
+        lang === 'en'
+          ? 'Sign up for free to import .json, .bkp, or .inp files.'
+          : '무료 가입 후 .json / .bkp / .inp 파일을 불러올 수 있습니다.',
+        'register'
+      );
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -600,6 +627,16 @@ export default function Header() {
   };
 
   const handleOpenUnifiedFilePicker = async () => {
+    if (isGuestDemo && !user) {
+      setCaseMenuOpen(false);
+      promptGuestAuth(
+        lang === 'en'
+          ? 'Sign up for free to import .json, .bkp, or .inp files.'
+          : '무료 가입 후 .json / .bkp / .inp 파일을 불러올 수 있습니다.',
+        'register'
+      );
+      return;
+    }
     type OpenFilePickerFn = (options?: {
       multiple?: boolean;
       types?: Array<{ description?: string; accept: Record<string, string[]> }>;

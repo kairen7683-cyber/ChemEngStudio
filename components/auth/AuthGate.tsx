@@ -64,6 +64,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const {
     loading,
     authenticated,
+    isGuestDemo,
+    enterGuestDemo,
     registrationMode,
     authError,
     refreshAuthAndHydrate,
@@ -74,6 +76,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const isEn = lang === 'en';
 
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [guestAuthReason, setGuestAuthReason] = useState<string | null>(null);
   const [showLandingPreview, setShowLandingPreview] = useState(false);
 
   useEffect(() => {
@@ -86,8 +89,22 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       setShowLandingPreview(true);
     }
     const onOpenLanding = () => setShowLandingPreview(true);
+    const onPromptGuestAuth = (e: Event) => {
+      const detail = (
+        e as CustomEvent<{ reason?: string; defaultTab?: 'login' | 'register' }>
+      ).detail;
+      setGuestAuthReason(detail?.reason ?? null);
+      setTab(detail?.defaultTab === 'login' ? 'login' : 'register');
+      setFormError(null);
+      setFormSuccess(null);
+      setAuthModalOpen(true);
+    };
     window.addEventListener('chemeng:open-landing', onOpenLanding);
-    return () => window.removeEventListener('chemeng:open-landing', onOpenLanding);
+    window.addEventListener('chemeng:prompt-guest-auth', onPromptGuestAuth);
+    return () => {
+      window.removeEventListener('chemeng:open-landing', onOpenLanding);
+      window.removeEventListener('chemeng:prompt-guest-auth', onPromptGuestAuth);
+    };
   }, []);
 
   const handleCloseLandingPreview = () => {
@@ -138,6 +155,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }, [authModalOpen]);
 
   const handleOpenAuth = (defaultTab: 'login' | 'register' = 'login') => {
+    setGuestAuthReason(null);
     setTab(defaultTab);
     setFormError(null);
     setFormSuccess(null);
@@ -341,11 +359,19 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <LandingPage
-        onOpenAuth={handleOpenAuth}
-        registrationMode={registrationMode}
-        authError={authError}
-      />
+      {isGuestDemo && !showLandingPreview ? (
+        children
+      ) : (
+        <LandingPage
+          onOpenAuth={handleOpenAuth}
+          onTryDemo={() => {
+            handleCloseLandingPreview();
+            enterGuestDemo();
+          }}
+          registrationMode={registrationMode}
+          authError={authError}
+        />
+      )}
 
       {authModalOpen && (
         <div
@@ -506,6 +532,25 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
         {/* Form Body */}
         <div style={{ padding: '22px 26px 24px' }}>
+          {guestAuthReason && (
+            <div
+              style={{
+                marginBottom: 14,
+                padding: '10px 12px',
+                borderRadius: 8,
+                background: '#F1F5F9',
+                border: '1px solid #CBD5E1',
+                borderLeft: '3px solid #1E3A8A',
+                color: '#1E293B',
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1.45,
+              }}
+            >
+              {guestAuthReason}
+            </div>
+          )}
+
           {authError && (
             <div
               style={{

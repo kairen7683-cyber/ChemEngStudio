@@ -8,6 +8,7 @@ import {
   useLocalUnit,
 } from '@/components/units/UnitControls';
 import { useUnitStore } from '@/lib/stores/unitStore';
+import { useAuth } from '@/components/auth/AuthContext';
 import {
   formatCanonicalValue,
   getUnitLabel,
@@ -146,6 +147,7 @@ export default function ColumnInternalsDesignPanel({
 }: ColumnInternalsDesignPanelProps) {
   const lang = useUnitStore((s) => s.lang);
   const isEn = lang === 'en';
+  const { user, isGuestDemo, promptGuestAuth } = useAuth();
   const [visualTab, setVisualTab] = useState<RightVisualTab>('drawing');
   const [aiNote, setAiNote] = useState<string | null>(null);
   const [aiReport, setAiReport] = useState<{
@@ -211,6 +213,10 @@ export default function ColumnInternalsDesignPanel({
   };
 
   const runAiInternalsAutoFix = async () => {
+    if (!user && isGuestDemo) {
+      promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+      return;
+    }
     if (!simResult || isAiBusy) return;
     setIsAiBusy(true);
     setAiStepLabel(isEn ? 'Searching flood & ΔP combinations...' : '범람·압손 조합 탐색 중...');
@@ -2942,6 +2948,10 @@ export default function ColumnInternalsDesignPanel({
                     role="menuitem"
                     onClick={() => {
                       setExportMenuOpen(false);
+                      if (!user && isGuestDemo) {
+                        promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+                        return;
+                      }
                       void downloadColumnEpcDatasheet({
                         unitTag,
                         unitLabel,

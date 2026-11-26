@@ -18,6 +18,7 @@ import {
 
 export interface LandingPageProps {
   onOpenAuth: (defaultTab?: 'login' | 'register') => void;
+  onTryDemo?: () => void;
   registrationMode: string;
   authError?: string | null;
   isLoggedInPreview?: boolean;
@@ -675,6 +676,7 @@ function HeroPfdPreview({ lang }: { lang: Lang }) {
 
 export default function LandingPage({
   onOpenAuth,
+  onTryDemo,
   registrationMode,
   authError,
   isLoggedInPreview = false,
@@ -1007,6 +1009,25 @@ export default function LandingPage({
 
             <PwaInstallButton variant="login-header" />
 
+            {!isLoggedInPreview && onTryDemo && (
+              <button
+                type="button"
+                className="cp-btn-outline-dark"
+                onClick={onTryDemo}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 12,
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  borderColor: 'rgba(147, 197, 253, 0.45)',
+                  color: '#E0F2FE',
+                  background: 'rgba(30, 58, 138, 0.28)',
+                }}
+              >
+                {lang === 'ko' ? '바로 체험' : 'Live Demo'}
+              </button>
+            )}
+
             <button
               type="button"
               className="cp-btn-primary"
@@ -1160,7 +1181,7 @@ export default function LandingPage({
                   : 'From rigorous MESH distillation and multi-reactor flowsheets to Bell-Delaware heat exchanger rating, API 520/526 PSV sizing, API 521 flare radiation, and electrolyte thermodynamics. Run directly in your browser and export official TEMA & API .xlsx datasheets.'}
               </p>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: !isLoggedInPreview && onTryDemo ? 12 : 28 }}>
                 <button
                   type="button"
                   className="cp-btn-primary"
@@ -1176,6 +1197,30 @@ export default function LandingPage({
                   <StreamFlowIcon size={15} />
                   <span>{lang === 'ko' ? '워크스페이스 로그인' : 'Launch Workspace'}</span>
                 </button>
+
+                {!isLoggedInPreview && onTryDemo && (
+                  <button
+                    type="button"
+                    onClick={onTryDemo}
+                    style={{
+                      padding: '12px 22px',
+                      fontSize: 14,
+                      fontWeight: 800,
+                      borderRadius: 8,
+                      border: '1px solid rgba(147, 197, 253, 0.55)',
+                      background: 'rgba(255, 255, 255, 0.1)',
+                      color: '#F8FAFC',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background 0.15s ease, border-color 0.15s ease',
+                    }}
+                  >
+                    <PfdSchematicIcon size={15} />
+                    <span>{lang === 'ko' ? '가입 없이 바로 체험하기' : 'Try Live Demo'}</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1193,6 +1238,21 @@ export default function LandingPage({
                   <span>{lang === 'ko' ? '검증 데이터 보기' : 'View Benchmarks'}</span>
                 </button>
               </div>
+
+              {!isLoggedInPreview && onTryDemo && (
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: '#94A3B8',
+                    marginBottom: 24,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {lang === 'ko'
+                    ? '미니 예제 5종 즉시 실행 · 저장·엑셀·AI 해결은 무료 가입 후 이용'
+                    : 'Run 5 mini-examples instantly · Free sign-up for Save, Excel & AI Auto-Fix'}
+                </div>
+              )}
 
               {/* Compact Trust Line */}
               <div

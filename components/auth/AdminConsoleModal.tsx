@@ -222,6 +222,8 @@ function generateStrongPassword(): string {
 export function HeaderUserControls() {
   const {
     user,
+    isGuestDemo,
+    promptGuestAuth,
     syncStatus,
     syncError,
     localDevBypass,
@@ -232,7 +234,56 @@ export function HeaderUserControls() {
   const lang = useUnitStore(s => s.lang);
   const isEn = lang === 'en';
 
-  if (!user) return null;
+  if (!user) {
+    if (!isGuestDemo) return null;
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <span
+          style={{
+            padding: '3px 8px',
+            borderRadius: 6,
+            border: '1px solid #334155',
+            background: '#1E293B',
+            color: '#CBD5E1',
+            fontSize: 10,
+            fontWeight: 800,
+            whiteSpace: 'nowrap',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: '#60A5FA',
+              flexShrink: 0,
+            }}
+          />
+          <span>{isEn ? 'Demo' : '체험 모드'}</span>
+        </span>
+        <button
+          type="button"
+          onClick={() => promptGuestAuth(undefined, 'register')}
+          style={{
+            padding: '4px 10px',
+            borderRadius: 6,
+            border: '1px solid #2563EB',
+            background: '#1E3A8A',
+            color: '#FFFFFF',
+            fontSize: 11,
+            fontWeight: 800,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {isEn ? 'Sign Up Free' : '무료 가입 / 로그인'}
+        </button>
+      </div>
+    );
+  }
 
   const isAdmin = user.role === 'admin';
   const syncBadge = (() => {

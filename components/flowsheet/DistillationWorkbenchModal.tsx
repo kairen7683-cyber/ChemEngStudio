@@ -13,6 +13,7 @@ import {
   getUnitLabel,
 } from '@/lib/units/unitSystem';
 import { useUnitStore } from '@/lib/stores/unitStore';
+import { useAuth } from '@/components/auth/AuthContext';
 import {
   resolveEffectiveDofSlots,
   type DistillCalcMode,
@@ -282,6 +283,7 @@ export default function DistillationWorkbenchModal({
 }: DistillationWorkbenchModalProps) {
   const lang = useUnitStore((s) => s.lang);
   const isEn = lang === 'en';
+  const { user, isGuestDemo, promptGuestAuth } = useAuth();
   const [workspaceView, setWorkspaceView] = useState<'simulation' | 'internals'>(initialView);
   const [leftTab, setLeftTab] = useState<LeftTabId>('specs');
   const [rightChart, setRightChart] = useState<RightChartId>('comp');
@@ -383,6 +385,10 @@ export default function DistillationWorkbenchModal({
   };
 
   const runAiAutoFixDistill = async () => {
+    if (!user && isGuestDemo) {
+      promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+      return;
+    }
     setIsAiBusy(true);
     setAiStepLabel(isEn ? 'Analyzing candidates and root causes...' : '후보 조합 및 원인 분석 중...');
     setAiReport(null);

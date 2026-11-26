@@ -178,7 +178,8 @@ export const PLANT_GROUP_TO_ID: Record<'electrolysis' | 'hcl1A' | 'ech' | 'cms' 
 export function isSimulatorOnlyUser(
   user?: { role?: string; allowed_plants?: string[] | null } | null
 ): boolean {
-  if (!user || user.role === 'admin') return false;
+  if (!user) return true; // Unauthenticated Guest Demo is strictly simulator-only
+  if (user.role === 'admin') return false;
   return (
     Array.isArray(user.allowed_plants) &&
     user.allowed_plants.length > 0 &&
@@ -203,10 +204,8 @@ export function isPlantAllowed(
   user?: { role?: string; allowed_plants?: string[] | null } | null
 ): boolean {
   if (plantId === 'new_builder' || plantId === 'classic_sim') return true;
-  if (OWNER_ONLY_PLANTS.has(plantId)) {
-    return user?.role === 'admin';
-  }
-  if (!user) return true;
+  if (!user) return false; // Guests can NEVER access commercial plants (PLANT 01~05)
+  if (OWNER_ONLY_PLANTS.has(plantId)) return user.role === 'admin';
   if (user.role === 'admin') return true;
   if (!Array.isArray(user.allowed_plants) || user.allowed_plants.length === 0) return true;
   if (user.allowed_plants.includes('*')) return true;

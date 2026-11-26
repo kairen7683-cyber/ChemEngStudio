@@ -11,6 +11,7 @@ import {
   useLocalUnit,
 } from '@/components/units/UnitControls';
 import { useUnitStore } from '@/lib/stores/unitStore';
+import { useAuth } from '@/components/auth/AuthContext';
 import {
   formatCanonicalValue,
   getUnitLabel,
@@ -195,6 +196,7 @@ export default function HeatExchangerWorkbenchModal({
 }: HeatExchangerWorkbenchModalProps) {
   const lang = useUnitStore((s) => s.lang);
   const isEn = lang === 'en';
+  const { user, isGuestDemo, promptGuestAuth } = useAuth();
   const [workbenchView, setWorkbenchView] = useState<HxWorkbenchView>(initialView);
   const [visualTab, setVisualTab] = useState<MechVisualTab>('cad');
   const [isRunningFeedback, setIsRunningFeedback] = useState(false);
@@ -353,6 +355,10 @@ export default function HeatExchangerWorkbenchModal({
   };
 
   const runAiAutoFixHx = async () => {
+    if (!user && isGuestDemo) {
+      promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+      return;
+    }
     setIsAiBusy(true);
     setAiStepLabel(isEn ? 'Analyzing thermal & hydraulic bottlenecks...' : '열·수력학 병목 원인 분석 중...');
     setAiReport(null);
@@ -411,6 +417,10 @@ export default function HeatExchangerWorkbenchModal({
   };
 
   const exportHxExcelDatasheet = async () => {
+    if (!user && isGuestDemo) {
+      promptGuestAuth(isEn ? 'Sign up for free to export Excel datasheets or run AI Auto-Fix.' : '무료 가입 후 엑셀(.xlsx) 출력 및 AI 자동 해결을 이용하실 수 있습니다.', 'register');
+      return;
+    }
     const dateStr = new Date().toISOString().slice(0, 10);
     const isPhe = dRes.hxKind === 'plate_phe';
     const isProcTube = dRes.allocation === 'process_tube';
