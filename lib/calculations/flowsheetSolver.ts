@@ -736,7 +736,8 @@ export type PublicReactorPresetId =
   | 'li_causticization'
   | 'smr_reforming'
   | 'methanol_synthesis'
-  | 'ammonia_synthesis';
+  | 'ammonia_synthesis'
+  | 'toluene_hda';
 
 export interface PublicReactorPresetSpec {
   id: PublicReactorPresetId;
@@ -796,12 +797,21 @@ export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
   },
   {
     id: 'ammonia_synthesis',
-    labelKo: '암모니아 합성 (Haber-Bosch)',
+    labelKo: 'Ammonia Synthesis (Haber-Bosch)',
     labelEn: 'Ammonia Synthesis (Haber-Bosch)',
     reactionEq: 'N₂ + 3H₂ → 2NH₃ (ΔH = -92.4 kJ/mol)',
     defaultTempC: 450.0,
     defaultPressKgcm2g: 150.0,
     defaultConvPct: 28.0,
+  },
+  {
+    id: 'toluene_hda',
+    labelKo: 'Toluene Hydrodealkylation (HDA)',
+    labelEn: 'Toluene Hydrodealkylation (HDA)',
+    reactionEq: 'C₇H₈ + H₂ → C₆H₆ + CH₄ (ΔH = -41.9 kJ/mol)',
+    defaultTempC: 620.0,
+    defaultPressKgcm2g: 24.5,
+    defaultConvPct: 75.0,
   },
 ];
 
@@ -901,7 +911,8 @@ export interface FlowUnitParams {
     | 'li_causticization'
     | 'smr_reforming'
     | 'methanol_synthesis'
-    | 'ammonia_synthesis';
+    | 'ammonia_synthesis'
+    | 'toluene_hda';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -3142,7 +3153,7 @@ export function solveFlowsheet(
         const P_abs = Math.max(0.15, P_proc_out + 1.03323);
 
         const refKey: RefrigerantPresetKey = p.refrigerantPreset ?? (isLiquefier ? 'freon_m35' : 'cw');
-        const refMeta = REFRIGERANT_PRESETS[refKey];
+        const refMeta = REFRIGERANT_PRESETS[refKey] ?? REFRIGERANT_PRESETS.cw;
 
         let T_proc_out = p.operTempC ?? (isLiquefier ? -22.0 : 25.0);
         const isDutySpec = (p.hexSpecMode ?? 'proc_temp') === 'heat_duty' && procIn.mass > 0;
@@ -4439,7 +4450,22 @@ export function solveFlowsheet(
           outF.N2 = Math.max(0, outF.N2 - n2Use);
           outF.H2 = Math.max(0, outF.H2 - h2Use);
           outF.NH3 += nh3Gen;
-          note = `암모니아 합성 Haber-Bosch (${T_out.toFixed(1)}°C): NH₃ ${nh3Gen.toFixed(1)} kg/h 생성 (전환율 ${(conv * 100).toFixed(1)}%)`;
+          note = `Ammonia Synthesis (${T_out.toFixed(1)}°C): NH₃ ${nh3Gen.toFixed(1)} kg/h (Conv ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'toluene_hda') {
+          // Toluene Hydrodealkylation (Douglas HDA): C₇H₈ + H₂ → C₆H₆ + CH₄ (ΔH = -41.9 kJ/mol, 620°C)
+          const mwTol = COMP_META.Toluene.mw;
+          const mwBz = COMP_META.Benzene.mw;
+          const mwCh4 = COMP_META.CH4.mw;
+          const extHda = Math.min(outF.Toluene / mwTol, outF.H2 / MW.H2) * conv;
+          const tolUse = extHda * mwTol;
+          const h2Use = extHda * MW.H2;
+          const bzGen = extHda * mwBz;
+          const ch4Gen = Math.max(0, tolUse + h2Use - bzGen);
+          outF.Toluene = Math.max(0, outF.Toluene - tolUse);
+          outF.H2 = Math.max(0, outF.H2 - h2Use);
+          outF.Benzene += bzGen;
+          outF.CH4 += ch4Gen;
+          note = `HDA Reactor (${T_out.toFixed(1)}°C): Benzene ${bzGen.toFixed(1)} / CH₄ ${ch4Gen.toFixed(1)} kg/h (Tol Conv ${(conv * 100).toFixed(1)}%)`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;
