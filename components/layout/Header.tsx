@@ -1682,7 +1682,9 @@ export default function Header() {
             })}
           </div>
 
-          <div ref={settingsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+          {/* 설정 ▾ — 시뮬레이터에서는 하단 리본 [설정] 탭으로 통합되었으므로 서브페이지에서만 표시 */}
+          {!pathname.startsWith('/flowsheet-simulator') && !pathname.startsWith('/material-balance') && (
+            <div ref={settingsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={settingsTriggerRef}
               type="button"
@@ -1897,7 +1899,8 @@ export default function Header() {
                 </div>
               </div>
             )}
-          </div>
+            </div>
+          )}
 
           <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
           <HeaderUserControls />

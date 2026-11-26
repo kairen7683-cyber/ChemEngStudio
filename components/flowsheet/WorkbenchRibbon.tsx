@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import { UNIT_PRESETS } from '@/lib/units/unitSystem';
 
 export interface WorkbenchRibbonProps {
   lang: 'ko' | 'en';
@@ -56,12 +58,12 @@ export interface WorkbenchRibbonProps {
   rightExtraSlot?: React.ReactNode;
 }
 
-type RibbonTabId = 'home' | 'equipment' | 'economics';
+type RibbonTabId = 'home' | 'design_econ' | 'settings';
 
 const RIBBON_TABS: Array<{ id: RibbonTabId; ko: string; en: string }> = [
   { id: 'home', ko: '홈', en: 'Home' },
-  { id: 'equipment', ko: '장치설계', en: 'Equipment' },
-  { id: 'economics', ko: '경제성', en: 'Economics' },
+  { id: 'design_econ', ko: '장치설계 · 경제성', en: 'Design & Economics' },
+  { id: 'settings', ko: '설정', en: 'Settings' },
 ];
 
 function RibbonGroup({
@@ -159,6 +161,10 @@ export default function WorkbenchRibbon({
   rightExtraSlot,
 }: WorkbenchRibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTabId>('home');
+  const unitPresetId = useUnitStore(s => s.presetId);
+  const applyUnitPreset = useUnitStore(s => s.applyPreset);
+  const tagStandard = useUnitStore(s => s.tagStandard);
+  const setTagStandard = useUnitStore(s => s.setTagStandard);
   const [wbTheme, setWbTheme] = useState<'light' | 'dark'>('light');
   const isEn = lang === 'en';
   const t = (ko: string, en: string) => (isEn ? en : ko);
@@ -598,41 +604,6 @@ export default function WorkbenchRibbon({
               </button>
             </RibbonGroup>
 
-            <RibbonGroup label={t('설정', 'Setup')}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={onOpenCompSetup}
-                title={t('열역학 모델 및 성분 설정', 'Thermodynamics & Component Setup')}
-              >
-                <span>
-                  {isEn
-                    ? `Thermo · Comps (${activeCompCount})`
-                    : `열역학 · 성분 (${activeCompCount}종)`}
-                </span>
-                <span
-                  onClick={(e) => {
-                    if (onOpenPropertyMethod) {
-                      e.stopPropagation();
-                      onOpenPropertyMethod();
-                    }
-                  }}
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#1E3A8A',
-                    backgroundColor: '#EFF6FF',
-                    border: '1px solid #BFDBFE',
-                    borderRadius: 3,
-                    padding: '1px 5px',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                  }}
-                >
-                  {propertyMethod}
-                </span>
-              </button>
-            </RibbonGroup>
-
             <RibbonGroup label={t('보기', 'View')}>
               <div className="wb-seg-wrap" role="group" aria-label={t('레이아웃 모드', 'Layout Mode')}>
                 <button
@@ -738,11 +709,11 @@ export default function WorkbenchRibbon({
           </>
         )}
 
-        {/* TAB 2: EQUIPMENT — 현재 시뮬레이션 연동 범용 장치 설계 vs 공장 맞춤 장치 */}
-        {activeTab === 'equipment' && (
+        {/* TAB 2: DESIGN & ECONOMICS — 장치설계 + 경제성 통합 (중복 제거) */}
+        {activeTab === 'design_econ' && (
           <>
             <RibbonGroup
-              label={t('범용 상세 설계', 'General Equipment Design')}
+              label={t('범용 상세 설계 · 경제성', 'Equipment Sizing & Economics')}
               noDivider={!plantCustomDesign && !rightExtraSlot}
             >
               <button
@@ -750,7 +721,7 @@ export default function WorkbenchRibbon({
                 className="wb-cmd-btn"
                 onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
               >
-                {t('장치목록 · 데이터시트', 'Equipment List · Datasheets')}
+                {t('장치목록 · 데이터시트 · CAPEX', 'Equipment List · Datasheets · CAPEX')}
               </button>
               <button
                 type="button"
@@ -772,6 +743,13 @@ export default function WorkbenchRibbon({
                 onClick={() => onNavigateRoute('/equipment-design?tab=psv_flare')}
               >
                 {t('PSV · 플레어 안전설계', 'PSV & Flare Safety')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/process-economics')}
+              >
+                {t('원단위 · 경제성 분석 (OPEX)', 'Unit & Economic Analysis (OPEX)')}
               </button>
             </RibbonGroup>
 
@@ -798,24 +776,92 @@ export default function WorkbenchRibbon({
           </>
         )}
 
-        {/* TAB 3: ECONOMICS — 현재 시뮬레이션 결과 기반 원단위 · OPEX · CAPEX */}
-        {activeTab === 'economics' && (
-          <RibbonGroup label={t('현재 공정 경제성 · 투자비', 'Case Economics & CAPEX')} noDivider={!rightExtraSlot}>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/process-economics')}
-            >
-              {t('원단위 · 경제성 분석 (OPEX)', 'Unit & Economic Analysis (OPEX)')}
-            </button>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
-            >
-              {t('장치 투자비 (CAPEX) · 데이터시트', 'Equipment CAPEX · Datasheets')}
-            </button>
-          </RibbonGroup>
+        {/* TAB 3: SETTINGS — 성분·열역학 + 단위계 + 태그 표준 + 화면 테마 통합 */}
+        {activeTab === 'settings' && (
+          <>
+            <RibbonGroup label={t('성분 · 열역학', 'Components & Thermo')}>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={onOpenCompSetup}
+                title={t('열역학 모델 및 성분 설정', 'Thermodynamics & Component Setup')}
+              >
+                <span>
+                  {isEn
+                    ? `Thermo · Comps (${activeCompCount})`
+                    : `열역학 · 성분 (${activeCompCount}종)`}
+                </span>
+                <span
+                  onClick={(e) => {
+                    if (onOpenPropertyMethod) {
+                      e.stopPropagation();
+                      onOpenPropertyMethod();
+                    }
+                  }}
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    color: '#1E3A8A',
+                    backgroundColor: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    borderRadius: 3,
+                    padding: '1px 5px',
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  }}
+                >
+                  {propertyMethod}
+                </span>
+              </button>
+            </RibbonGroup>
+
+            <RibbonGroup label={t('단위계', 'Unit System')}>
+              <div className="wb-seg-wrap" role="group" aria-label={t('단위계 프리셋', 'Unit System Preset')}>
+                {UNIT_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`wb-seg-btn${unitPresetId === p.id ? ' active' : ''}`}
+                    onClick={() => applyUnitPreset(p.id)}
+                    title={p.desc}
+                  >
+                    {p.shortName}
+                  </button>
+                ))}
+              </div>
+            </RibbonGroup>
+
+            <RibbonGroup label={t('장치 태그 표준', 'Tag Standard')}>
+              <div className="wb-seg-wrap" role="group" aria-label={t('장치 태그 표준', 'Equipment Tag Standard')}>
+                <button
+                  type="button"
+                  className={`wb-seg-btn${tagStandard === 'KR_JP' ? ' active' : ''}`}
+                  onClick={() => setTagStandard('KR_JP')}
+                >
+                  {t('한국·일본 EPC', 'KR·JP EPC')}
+                </button>
+                <button
+                  type="button"
+                  className={`wb-seg-btn${tagStandard === 'GLOBAL_US' ? ' active' : ''}`}
+                  onClick={() => setTagStandard('GLOBAL_US')}
+                >
+                  {t('미국·글로벌 EPC', 'US·Global EPC')}
+                </button>
+              </div>
+            </RibbonGroup>
+
+            <RibbonGroup label={t('화면 테마', 'Theme')} noDivider={!rightExtraSlot}>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={toggleWbTheme}
+                title={t('라이트 / 다크 테마 전환', 'Toggle Light / Dark theme')}
+              >
+                {wbTheme === 'dark'
+                  ? t('☀ 라이트 모드', '☀ Light Mode')
+                  : t('🌙 다크 모드', '🌙 Dark Mode')}
+              </button>
+            </RibbonGroup>
+          </>
         )}
 
         {/* Optional right extra slot */}
