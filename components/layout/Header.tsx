@@ -1698,8 +1698,8 @@ export default function Header() {
             })}
           </div>
 
-          {/* 설정 ▾ — 시뮬레이터에서는 하단 리본 [설정] 탭으로 통합되었으므로 서브페이지에서만 표시 */}
-          {!pathname.startsWith('/flowsheet-simulator') && !pathname.startsWith('/material-balance') && (
+          {/* 설정 ▾ — 데스크톱 시뮬레이터에서는 하단 리본 [설정] 탭으로 통합, 모바일 및 서브페이지에서는 상단에 상시 표시 */}
+          {(isMobile || (!pathname.startsWith('/flowsheet-simulator') && !pathname.startsWith('/material-balance'))) && (
             <div ref={settingsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={settingsTriggerRef}

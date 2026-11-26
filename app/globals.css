@@ -553,7 +553,11 @@ body {
    Unified Workbench Dark Theme (html[data-wb-theme="dark"])
    MaximaLabs / VS Code Dark Engineering Slate Palette
    ============================================================ */
-html[data-wb-theme="dark"] {
+/* 워크벤치 캔버스·리본·레일·MDI 바에만 다크 토큰 적용 (흰색 모달/관리자 콘솔의 글자 투명화 방지) */
+html[data-wb-theme="dark"] .wb-ribbon-root,
+html[data-wb-theme="dark"] .wb-slim-rail,
+html[data-wb-theme="dark"] .wb-mdi-bar,
+html[data-wb-theme="dark"] .react-flow {
   --bg-base: #0F172A;
   --bg-surface: #1E293B;
   --bg-elevated: #263449;
@@ -564,7 +568,6 @@ html[data-wb-theme="dark"] {
   --text-muted: #94A3B8;
   --border-subtle: #334155;
   --border-default: #475569;
-  color-scheme: dark;
 }
 
 html[data-wb-theme="dark"] .wb-ribbon-root {
