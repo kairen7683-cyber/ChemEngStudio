@@ -4,12 +4,14 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   SIM_COMPS,
   COMP_META,
+  getCompLabel,
   solveFlowsheet,
   type SimCompKey,
   type FlowNodeDef,
   type FlowEdgeDef,
   type TearSolverMethod,
 } from '@/lib/calculations/flowsheetSolver';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import type { SimPropertyMethod } from '@/lib/calculations/componentCatalog';
 import {
   DESIGN_SPEC_STREAM_METRIC_LABELS,
@@ -47,6 +49,39 @@ export interface FlowsheetOptimizationModalProps {
 }
 
 const CHART_COLORS = ['#1D4ED8', '#059669', '#D97706', '#DC2626', '#7C3AED', '#0891B2'];
+
+const STREAM_METRIC_EN: Record<DesignSpecStreamMetric, string> = {
+  comp_wt_pct: 'Mass Concentration (wt%)',
+  comp_mol_pct: 'Mole Concentration (mol%)',
+  comp_flow_kgh: 'Component Mass Flow (kg/h)',
+  total_flow_kgh: 'Total Mass Flow (kg/h)',
+  temp_c: 'Stream Temperature (°C)',
+  vapor_frac: 'Vapor Fraction',
+  comp_recovery_pct: 'Recovery (%)',
+};
+
+const UNIT_METRIC_EN: Record<DesignSpecUnitMetric, string> = {
+  heat_duty_mcalh: 'Unit Heat Duty (Mcal/h)',
+  shaft_power_kw: 'Shaft / Power Consumption (kW)',
+  outlet_mass_kgh: 'Unit Total Outlet Flow (kg/h)',
+};
+
+const MANIPULATED_PARAM_EN: Record<ManipulatedParamKey, string> = {
+  feed_comp_kgh: 'Feed Component Flow (kg/h)',
+  feed_total_scale: 'Feed Total Flow Scale',
+  operTempC: 'Operating Temperature (°C)',
+  operPressKgcm2g: 'Operating Pressure (kgf/cm²G)',
+  splitRatioTop: 'Split Ratio / Purge Frac (0–1)',
+  makeupSolventKgH: 'Makeup Solvent Flow (kg/h)',
+  specifiedDutyMcalH: 'Specified Heat Duty (Mcal/h)',
+  conversion: 'Reaction Conversion (0–1)',
+  refluxRatio: 'Distillation Reflux Ratio',
+  distillateRateKgH: 'Distillate Rate D (kg/h)',
+  sideCutRateKgH: 'Side-Cut Flow Rate S (kg/h)',
+  sideCutRatioSF: 'Side-Cut Split Ratio S/F (0–0.85)',
+  sideCutStage: 'Side-Cut Draw Stage N_sc',
+  outletPressKgcm2g: 'Outlet / Discharge Pressure (kgf/cm²G)',
+};
 
 function getAvailableParamsForNode(node?: FlowNodeDef): ManipulatedParamKey[] {
   if (!node) return Object.keys(MANIPULATED_PARAM_LABELS) as ManipulatedParamKey[];
@@ -257,6 +292,16 @@ export default function FlowsheetOptimizationModal({
   onChangeDesignSpecs,
   onApplyAdjustedNodes,
 }: FlowsheetOptimizationModalProps) {
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
+  const t = (ko: string, en: string) => (isEn ? en : ko);
+  const streamMetricLabel = (mk: DesignSpecStreamMetric) =>
+    isEn ? STREAM_METRIC_EN[mk] : DESIGN_SPEC_STREAM_METRIC_LABELS[mk].labelKo;
+  const unitMetricLabel = (uk: DesignSpecUnitMetric) =>
+    isEn ? UNIT_METRIC_EN[uk] : DESIGN_SPEC_UNIT_METRIC_LABELS[uk].labelKo;
+  const manipParamLabel = (pk: ManipulatedParamKey) =>
+    isEn ? MANIPULATED_PARAM_EN[pk] : MANIPULATED_PARAM_LABELS[pk].labelKo;
+
   const [activeTab, setActiveTab] = useState<OptimizationModalTab>(initialTab);
   const [isMobile, setIsMobile] = useState<boolean>(false);
   const [showAllComps, setShowAllComps] = useState<boolean>(false);
@@ -264,7 +309,7 @@ export default function FlowsheetOptimizationModal({
   // Design Spec execution state
   const [specSolveResult, setSpecSolveResult] = useState<FlowsheetDesignSpecSolveResult | null>(null);
   const [selectedSpecLogIdx, setSelectedSpecLogIdx] = useState<number>(0);
-  const [appliedBanner, setAppliedBanner] = useState<string | null>(null);
+  const [appliedBanner, setAppliedBanner] = useState<boolean>(false);
 
   // Sensitivity state
   const defaultManipNode = useMemo(
@@ -379,7 +424,7 @@ export default function FlowsheetOptimizationModal({
       const initialWatched: SensitivityWatchedOutput[] = [
         {
           id: 'w-1',
-          label: `${defaultEdge.streamNo} 총유량 (kg/h)`,
+          label: `${defaultEdge.streamNo} ${t('총유량 (kg/h)', 'Total Flow (kg/h)')}`,
           streamEdgeId: defaultEdge.id,
           metric: 'total_flow_kgh',
         },
@@ -395,7 +440,7 @@ export default function FlowsheetOptimizationModal({
       if (heatUnit) {
         initialWatched.push({
           id: 'w-2',
-          label: `${heatUnit.tag} 열부하 (Mcal/h)`,
+          label: `${heatUnit.tag} ${t('열부하 (Mcal/h)', 'Heat Duty (Mcal/h)')}`,
           unitNodeId: heatUnit.id,
           unitMetric: 'heat_duty_mcalh',
         });
@@ -480,22 +525,22 @@ export default function FlowsheetOptimizationModal({
       },
     };
     onChangeDesignSpecs([...designSpecs, nextSpec]);
-    setAppliedBanner(null);
+    setAppliedBanner(false);
   };
 
   const updateSpecAt = (idx: number, patch: Partial<DesignSpecDef>) => {
     const next = designSpecs.map((s, i) => (i === idx ? { ...s, ...patch } : s));
     onChangeDesignSpecs(next);
-    setAppliedBanner(null);
+    setAppliedBanner(false);
   };
 
   const removeSpecAt = (idx: number) => {
     onChangeDesignSpecs(designSpecs.filter((_, i) => i !== idx));
-    setAppliedBanner(null);
+    setAppliedBanner(false);
   };
 
   const handleRunDesignSpecs = () => {
-    setAppliedBanner(null);
+    setAppliedBanner(false);
     const res = solveFlowsheetWithDesignSpecs(nodes, edges, designSpecs, {
       propertyMethod,
       activeComponents,
@@ -510,7 +555,7 @@ export default function FlowsheetOptimizationModal({
   const handleApplyDesignSpecResult = () => {
     if (!specSolveResult) return;
     onApplyAdjustedNodes(specSolveResult.adjustedNodes, specSolveResult.solveResult);
-    setAppliedBanner('조작변수 값이 장치 사양에 반영되었습니다.');
+    setAppliedBanner(true);
   };
 
   // ── Sensitivity Handlers ──
@@ -522,7 +567,7 @@ export default function FlowsheetOptimizationModal({
         ...prev,
         {
           id,
-          label: `${e0.streamNo} ${defaultComp} 농도(wt%)`,
+          label: `${e0.streamNo} ${defaultComp} ${t('농도(wt%)', 'Conc. (wt%)')}`,
           streamEdgeId: e0.id,
           metric: 'comp_wt_pct',
           comp: defaultComp,
@@ -533,7 +578,7 @@ export default function FlowsheetOptimizationModal({
         ...prev,
         {
           id,
-          label: `${nodes[0].tag} 열부하(Mcal/h)`,
+          label: `${nodes[0].tag} ${t('열부하(Mcal/h)', 'Heat Duty (Mcal/h)')}`,
           unitNodeId: nodes[0].id,
           unitMetric: 'heat_duty_mcalh',
         },
@@ -561,7 +606,7 @@ export default function FlowsheetOptimizationModal({
           nodeId: sensPrimNodeId,
           paramKey: sensPrimParam,
           comp: sensPrimParam === 'feed_comp_kgh' ? sensPrimComp : undefined,
-          label: `${nodeLabelMap.get(sensPrimNodeId) ?? sensPrimNodeId} · ${MANIPULATED_PARAM_LABELS[sensPrimParam].labelKo}`,
+          label: `${nodeLabelMap.get(sensPrimNodeId) ?? sensPrimNodeId} · ${manipParamLabel(sensPrimParam)}`,
           minValue: sensMin,
           maxValue: sensMax,
           steps: Math.max(2, Math.min(30, sensSteps)),
@@ -572,7 +617,7 @@ export default function FlowsheetOptimizationModal({
                 nodeId: sensSecNodeId,
                 paramKey: sensSecParam,
                 comp: sensSecParam === 'feed_comp_kgh' ? sensSecComp : undefined,
-                label: MANIPULATED_PARAM_LABELS[sensSecParam].labelKo,
+                label: manipParamLabel(sensSecParam),
                 values: secVals,
               }
             : undefined,
@@ -594,8 +639,8 @@ export default function FlowsheetOptimizationModal({
     if (!sensResult) return;
     const header = [
       'Step',
-      `${MANIPULATED_PARAM_LABELS[sensPrimParam].labelKo}`,
-      ...(sensSecEnabled ? ['2차변수'] : []),
+      `${manipParamLabel(sensPrimParam)}`,
+      ...(sensSecEnabled ? [t('2차변수', 'Secondary Var')] : []),
       'Converged',
       'Iterations',
       ...watchedOutputs.map(w => w.label),
@@ -730,10 +775,10 @@ export default function FlowsheetOptimizationModal({
                 textOverflow: 'ellipsis',
               }}
             >
-              🎯 목표역산 · 민감도 · 수렴기 설정
+              🎯 {t('목표역산 · 민감도 · 수렴기 설정', 'Design Spec · Sensitivity · Tear Solver')}
             </div>
             <div style={{ fontSize: 10.5, color: '#94A3B8', marginTop: 2 }}>
-              장치 {nodes.length} · 스트림 {edges.length} · Tear {currentResult.convergence.tearEdgeIds.length} · {currentResult.propertyMethodUsed}
+              {t('장치', 'Units')} {nodes.length} · {t('스트림', 'Streams')} {edges.length} · {t('Tear', 'Tears')} {currentResult.convergence.tearEdgeIds.length} · {currentResult.propertyMethodUsed}
             </div>
           </div>
 
@@ -753,7 +798,7 @@ export default function FlowsheetOptimizationModal({
               whiteSpace: 'nowrap',
             }}
           >
-            ✕ 닫기
+            ✕ {t('닫기', 'Close')}
           </button>
         </div>
 
@@ -773,15 +818,21 @@ export default function FlowsheetOptimizationModal({
             [
               {
                 key: 'design_spec',
-                label: `🎯 목표역산 (Design Spec${designSpecs.length > 0 ? ` · ${designSpecs.filter(d => d.enabled).length}` : ''})`,
+                label: t(
+                  `🎯 목표역산 (Design Spec${designSpecs.length > 0 ? ` · ${designSpecs.filter(d => d.enabled).length}` : ''})`,
+                  `🎯 Design Spec${designSpecs.length > 0 ? ` · ${designSpecs.filter(d => d.enabled).length}` : ''}`
+                ),
               },
               {
                 key: 'sensitivity',
-                label: '📈 민감도 분석 (Sensitivity)',
+                label: t('📈 민감도 분석 (Sensitivity)', '📈 Sensitivity Analysis'),
               },
               {
                 key: 'tear_solver',
-                label: `🔄 수렴기 설정 (${tearMethod.toUpperCase()})`,
+                label: t(
+                  `🔄 수렴기 설정 (${tearMethod.toUpperCase()})`,
+                  `🔄 Tear Solver (${tearMethod.toUpperCase()})`
+                ),
               },
             ] as { key: OptimizationModalTab; label: string }[]
           ).map(tab => {
@@ -840,7 +891,10 @@ export default function FlowsheetOptimizationModal({
                 }}
               >
                 <div style={{ fontSize: 11.5, color: '#1E3A8A', fontWeight: 700 }}>
-                  목표 사양 역산 (단일 1D Secant–Brent · 다변수 감쇠 Broyden)
+                  {t(
+                    '목표 사양 역산 (단일 1D Secant–Brent · 다변수 감쇠 Broyden)',
+                    'Design Spec Solver (Single 1D Secant–Brent · Multi-variable Damped Broyden)'
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <label
@@ -858,7 +912,7 @@ export default function FlowsheetOptimizationModal({
                       checked={showAllComps}
                       onChange={e => setShowAllComps(e.target.checked)}
                     />
-                    전체 {SIM_COMPS.length}종
+                    {t(`전체 ${SIM_COMPS.length}종`, `All ${SIM_COMPS.length} Comps`)}
                   </label>
                   <button
                     type="button"
@@ -874,7 +928,7 @@ export default function FlowsheetOptimizationModal({
                       cursor: 'pointer',
                     }}
                   >
-                    + Spec 추가
+                    {t('+ Spec 추가', '+ Add Spec')}
                   </button>
                 </div>
               </div>
@@ -891,7 +945,10 @@ export default function FlowsheetOptimizationModal({
                     fontSize: 12,
                   }}
                 >
-                  등록된 Design Spec 없음 · [+ Spec 추가]로 역산 조건을 구성하세요.
+                  {t(
+                    '등록된 Design Spec 없음 · [+ Spec 추가]로 역산 조건을 구성하세요.',
+                    'No Design Specs configured · Click [+ Add Spec] to define a target specification.'
+                  )}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -955,7 +1012,7 @@ export default function FlowsheetOptimizationModal({
                                 color: spec.enabled ? '#1E40AF' : '#64748B',
                               }}
                             >
-                              {spec.enabled ? '활성' : '비활성'}
+                              {spec.enabled ? t('활성', 'Active') : t('비활성', 'Inactive')}
                             </span>
                           </div>
                           <button
@@ -972,7 +1029,7 @@ export default function FlowsheetOptimizationModal({
                               cursor: 'pointer',
                             }}
                           >
-                            삭제
+                            {t('삭제', 'Delete')}
                           </button>
                         </div>
 
@@ -1002,7 +1059,7 @@ export default function FlowsheetOptimizationModal({
                               }}
                             >
                               <span style={{ fontSize: 11.5, fontWeight: 800, color: '#0F766E' }}>
-                                ① 목표치 (Target)
+                                {t('① 목표치 (Target)', '① Target')}
                               </span>
                               <div style={{ display: 'flex', gap: 4 }}>
                                 <button
@@ -1029,7 +1086,7 @@ export default function FlowsheetOptimizationModal({
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  스트림
+                                  {t('스트림', 'Stream')}
                                 </button>
                                 <button
                                   type="button"
@@ -1054,7 +1111,7 @@ export default function FlowsheetOptimizationModal({
                                     cursor: 'pointer',
                                   }}
                                 >
-                                  장치
+                                  {t('장치', 'Unit')}
                                 </button>
                               </div>
                             </div>
@@ -1069,7 +1126,7 @@ export default function FlowsheetOptimizationModal({
                               {!isUnitTarget ? (
                                 <>
                                   <div>
-                                    <span style={labelStyle}>스트림</span>
+                                    <span style={labelStyle}>{t('스트림', 'Stream')}</span>
                                     <select
                                       value={spec.measured.streamEdgeId ?? ''}
                                       onChange={e =>
@@ -1087,7 +1144,7 @@ export default function FlowsheetOptimizationModal({
                                     </select>
                                   </div>
                                   <div>
-                                    <span style={labelStyle}>측정 항목</span>
+                                    <span style={labelStyle}>{t('측정 항목', 'Measurement')}</span>
                                     <select
                                       value={sMetric}
                                       onChange={e =>
@@ -1103,7 +1160,7 @@ export default function FlowsheetOptimizationModal({
                                       {(Object.keys(DESIGN_SPEC_STREAM_METRIC_LABELS) as DesignSpecStreamMetric[]).map(
                                         mk => (
                                           <option key={mk} value={mk}>
-                                            {DESIGN_SPEC_STREAM_METRIC_LABELS[mk].labelKo}
+                                            {streamMetricLabel(mk)}
                                           </option>
                                         )
                                       )}
@@ -1112,7 +1169,7 @@ export default function FlowsheetOptimizationModal({
                                   {needsTargetComp && (
                                     <div>
                                       <span style={labelStyle}>
-                                        성분{sMetric === 'comp_recovery_pct' ? ' (미선택=총유량)' : ''}
+                                        {t('성분', 'Component')}{sMetric === 'comp_recovery_pct' ? t(' (미선택=총유량)', ' (Unselected = Total Flow)') : ''}
                                       </span>
                                       <select
                                         value={spec.measured.comp ?? ''}
@@ -1127,11 +1184,11 @@ export default function FlowsheetOptimizationModal({
                                         style={inputStyle}
                                       >
                                         {sMetric === 'comp_recovery_pct' && (
-                                          <option value="">전체 질량 회수율 (%)</option>
+                                          <option value="">{t('전체 질량 회수율 (%)', 'Overall Mass Recovery (%)')}</option>
                                         )}
                                         {selectableComps.map(ck => (
                                           <option key={ck} value={ck}>
-                                            {ck} ({COMP_META[ck].label})
+                                            {ck} ({getCompLabel(ck, lang)})
                                           </option>
                                         ))}
                                       </select>
@@ -1139,7 +1196,7 @@ export default function FlowsheetOptimizationModal({
                                   )}
                                   {sMetric === 'comp_recovery_pct' && (
                                     <div>
-                                      <span style={labelStyle}>기준 Feed (미지정=전체)</span>
+                                      <span style={labelStyle}>{t('기준 Feed (미지정=전체)', 'Reference Feed (Default = All)')}</span>
                                       <select
                                         value={spec.measured.refFeedNodeId ?? ''}
                                         onChange={e =>
@@ -1152,7 +1209,7 @@ export default function FlowsheetOptimizationModal({
                                         }
                                         style={inputStyle}
                                       >
-                                        <option value="">전체 Feed 합산</option>
+                                        <option value="">{t('전체 Feed 합산', 'All Feeds Combined')}</option>
                                         {nodes.map(n => (
                                           <option key={n.id} value={n.id}>
                                             {nodeLabelMap.get(n.id)}
@@ -1165,7 +1222,7 @@ export default function FlowsheetOptimizationModal({
                               ) : (
                                 <>
                                   <div>
-                                    <span style={labelStyle}>장치</span>
+                                    <span style={labelStyle}>{t('장치', 'Unit')}</span>
                                     <select
                                       value={spec.measured.unitNodeId ?? ''}
                                       onChange={e =>
@@ -1183,7 +1240,7 @@ export default function FlowsheetOptimizationModal({
                                     </select>
                                   </div>
                                   <div>
-                                    <span style={labelStyle}>장치 지표</span>
+                                    <span style={labelStyle}>{t('장치 지표', 'Unit Metric')}</span>
                                     <select
                                       value={spec.measured.unitMetric ?? 'heat_duty_mcalh'}
                                       onChange={e =>
@@ -1199,7 +1256,7 @@ export default function FlowsheetOptimizationModal({
                                       {(Object.keys(DESIGN_SPEC_UNIT_METRIC_LABELS) as DesignSpecUnitMetric[]).map(
                                         uk => (
                                           <option key={uk} value={uk}>
-                                            {DESIGN_SPEC_UNIT_METRIC_LABELS[uk].labelKo}
+                                            {unitMetricLabel(uk)}
                                           </option>
                                         )
                                       )}
@@ -1209,7 +1266,7 @@ export default function FlowsheetOptimizationModal({
                               )}
 
                               <div>
-                                <span style={labelStyle}>목표값 (Target)</span>
+                                <span style={labelStyle}>{t('목표값 (Target)', 'Target Value')}</span>
                                 <input
                                   type="number"
                                   step="any"
@@ -1226,7 +1283,7 @@ export default function FlowsheetOptimizationModal({
                                 />
                               </div>
                               <div>
-                                <span style={labelStyle}>허용오차 (Tol)</span>
+                                <span style={labelStyle}>{t('허용오차 (Tol)', 'Tolerance')}</span>
                                 <input
                                   type="number"
                                   step="any"
@@ -1263,7 +1320,7 @@ export default function FlowsheetOptimizationModal({
                               }}
                             >
                               <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1D4ED8' }}>
-                                ② 조작변수 (Manipulated)
+                                {t('② 조작변수 (Manipulated)', '② Manipulated Variable')}
                               </span>
                               <button
                                 type="button"
@@ -1290,7 +1347,7 @@ export default function FlowsheetOptimizationModal({
                                   cursor: 'pointer',
                                 }}
                               >
-                                현재값 → 초기값
+                                {t('현재값 → 초기값', 'Current → Initial')}
                               </button>
                             </div>
 
@@ -1302,7 +1359,7 @@ export default function FlowsheetOptimizationModal({
                               }}
                             >
                               <div>
-                                <span style={labelStyle}>장치 (Node)</span>
+                                <span style={labelStyle}>{t('장치 (Node)', 'Unit (Node)')}</span>
                                 <select
                                   value={spec.manipulated.nodeId}
                                   onChange={e => {
@@ -1337,7 +1394,7 @@ export default function FlowsheetOptimizationModal({
                                 </select>
                               </div>
                               <div>
-                                <span style={labelStyle}>파라미터</span>
+                                <span style={labelStyle}>{t('파라미터', 'Parameter')}</span>
                                 <select
                                   value={mParam}
                                   onChange={e => {
@@ -1367,7 +1424,7 @@ export default function FlowsheetOptimizationModal({
                                     const choices = avail.includes(mParam) ? avail : [...avail, mParam];
                                     return choices.map(pk => (
                                       <option key={pk} value={pk}>
-                                        {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                                        {manipParamLabel(pk)}
                                       </option>
                                     ));
                                   })()}
@@ -1376,7 +1433,7 @@ export default function FlowsheetOptimizationModal({
 
                               {needsManipComp && (
                                 <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                                  <span style={labelStyle}>대상 성분</span>
+                                  <span style={labelStyle}>{t('대상 성분', 'Component')}</span>
                                   <select
                                     value={spec.manipulated.comp ?? defaultComp}
                                     onChange={e =>
@@ -1391,7 +1448,7 @@ export default function FlowsheetOptimizationModal({
                                   >
                                     {selectableComps.map(ck => (
                                       <option key={ck} value={ck}>
-                                        {ck} ({COMP_META[ck].label})
+                                        {ck} ({getCompLabel(ck, lang)})
                                       </option>
                                     ))}
                                   </select>
@@ -1399,7 +1456,7 @@ export default function FlowsheetOptimizationModal({
                               )}
 
                               <div>
-                                <span style={labelStyle}>하한 (Min)</span>
+                                <span style={labelStyle}>{t('하한 (Min)', 'Min Bound')}</span>
                                 <input
                                   type="number"
                                   step="any"
@@ -1416,7 +1473,7 @@ export default function FlowsheetOptimizationModal({
                                 />
                               </div>
                               <div>
-                                <span style={labelStyle}>상한 (Max)</span>
+                                <span style={labelStyle}>{t('상한 (Max)', 'Max Bound')}</span>
                                 <input
                                   type="number"
                                   step="any"
@@ -1433,12 +1490,12 @@ export default function FlowsheetOptimizationModal({
                                 />
                               </div>
                               <div style={{ gridColumn: isMobile ? 'auto' : '1 / -1' }}>
-                                <span style={labelStyle}>초기값 (Initial Guess)</span>
+                                <span style={labelStyle}>{t('초기값 (Initial Guess)', 'Initial Guess')}</span>
                                 <input
                                   type="number"
                                   step="any"
                                   value={spec.manipulated.initialGuess ?? ''}
-                                  placeholder="미입력 시 현재 설정값"
+                                  placeholder={t('미입력 시 현재 설정값', 'Current value if blank')}
                                   onChange={e =>
                                     updateSpecAt(idx, {
                                       manipulated: {
@@ -1489,7 +1546,7 @@ export default function FlowsheetOptimizationModal({
                     boxShadow: '0 2px 6px rgba(29,78,216,0.28)',
                   }}
                 >
-                  ▶ 역산 실행 (Solve)
+                  {t('▶ 역산 실행 (Solve)', '▶ Solve')}
                 </button>
 
                 {specSolveResult && (
@@ -1508,7 +1565,7 @@ export default function FlowsheetOptimizationModal({
                       boxShadow: '0 2px 6px rgba(5,150,105,0.28)',
                     }}
                   >
-                    ✅ 결과 반영 (Apply)
+                    {t('✅ 결과 반영 (Apply)', '✅ Apply Results')}
                   </button>
                 )}
               </div>
@@ -1525,7 +1582,7 @@ export default function FlowsheetOptimizationModal({
                     fontWeight: 700,
                   }}
                 >
-                  ✓ {appliedBanner}
+                  ✓ {t('조작변수 값이 장치 사양에 반영되었습니다.', 'Manipulated variable values have been applied to unit specifications.')}
                 </div>
               )}
 
@@ -1552,7 +1609,7 @@ export default function FlowsheetOptimizationModal({
                     }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>
-                      역산 결과 ({specSolveResult.solverMethodUsed === 'secant_brent_1d' ? 'Secant–Brent' : specSolveResult.solverMethodUsed === 'damped_broyden_nd' ? 'Broyden' : '직결'} · {specSolveResult.outerIterations}회)
+                      {t('역산 결과', 'Design Spec Results')} ({specSolveResult.solverMethodUsed === 'secant_brent_1d' ? 'Secant–Brent' : specSolveResult.solverMethodUsed === 'damped_broyden_nd' ? 'Broyden' : t('직결', 'Direct')} · {specSolveResult.outerIterations}{t('회', ' iter')})
                     </div>
                     <span
                       style={{
@@ -1564,7 +1621,7 @@ export default function FlowsheetOptimizationModal({
                         color: specSolveResult.converged ? '#166534' : '#92400E',
                       }}
                     >
-                      {specSolveResult.converged ? '전체 목표 수렴 완료' : '일부 미수렴 / 경계 도달'}
+                      {specSolveResult.converged ? t('전체 목표 수렴 완료', 'All Specs Converged') : t('일부 미수렴 / 경계 도달', 'Partially Unconverged / Bound Hit')}
                     </span>
                   </div>
 
@@ -1580,13 +1637,13 @@ export default function FlowsheetOptimizationModal({
                     >
                       <thead>
                         <tr style={{ background: '#F1F5F9', color: '#334155', textAlign: 'left' }}>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>제어기</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>상태</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>목표치</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>달성치</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>오차</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>최종 조작변수</th>
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>반복수</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('제어기', 'Controller')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('상태', 'Status')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('목표치', 'Target')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('달성치', 'Achieved')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('오차', 'Error')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('최종 조작변수', 'Final Manipulated')}</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('반복수', 'Iter')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1623,7 +1680,7 @@ export default function FlowsheetOptimizationModal({
                             <td style={{ padding: '6px 8px', fontWeight: 800, color: '#1D4ED8' }}>
                               {sr.finalManipulatedValue.toFixed(5)}
                             </td>
-                            <td style={{ padding: '6px 8px' }}>{sr.iterations}회</td>
+                            <td style={{ padding: '6px 8px' }}>{sr.iterations}{t('회', '')}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1634,7 +1691,7 @@ export default function FlowsheetOptimizationModal({
                   {specSolveResult.specResults[selectedSpecLogIdx] && (
                     <div>
                       <div style={{ fontSize: 11.5, fontWeight: 800, color: '#475569', marginBottom: 5 }}>
-                        반복 수렴 이력 — {specSolveResult.specResults[selectedSpecLogIdx].name}
+                        {t('반복 수렴 이력', 'Iteration Convergence History')} — {specSolveResult.specResults[selectedSpecLogIdx].name}
                       </div>
                       <div
                         style={{
@@ -1655,10 +1712,10 @@ export default function FlowsheetOptimizationModal({
                           <thead>
                             <tr style={{ background: '#F8FAFC', color: '#475569', textAlign: 'left' }}>
                               <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>Iter</th>
-                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>조작변수 u</th>
-                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>측정 결과 y(u)</th>
-                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>오차 y - y*</th>
-                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>내부수렴</th>
+                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>{t('조작변수 u', 'Manipulated u')}</th>
+                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>{t('측정 결과 y(u)', 'Measured y(u)')}</th>
+                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>{t('오차 y - y*', 'Error y - y*')}</th>
+                              <th style={{ padding: '5px 8px', borderBottom: '1px solid #E2E8F0' }}>{t('내부수렴', 'Inner Conv.')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1702,7 +1759,7 @@ export default function FlowsheetOptimizationModal({
                 }}
               >
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0F172A' }}>
-                  ① 독립변수 설정 (Sweep)
+                  {t('① 독립변수 설정 (Sweep)', '① Independent Variable (Sweep)')}
                 </div>
 
                 <div
@@ -1713,7 +1770,7 @@ export default function FlowsheetOptimizationModal({
                   }}
                 >
                   <div>
-                    <span style={labelStyle}>장치</span>
+                    <span style={labelStyle}>{t('장치', 'Unit')}</span>
                     <select
                       value={sensPrimNodeId}
                       onChange={e => {
@@ -1738,7 +1795,7 @@ export default function FlowsheetOptimizationModal({
                     </select>
                   </div>
                   <div>
-                    <span style={labelStyle}>파라미터</span>
+                    <span style={labelStyle}>{t('파라미터', 'Parameter')}</span>
                     <select
                       value={sensPrimParam}
                       onChange={e => {
@@ -1758,7 +1815,7 @@ export default function FlowsheetOptimizationModal({
                         const choices = avail.includes(sensPrimParam) ? avail : [...avail, sensPrimParam];
                         return choices.map(pk => (
                           <option key={pk} value={pk}>
-                            {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                            {manipParamLabel(pk)}
                           </option>
                         ));
                       })()}
@@ -1766,7 +1823,7 @@ export default function FlowsheetOptimizationModal({
                   </div>
                   {sensPrimParam === 'feed_comp_kgh' && (
                     <div>
-                      <span style={labelStyle}>성분</span>
+                      <span style={labelStyle}>{t('성분', 'Component')}</span>
                       <select
                         value={sensPrimComp}
                         onChange={e => setSensPrimComp(e.target.value as SimCompKey)}
@@ -1774,14 +1831,14 @@ export default function FlowsheetOptimizationModal({
                       >
                         {selectableComps.map(ck => (
                           <option key={ck} value={ck}>
-                            {ck} ({COMP_META[ck].label})
+                            {ck} ({getCompLabel(ck, lang)})
                           </option>
                         ))}
                       </select>
                     </div>
                   )}
                   <div>
-                    <span style={labelStyle}>최소 (Min)</span>
+                    <span style={labelStyle}>{t('최소 (Min)', 'Min')}</span>
                     <input
                       type="number"
                       step="any"
@@ -1791,7 +1848,7 @@ export default function FlowsheetOptimizationModal({
                     />
                   </div>
                   <div>
-                    <span style={labelStyle}>최대 (Max)</span>
+                    <span style={labelStyle}>{t('최대 (Max)', 'Max')}</span>
                     <input
                       type="number"
                       step="any"
@@ -1801,7 +1858,7 @@ export default function FlowsheetOptimizationModal({
                     />
                   </div>
                   <div>
-                    <span style={labelStyle}>스텝 (2~30)</span>
+                    <span style={labelStyle}>{t('스텝 (2~30)', 'Steps (2–30)')}</span>
                     <input
                       type="number"
                       min={2}
@@ -1854,7 +1911,7 @@ export default function FlowsheetOptimizationModal({
                         }
                       }}
                     />
-                    2차 변수 동시 스윕 (2D)
+                    {t('2차 변수 동시 스윕 (2D)', '2D Secondary Variable Sweep')}
                   </label>
                   {sensSecEnabled && (
                     <div
@@ -1866,7 +1923,7 @@ export default function FlowsheetOptimizationModal({
                       }}
                     >
                       <div>
-                        <span style={labelStyle}>2차 장치</span>
+                        <span style={labelStyle}>{t('2차 장치', 'Secondary Unit')}</span>
                         <select
                           value={sensSecNodeId}
                           onChange={e => {
@@ -1891,7 +1948,7 @@ export default function FlowsheetOptimizationModal({
                         </select>
                       </div>
                       <div>
-                        <span style={labelStyle}>2차 파라미터</span>
+                        <span style={labelStyle}>{t('2차 파라미터', 'Secondary Parameter')}</span>
                         <select
                           value={sensSecParam}
                           onChange={e => {
@@ -1909,7 +1966,7 @@ export default function FlowsheetOptimizationModal({
                             const choices = avail.includes(sensSecParam) ? avail : [...avail, sensSecParam];
                             return choices.map(pk => (
                               <option key={pk} value={pk}>
-                                {MANIPULATED_PARAM_LABELS[pk].labelKo}
+                                {manipParamLabel(pk)}
                               </option>
                             ));
                           })()}
@@ -1917,7 +1974,7 @@ export default function FlowsheetOptimizationModal({
                       </div>
                       {sensSecParam === 'feed_comp_kgh' && (
                         <div>
-                          <span style={labelStyle}>2차 성분</span>
+                          <span style={labelStyle}>{t('2차 성분', 'Secondary Comp.')}</span>
                           <select
                             value={sensSecComp}
                             onChange={e => setSensSecComp(e.target.value as SimCompKey)}
@@ -1932,7 +1989,7 @@ export default function FlowsheetOptimizationModal({
                         </div>
                       )}
                       <div>
-                        <span style={labelStyle}>값 목록 (쉼표 구분)</span>
+                        <span style={labelStyle}>{t('값 목록 (쉼표 구분)', 'Values (comma-separated)')}</span>
                         <input
                           type="text"
                           value={sensSecValuesText}
@@ -1956,7 +2013,7 @@ export default function FlowsheetOptimizationModal({
                     }}
                   >
                     <span style={{ fontSize: 12, fontWeight: 800, color: '#0F172A' }}>
-                      ② 관측 출력 (Watched Outputs)
+                      {t('② 관측 출력 (Watched Outputs)', '② Watched Outputs')}
                     </span>
                     <button
                       type="button"
@@ -1972,7 +2029,7 @@ export default function FlowsheetOptimizationModal({
                         cursor: 'pointer',
                       }}
                     >
-                      + 출력 추가
+                      {t('+ 출력 추가', '+ Add Output')}
                     </button>
                   </div>
 
@@ -2005,7 +2062,7 @@ export default function FlowsheetOptimizationModal({
                                   metric: undefined,
                                   unitNodeId: u0?.id ?? '',
                                   unitMetric: 'heat_duty_mcalh',
-                                  label: `${u0?.tag ?? 'Unit'} 열부하(Mcal/h)`,
+                                  label: `${u0?.tag ?? 'Unit'} ${t('열부하(Mcal/h)', 'Heat Duty (Mcal/h)')}`,
                                 });
                               } else {
                                 const ed0 = edges[0];
@@ -2014,14 +2071,14 @@ export default function FlowsheetOptimizationModal({
                                   unitMetric: undefined,
                                   streamEdgeId: ed0?.id ?? '',
                                   metric: 'total_flow_kgh',
-                                  label: `${ed0?.streamNo ?? 'Stream'} 총유량(kg/h)`,
+                                  label: `${ed0?.streamNo ?? 'Stream'} ${t('총유량(kg/h)', 'Total Flow (kg/h)')}`,
                                 });
                               }
                             }}
                             style={inputStyle}
                           >
-                            <option value="stream">배관</option>
-                            <option value="unit">장치</option>
+                            <option value="stream">{t('배관', 'Stream')}</option>
+                            <option value="unit">{t('장치', 'Unit')}</option>
                           </select>
 
                           {!isUnit ? (
@@ -2054,7 +2111,7 @@ export default function FlowsheetOptimizationModal({
                                       DESIGN_SPEC_STREAM_METRIC_LABELS[mk].needsComp && !w.comp
                                         ? defaultComp
                                         : w.comp,
-                                    label: `${ed?.streamNo ?? ''} ${DESIGN_SPEC_STREAM_METRIC_LABELS[mk].labelKo}`,
+                                    label: `${ed?.streamNo ?? ''} ${streamMetricLabel(mk)}`,
                                   });
                                 }}
                                 style={inputStyle}
@@ -2062,7 +2119,7 @@ export default function FlowsheetOptimizationModal({
                                 {(Object.keys(DESIGN_SPEC_STREAM_METRIC_LABELS) as DesignSpecStreamMetric[]).map(
                                   mk => (
                                     <option key={mk} value={mk}>
-                                      {DESIGN_SPEC_STREAM_METRIC_LABELS[mk].labelKo}
+                                      {streamMetricLabel(mk)}
                                     </option>
                                   )
                                 )}
@@ -2076,7 +2133,7 @@ export default function FlowsheetOptimizationModal({
                                 }
                                 style={inputStyle}
                               >
-                                <option value="">(성분 무관/전체)</option>
+                                <option value="">{t('(성분 무관/전체)', '(All / N/A)')}</option>
                                 {selectableComps.map(ck => (
                                   <option key={ck} value={ck}>
                                     {ck}
@@ -2092,7 +2149,7 @@ export default function FlowsheetOptimizationModal({
                                   const nd = nodes.find(x => x.id === e.target.value);
                                   updateWatchedAt(wIdx, {
                                     unitNodeId: e.target.value,
-                                    label: `${nd?.tag ?? ''} ${DESIGN_SPEC_UNIT_METRIC_LABELS[w.unitMetric ?? 'heat_duty_mcalh'].labelKo}`,
+                                    label: `${nd?.tag ?? ''} ${unitMetricLabel(w.unitMetric ?? 'heat_duty_mcalh')}`,
                                   });
                                 }}
                                 style={inputStyle}
@@ -2110,7 +2167,7 @@ export default function FlowsheetOptimizationModal({
                                   const nd = nodes.find(x => x.id === w.unitNodeId);
                                   updateWatchedAt(wIdx, {
                                     unitMetric: uk,
-                                    label: `${nd?.tag ?? ''} ${DESIGN_SPEC_UNIT_METRIC_LABELS[uk].labelKo}`,
+                                    label: `${nd?.tag ?? ''} ${unitMetricLabel(uk)}`,
                                   });
                                 }}
                                 style={inputStyle}
@@ -2118,7 +2175,7 @@ export default function FlowsheetOptimizationModal({
                                 {(Object.keys(DESIGN_SPEC_UNIT_METRIC_LABELS) as DesignSpecUnitMetric[]).map(
                                   uk => (
                                     <option key={uk} value={uk}>
-                                      {DESIGN_SPEC_UNIT_METRIC_LABELS[uk].labelKo}
+                                      {unitMetricLabel(uk)}
                                     </option>
                                   )
                                 )}
@@ -2131,7 +2188,7 @@ export default function FlowsheetOptimizationModal({
                             type="text"
                             value={w.label}
                             onChange={e => updateWatchedAt(wIdx, { label: e.target.value })}
-                            placeholder="범례명"
+                            placeholder={t('범례명', 'Legend Label')}
                             style={inputStyle}
                           />
 
@@ -2173,7 +2230,7 @@ export default function FlowsheetOptimizationModal({
                       boxShadow: '0 2px 6px rgba(15,118,110,0.28)',
                     }}
                   >
-                    ▶ 민감도 실행 ({sensSteps} Steps)
+                    {t(`▶ 민감도 실행 (${sensSteps} Steps)`, `▶ Run Sensitivity (${sensSteps} Steps)`)}
                   </button>
 
                   {sensResult && (
@@ -2191,7 +2248,7 @@ export default function FlowsheetOptimizationModal({
                         cursor: 'pointer',
                       }}
                     >
-                      📥 {csvCopied ? '복사 · CSV 저장 완료' : 'CSV 내보내기'}
+                      📥 {csvCopied ? t('복사 · CSV 저장 완료', 'Copied · CSV Exported') : t('CSV 내보내기', 'Export CSV')}
                     </button>
                   )}
                 </div>
@@ -2220,18 +2277,19 @@ export default function FlowsheetOptimizationModal({
                     }}
                   >
                     <span style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>
-                      민감도 트렌드 ({sensResult.flatRows.length} pts · {sensResult.elapsedMs} ms)
+                      {t('민감도 트렌드', 'Sensitivity Trend')} ({sensResult.flatRows.length} pts · {sensResult.elapsedMs} ms)
                     </span>
                     <span style={{ fontSize: 11, color: '#64748B' }}>
-                      좌축: {watchedOutputs[0]?.label}
-                      {watchedOutputs[1] && !sensSecEnabled ? ` | 우축: ${watchedOutputs[1].label}` : ''}
+                      {t('좌축', 'Left Axis')}: {watchedOutputs[0]?.label}
+                      {watchedOutputs[1] && !sensSecEnabled ? ` | ${t('우축', 'Right Axis')}: ${watchedOutputs[1].label}` : ''}
                     </span>
                   </div>
 
                   <SensitivitySvgChart
                     sensResult={sensResult}
                     watchedOutputs={watchedOutputs}
-                    xLabel={MANIPULATED_PARAM_LABELS[sensPrimParam].labelKo}
+                    xLabel={manipParamLabel(sensPrimParam)}
+                    isEn={isEn}
                   />
 
                   <div style={{ overflowX: 'auto', maxHeight: 240, border: '1px solid #E2E8F0', borderRadius: 6 }}>
@@ -2247,12 +2305,12 @@ export default function FlowsheetOptimizationModal({
                         <tr style={{ background: '#F1F5F9', color: '#334155', textAlign: 'left' }}>
                           <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>#</th>
                           <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>
-                            {MANIPULATED_PARAM_LABELS[sensPrimParam].labelKo}
+                            {manipParamLabel(sensPrimParam)}
                           </th>
                           {sensResult.secondaryValues[0] !== null && (
-                            <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>2차변수</th>
+                            <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('2차변수', 'Secondary Var')}</th>
                           )}
-                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>수렴</th>
+                          <th style={{ padding: '6px 8px', borderBottom: '1px solid #CBD5E1' }}>{t('수렴', 'Converged')}</th>
                           {watchedOutputs.map((w, i) => (
                             <th
                               key={w.id}
@@ -2310,7 +2368,7 @@ export default function FlowsheetOptimizationModal({
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>
-                  Tear 수렴 알고리즘
+                  {t('Tear 수렴 알고리즘', 'Tear Convergence Algorithm')}
                 </div>
 
                 <div
@@ -2324,23 +2382,35 @@ export default function FlowsheetOptimizationModal({
                     [
                       {
                         key: 'auto',
-                        title: 'AUTO 자동 선택 (권장)',
-                        desc: '단일 루프 Wegstein · 다중 루프(≥2 Tear) 동시 Broyden',
+                        title: t('AUTO 자동 선택 (권장)', 'AUTO (Recommended)'),
+                        desc: t(
+                          '단일 루프 Wegstein · 다중 루프(≥2 Tear) 동시 Broyden',
+                          'Wegstein for single loop · Simultaneous Broyden for multi-loop (≥2 Tears)'
+                        ),
                       },
                       {
                         key: 'broyden',
-                        title: 'Broyden 동시 준뉴턴',
-                        desc: '결합 Tear 상태벡터 · Sherman–Morrison 역야코비안 갱신',
+                        title: t('Broyden 동시 준뉴턴', 'Broyden Quasi-Newton'),
+                        desc: t(
+                          '결합 Tear 상태벡터 · Sherman–Morrison 역야코비안 갱신',
+                          'Coupled Tear state vector · Sherman–Morrison inverse Jacobian update'
+                        ),
                       },
                       {
                         key: 'wegstein',
-                        title: 'Bounded Wegstein',
-                        desc: 'Rayleigh q ∈ [-5, 0] · 양수 보존 가드 가속',
+                        title: t('Bounded Wegstein', 'Wegstein'),
+                        desc: t(
+                          'Rayleigh q ∈ [-5, 0] · 양수 보존 가드 가속',
+                          'Rayleigh q ∈ [-5, 0] · Positivity-preserving acceleration'
+                        ),
                       },
                       {
                         key: 'direct',
-                        title: '감쇠 직접치환 (Direct)',
-                        desc: '순차 대입 · 진동 시 q=0.5 감쇠',
+                        title: t('감쇠 직접치환 (Direct)', 'Damped Direct'),
+                        desc: t(
+                          '순차 대입 · 진동 시 q=0.5 감쇠',
+                          'Sequential substitution · q=0.5 damping on oscillation'
+                        ),
                       },
                     ] as { key: TearSolverMethod; title: string; desc: string }[]
                   ).map(opt => {
@@ -2379,20 +2449,20 @@ export default function FlowsheetOptimizationModal({
                   }}
                 >
                   <div>
-                    <span style={labelStyle}>상대 허용오차 (Rel Tol)</span>
+                    <span style={labelStyle}>{t('상대 허용오차 (Rel Tol)', 'Relative Tolerance (Rel Tol)')}</span>
                     <select
                       value={String(relTolInput)}
                       onChange={e => setRelTolInput(Number(e.target.value))}
                       style={inputStyle}
                     >
-                      <option value="0.001">1e-3 (빠른 검토)</option>
-                      <option value="0.0001">1e-4 (표준 설계)</option>
-                      <option value="0.00001">1e-5 (고정밀 수지)</option>
-                      <option value="0.000001">1e-6 (초정밀 검증)</option>
+                      <option value="0.001">{t('1e-3 (빠른 검토)', '1e-3 (Fast Check)')}</option>
+                      <option value="0.0001">{t('1e-4 (표준 설계)', '1e-4 (Standard Design)')}</option>
+                      <option value="0.00001">{t('1e-5 (고정밀 수지)', '1e-5 (High-Precision Balance)')}</option>
+                      <option value="0.000001">{t('1e-6 (초정밀 검증)', '1e-6 (Ultra-Precision Verification)')}</option>
                     </select>
                   </div>
                   <div>
-                    <span style={labelStyle}>최대 반복수 (Max Iter)</span>
+                    <span style={labelStyle}>{t('최대 반복수 (Max Iter)', 'Max Iterations (Max Iter)')}</span>
                     <input
                       type="number"
                       min={10}
@@ -2416,7 +2486,7 @@ export default function FlowsheetOptimizationModal({
                       cursor: 'pointer',
                     }}
                   >
-                    ⚡ Wegstein vs Broyden 비교
+                    {t('⚡ Wegstein vs Broyden 비교', '⚡ Compare Wegstein vs Broyden')}
                   </button>
                 </div>
 
@@ -2430,11 +2500,11 @@ export default function FlowsheetOptimizationModal({
                   }}
                 >
                   <div style={{ fontSize: 12, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>
-                    현재 Tear 잔차 진단 ({currentResult.convergence.solverMethodLabel})
+                    {t('현재 Tear 잔차 진단', 'Current Tear Residual Diagnostics')} ({currentResult.convergence.solverMethodLabel})
                   </div>
                   {currentResult.convergence.tearEdgeIds.length === 0 ? (
                     <div style={{ fontSize: 11.5, color: '#64748B' }}>
-                      순환 루프 없음 (Direct DAG 1패스 해석)
+                      {t('순환 루프 없음 (Direct DAG 1패스 해석)', 'No recycle loops (Direct 1-pass DAG solve)')}
                     </div>
                   ) : (
                     <div style={{ overflowX: 'auto' }}>
@@ -2448,12 +2518,12 @@ export default function FlowsheetOptimizationModal({
                       >
                         <thead>
                           <tr style={{ background: '#E2E8F0', color: '#334155', textAlign: 'left' }}>
-                            <th style={{ padding: '5px 8px' }}>Tear 배관</th>
-                            <th style={{ padding: '5px 8px' }}>질량 절대잔차(kg/h)</th>
-                            <th style={{ padding: '5px 8px' }}>질량 상대잔차</th>
-                            <th style={{ padding: '5px 8px' }}>온도 잔차(°C)</th>
-                            <th style={{ padding: '5px 8px' }}>엔탈피 상대잔차</th>
-                            <th style={{ padding: '5px 8px' }}>판정</th>
+                            <th style={{ padding: '5px 8px' }}>{t('Tear 배관', 'Tear Stream')}</th>
+                            <th style={{ padding: '5px 8px' }}>{t('질량 절대잔차(kg/h)', 'Mass Abs Res (kg/h)')}</th>
+                            <th style={{ padding: '5px 8px' }}>{t('질량 상대잔차', 'Mass Rel Res')}</th>
+                            <th style={{ padding: '5px 8px' }}>{t('온도 잔차(°C)', 'Temp Res (°C)')}</th>
+                            <th style={{ padding: '5px 8px' }}>{t('엔탈피 상대잔차', 'Enthalpy Rel Res')}</th>
+                            <th style={{ padding: '5px 8px' }}>{t('판정', 'Status')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2528,11 +2598,11 @@ export default function FlowsheetOptimizationModal({
                                 color: c.converged ? '#166534' : '#991B1B',
                               }}
                             >
-                              {c.converged ? '수렴 완료' : '미수렴'} · {c.iterations}회 ({card.data.ms} ms)
+                              {c.converged ? t('수렴 완료', 'Converged') : t('미수렴', 'Unconverged')} · {c.iterations}{t('회', ' iter')} ({card.data.ms} ms)
                             </span>
                           </div>
                           <div style={{ fontSize: 11, color: '#475569', fontFamily: 'JetBrains Mono, monospace' }}>
-                            최대 질량잔차: {c.maxResidualKgH} kg/h · 진단: {c.recycleDiagnosis ?? 'none'}
+                            {t('최대 질량잔차', 'Max Mass Residual')}: {c.maxResidualKgH} kg/h · {t('진단', 'Diagnosis')}: {c.recycleDiagnosis ?? 'none'}
                           </div>
                           {c.iterationHistory && c.iterationHistory.length > 0 && (
                             <div
@@ -2575,10 +2645,12 @@ function SensitivitySvgChart({
   sensResult,
   watchedOutputs,
   xLabel,
+  isEn,
 }: {
   sensResult: SensitivityAnalysisResult;
   watchedOutputs: SensitivityWatchedOutput[];
   xLabel: string;
+  isEn: boolean;
 }) {
   const W = 760;
   const H = 270;
@@ -2650,7 +2722,7 @@ function SensitivitySvgChart({
     watchedOutputs.forEach((wo, wIdx) => {
       const useRight = wIdx === 1 && !!rightOutput;
       curves.push({
-        label: `${wo.label}${useRight ? ' (우축)' : ''}`,
+        label: `${wo.label}${useRight ? (isEn ? ' (Right Axis)' : ' (우축)') : ''}`,
         color: CHART_COLORS[wIdx % CHART_COLORS.length],
         points: sensResult.series[0].rows.map(r => ({
           x: toX(r.primaryValue),

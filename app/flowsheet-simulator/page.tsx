@@ -5079,7 +5079,9 @@ export function FlowsheetWorkspace({
       let summary = '';
       if (def && uRes) {
         if (isVisualOnlyUnit(def.unitType)) {
-          summary = uRes.inletMassKgH > 0 ? `통과 ${uRes.inletMassKgH.toFixed(0)} kg/h` : '도면 표기';
+          summary = uRes.inletMassKgH > 0
+            ? (isEn ? `Thru ${uRes.inletMassKgH.toFixed(0)} kg/h` : `통과 ${uRes.inletMassKgH.toFixed(0)} kg/h`)
+            : (isEn ? 'PFD Symbol' : '도면 표기');
         } else if (def.unitType === 'feed') {
           const fSum = Object.values(def.params.feedFlowsKgH ?? {}).reduce((a, b) => a + (Number(b) || 0), 0);
           summary = `${fSum.toFixed(0)} kg/h · ${def.params.feedTempC ?? 25}°C`;
@@ -5090,11 +5092,15 @@ export function FlowsheetWorkspace({
         } else if (def.unitType === 'chelate_tower') {
           summary = `Ca+Mg <20ppb · ${uRes.outletMassKgH.toFixed(0)} kg/h`;
         } else if (def.unitType === 'candle_filter') {
-          const fMode = def.params.filterMode === 'carbon' ? '카본 필터' : '캔들 필터';
+          const fMode = def.params.filterMode === 'carbon'
+            ? (isEn ? 'Carbon Filter' : '카본 필터')
+            : (isEn ? 'Candle Filter' : '캔들 필터');
           const dpVal = Number(def.params.filterDeltaPBar ?? 0.4).toFixed(1);
           summary = `${fMode} · ΔP ${dpVal} bar`;
         } else if (def.unitType === 'desiccant_dryer') {
-          summary = `노점 ${def.params.targetDewPointC ?? -60}°C · 건조H₂`;
+          summary = isEn
+            ? `DP ${def.params.targetDewPointC ?? -60}°C · Dry H₂`
+            : `노점 ${def.params.targetDewPointC ?? -60}°C · 건조H₂`;
         } else if (def.unitType === 'electrolyzer') {
           const presetShortMap: Record<ElectrolyzerPresetId, string> = {
             nacl_chlor_alkali: '[NaCl→NaOH]',
@@ -5109,31 +5115,41 @@ export function FlowsheetWorkspace({
         } else if (def.unitType === 'liquefier') {
           summary =
             uRes.condensedOrRemovedKgH > 0
-              ? `액화 ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h (${def.params.operTempC ?? -22}°C)`
-              : `미액화 (${def.params.operTempC ?? -22}°C)`;
+              ? (isEn
+                  ? `Liq ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h (${def.params.operTempC ?? -22}°C)`
+                  : `액화 ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h (${def.params.operTempC ?? -22}°C)`)
+              : (isEn ? `Unliquefied (${def.params.operTempC ?? -22}°C)` : `미액화 (${def.params.operTempC ?? -22}°C)`);
         } else if (def.unitType === 'hex' || def.unitType === 'cooler') {
           summary = `Q=${(uRes.heatDutyKcalH / 1000).toFixed(0)} Mcal/h`;
         } else if (def.unitType === 'absorber') {
           const ppmTxt = uRes.extraMetrics?.['건조 Cl₂ 출구 수분'];
-          summary = ppmTxt ? `출구수분 ${ppmTxt}` : `제거 ${uRes.condensedOrRemovedKgH.toFixed(1)} kg/h`;
+          summary = ppmTxt
+            ? (isEn ? `Out H₂O ${ppmTxt}` : `출구수분 ${ppmTxt}`)
+            : (isEn ? `Removed ${uRes.condensedOrRemovedKgH.toFixed(1)} kg/h` : `제거 ${uRes.condensedOrRemovedKgH.toFixed(1)} kg/h`);
         } else if (def.unitType === 'separator') {
-          summary = `액분리 ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h`;
+          summary = isEn
+            ? `Liq Sep ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h`
+            : `액분리 ${uRes.condensedOrRemovedKgH.toFixed(0)} kg/h`;
         } else if (def.unitType === 'distillation') {
           const dr = uRes.distillResult;
           const nSt = dr?.totalStagesUsed ?? def.params.distillConfig?.totalStages ?? 24;
           if (dr && uRes.inletMassKgH > 0.01) {
             const dKg = SIM_COMPS.reduce((s, k) => s + (dr.distillateFlowsKgH[k] || 0), 0);
             const bKg = SIM_COMPS.reduce((s, k) => s + (dr.bottomsFlowsKgH[k] || 0), 0);
-            summary = `${nSt}단 · RR=${dr.actualRefluxRatio.toFixed(1)} · D:${dKg.toFixed(0)}/B:${bKg.toFixed(0)}`;
+            summary = isEn
+              ? `${nSt} Stg · RR=${dr.actualRefluxRatio.toFixed(1)} · D:${dKg.toFixed(0)}/B:${bKg.toFixed(0)}`
+              : `${nSt}단 · RR=${dr.actualRefluxRatio.toFixed(1)} · D:${dKg.toFixed(0)}/B:${bKg.toFixed(0)}`;
           } else {
-            summary = `${nSt}단 정밀증류`;
+            summary = isEn ? `${nSt}-Stage Rigorous` : `${nSt}단 정밀증류`;
           }
         } else if (def.unitType === 'compressor') {
           summary = `${def.params.outletPressKgcm2g ?? 3.5}kG · ${uRes.shaftPowerKW.toFixed(1)}kW`;
         } else if (def.unitType === 'pump') {
           summary = `${uRes.shaftPowerKW.toFixed(1)} kW`;
         } else if (def.unitType === 'evaporator') {
-          summary = `${def.params.evapTargetConcWt ?? 50}% 농축 · 증발 ${uRes.condensedOrRemovedKgH.toFixed(0)}kg/h`;
+          summary = isEn
+            ? `${def.params.evapTargetConcWt ?? 50}% Conc · Evap ${uRes.condensedOrRemovedKgH.toFixed(0)}kg/h`
+            : `${def.params.evapTargetConcWt ?? 50}% 농축 · 증발 ${uRes.condensedOrRemovedKgH.toFixed(0)}kg/h`;
         } else {
           summary = `${uRes.outletMassKgH.toFixed(0)} kg/h`;
         }
@@ -5152,12 +5168,12 @@ export function FlowsheetWorkspace({
         hasMassErr || hasDistillErr ? 'error' : hasFlow ? 'converged' : 'idle';
       const simStatusMsg =
         hasMassErr
-          ? `수지 오차 (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`
+          ? (isEn ? `Mass Imbalance (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)` : `수지 오차 (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`)
           : hasDistillErr
-            ? '증류탑 미수렴 또는 목표 스펙 미달'
+            ? (isEn ? 'Column not converged or spec unmet' : '증류탑 미수렴 또는 목표 스펙 미달')
             : hasFlow
-              ? '수렴 완료'
-              : '연결 대기';
+              ? (isEn ? 'Converged' : '수렴 완료')
+              : (isEn ? 'Waiting for connections' : '연결 대기');
 
       const allowSubSheet = isPlantSimMode || Object.keys(hierarchySheets).length > 1;
       const resolvedType = def?.unitType ?? n.data.unitType;
@@ -5182,7 +5198,7 @@ export function FlowsheetWorkspace({
         },
       };
     });
-  }, [rfNodes, simDefs, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet, tagStandard]);
+  }, [rfNodes, simDefs, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet, tagStandard, isEn]);
 
   // 엣지(배관) 스타일 및 라벨 — 깔끔한 슬레이트 중심 + 선택(블루) + 순환Tear(보라)
   const displayEdges: Edge[] = useMemo(() => {
@@ -5197,7 +5213,7 @@ export function FlowsheetWorkspace({
           : '#475569';
 
       const labelText = s
-        ? `${isTear ? '[순환] ' : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`
+        ? `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`
         : `[${e.streamNo}]`;
 
       return {
@@ -6672,11 +6688,15 @@ export function FlowsheetWorkspace({
                   ? 'warning'
                   : 'converged';
 
-          const activeSheetTitle =
+          const rawSheetTitle =
             hierarchySheets[activeSheetId]?.title ||
             hierarchySheets[activeSheetId]?.shortTabLabel ||
             activeCaseName ||
             activeSheetId;
+          const activeSheetTitle =
+            isEn && (rawSheetTitle === '공정 시뮬레이터' || rawSheetTitle === '기본 시뮬레이션 시트')
+              ? 'Process Simulator'
+              : rawSheetTitle;
 
           const displayPropertyMethod =
             propertyMethod === 'AUTO'

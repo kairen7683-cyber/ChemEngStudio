@@ -644,7 +644,9 @@ export default function Header() {
         router.push(simUiMode === 'classic' ? '/classic-simulator' : '/flowsheet-simulator');
         if (res.warnings.length > 0) {
           alert(
-            `${baseName}: 장치 ${res.summary.unitCount}개 · 스트림 ${res.summary.edgeCount}개 불러오기 완료\n\n참고:\n- ${res.warnings.slice(0, 4).join('\n- ')}`
+            lang === 'en'
+              ? `${baseName}: Imported ${res.summary.unitCount} units · ${res.summary.edgeCount} streams\n\nNotes:\n- ${res.warnings.slice(0, 4).join('\n- ')}`
+              : `${baseName}: 장치 ${res.summary.unitCount}개 · 스트림 ${res.summary.edgeCount}개 불러오기 완료\n\n참고:\n- ${res.warnings.slice(0, 4).join('\n- ')}`
           );
         }
       } catch {

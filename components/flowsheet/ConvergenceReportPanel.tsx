@@ -4,11 +4,11 @@ import React, { useState } from 'react';
 import type {
   FlowsheetConvergenceInfo,
   FlowsheetBalanceReport,
-  UnitConvergenceEntry,
   TearResidualEntry,
   MakeupReportEntry,
   UnitEnergyCheck,
 } from '@/lib/calculations/flowsheetSolver';
+import { useUnitStore } from '@/lib/stores/unitStore';
 
 export interface ConvergenceReportPanelProps {
   convergence?: FlowsheetConvergenceInfo;
@@ -20,13 +20,13 @@ export interface ConvergenceReportPanelProps {
   inline?: boolean;
 }
 
-const KIND_LABEL_MAP: Record<string, string> = {
-  makeup_water: '보충수(Water)',
-  salt: '고체염(Salt)',
-  solvent: '보충용제(Solvent)',
-  reagent: '반응시약(Reagent)',
-  multiplier: '배수증폭(Scale)',
-  other: '기타 보충',
+const KIND_LABEL_MAP: Record<string, { ko: string; en: string }> = {
+  makeup_water: { ko: '보충수(Water)', en: 'Makeup Water' },
+  salt: { ko: '고체염(Salt)', en: 'Solid Salt' },
+  solvent: { ko: '보충용제(Solvent)', en: 'Makeup Solvent' },
+  reagent: { ko: '반응시약(Reagent)', en: 'Reaction Reagent' },
+  multiplier: { ko: '배수증폭(Scale)', en: 'Scale Multiplier' },
+  other: { ko: '기타 보충', en: 'Other Makeup' },
 };
 
 export default function ConvergenceReportPanel({
@@ -39,6 +39,9 @@ export default function ConvergenceReportPanel({
 }: ConvergenceReportPanelProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'units' | 'tear' | 'makeup' | 'balance'>('all');
   const [unitFilter, setUnitFilter] = useState<'all' | 'failed' | 'warning'>('all');
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
+  const t = (ko: string, en: string) => (isEn ? en : ko);
 
   if (!convergence) {
     return (
@@ -51,7 +54,7 @@ export default function ConvergenceReportPanel({
           fontFamily: "'Inter', system-ui, sans-serif",
         }}
       >
-        시뮬레이션 해석 결과가 없습니다.
+        {t('시뮬레이션 해석 결과가 없습니다.', 'No simulation convergence results available.')}
       </div>
     );
   }
@@ -59,16 +62,15 @@ export default function ConvergenceReportPanel({
   const overall = convergence.overallStatus ?? (convergence.converged ? 'converged' : 'failed');
   const isOk = overall === 'converged';
   const isWarn = overall === 'converged_with_warnings';
-  const isFail = overall === 'failed';
 
   const badgeBg = isOk ? '#ECFDF5' : isWarn ? '#FFFBEB' : '#FEF2F2';
   const badgeBorder = isOk ? '#A7F3D0' : isWarn ? '#FDE68A' : '#FECACA';
   const badgeColor = isOk ? '#065F46' : isWarn ? '#92400E' : '#991B1B';
   const badgeText = isOk
-    ? '✓ 엄밀 수렴 완료 (Converged)'
+    ? t('✓ 엄밀 수렴 완료 (Converged)', '✓ Converged')
     : isWarn
-      ? '⚠ 경고 동반 수렴 (Converged w/ Warnings)'
-      : '✕ 미수렴 (Convergence Failed)';
+      ? t('⚠ 경고 동반 수렴 (Converged w/ Warnings)', '⚠ Converged w/ Warnings')
+      : t('✕ 미수렴 (Convergence Failed)', '✕ Convergence Failed');
 
   const unitList = convergence.unitConvergence ?? [];
   const filteredUnits = unitList.filter(u => {
@@ -159,7 +161,7 @@ export default function ConvergenceReportPanel({
               wordBreak: 'break-word',
             }}
           >
-            {convergence.solverMethodLabel || '공정 시뮬레이터 수렴 진단'}
+            {convergence.solverMethodLabel || t('공정 시뮬레이터 수렴 진단', 'Flowsheet Solver Convergence Diagnostics')}
           </div>
         </div>
 
@@ -167,7 +169,7 @@ export default function ConvergenceReportPanel({
           <button
             type="button"
             onClick={onClose}
-            aria-label="닫기"
+            aria-label={t('닫기', 'Close')}
             style={{
               background: '#F1F5F9',
               border: 'none',
@@ -223,11 +225,11 @@ export default function ConvergenceReportPanel({
       >
         {(
           [
-            ['all', '종합 요약'],
-            ['units', `장치별 (${convergence.failedUnitCount ?? 0}✕/${convergence.warningUnitCount ?? 0}⚠)`],
-            ['tear', `순환 루프 (${tearResiduals.length})`],
-            ['makeup', `보충·약품 (${(convergence.makeupTotalKgH ?? 0).toFixed(0)} kg/h)`],
-            ['balance', '수지 결산'],
+            ['all', t('종합 요약', 'Overview')],
+            ['units', t(`장치별 (${convergence.failedUnitCount ?? 0}✕/${convergence.warningUnitCount ?? 0}⚠)`, `Units (${convergence.failedUnitCount ?? 0}✕/${convergence.warningUnitCount ?? 0}⚠)`)],
+            ['tear', t(`순환 루프 (${tearResiduals.length})`, `Recycle Loops (${tearResiduals.length})`)],
+            ['makeup', t(`보충·약품 (${(convergence.makeupTotalKgH ?? 0).toFixed(0)} kg/h)`, `Makeup & Reagents (${(convergence.makeupTotalKgH ?? 0).toFixed(0)} kg/h)`)],
+            ['balance', t('수지 결산', 'Balance Audit')],
           ] as const
         ).map(([tabKey, tabLabel]) => {
           const isSelected = activeTab === tabKey;
@@ -271,14 +273,14 @@ export default function ConvergenceReportPanel({
             }}
           >
             <span style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>
-              장치별 수렴 판정 ({unitList.length}기)
+              {t(`장치별 수렴 판정 (${unitList.length}기)`, `Unit Convergence Status (${unitList.length} units)`)}
             </span>
             <div style={{ display: 'inline-flex', gap: 3 }}>
               {(
                 [
-                  ['all', '전체'],
-                  ['failed', `실패(${convergence.failedUnitCount ?? 0})`],
-                  ['warning', `경고(${convergence.warningUnitCount ?? 0})`],
+                  ['all', t('전체', 'All')],
+                  ['failed', t(`실패(${convergence.failedUnitCount ?? 0})`, `Failed (${convergence.failedUnitCount ?? 0})`)],
+                  ['warning', t(`경고(${convergence.warningUnitCount ?? 0})`, `Warning (${convergence.warningUnitCount ?? 0})`)],
                 ] as const
               ).map(([fk, fl]) => (
                 <button
@@ -316,7 +318,7 @@ export default function ConvergenceReportPanel({
           >
             {filteredUnits.length === 0 ? (
               <div style={{ fontSize: 10.5, color: '#94A3B8', textAlign: 'center', padding: 8 }}>
-                해당 조건의 장치가 없습니다.
+                {t('해당 조건의 장치가 없습니다.', 'No units match this filter.')}
               </div>
             ) : (
               filteredUnits.map(u => {
@@ -343,7 +345,7 @@ export default function ConvergenceReportPanel({
                       fontSize: 10,
                       fontFamily: 'JetBrains Mono, monospace',
                     }}
-                    title={onSelectNode ? '클릭 시 해당 장치로 이동합니다' : undefined}
+                    title={onSelectNode ? t('클릭 시 해당 장치로 이동합니다', 'Click to jump to this unit') : undefined}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: 800, color: '#0F172A' }}>
@@ -356,7 +358,7 @@ export default function ConvergenceReportPanel({
                           fontSize: 9.5,
                         }}
                       >
-                        {uIsFail ? '✕ 실패' : uIsWarn ? '⚠ 경고' : uIsOk ? '✓ 수렴' : '— N/A'}
+                        {uIsFail ? t('✕ 실패', '✕ Failed') : uIsWarn ? t('⚠ 경고', '⚠ Warning') : uIsOk ? t('✓ 수렴', '✓ Converged') : '— N/A'}
                       </span>
                     </div>
                     {u.message && (
@@ -376,7 +378,7 @@ export default function ConvergenceReportPanel({
       {(activeTab === 'all' || activeTab === 'tear') && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 800, color: '#334155', marginBottom: 5 }}>
-            순환 배관 (Tear Stream) 수렴 상세
+            {t('순환 배관 (Tear Stream) 수렴 상세', 'Recycle Loop (Tear Stream) Convergence')}
           </div>
           {tearResiduals.length === 0 ? (
             <div
@@ -390,7 +392,7 @@ export default function ConvergenceReportPanel({
                 fontFamily: 'JetBrains Mono, monospace',
               }}
             >
-              순환 배관(Recycle Loop) 없음 (단방향 직렬 공정 Direct DAG)
+              {t('순환 배관(Recycle Loop) 없음 (단방향 직렬 공정 Direct DAG)', 'No recycle loops (Direct acyclic flowsheet / DAG)')}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -403,17 +405,17 @@ export default function ConvergenceReportPanel({
                   fontFamily: 'JetBrains Mono, monospace',
                 }}
               >
-                <span>상대 허용오차: {(convergence.relTolerance ?? 1e-4).toExponential(0)}</span>
+                <span>{t('상대 허용오차:', 'Rel. Tolerance:')} {(convergence.relTolerance ?? 1e-4).toExponential(0)}</span>
                 <span>
-                  진단:{' '}
+                  {t('진단:', 'Diagnosis:')}{' '}
                   <b>
                     {convergence.recycleDiagnosis === 'oscillating'
-                      ? '진동 감지'
+                      ? t('진동 감지', 'Oscillation')
                       : convergence.recycleDiagnosis === 'diverging'
-                        ? '발산 감지'
+                        ? t('발산 감지', 'Diverging')
                         : convergence.recycleDiagnosis === 'stalled'
-                          ? '수렴 정체'
-                          : '안정 수렴'}
+                          ? t('수렴 정체', 'Stalled')
+                          : t('안정 수렴', 'Stable')}
                   </b>
                 </span>
               </div>
@@ -435,11 +437,11 @@ export default function ConvergenceReportPanel({
                 >
                   <thead>
                     <tr style={{ background: '#F1F5F9', color: '#475569' }}>
-                      <th style={{ padding: '4px 6px' }}>배관</th>
-                      <th style={{ padding: '4px 6px' }}>질량상대</th>
-                      <th style={{ padding: '4px 6px' }}>온도상대</th>
-                      <th style={{ padding: '4px 6px' }}>엔탈피상대</th>
-                      <th style={{ padding: '4px 6px' }}>판정</th>
+                      <th style={{ padding: '4px 6px' }}>{t('배관', 'Stream')}</th>
+                      <th style={{ padding: '4px 6px' }}>{t('질량상대', 'Mass Rel.')}</th>
+                      <th style={{ padding: '4px 6px' }}>{t('온도상대', 'Temp Rel.')}</th>
+                      <th style={{ padding: '4px 6px' }}>{t('엔탈피상대', 'Enthalpy Rel.')}</th>
+                      <th style={{ padding: '4px 6px' }}>{t('판정', 'Status')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -462,7 +464,7 @@ export default function ConvergenceReportPanel({
                             color: tr.withinTolerance ? '#059669' : '#D97706',
                           }}
                         >
-                          {tr.withinTolerance ? '✓ 합격' : '⚠ 미달'}
+                          {tr.withinTolerance ? t('✓ 합격', '✓ Pass') : t('⚠ 미달', '⚠ Exceeds')}
                         </td>
                       </tr>
                     ))}
@@ -486,7 +488,7 @@ export default function ConvergenceReportPanel({
             }}
           >
             <span style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>
-              비배관 자동 보충·약품 주입 내역
+              {t('비배관 자동 보충·약품 주입 내역', 'Non-Piped Auto Makeup & Reagent Injection')}
             </span>
             <span
               style={{
@@ -496,7 +498,7 @@ export default function ConvergenceReportPanel({
                 fontWeight: 700,
               }}
             >
-              합계 {(convergence.makeupTotalKgH ?? 0).toFixed(1)} kg/h
+              {t(`합계 ${(convergence.makeupTotalKgH ?? 0).toFixed(1)} kg/h`, `Total ${(convergence.makeupTotalKgH ?? 0).toFixed(1)} kg/h`)}
             </span>
           </div>
 
@@ -512,7 +514,7 @@ export default function ConvergenceReportPanel({
                 fontFamily: 'JetBrains Mono, monospace',
               }}
             >
-              외부 인위적 보충 없음 (순수 배관망 수지 100% 일치)
+              {t('외부 인위적 보충 없음 (순수 배관망 수지 100% 일치)', 'No external makeup injection (100% closed stream network balance)')}
             </div>
           ) : (
             <div
@@ -535,10 +537,10 @@ export default function ConvergenceReportPanel({
               >
                 <thead>
                   <tr style={{ background: '#F1F5F9', color: '#475569' }}>
-                    <th style={{ padding: '4px 6px' }}>장치</th>
-                    <th style={{ padding: '4px 6px' }}>유형</th>
-                    <th style={{ padding: '4px 6px' }}>유량(kg/h)</th>
-                    <th style={{ padding: '4px 6px' }}>주입 사유</th>
+                    <th style={{ padding: '4px 6px' }}>{t('장치', 'Unit')}</th>
+                    <th style={{ padding: '4px 6px' }}>{t('유형', 'Type')}</th>
+                    <th style={{ padding: '4px 6px' }}>{t('유량(kg/h)', 'Flow (kg/h)')}</th>
+                    <th style={{ padding: '4px 6px' }}>{t('주입 사유', 'Reason')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -552,7 +554,7 @@ export default function ConvergenceReportPanel({
                     >
                       <td style={{ padding: '4px 6px', fontWeight: 700 }}>{m.tag}</td>
                       <td style={{ padding: '4px 6px', color: '#64748B' }}>
-                        {KIND_LABEL_MAP[m.kind] ?? m.kind}
+                        {KIND_LABEL_MAP[m.kind] ? (isEn ? KIND_LABEL_MAP[m.kind].en : KIND_LABEL_MAP[m.kind].ko) : m.kind}
                       </td>
                       <td style={{ padding: '4px 6px', fontWeight: 700, color: '#B45309' }}>
                         {m.totalKgH.toFixed(1)}
@@ -571,7 +573,7 @@ export default function ConvergenceReportPanel({
       {(activeTab === 'all' || activeTab === 'balance') && balance && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 800, color: '#334155', marginBottom: 5 }}>
-            물질·에너지 종합 수지 결산
+            {t('물질·에너지 종합 수지 결산', 'Overall Mass & Energy Balance Audit')}
           </div>
           <div
             style={{
@@ -586,7 +588,7 @@ export default function ConvergenceReportPanel({
           >
             {/* 물리 배관망만 */}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>• 물리 배관망 수지차 (보충 제외):</span>
+              <span style={{ color: '#475569' }}>{t('• 물리 배관망 수지차 (보충 제외):', '• Physical Network Mass Imbalance (excl. makeup):')}</span>
               <b
                 style={{
                   color:
@@ -600,7 +602,7 @@ export default function ConvergenceReportPanel({
 
             {/* 보충 포함 총 수지 */}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>• 보충 포함 총 물질 수지차:</span>
+              <span style={{ color: '#475569' }}>{t('• 보충 포함 총 물질 수지차:', '• Total Mass Imbalance (incl. makeup):')}</span>
               <b style={{ color: Math.abs(balance.massImbalanceKgH) < 0.5 ? '#059669' : '#DC2626' }}>
                 {balance.massImbalanceKgH.toFixed(2)} kg/h ({balance.massImbalancePct.toFixed(3)}%)
               </b>
@@ -608,7 +610,7 @@ export default function ConvergenceReportPanel({
 
             {/* 에너지 잔차 */}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#475569' }}>• 전 플랜트 에너지 잔차:</span>
+              <span style={{ color: '#475569' }}>{t('• 전 플랜트 에너지 잔차:', '• Plant-Wide Energy Residual:')}</span>
               <b
                 style={{
                   color:
@@ -625,8 +627,10 @@ export default function ConvergenceReportPanel({
 
             {/* 미연결 출구 / 보충 유입 카운트 */}
             <div style={{ marginTop: 4, color: '#64748B', fontSize: 9.5 }}>
-              미연결 출구 {balance.unroutedOutlets.length}개 ({balance.unroutedOutKgH.toFixed(0)} kg/h) ·
-              보충 유입 {balance.makeupInlets.length}개 ({balance.makeupInKgH.toFixed(0)} kg/h)
+              {t(
+                `미연결 출구 ${balance.unroutedOutlets.length}개 (${balance.unroutedOutKgH.toFixed(0)} kg/h) · 보충 유입 ${balance.makeupInlets.length}개 (${balance.makeupInKgH.toFixed(0)} kg/h)`,
+                `Unconnected outlets: ${balance.unroutedOutlets.length} (${balance.unroutedOutKgH.toFixed(0)} kg/h) · Makeup inlets: ${balance.makeupInlets.length} (${balance.makeupInKgH.toFixed(0)} kg/h)`
+              )}
             </div>
           </div>
 
@@ -634,7 +638,7 @@ export default function ConvergenceReportPanel({
           {flaggedEnergyChecks.length > 0 && (
             <div style={{ marginTop: 6 }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#B45309', marginBottom: 3 }}>
-                ⚠ 에너지 잔차 0.5% 초과 장치 ({flaggedEnergyChecks.length}기)
+                {t(`⚠ 에너지 잔차 0.5% 초과 장치 (${flaggedEnergyChecks.length}기)`, `⚠ Units Exceeding 0.5% Energy Residual (${flaggedEnergyChecks.length})`)}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {flaggedEnergyChecks.map(ec => (
@@ -653,7 +657,7 @@ export default function ConvergenceReportPanel({
                   >
                     <span>[{ec.tag}]</span>
                     <span style={{ color: '#B45309' }}>
-                      {ec.residualKW.toFixed(1)} kW ({ec.residualPct.toFixed(2)}% / 규모{' '}
+                      {ec.residualKW.toFixed(1)} kW ({ec.residualPct.toFixed(2)}% / {t('규모', 'Throughput')}{' '}
                       {ec.throughputKW.toFixed(0)} kW)
                     </span>
                   </div>
