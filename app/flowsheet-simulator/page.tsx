@@ -6692,11 +6692,15 @@ export function FlowsheetWorkspace({
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              gap: 4,
+              gap: 2,
+              background: '#F1F5F9',
+              padding: 2,
+              borderRadius: 6,
+              border: '1px solid #CBD5E1',
             }}
           >
             {([
-              { id: 'canvas', label: isEn ? 'Canvas' : '도면 크게' },
+              { id: 'canvas', label: isEn ? 'Full Canvas' : '도면만 크게' },
               { id: 'split', label: isEn ? 'Split' : '도면+스트림' },
               { id: 'table', label: isEn ? 'Streams' : '스트림 전체' },
             ] as const).map(v => {
@@ -6704,16 +6708,30 @@ export function FlowsheetWorkspace({
               return (
                 <button
                   key={v.id}
-                  onClick={() => setLayoutMode(v.id)}
+                  type="button"
+                  onClick={() => {
+                    setLayoutMode(v.id);
+                    if (v.id === 'canvas') {
+                      setInspectorOpen(false);
+                      setPaletteOpen(false);
+                      setTimeout(() => rfInstance?.fitView({ padding: 0.08, duration: 200 }), 80);
+                    } else if (v.id === 'split') {
+                      setInspectorOpen(true);
+                      setPaletteOpen(true);
+                    } else if (v.id === 'table') {
+                      setInspectorOpen(false);
+                      setPaletteOpen(false);
+                    }
+                  }}
                   style={{
                     fontSize: 11,
-                    fontWeight: active ? 800 : 600,
-                    padding: '4px 7px',
+                    fontWeight: active ? 800 : 700,
+                    padding: '3px 8px',
                     border: 'none',
-                    borderBottom: active ? '2px solid #1E3A8A' : '2px solid transparent',
+                    borderRadius: 4,
                     cursor: 'pointer',
-                    background: 'transparent',
-                    color: active ? '#1E3A8A' : '#475569',
+                    background: active ? '#1E3A8A' : 'transparent',
+                    color: active ? '#FFFFFF' : '#475569',
                     whiteSpace: 'nowrap',
                   }}
                 >
