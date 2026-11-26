@@ -737,7 +737,8 @@ export type PublicReactorPresetId =
   | 'smr_reforming'
   | 'methanol_synthesis'
   | 'ammonia_synthesis'
-  | 'toluene_hda';
+  | 'toluene_hda'
+  | 'etoac_esterification';
 
 export interface PublicReactorPresetSpec {
   id: PublicReactorPresetId;
@@ -812,6 +813,15 @@ export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
     defaultTempC: 620.0,
     defaultPressKgcm2g: 24.5,
     defaultConvPct: 75.0,
+  },
+  {
+    id: 'etoac_esterification',
+    labelKo: 'Ethyl Acetate Esterification (EtOH + AcOH)',
+    labelEn: 'Ethyl Acetate Esterification (EtOH + AcOH)',
+    reactionEq: 'C₂H₅OH + CH₃COOH ⇌ CH₃COOC₂H₅ + H₂O (ΔH = -3.6 kJ/mol)',
+    defaultTempC: 85.0,
+    defaultPressKgcm2g: 1.2,
+    defaultConvPct: 72.0,
   },
 ];
 
@@ -912,7 +922,8 @@ export interface FlowUnitParams {
     | 'smr_reforming'
     | 'methanol_synthesis'
     | 'ammonia_synthesis'
-    | 'toluene_hda';
+    | 'toluene_hda'
+    | 'etoac_esterification';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -4466,6 +4477,21 @@ export function solveFlowsheet(
           outF.Benzene += bzGen;
           outF.CH4 += ch4Gen;
           note = `HDA Reactor (${T_out.toFixed(1)}°C): Benzene ${bzGen.toFixed(1)} / CH₄ ${ch4Gen.toFixed(1)} kg/h (Tol Conv ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'etoac_esterification') {
+          // Fischer Esterification: EtOH(46.069) + AceticAcid(60.052) ⇌ EtOAc(88.106) + H2O(18.015)
+          const mwEt = COMP_META.EtOH.mw;
+          const mwAc = COMP_META.AceticAcid.mw;
+          const mwEa = COMP_META.EtOAc.mw;
+          const extEa = Math.min(outF.EtOH / mwEt, outF.AceticAcid / mwAc) * conv;
+          const etUse = extEa * mwEt;
+          const acUse = extEa * mwAc;
+          const eaGen = extEa * mwEa;
+          const h2oGen = Math.max(0, etUse + acUse - eaGen);
+          outF.EtOH = Math.max(0, outF.EtOH - etUse);
+          outF.AceticAcid = Math.max(0, outF.AceticAcid - acUse);
+          outF.EtOAc += eaGen;
+          outF.H2O += h2oGen;
+          note = `Esterification (${T_out.toFixed(1)}°C): EtOAc ${eaGen.toFixed(1)} / H₂O ${h2oGen.toFixed(1)} kg/h (Conv ${(conv * 100).toFixed(1)}%)`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;
