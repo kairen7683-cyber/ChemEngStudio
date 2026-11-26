@@ -334,7 +334,7 @@ export default function ComponentPropertySetupModal({
       currentPlantContext === 'cms_plant' ||
       currentPlantContext === 'mdi_plant');
 
-  const [sourceTab, setSourceTab] = useState<'general' | 'plant' | 'custom'>(isPlantCtx ? 'plant' : 'general');
+  const [sourceTab, setSourceTab] = useState<'general' | 'plant' | 'custom'>('general');
   const [draftComps, setDraftComps] = useState<SimCompKey[]>(activeComponents);
   const [draftMethod, setDraftMethod] = useState<SimPropertyMethod>(propertyMethod);
   const [familyFilter, setFamilyFilter] = useState<'ALL' | CompChemicalFamily>('ALL');
@@ -370,10 +370,10 @@ export default function ComponentPropertySetupModal({
     if (open) {
       setDraftComps(activeComponents);
       setDraftMethod(propertyMethod || 'AUTO');
-      setSourceTab(isPlantCtx ? 'plant' : 'general');
+      setSourceTab('general');
       setSearchQuery('');
     }
-  }, [open, activeComponents, propertyMethod, isPlantCtx]);
+  }, [open, activeComponents, propertyMethod]);
 
   const inUseSet = useMemo(() => {
     const s = new Set<SimCompKey>();
@@ -430,6 +430,18 @@ export default function ComponentPropertySetupModal({
     });
   }, [extCatFilter, extSearch]);
 
+  const unifiedFilteredExt = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return EXTENDED_CHEMICAL_LIBRARY.filter(item =>
+      item.id.toLowerCase().includes(q) ||
+      item.nameKo.toLowerCase().includes(q) ||
+      item.nameEn.toLowerCase().includes(q) ||
+      item.formula.toLowerCase().includes(q) ||
+      item.cas.includes(q)
+    );
+  }, [searchQuery]);
+
   const liveJobackPred = useMemo(() => {
     const parsedTb = jbTbExpStr.trim() !== '' ? Number(jbTbExpStr) : undefined;
     const tbOpt = parsedTb !== undefined && Number.isFinite(parsedTb) ? parsedTb : undefined;
@@ -445,7 +457,9 @@ export default function ComponentPropertySetupModal({
     const q = rawQuery.trim();
     if (q.length < 2 || q.length > 60) return;
 
-    const visibleCount = isExtTab ? filteredExtLibrary.length : filteredComps.length;
+    const visibleCount = isExtTab
+      ? filteredExtLibrary.length
+      : filteredComps.length + unifiedFilteredExt.length;
     if (visibleCount > 0) return;
 
     const normKey = q.toLowerCase();
@@ -483,7 +497,7 @@ export default function ComponentPropertySetupModal({
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [open, sourceTab, customSubTab, searchQuery, extSearch, filteredComps.length, filteredExtLibrary.length]);
+  }, [open, sourceTab, customSubTab, searchQuery, extSearch, filteredComps.length, unifiedFilteredExt.length, filteredExtLibrary.length]);
 
   if (!open) return null;
 
@@ -556,6 +570,32 @@ export default function ComponentPropertySetupModal({
 
   const slot1Spec = getActiveCustomSlotSpec('CUSTOM_1');
   const slot2Spec = getActiveCustomSlotSpec('CUSTOM_2');
+
+  const handleToggleUnifiedExt = (chemId: string) => {
+    if (slot1Spec.id === chemId && draftComps.includes('CUSTOM_1')) {
+      toggleComp('CUSTOM_1');
+      return;
+    }
+    if (slot2Spec.id === chemId && draftComps.includes('CUSTOM_2')) {
+      toggleComp('CUSTOM_2');
+      return;
+    }
+    const targetSlot: CustomSlotKey = !draftComps.includes('CUSTOM_1') ? 'CUSTOM_1' : 'CUSTOM_2';
+    handleAssignExtToSlot(targetSlot, chemId);
+  };
+
+  const handleRequestMissingComp = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('chemeng:open-component-request', {
+          detail: { query: q },
+        })
+      );
+    }
+    onClose();
+  };
 
   const getCompDisplayName = (comp: SimCompKey) => {
     if (!isEn) return COMP_META[comp].label;
@@ -715,113 +755,29 @@ export default function ComponentPropertySetupModal({
               overflow: isMobile ? 'visible' : 'hidden',
             }}
           >
-            {/* 모드 스위치 탭: 범용 공정 개발 vs 공장별 표준 성분 vs 100+ 확장물질 · UNIFAC 분자설계 */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-              <div
-                style={{
-                  display: 'inline-flex',
-                  flexWrap: 'wrap',
-                  gap: 2,
-                  background: '#F1F5F9',
-                  padding: 3,
-                  borderRadius: 8,
-                  border: '1px solid #CBD5E1',
-                  maxWidth: '100%',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSourceTab('general')}
-                  style={{
-                    padding: isMobile ? '5px 8px' : '5px 10px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: sourceTab === 'general' ? '#1D4ED8' : 'transparent',
-                    color: sourceTab === 'general' ? '#FFFFFF' : '#334155',
-                    fontSize: isMobile ? 10.8 : 11.2,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t(`🌐 범용 (${SIM_COMPS.length}종)`, `🌐 General (${SIM_COMPS.length})`)}
-                </button>
-                {allowedPlantPresets.length > 0 && (
+            {sourceTab === 'custom' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 2 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    onClick={() => setSourceTab('plant')}
+                    onClick={() => setSourceTab('general')}
                     style={{
-                      padding: isMobile ? '5px 8px' : '5px 10px',
+                      padding: '4px 10px',
                       borderRadius: 6,
-                      border: 'none',
-                      background: sourceTab === 'plant' ? '#0F5338' : 'transparent',
-                      color: sourceTab === 'plant' ? '#FFFFFF' : '#334155',
-                      fontSize: isMobile ? 10.8 : 11.2,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      color: '#1E293B',
+                      fontSize: 11,
                       fontWeight: 800,
                       cursor: 'pointer',
                     }}
                   >
-                    {t('🏭 공장 표준', '🏭 Plant Standard')}
+                    {t('← 통합 검색으로 돌아가기', '← Back to Unified Search')}
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSourceTab('custom')}
-                  style={{
-                    padding: isMobile ? '5px 8px' : '5px 10px',
-                    borderRadius: 6,
-                    border: 'none',
-                    background: sourceTab === 'custom' ? '#7C3AED' : 'transparent',
-                    color: sourceTab === 'custom' ? '#FFFFFF' : '#5B21B6',
-                    fontSize: isMobile ? 10.8 : 11.2,
-                    fontWeight: 900,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t('🧪 확장 · Joback/UNIFAC', '🧪 Extended · Joback/UNIFAC')}
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <button
-                  type="button"
-                  onClick={() => setDraftComps([...SIM_COMPS])}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    borderRadius: 5,
-                    border: '1px solid #CBD5E1',
-                    background: '#F8FAFC',
-                    color: '#334155',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t(`전체 (${SIM_COMPS.length})`, `All (${SIM_COMPS.length})`)}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const base: SimCompKey[] = inUseSet.size > 0 ? Array.from(inUseSet) : ['H2O'];
-                    setDraftComps(SIM_COMPS.filter(c => base.includes(c)));
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    fontSize: 10.5,
-                    fontWeight: 700,
-                    borderRadius: 5,
-                    border: '1px solid #CBD5E1',
-                    background: '#FFFFFF',
-                    color: '#64748B',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {t('사용중만', 'In Use Only')}
-                </button>
-              </div>
-            </div>
-
-            {sourceTab === 'custom' ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 2 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#0F766E' }}>
+                    {t('🧬 가상성분 (Joback / UNIFAC) 직접 설계', '🧬 Hypothetical Component (Joback / UNIFAC)')}
+                  </span>
+                </div>
                 {/* 현재 배정된 CUSTOM_1 / CUSTOM_2 슬롯 상태 카드 */}
                 <div
                   style={{
@@ -1326,11 +1282,29 @@ export default function ComponentPropertySetupModal({
               </div>
             ) : sourceTab === 'plant' ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, overflowY: 'auto', paddingRight: 2 }}>
-                <div style={{ fontSize: 10.5, color: '#64748B' }}>
-                  {t(
-                    '공장별 표준 성분 프리셋 (로드 후 범용 탭에서 추가/편집 가능)',
-                    'Plant-standard component presets (you can add or edit components in General tab after loading)'
-                  )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSourceTab('general')}
+                    style={{
+                      padding: '4px 10px',
+                      borderRadius: 6,
+                      border: '1px solid #CBD5E1',
+                      background: '#F8FAFC',
+                      color: '#1E293B',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {t('← 통합 검색으로 돌아가기', '← Back to Unified Search')}
+                  </button>
+                  <span style={{ fontSize: 10.5, color: '#64748B' }}>
+                    {t(
+                      '공장별 표준 성분 프리셋 (로드 후 통합 검색에서 추가/편집 가능)',
+                      'Plant-standard component presets (editable in Unified Search after loading)'
+                    )}
+                  </span>
                 </div>
                 {allowedPlantPresets.map(preset => {
                   const isExact =
@@ -1412,68 +1386,122 @@ export default function ComponentPropertySetupModal({
               </div>
             ) : (
               <>
-                {/* 범용 공정 빠른 스타터 패키지 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 800, color: '#475569' }}>
+                {/* 컴팩트 1행 빠른 프리셋 */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    overflowX: 'auto',
+                    flexShrink: 0,
+                    paddingBottom: 2,
+                  }}
+                >
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap', flexShrink: 0 }}>
                     {t('⚡ 빠른 프리셋:', '⚡ Quick Presets:')}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {visibleGeneralPacks.map(pk => {
-                      const gEn = GENERAL_PACK_EN[pk.id];
-                      return (
-                        <button
-                          key={pk.id}
-                          type="button"
-                          onClick={() => applyPresetList(pk.components)}
-                          title={isEn && gEn ? gEn.desc : pk.descKo}
+                  </span>
+                  {visibleGeneralPacks.map(pk => {
+                    const gEn = GENERAL_PACK_EN[pk.id];
+                    return (
+                      <button
+                        key={pk.id}
+                        type="button"
+                        onClick={() => applyPresetList(pk.components)}
+                        title={isEn && gEn ? gEn.desc : pk.descKo}
+                        style={{
+                          padding: '3.5px 8px',
+                          borderRadius: 6,
+                          border: '1px solid #BFDBFE',
+                          background: '#EFF6FF',
+                          color: '#1E3A8A',
+                          fontSize: 10.3,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span>{isEn && gEn ? gEn.label : pk.labelKo}</span>
+                        <span
                           style={{
-                            padding: '4px 8px',
-                            borderRadius: 6,
-                            border: '1px solid #BFDBFE',
-                            background: '#EFF6FF',
-                            color: '#1E3A8A',
-                            fontSize: 10.5,
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
+                            fontSize: 9,
+                            padding: '0.5px 4px',
+                            borderRadius: 3,
+                            background: '#DBEAFE',
+                            color: '#1D4ED8',
                           }}
                         >
-                          <span>{isEn && gEn ? gEn.label : pk.labelKo}</span>
-                          <span
-                            style={{
-                              fontSize: 9,
-                              padding: '0.5px 4px',
-                              borderRadius: 3,
-                              background: '#DBEAFE',
-                              color: '#1D4ED8',
-                            }}
-                          >
-                            {isEn && gEn ? gEn.badge : pk.badge}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {isEn && gEn ? gEn.badge : pk.badge}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* 검색창 + 화학군 필터 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder={t('물질명, 화학식, CAS 검색...', 'Search name, formula, or CAS...')}
-                    style={{
-                      width: '100%',
-                      padding: '6px 10px',
-                      fontSize: 11.5,
-                      borderRadius: 6,
-                      border: '1px solid #CBD5E1',
-                      background: '#F8FAFC',
-                    }}
-                  />
+                {/* 통합 검색창 + 전체/사용중만 + 화학군 필터 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      placeholder={t(
+                        '물질명, 화학식, CAS 통합 검색 (핵심 + 추가 DB)...',
+                        'Search name, formula, or CAS (Core + Extended DB)...'
+                      )}
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        padding: '6px 10px',
+                        fontSize: 11.5,
+                        borderRadius: 6,
+                        border: '1px solid #CBD5E1',
+                        background: '#F8FAFC',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setDraftComps([...SIM_COMPS])}
+                      style={{
+                        padding: '5px 8px',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        borderRadius: 5,
+                        border: '1px solid #CBD5E1',
+                        background: '#F8FAFC',
+                        color: '#334155',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {t(`전체 (${SIM_COMPS.length})`, `All (${SIM_COMPS.length})`)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const base: SimCompKey[] = inUseSet.size > 0 ? Array.from(inUseSet) : ['H2O'];
+                        setDraftComps(SIM_COMPS.filter(c => base.includes(c)));
+                      }}
+                      style={{
+                        padding: '5px 8px',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        borderRadius: 5,
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#64748B',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {t('사용중만', 'In Use Only')}
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {FAMILY_ORDER.map(fam => {
                       const active = familyFilter === fam;
@@ -1506,14 +1534,14 @@ export default function ComponentPropertySetupModal({
                   </div>
                 </div>
 
-                {/* 검증된 40종 물질 그리드 */}
+                {/* 통합 물질 그리드: 핵심 DB + (검색 시) 추가 DB + PubChem 추가 요청 배너 */}
                 <div
                   style={{
                     flex: 1,
                     minHeight: 0,
                     overflowY: 'auto',
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
                     gap: 6,
                     alignContent: 'start',
                     paddingRight: 3,
@@ -1611,6 +1639,192 @@ export default function ComponentPropertySetupModal({
                       </div>
                     );
                   })}
+
+                  {searchQuery.trim().length > 0 &&
+                    unifiedFilteredExt.map(item => {
+                      const isExtSelected =
+                        (slot1Spec.id === item.id && draftComps.includes('CUSTOM_1')) ||
+                        (slot2Spec.id === item.id && draftComps.includes('CUSTOM_2'));
+                      return (
+                        <div
+                          key={`ext-${item.id}`}
+                          onClick={() => handleToggleUnifiedExt(item.id)}
+                          style={{
+                            padding: '7px 9px',
+                            borderRadius: 7,
+                            border: isExtSelected ? '1.5px solid #2563EB' : '1px solid #E2E8F0',
+                            background: isExtSelected ? '#EFF6FF' : '#FFFFFF',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 4,
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                              <span
+                                style={{
+                                  fontSize: 11.3,
+                                  fontWeight: isExtSelected ? 900 : 700,
+                                  color: '#0F172A',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {isEn ? item.nameEn : item.nameKo}
+                              </span>
+                              <span
+                                style={{
+                                  fontSize: 8.8,
+                                  fontWeight: 800,
+                                  padding: '1px 5px',
+                                  borderRadius: 999,
+                                  background: '#F1F5F9',
+                                  border: '1px solid #CBD5E1',
+                                  color: '#475569',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {t('추가 DB', 'Extended DB')}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                handleToggleUnifiedExt(item.id);
+                              }}
+                              style={{
+                                padding: '2.5px 8px',
+                                borderRadius: 5,
+                                border: isExtSelected ? '1px solid #2563EB' : '1px solid #CBD5E1',
+                                background: isExtSelected ? '#2563EB' : '#F8FAFC',
+                                color: isExtSelected ? '#FFFFFF' : '#1E3A8A',
+                                fontSize: 10,
+                                fontWeight: 800,
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {isExtSelected ? t('✓ 선택됨', '✓ Selected') : t('+ 선택', '+ Select')}
+                            </button>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 9.6,
+                              color: '#475569',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {item.formula} · CAS {item.cas} · Tb {item.tbC.toFixed(1)}°C · MW {item.mw.toFixed(1)}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  {searchQuery.trim().length >= 1 && (
+                    <div
+                      style={{
+                        gridColumn: '1 / -1',
+                        padding: filteredComps.length + unifiedFilteredExt.length === 0 ? '14px 12px' : '8px 10px',
+                        borderRadius: 8,
+                        border: '1px dashed #93C5FD',
+                        background: '#F0F9FF',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: filteredComps.length + unifiedFilteredExt.length === 0 ? 'center' : 'stretch',
+                        gap: 6,
+                        marginTop: 2,
+                      }}
+                    >
+                      {filteredComps.length + unifiedFilteredExt.length === 0 && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#334155', textAlign: 'center' }}>
+                          {t(
+                            `"${searchQuery.trim()}"에 해당하는 물질이 내장 DB에 없습니다.`,
+                            `No matching component found in built-in DB for "${searchQuery.trim()}".`
+                          )}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRequestMissingComp}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 6,
+                          border: '1px solid #2563EB',
+                          background: '#FFFFFF',
+                          color: '#1D4ED8',
+                          fontSize: 11,
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          textAlign: 'center',
+                        }}
+                      >
+                        {t(
+                          `+ "${searchQuery.trim()}" 물질 추가 요청 (PubChem 자동 조회)`,
+                          `+ Request "${searchQuery.trim()}" (Auto PubChem Lookup)`
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* 하단 보조 링크 (고급 가상성분 설계 / 공장 표준 프리셋) */}
+                <div
+                  style={{
+                    flexShrink: 0,
+                    borderTop: '1px solid #E2E8F0',
+                    paddingTop: 6,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourceTab('custom');
+                      setCustomSubTab('joback');
+                    }}
+                    style={{
+                      padding: '2px 4px',
+                      border: 'none',
+                      background: 'transparent',
+                      color: '#64748B',
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    {t('🧬 고급: 가상성분(Joback/UNIFAC) 직접 설계', '🧬 Advanced: Hypothetical Component (Joback)')}
+                  </button>
+                  {isPlantCtx && allowedPlantPresets.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSourceTab('plant')}
+                      style={{
+                        padding: '2px 4px',
+                        border: 'none',
+                        background: 'transparent',
+                        color: '#0F766E',
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {t('🏭 공장 표준 프리셋', '🏭 Plant Standard Presets')}
+                    </button>
+                  )}
                 </div>
               </>
             )}

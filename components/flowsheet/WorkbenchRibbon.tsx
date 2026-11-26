@@ -38,6 +38,9 @@ export interface WorkbenchRibbonProps {
   inspectorOpen: boolean;
   onToggleInspector: () => void;
   onFitView: () => void;
+  streamLabelMode?: 'full' | 'compact';
+  onToggleStreamLabelMode?: () => void;
+  onExportPfdPng?: () => void;
   // Edit / History
   canUndo: boolean;
   canRedo: boolean;
@@ -145,6 +148,9 @@ export default function WorkbenchRibbon({
   inspectorOpen,
   onToggleInspector,
   onFitView,
+  streamLabelMode = 'full',
+  onToggleStreamLabelMode,
+  onExportPfdPng,
   canUndo,
   canRedo,
   onUndo,
@@ -166,6 +172,41 @@ export default function WorkbenchRibbon({
   const tagStandard = useUnitStore(s => s.tagStandard);
   const setTagStandard = useUnitStore(s => s.setTagStandard);
   const [wbTheme, setWbTheme] = useState<'light' | 'dark'>('light');
+  const [projMeta, setProjMeta] = useState<{ projectName: string; rev: string; engineer: string }>({
+    projectName: '',
+    rev: 'Rev.0',
+    engineer: '',
+  });
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('chemeng_project_meta_v1');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          setProjMeta({
+            projectName: String(parsed.projectName ?? ''),
+            rev: String(parsed.rev ?? 'Rev.0'),
+            engineer: String(parsed.engineer ?? ''),
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const updateProjMeta = (patch: Partial<{ projectName: string; rev: string; engineer: string }>) => {
+    setProjMeta(prev => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem('chemeng_project_meta_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
   const isEn = lang === 'en';
   const t = (ko: string, en: string) => (isEn ? en : ko);
 
@@ -637,6 +678,18 @@ export default function WorkbenchRibbon({
               >
                 {t('속성창', 'Inspector')}
               </button>
+              {onToggleStreamLabelMode && (
+                <button
+                  type="button"
+                  className={`wb-cmd-btn${streamLabelMode === 'compact' ? ' active' : ''}`}
+                  onClick={onToggleStreamLabelMode}
+                  title={t('도면 스트림 라벨 표시 밀도 전환 (상세 T·P·F ↔ 번호만)', 'Toggle stream callout labels (Full T·P·F ↔ No. Only)')}
+                >
+                  {streamLabelMode === 'compact'
+                    ? t('라벨: 번호만', 'Labels: No.')
+                    : t('라벨: 상세', 'Labels: Full')}
+                </button>
+              )}
             </RibbonGroup>
 
             <RibbonGroup label={t('제어 · 편집', 'Edit & Controls')} noDivider={!rightExtraSlot}>
@@ -670,6 +723,16 @@ export default function WorkbenchRibbon({
               >
                 {t('전체 맞춤', 'Fit')}
               </button>
+              {onExportPfdPng && (
+                <button
+                  type="button"
+                  className="wb-cmd-btn"
+                  onClick={onExportPfdPng}
+                  title={t('현재 PFD 도면을 고해상도 이미지(PNG)로 저장', 'Export current PFD canvas as PNG image')}
+                >
+                  {t('PFD 저장', 'Export PFD')}
+                </button>
+              )}
               {hasMultipleSheets && onToggleBoundarySync && (
                 <label
                   style={{
@@ -849,7 +912,7 @@ export default function WorkbenchRibbon({
               </div>
             </RibbonGroup>
 
-            <RibbonGroup label={t('화면 테마', 'Theme')} noDivider={!rightExtraSlot}>
+            <RibbonGroup label={t('화면 테마', 'Theme')}>
               <button
                 type="button"
                 className="wb-cmd-btn"
@@ -860,6 +923,58 @@ export default function WorkbenchRibbon({
                   ? t('☀ 라이트 모드', '☀ Light Mode')
                   : t('🌙 다크 모드', '🌙 Dark Mode')}
               </button>
+            </RibbonGroup>
+
+            <RibbonGroup label={t('데이터시트 프로젝트 정보', 'Datasheet Project Info')} noDivider={!rightExtraSlot}>
+              <input
+                type="text"
+                value={projMeta.projectName}
+                onChange={e => updateProjMeta({ projectName: e.target.value })}
+                placeholder={t('프로젝트명', 'Project Name')}
+                style={{
+                  height: 24,
+                  width: 118,
+                  padding: '0 6px',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#0F172A',
+                }}
+              />
+              <input
+                type="text"
+                value={projMeta.rev}
+                onChange={e => updateProjMeta({ rev: e.target.value })}
+                placeholder="Rev.0"
+                style={{
+                  height: 24,
+                  width: 52,
+                  padding: '0 5px',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#0F172A',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                }}
+              />
+              <input
+                type="text"
+                value={projMeta.engineer}
+                onChange={e => updateProjMeta({ engineer: e.target.value })}
+                placeholder={t('작성자', 'Engineer')}
+                style={{
+                  height: 24,
+                  width: 78,
+                  padding: '0 6px',
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: '1px solid #CBD5E1',
+                  background: '#FFFFFF',
+                  color: '#0F172A',
+                }}
+              />
             </RibbonGroup>
           </>
         )}

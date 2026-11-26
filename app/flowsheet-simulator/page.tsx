@@ -727,7 +727,7 @@ interface FlowCanvasNodeData {
   calcMode?: UnitCalcMode;
   liveSummary: string;
   detectedFluid?: string;
-  simStatus?: 'converged' | 'error' | 'idle';
+  simStatus?: 'converged' | 'error' | 'incomplete' | 'ready' | 'idle';
   simStatusMsg?: string;
   subSheetId?: string;
   subSheetBadge?: string;
@@ -961,6 +961,48 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
         >
           !
         </span>
+      )}
+      {data.simStatus === 'incomplete' && (
+        <span
+          title={data.simStatusMsg || '입력 부족'}
+          style={{
+            position: 'absolute',
+            top: -5,
+            right: -5,
+            width: 14,
+            height: 14,
+            borderRadius: 999,
+            background: '#FEF3C7',
+            color: '#B45309',
+            fontSize: 9,
+            fontWeight: 900,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '1.5px solid #D97706',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+            zIndex: 20,
+          }}
+        >
+          •
+        </span>
+      )}
+      {data.simStatus === 'ready' && (
+        <span
+          title={data.simStatusMsg || '입력 완료 — RUN 가능'}
+          style={{
+            position: 'absolute',
+            top: -5,
+            right: -5,
+            width: 13,
+            height: 13,
+            borderRadius: 999,
+            background: '#2563EB',
+            border: '1.5px solid #FFFFFF',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
+            zIndex: 20,
+          }}
+        />
       )}
 
       {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 (Flip/Rotate는 심볼에만 적용하여 텍스트 가독성 유지) ── */}
@@ -2421,6 +2463,58 @@ export function FlowsheetWorkspace({
   const [tearMethod, setTearMethod] = useState<TearSolverMethod>('auto');
   const [designSpecs, setDesignSpecs] = useState<DesignSpecDef[]>([]);
   const [reactorModalNodeId, setReactorModalNodeId] = useState<string | null>(null);
+  const [streamLabelMode, setStreamLabelMode] = useState<'full' | 'compact'>('full');
+  const copiedNodeRef = useRef<{ def: FlowNodeDef; x: number; y: number } | null>(null);
+
+  const handleExportPfdPng = useCallback(() => {
+    try {
+      const rfEl = document.querySelector('.react-flow') as HTMLElement | null;
+      if (!rfEl) return;
+      const rect = rfEl.getBoundingClientRect();
+      const w = Math.max(800, Math.round(rect.width));
+      const h = Math.max(500, Math.round(rect.height));
+      const scale = 2;
+      const clone = rfEl.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('.react-flow__controls, .react-flow__minimap, .react-flow__attribution').forEach(el => el.remove());
+      const bg = document.documentElement.getAttribute('data-wb-theme') === 'dark' ? '#111827' : '#F6F7F2';
+      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${w * scale}" height="${h * scale}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="${bg}"/><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${w}px;height:${h}px;overflow:hidden;font-family:Inter,system-ui,sans-serif;">${clone.outerHTML}</div></foreignObject></svg>`;
+      const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = bg;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          canvas.toBlob(pngBlob => {
+            if (pngBlob) {
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(pngBlob);
+              a.download = `ChemPlant_PFD_${new Date().toISOString().slice(0, 10)}.png`;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+            }
+          }, 'image/png');
+        }
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => {
+        // Fallback: download crisp SVG directly if browser taints foreignObject canvas
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ChemPlant_PFD_${new Date().toISOString().slice(0, 10)}.svg`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      };
+      img.src = url;
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const feedSummaryForThermo = useMemo(() => {
     const flows: Partial<Record<SimCompKey, number>> = {};
@@ -2806,11 +2900,53 @@ export function FlowsheetWorkspace({
       } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
         e.preventDefault();
         handleRedo();
+      } else if (key === 'c' && !e.shiftKey) {
+        if (selectedNodeId) {
+          const curDef = simDefs.find(d => d.id === selectedNodeId);
+          const curRf = rfNodes.find(n => n.id === selectedNodeId);
+          if (curDef && curRf) {
+            copiedNodeRef.current = {
+              def: JSON.parse(JSON.stringify(curDef)) as FlowNodeDef,
+              x: curRf.position.x,
+              y: curRf.position.y,
+            };
+          }
+        }
+      } else if (key === 'v' && !e.shiftKey) {
+        const snap = copiedNodeRef.current;
+        if (snap) {
+          e.preventDefault();
+          pushUndoSnapshot();
+          const newId = `u_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+          const countOfType = simDefs.filter(d => d.unitType === snap.def.unitType).length + 1;
+          const basePrefix = snap.def.tag.replace(/-\d+$/, '') || 'U';
+          const newTag = `${basePrefix}-${100 + countOfType * 10}`;
+          const clonedDef: FlowNodeDef = {
+            ...(JSON.parse(JSON.stringify(snap.def)) as FlowNodeDef),
+            id: newId,
+            tag: newTag,
+          };
+          const nextPos = { x: snap.x + 42, y: snap.y + 42 };
+          copiedNodeRef.current = { def: clonedDef, x: nextPos.x, y: nextPos.y };
+          setSimDefs(prev => [...prev, clonedDef]);
+          setRfNodes(prev => [
+            ...prev.map(n => (n.selected ? { ...n, selected: false } : n)),
+            {
+              id: newId,
+              type: 'flowUnit',
+              position: nextPos,
+              selected: true,
+              data: { tag: newTag, name: clonedDef.name, unitType: clonedDef.unitType, liveSummary: '' },
+            },
+          ]);
+          setSelectedNodeId(newId);
+          setSelectedEdgeId(null);
+        }
       }
     };
     window.addEventListener('keydown', onUndoRedoKeyDown);
     return () => window.removeEventListener('keydown', onUndoRedoKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [handleUndo, handleRedo, selectedNodeId, simDefs, rfNodes, pushUndoSnapshot]);
 
   // ── 우클릭 드래그 마키(Box) 다중선택 상태 및 핸들러 ────────────────────────
   const [rmbSelectBox, setRmbSelectBox] = useState<{
@@ -5191,16 +5327,39 @@ export function FlowsheetWorkspace({
       );
       const hasMassErr = Boolean(uRes && !uRes.isVisualOnly && Math.abs(uRes.massImbalanceKgH) > 1.0);
       const hasFlow = Boolean(uRes && !uRes.isVisualOnly && (uRes.inletMassKgH > 0.01 || uRes.outletMassKgH > 0.01));
-      const simStatus: 'converged' | 'error' | 'idle' =
-        hasMassErr || hasDistillErr ? 'error' : hasFlow ? 'converged' : 'idle';
+      const isVis = Boolean(def && isVisualOnlyUnit(def.unitType));
+      const feedSum = def?.unitType === 'feed'
+        ? Object.values(def.params.feedFlowsKgH ?? {}).reduce((a, b) => a + (Number(b) || 0), 0)
+        : 0;
+      const hasIncomingEdge = def ? flowEdges.some(e => e.target === def.id) : false;
+      const isIncomplete =
+        !isVis &&
+        ((def?.unitType === 'feed' && feedSum <= 0.0001) ||
+          (def && def.unitType !== 'feed' && !hasIncomingEdge));
+      const simStatus: 'converged' | 'error' | 'incomplete' | 'ready' | 'idle' =
+        hasMassErr || hasDistillErr
+          ? 'error'
+          : isIncomplete
+            ? 'incomplete'
+            : hasFlow
+              ? 'converged'
+              : !isVis
+                ? 'ready'
+                : 'idle';
       const simStatusMsg =
         hasMassErr
           ? (isEn ? `Mass Imbalance (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)` : `수지 오차 (${uRes!.massImbalanceKgH.toFixed(1)} kg/h)`)
           : hasDistillErr
             ? (isEn ? 'Column not converged or spec unmet' : '증류탑 미수렴 또는 목표 스펙 미달')
-            : hasFlow
-              ? (isEn ? 'Converged' : '수렴 완료')
-              : (isEn ? 'Waiting for connections' : '연결 대기');
+            : isIncomplete
+              ? def?.unitType === 'feed'
+                ? (isEn ? 'Spec Required: Enter feed flow rate (0 kg/h)' : '입력 필요: 원료 유량을 입력하세요 (0 kg/h)')
+                : (isEn ? 'Spec Required: Connect an inlet stream' : '연결 필요: 유입 스트림을 연결하세요')
+              : hasFlow
+                ? (isEn ? 'Converged' : '수렴 완료')
+                : !isVis
+                  ? (isEn ? 'Ready — Press ▶ RUN (F5)' : '입력 완료 — ▶ RUN (F5) 실행 가능')
+                  : (isEn ? 'PFD Symbol' : '도면 표기');
 
       const allowSubSheet = isPlantSimMode || Object.keys(hierarchySheets).length > 1;
       const resolvedType = def?.unitType ?? n.data.unitType;
@@ -5225,7 +5384,7 @@ export function FlowsheetWorkspace({
         },
       };
     });
-  }, [rfNodes, simDefs, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet, tagStandard, isEn]);
+  }, [rfNodes, simDefs, flowEdges, unitResultMap, selectedNodeId, isPlantSimMode, hierarchySheets, navigateToHierarchySheet, tagStandard, isEn, localizeNodeName]);
 
   // 엣지(배관) 스타일 및 라벨 — 깔끔한 슬레이트 중심 + 선택(블루) + 순환Tear(보라)
   const displayEdges: Edge[] = useMemo(() => {
@@ -5239,9 +5398,10 @@ export function FlowsheetWorkspace({
           ? '#7C3AED'
           : '#475569';
 
-      const labelText = s
-        ? `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`
-        : `[${e.streamNo}]`;
+      const labelText =
+        streamLabelMode === 'compact' || !s
+          ? `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}]`
+          : `${isTear ? (isEn ? '[Tear] ' : '[순환] ') : ''}[${e.streamNo}] ${formatCanonicalValue('massFlow', s.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', s.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', s.pressKgcm2g, globalUnits.pressG, 2)}${getUnitLabel('pressG', globalUnits.pressG)} (${s.phase})`;
 
       return {
         id: e.id,
@@ -5275,7 +5435,7 @@ export function FlowsheetWorkspace({
         markerEnd: { type: MarkerType.ArrowClosed, color: phaseColor, width: 15, height: 15 },
       };
     });
-  }, [flowEdges, streamResultMap, selectedEdgeId, globalUnits.massFlow, globalUnits.temp, globalUnits.pressG]);
+  }, [flowEdges, streamResultMap, selectedEdgeId, globalUnits.massFlow, globalUnits.temp, globalUnits.pressG, streamLabelMode, isEn]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     const newlySelected = changes.find(
@@ -6779,6 +6939,9 @@ export function FlowsheetWorkspace({
                 inspectorOpen={inspectorOpen}
                 onToggleInspector={() => setInspectorOpen(v => !v)}
                 onFitView={() => rfInstance?.fitView({ padding: 0.1, duration: 220 })}
+                streamLabelMode={streamLabelMode}
+                onToggleStreamLabelMode={() => setStreamLabelMode(m => (m === 'full' ? 'compact' : 'full'))}
+                onExportPfdPng={handleExportPfdPng}
                 canUndo={canUndo}
                 canRedo={canRedo}
                 onUndo={handleUndo}
@@ -8840,6 +9003,89 @@ export function FlowsheetWorkspace({
                   <option value="cathode_out">{isEn ? 'Electrolyzer Cathode Outlet (cathode_out)' : '전해조 음극 출구 (cathode_out)'}</option>
                 </select>
               </div>
+
+              {/* HYSYS-style: 배관 시작점이 원료(Feed) 노드이면 스트림 클릭만으로도 온도·압력·유량·조성 바로 편집 */}
+              {(() => {
+                const linkedFeed = simDefs.find(d => d.id === selectedEdgeDef.source && d.unitType === 'feed');
+                if (!linkedFeed) return null;
+                const updateLinkedFeedParam = (key: keyof FlowNodeDef['params'], val: unknown) => {
+                  recordParamEditSnapshot();
+                  setSimDefs(prev =>
+                    prev.map(d => (d.id === linkedFeed.id ? { ...d, params: { ...d.params, [key]: val } } : d))
+                  );
+                };
+                return (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      paddingTop: 10,
+                      borderTop: '1px solid #CBD5E1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 900, color: '#1E3A8A' }}>
+                      {isEn ? `Feed Conditions (${linkedFeed.tag})` : `원료 스트림 조건 직접 편집 (${linkedFeed.tag})`}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                          {isEn ? 'Temperature' : '공급 온도'}
+                        </div>
+                        <UnitNumberInput
+                          quantity="temp"
+                          syncKey={`${linkedFeed.id}-stream-ftemp`}
+                          value={linkedFeed.params.feedTempC ?? 25}
+                          onValueChange={v => updateLinkedFeedParam('feedTempC', v)}
+                          onEnterRun={() => runSimulationNow()}
+                          inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                          {isEn ? 'Pressure' : '공급 압력'}
+                        </div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          syncKey={`${linkedFeed.id}-stream-fpress`}
+                          value={linkedFeed.params.feedPressKgcm2g ?? 0}
+                          onValueChange={v => updateLinkedFeedParam('feedPressKgcm2g', v)}
+                          onEnterRun={() => runSimulationNow()}
+                          inputStyle={{ padding: '4px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}
+                        />
+                      </div>
+                    </div>
+                    <FeedCompositionEditor
+                      nodeId={linkedFeed.id}
+                      flowsKgH={linkedFeed.params.feedFlowsKgH ?? {}}
+                      activeComponents={activeComponents}
+                      feedFlowUnit={feedFlowUnit}
+                      onFeedFlowUnitChange={setFeedFlowUnit}
+                      onReplaceFlows={nextFlows => {
+                        recordParamEditSnapshot();
+                        setSimDefs(prev =>
+                          prev.map(d => (d.id === linkedFeed.id ? { ...d, params: { ...d.params, feedFlowsKgH: nextFlows } } : d))
+                        );
+                      }}
+                      onUpdateSingleComp={(comp, kgH) => {
+                        recordParamEditSnapshot();
+                        setSimDefs(prev =>
+                          prev.map(d => {
+                            if (d.id !== linkedFeed.id) return d;
+                            const nextFlows = { ...(d.params.feedFlowsKgH ?? {}), [comp]: Math.max(0, kgH) };
+                            return { ...d, params: { ...d.params, feedFlowsKgH: nextFlows } };
+                          })
+                        );
+                      }}
+                      onOpenCompSetup={() => setCompSetupModalOpen(true)}
+                      onEnterRun={() => runSimulationNow()}
+                      lang={lang}
+                      variant="modern"
+                    />
+                  </div>
+                );
+              })()}
             </div>
           ) : !selectedDef ? (
             <div style={{ fontSize: 12, color: '#64748B', paddingTop: 20, lineHeight: 1.6 }}>

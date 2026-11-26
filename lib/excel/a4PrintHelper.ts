@@ -80,11 +80,38 @@ export function applyA4PrintFit(
     margins: {
       left: 0.32,
       right: 0.32,
-      top: 0.35,
-      bottom: 0.35,
+      top: 0.42,
+      bottom: 0.42,
       header: 0.2,
       footer: 0.2,
     },
     printArea: `A1:${lastCol}${safeRows}`,
   };
+
+  // 프로젝트 메타정보(리본 [설정] 탭 입력값)가 있으면 A4 인쇄 머리글/바닥글에 자동 기입
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('chemeng_project_meta_v1');
+      if (raw) {
+        const meta = JSON.parse(raw);
+        const leftParts = [
+          meta?.projectName ? `Project: ${meta.projectName}` : '',
+          meta?.rev ? `${meta.rev}` : '',
+        ].filter(Boolean);
+        const rightParts = [
+          meta?.engineer ? `By: ${meta.engineer}` : '',
+          new Date().toISOString().slice(0, 10),
+        ].filter(Boolean);
+        if (leftParts.length > 0 || meta?.engineer) {
+          ws.headerFooter = {
+            ...ws.headerFooter,
+            oddHeader: `&L&8${leftParts.join('  |  ')}&R&8${rightParts.join('  |  ')}`,
+            oddFooter: '&L&8ChemPlant Studio&R&8Page &P of &N',
+          };
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
 }
