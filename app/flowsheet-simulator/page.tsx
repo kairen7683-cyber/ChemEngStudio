@@ -5353,14 +5353,13 @@ export function FlowsheetWorkspace({
         pushUndoSnapshot();
         const feedCount = simDefs.filter(d => d.unitType === 'feed').length + 1;
         const feedTag = `S-IN-${String(feedCount).padStart(2, '0')}`;
-        const defaultParams =
-          originDef.unitType === 'distillation'
+        const defaultParams = useGenericDefault
+          ? createDefaultParamsForType('feed', true)
+          : originDef.unitType === 'distillation'
             ? {
                 feedTempC: 65,
                 feedPressKgcm2g: 0.2,
-                feedFlowsKgH: (useGenericDefault
-                  ? { Benzene: 5000, Toluene: 5000 }
-                  : { ECH: 5000, DCH: 5000 }) as Partial<Record<SimCompKey, number>>,
+                feedFlowsKgH: { ECH: 5000, DCH: 5000 } as Partial<Record<SimCompKey, number>>,
               }
             : rawH === 'liq_in' && originDef.unitType === 'absorber'
               ? {
@@ -5368,7 +5367,7 @@ export function FlowsheetWorkspace({
                   feedPressKgcm2g: 1.0,
                   feedFlowsKgH: { H2SO4: 980, H2O: 20 } as Partial<Record<SimCompKey, number>>,
                 }
-              : createDefaultParamsForType('feed', useGenericDefault);
+              : createDefaultParamsForType('feed', false);
 
         const newFeedDef: FlowNodeDef = {
           id: newNodeId,
@@ -6909,8 +6908,6 @@ export function FlowsheetWorkspace({
                         </span>
                       )}
                     </button>
-
-                    <CaseOutputsMenu compact unitCount={simDefs.length} />
                   </>
                 }
               />

@@ -105,7 +105,7 @@ export default function WorkbenchExplorer({
       className="wb-slim-rail"
       onMouseLeave={() => setHoverTip(null)}
       style={{
-        width: 76,
+        width: 52,
         flexShrink: 0,
         height: '100%',
         backgroundColor: 'var(--bg-surface, #FFFFFF)',
@@ -129,8 +129,8 @@ export default function WorkbenchExplorer({
           border-left: 2px solid transparent;
           background: transparent;
           text-align: left;
-          padding: 3.5px 5px;
-          font-size: 10px;
+          padding: 3px 3px;
+          font-size: 9.5px;
           font-weight: 600;
           color: var(--text-secondary, #334155);
           font-family: ${MONO};
@@ -168,21 +168,22 @@ export default function WorkbenchExplorer({
           background: var(--bg-base, #F8FAFC);
           border-top: 1px solid var(--border-subtle, #E2E8F0);
           border-bottom: 1px solid var(--border-subtle, #E2E8F0);
-          padding: 3.5px 5px;
-          font-size: 9px;
+          padding: 3px 3px;
+          font-size: 8.5px;
           font-weight: 800;
           color: var(--text-muted, #64748B);
-          letter-spacing: 0.15px;
+          letter-spacing: 0px;
           display: flex;
           align-items: center;
           justify-content: space-between;
           cursor: pointer;
+          white-space: nowrap;
         }
       `}</style>
 
       {/* 예제 공장 전용: 넓은 운전 기준 패널이 필요할 때만 상단 1클릭 버튼 제공 */}
       {hasPlantBasisControls && onOpenPlantBasis && (
-        <div style={{ padding: '6px 6px 4px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>
+        <div style={{ padding: '4px 3px', borderBottom: '1px solid var(--border-subtle, #E2E8F0)' }}>
           <button
             type="button"
             onClick={onOpenPlantBasis}
@@ -196,21 +197,22 @@ export default function WorkbenchExplorer({
             onMouseLeave={() => setHoverTip(null)}
             style={{
               width: '100%',
-              padding: '4px 6px',
-              borderRadius: 5,
+              padding: '3px 3px',
+              borderRadius: 4,
               border: '1px solid #BFDBFE',
               background: '#EFF6FF',
               color: '#1E3A8A',
-              fontSize: 10,
+              fontSize: 9,
               fontWeight: 800,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: 'center',
+              gap: 1,
             }}
           >
-            <span>{t('운전 기준', 'Basis')}</span>
-            <span style={{ fontSize: 10 }}>▸</span>
+            <span>{t('기준', 'Bas')}</span>
+            <span style={{ fontSize: 8 }}>▸</span>
           </button>
         </div>
       )}
@@ -222,22 +224,23 @@ export default function WorkbenchExplorer({
           <div>
             <div
               style={{
-                padding: '4px 6px',
-                fontSize: 9.5,
+                padding: '3px 3px',
+                fontSize: 8.5,
                 fontWeight: 800,
                 color: 'var(--text-muted, #64748B)',
                 background: 'var(--bg-base, #F8FAFC)',
                 borderBottom: '1px solid var(--border-subtle, #E2E8F0)',
+                whiteSpace: 'nowrap',
               }}
             >
-              {t('시트', 'SHEETS')} ({orderedSheets.length})
+              {t('시트', 'SHT')}
             </div>
             {orderedSheets.map(sh => {
               const active = sh.id === activeSheetId;
               const shortTag =
                 sh.id === 'master'
-                  ? t('마스터', 'Master')
-                  : sh.shortLabel.replace(/^[^\w가-힣]+/, '').slice(0, 12);
+                  ? t('마스터', 'Mst')
+                  : sh.shortLabel.replace(/^[^\w가-힣]+/, '').slice(0, 6);
               return (
                 <button
                   key={sh.id}
@@ -259,8 +262,9 @@ export default function WorkbenchExplorer({
           type="button"
           className="wb-rail-sec-btn"
           onClick={() => setBlocksOpen(v => !v)}
+          title={t(`블록 (${equipmentBlocks.length})`, `Blocks (${equipmentBlocks.length})`)}
         >
-          <span>{t('블록', 'BLK')} ({equipmentBlocks.length})</span>
+          <span>{t('블록', 'BLK')}</span>
           <span>{blocksOpen ? '▾' : '▸'}</span>
         </button>
         {blocksOpen && (
@@ -288,8 +292,9 @@ export default function WorkbenchExplorer({
           type="button"
           className="wb-rail-sec-btn"
           onClick={() => setStreamsOpen(v => !v)}
+          title={t(`스트림 (${uniqueStreams.length})`, `Streams (${uniqueStreams.length})`)}
         >
-          <span>{t('스트림', 'STR')} ({uniqueStreams.length})</span>
+          <span>{t('스트림', 'STR')}</span>
           <span>{streamsOpen ? '▾' : '▸'}</span>
         </button>
         {streamsOpen && (
@@ -318,7 +323,7 @@ export default function WorkbenchExplorer({
         <div
           style={{
             position: 'fixed',
-            left: 82,
+            left: 56,
             top: hoverTip.top,
             transform: 'translateY(-50%)',
             zIndex: 9999,

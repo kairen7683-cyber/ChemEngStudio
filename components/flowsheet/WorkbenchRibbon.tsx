@@ -56,14 +56,12 @@ export interface WorkbenchRibbonProps {
   rightExtraSlot?: React.ReactNode;
 }
 
-type RibbonTabId = 'home' | 'equipment' | 'economics' | 'properties' | 'view';
+type RibbonTabId = 'home' | 'equipment' | 'economics';
 
 const RIBBON_TABS: Array<{ id: RibbonTabId; ko: string; en: string }> = [
   { id: 'home', ko: '홈', en: 'Home' },
   { id: 'equipment', ko: '장치설계', en: 'Equipment' },
   { id: 'economics', ko: '경제성', en: 'Economics' },
-  { id: 'properties', ko: '물성 · DB', en: 'Properties & DB' },
-  { id: 'view', ko: '보기', en: 'View' },
 ];
 
 function RibbonGroup({
@@ -699,27 +697,7 @@ export default function WorkbenchRibbon({
               </button>
             </RibbonGroup>
 
-            <RibbonGroup label={t('편집', 'Edit')} noDivider={!rightExtraSlot}>
-              <button
-                type="button"
-                className="wb-icon-btn"
-                onClick={onUndo}
-                disabled={!canUndo}
-                title={t('실행 취소 (Ctrl+Z)', 'Undo (Ctrl+Z)')}
-                aria-label={t('실행 취소', 'Undo')}
-              >
-                ↶
-              </button>
-              <button
-                type="button"
-                className="wb-icon-btn"
-                onClick={onRedo}
-                disabled={!canRedo}
-                title={t('다시 실행 (Ctrl+Y)', 'Redo (Ctrl+Y)')}
-                aria-label={t('다시 실행', 'Redo')}
-              >
-                ↷
-              </button>
+            <RibbonGroup label={t('제어 · 초기화', 'Controls')} noDivider={!rightExtraSlot}>
               <button
                 type="button"
                 className="wb-cmd-btn"
@@ -728,17 +706,59 @@ export default function WorkbenchRibbon({
               >
                 {t('전체 맞춤', 'Fit')}
               </button>
+              {hasMultipleSheets && onToggleBoundarySync && (
+                <label
+                  style={{
+                    height: 26,
+                    padding: '0 7px',
+                    borderRadius: 4,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: boundarySyncEnabled ? '#EFF6FF' : '#FFFFFF',
+                    color: boundarySyncEnabled ? '#1E3A8A' : '#334155',
+                    fontSize: 11,
+                    fontWeight: boundarySyncEnabled ? 700 : 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={boundarySyncEnabled}
+                    onChange={onToggleBoundarySync}
+                    style={{ width: 12, height: 12, accentColor: '#1E3A8A', cursor: 'pointer', margin: 0 }}
+                  />
+                  <span>{t('상하위 연동', 'Sync')}</span>
+                </label>
+              )}
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={onResetOrClear}
+                title={isPlantSimMode ? t('초기값 복원', 'Restore Defaults') : t('캔버스 초기화', 'Clear Canvas')}
+              >
+                {isPlantSimMode ? t('초기값 복원', 'Restore') : t('초기화', 'Clear')}
+              </button>
             </RibbonGroup>
           </>
         )}
 
-        {/* TAB 2: EQUIPMENT — 범용 장치 설계 vs 공장 맞춤 장치 명확 분리 */}
+        {/* TAB 2: EQUIPMENT — 현재 시뮬레이션 연동 범용 장치 설계 vs 공장 맞춤 장치 */}
         {activeTab === 'equipment' && (
           <>
             <RibbonGroup
-              label={t('범용 장치 설계', 'General Equipment Sizing')}
+              label={t('범용 상세 설계', 'General Equipment Design')}
               noDivider={!plantCustomDesign && !rightExtraSlot}
             >
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
+              >
+                {t('장치목록 · 데이터시트', 'Equipment List · Datasheets')}
+              </button>
               <button
                 type="button"
                 className="wb-cmd-btn"
@@ -749,30 +769,16 @@ export default function WorkbenchRibbon({
               <button
                 type="button"
                 className="wb-cmd-btn"
-                onClick={() => onNavigateRoute('/unit-equipment')}
-              >
-                {t('범용 6종 숏컷', '6-Unit Shortcuts')}
-              </button>
-              <button
-                type="button"
-                className="wb-cmd-btn"
                 onClick={() => onNavigateRoute('/equipment-design?tab=compressor')}
               >
-                {t('압축기 설계', 'Compressor')}
+                {t('압축기 상세설계', 'Compressor Design')}
               </button>
               <button
                 type="button"
                 className="wb-cmd-btn"
                 onClick={() => onNavigateRoute('/equipment-design?tab=psv_flare')}
               >
-                {t('PSV·플레어', 'PSV & Flare')}
-              </button>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
-              >
-                {t('장치목록', 'Equipment List')}
+                {t('PSV · 플레어 안전설계', 'PSV & Flare Safety')}
               </button>
             </RibbonGroup>
 
@@ -799,181 +805,24 @@ export default function WorkbenchRibbon({
           </>
         )}
 
-        {/* TAB 3: ECONOMICS */}
+        {/* TAB 3: ECONOMICS — 현재 시뮬레이션 결과 기반 원단위 · OPEX · CAPEX */}
         {activeTab === 'economics' && (
-          <RibbonGroup label={t('공정 경제성 · 원가', 'Process Economics & Costing')} noDivider={!rightExtraSlot}>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/economics-handbook')}
-            >
-              {t('104종 공정경제성 핸드북', '104-Process Economics Handbook')}
-            </button>
+          <RibbonGroup label={t('현재 공정 경제성 · 투자비', 'Case Economics & CAPEX')} noDivider={!rightExtraSlot}>
             <button
               type="button"
               className="wb-cmd-btn"
               onClick={() => onNavigateRoute('/process-economics')}
             >
-              {t('원단위 · 경제성 분석', 'Unit & Economic Analysis')}
+              {t('원단위 · 경제성 분석 (OPEX)', 'Unit & Economic Analysis (OPEX)')}
             </button>
             <button
               type="button"
               className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/unit-equipment')}
+              onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
             >
-              {t('장치 CAPEX/OPEX', 'Equipment CAPEX/OPEX')}
+              {t('장치 투자비 (CAPEX) · 데이터시트', 'Equipment CAPEX · Datasheets')}
             </button>
           </RibbonGroup>
-        )}
-
-        {/* TAB 4: PROPERTIES & DB */}
-        {activeTab === 'properties' && (
-          <>
-            <RibbonGroup label={t('열역학 · 성분', 'Thermo & Comps')}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={onOpenCompSetup}
-              >
-                <span>{t('열역학 · 성분 설정', 'Thermo & Component Setup')}</span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: '#1E3A8A',
-                    backgroundColor: '#EFF6FF',
-                    border: '1px solid #BFDBFE',
-                    borderRadius: 3,
-                    padding: '1px 5px',
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-                  }}
-                >
-                  {propertyMethod} · {activeCompCount}
-                </span>
-              </button>
-              {onOpenPropertyMethod && (
-                <button
-                  type="button"
-                  className="wb-cmd-btn"
-                  onClick={onOpenPropertyMethod}
-                >
-                  {t('열역학 모델 변경', 'Property Method')}
-                </button>
-              )}
-            </RibbonGroup>
-
-            <RibbonGroup label={t('물성 DB', 'Property DB')} noDivider={!rightExtraSlot}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={() => onNavigateRoute('/property-db')}
-              >
-                {t('물성 DB 조회', 'Property DB Lookup')}
-              </button>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={handleRequestComponent}
-                style={{
-                  color: '#1E3A8A',
-                  borderColor: '#BFDBFE',
-                  backgroundColor: '#EFF6FF',
-                  fontWeight: 600,
-                }}
-              >
-                {t('물질등록 요청', 'Request Component')}
-              </button>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={() => {
-                  if (typeof window !== 'undefined') {
-                    window.dispatchEvent(new CustomEvent('chemeng:open-validation-report'));
-                  }
-                }}
-              >
-                {t('검증 리포트 (Golden Cases)', 'Validation Report')}
-              </button>
-            </RibbonGroup>
-          </>
-        )}
-
-        {/* TAB 5: VIEW & TOOLS */}
-        {activeTab === 'view' && (
-          <>
-            <RibbonGroup label={t('화면 제어', 'Viewport')}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={onFitView}
-              >
-                {t('전체 맞춤 (Fit View)', 'Fit View')}
-              </button>
-              <button
-                type="button"
-                className={`wb-cmd-btn${layoutMode === 'canvas' ? ' active' : ''}`}
-                onClick={() => onChangeLayoutMode('canvas')}
-              >
-                {t('도면만 크게', 'Canvas Only')}
-              </button>
-            </RibbonGroup>
-
-            <RibbonGroup label={t('시트 · 초기화', 'Sheet & Reset')} noDivider={!rightExtraSlot}>
-              {hasMultipleSheets && onToggleBoundarySync && (
-                <label
-                  style={{
-                    height: 26,
-                    padding: '0 8px',
-                    borderRadius: 4,
-                    border: '1px solid #E2E8F0',
-                    backgroundColor: boundarySyncEnabled ? '#EFF6FF' : '#FFFFFF',
-                    color: boundarySyncEnabled ? '#1E3A8A' : '#334155',
-                    fontSize: 11.5,
-                    fontWeight: boundarySyncEnabled ? 600 : 500,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={boundarySyncEnabled}
-                    onChange={onToggleBoundarySync}
-                    style={{
-                      width: 13,
-                      height: 13,
-                      accentColor: '#1E3A8A',
-                      cursor: 'pointer',
-                      margin: 0,
-                    }}
-                  />
-                  <span>{t('상하위 연동', 'Boundary Sync')}</span>
-                </label>
-              )}
-
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={toggleWbTheme}
-                title={t('라이트 / 다크 테마 전환', 'Toggle Light / Dark theme')}
-              >
-                {wbTheme === 'dark'
-                  ? t('☀ 라이트 모드', '☀ Light Mode')
-                  : t('🌙 다크 모드', '🌙 Dark Mode')}
-              </button>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={onResetOrClear}
-              >
-                {isPlantSimMode
-                  ? t('초기값 복원', 'Restore Defaults')
-                  : t('캔버스 초기화', 'Clear Canvas')}
-              </button>
-            </RibbonGroup>
-          </>
         )}
 
         {/* Optional right extra slot */}

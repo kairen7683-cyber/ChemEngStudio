@@ -85,6 +85,31 @@ export default function Header() {
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [compReqModalOpen, setCompReqModalOpen] = useState(false);
+  const [wbTheme, setWbTheme] = useState<'light' | 'dark'>('light');
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem('chemeng_wb_theme_v1');
+      if (saved === 'dark' || saved === 'light') {
+        setWbTheme(saved);
+        document.documentElement.setAttribute('data-wb-theme', saved);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const applyWbTheme = (next: 'light' | 'dark') => {
+    setWbTheme(next);
+    try {
+      window.localStorage.setItem('chemeng_wb_theme_v1', next);
+    } catch {
+      // ignore
+    }
+    if (typeof document !== 'undefined') {
+      document.documentElement.setAttribute('data-wb-theme', next);
+    }
+  };
 
   const [caseMenuPos, setCaseMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 16 });
   const [toolsMenuPos, setToolsMenuPos] = useState<{ top: number; left: number }>({ top: 44, left: 320 });
@@ -1317,11 +1342,9 @@ export default function Header() {
             <span>{lang === 'en' ? 'Save As' : isMobile ? '다른이름 저장' : '다른 이름으로 저장'}</span>
           </button>
 
-          {/* 도구 ▾ 통합 드롭다운 — 시뮬레이터 화면에서는 하단 리본(장치설계·경제성·물성DB)으로 통합되었으므로 서브페이지에서만 표시 */}
-          {!pathname.startsWith('/flowsheet-simulator') && !pathname.startsWith('/material-balance') && (
-            <>
-              <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
-              <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+          {/* 라이브러리 ▾ 전역 통합 드롭다운 (시뮬레이션 독립 백과 · DB · 숏컷 계산기 · 검증) */}
+          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
+          <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={toolsTriggerRef}
               type="button"
@@ -1337,7 +1360,7 @@ export default function Header() {
                 setSettingsMenuOpen(false);
                 setToolsMenuOpen(v => !v);
               }}
-              title={lang === 'en' ? 'Engineering tools & calculators' : '엔지니어링 계산 도구 및 DB'}
+              title={lang === 'en' ? 'Reference libraries, Property DB & standalone calculators' : '공정경제성 핸드북 · 물성 DB · 단품 숏컷 계산기'}
               style={{
                 ...navBtnStyle,
                 border: toolsMenuOpen || isToolsActive ? '1px solid #60A5FA' : '1px solid #334155',
@@ -1345,7 +1368,7 @@ export default function Header() {
               }}
             >
               <CalcShortcutIcon size={13} />
-              <span>{lang === 'en' ? 'Tools' : '도구'}</span>
+              <span>{lang === 'en' ? 'Library' : '라이브러리'}</span>
               <span style={{ fontSize: 9, opacity: 0.78 }}>{toolsMenuOpen ? '▴' : '▾'}</span>
             </button>
 
@@ -1376,7 +1399,7 @@ export default function Header() {
                     letterSpacing: '0.2px',
                   }}
                 >
-                  {lang === 'en' ? 'Engineering Tools' : '엔지니어링 도구'}
+                  {lang === 'en' ? 'Reference & Standalone Tools' : '전역 라이브러리 · 독립 계산기'}
                 </div>
 
                 <button
@@ -1466,96 +1489,6 @@ export default function Header() {
                   {isEconHandbookTool && <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>}
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setToolsMenuOpen(false);
-                    setEquipSubTab('psv_flare');
-                    router.push('/equipment-design?tab=psv_flare');
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '7px 9px',
-                    borderRadius: 6,
-                    border:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
-                        ? '1px solid #1E3A8A'
-                        : '1px solid transparent',
-                    background:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
-                        ? '#EFF6FF'
-                        : '#FFFFFF',
-                    color:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
-                        ? '#1E3A8A'
-                        : '#1E293B',
-                    fontSize: 11.3,
-                    fontWeight:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare'
-                        ? 800
-                        : 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                    <VesselEquipIcon size={13} />
-                    <span>{lang === 'en' ? 'PSV · Flare Safety Design' : 'PSV · 플레어 안전설계'}</span>
-                  </span>
-                  {pathname.startsWith('/equipment-design') && equipSubTab === 'psv_flare' && (
-                    <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setToolsMenuOpen(false);
-                    setEquipSubTab('compressor');
-                    router.push('/equipment-design?tab=compressor');
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '7px 9px',
-                    borderRadius: 6,
-                    border:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
-                        ? '1px solid #1E3A8A'
-                        : '1px solid transparent',
-                    background:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
-                        ? '#EFF6FF'
-                        : '#FFFFFF',
-                    color:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
-                        ? '#1E3A8A'
-                        : '#1E293B',
-                    fontSize: 11.3,
-                    fontWeight:
-                      pathname.startsWith('/equipment-design') && equipSubTab === 'compressor'
-                        ? 800
-                        : 600,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 8,
-                    textAlign: 'left',
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-                    <VesselEquipIcon size={13} />
-                    <span>{lang === 'en' ? 'Compressor Detailed Design' : '압축기 상세설계'}</span>
-                  </span>
-                  {pathname.startsWith('/equipment-design') && equipSubTab === 'compressor' && (
-                    <span style={{ fontSize: 11, fontWeight: 900 }}>✓</span>
-                  )}
-                </button>
-
                 <div style={{ height: 1, background: '#E2E8F0', margin: '4px 4px' }} />
 
                 <button
@@ -1611,9 +1544,7 @@ export default function Header() {
                 </button>
               </div>
             )}
-              </div>
-            </>
-          )}
+          </div>
 
           {/* 서브페이지에서만 표시: ← 시뮬레이션 복귀 */}
           {showReturnToSimBtn && (
@@ -1690,22 +1621,6 @@ export default function Header() {
             }}
           >
             {lang === 'en' ? 'Refresh' : '새로고침'}
-          </button>
-
-          {/* 물질등록 요청 (상단 바 상시 노출 — 데스크톱/모바일 공용) */}
-          <button
-            type="button"
-            onClick={() => {
-              setCaseMenuOpen(false);
-              setToolsMenuOpen(false);
-              setSettingsMenuOpen(false);
-              setCompReqModalOpen(true);
-            }}
-            title={lang === 'en' ? 'Request New Component / Community DB' : '물질등록 요청 · 커뮤니티 물성 DB'}
-            style={navBtnStyle}
-          >
-            <FlaskCompIcon size={12} />
-            <span>{lang === 'en' ? 'Request Component' : '물질등록 요청'}</span>
           </button>
 
           {/* 피드백 (상단 바 상시 노출) */}
@@ -1813,6 +1728,59 @@ export default function Header() {
                   color: '#0F172A',
                 }}
               >
+                {/* 화면 테마 (라이트 / 다크) */}
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
+                    {lang === 'en' ? 'Appearance Theme' : '화면 테마'}
+                  </div>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 4,
+                      background: '#F1F5F9',
+                      border: '1px solid #CBD5E1',
+                      borderRadius: 7,
+                      padding: 3,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => applyWbTheme('light')}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: 5,
+                        border: 'none',
+                        background: wbTheme === 'light' ? '#1E3A8A' : 'transparent',
+                        color: wbTheme === 'light' ? '#FFFFFF' : '#475569',
+                        fontSize: 11,
+                        fontWeight: wbTheme === 'light' ? 800 : 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {lang === 'en' ? '☀ Light' : '☀ 라이트'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => applyWbTheme('dark')}
+                      style={{
+                        padding: '5px 8px',
+                        borderRadius: 5,
+                        border: 'none',
+                        background: wbTheme === 'dark' ? '#1E3A8A' : 'transparent',
+                        color: wbTheme === 'dark' ? '#FFFFFF' : '#475569',
+                        fontSize: 11,
+                        fontWeight: wbTheme === 'dark' ? 800 : 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {lang === 'en' ? '🌙 Dark' : '🌙 다크'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ height: 1, background: '#E2E8F0' }} />
+
                 {/* 단위계 프리셋 */}
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
