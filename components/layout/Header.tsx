@@ -1625,6 +1625,22 @@ export default function Header() {
             {lang === 'en' ? 'Refresh' : '새로고침'}
           </button>
 
+          {/* 물질등록 요청 (상단 바 상시 노출 — 라이브러리 메뉴와 함께 빠른 접근 제공) */}
+          <button
+            type="button"
+            onClick={() => {
+              setCaseMenuOpen(false);
+              setToolsMenuOpen(false);
+              setSettingsMenuOpen(false);
+              setCompReqModalOpen(true);
+            }}
+            title={lang === 'en' ? 'Request New Component / Community DB' : '물질등록 요청 · 커뮤니티 물성 DB'}
+            style={navBtnStyle}
+          >
+            <FlaskCompIcon size={12} />
+            <span>{lang === 'en' ? 'Request Component' : '물질등록 요청'}</span>
+          </button>
+
           {/* 피드백 (상단 바 상시 노출) */}
           <button
             type="button"

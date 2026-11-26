@@ -365,9 +365,11 @@ function pickPumpNozzleIds(Q_m3h: number): { dsuc: string; ddis: string } {
 export function getUnitDesignRouteInfo(
   node: FlowNodeDef,
   isElectrolyzerPlantMode: boolean,
-  activeSheetId: string
+  activeSheetId: string,
+  lang: 'ko' | 'en' = 'ko'
 ): UnitDesignRouteAction | null {
   const t: FlowUnitType = node.unitType;
+  const isEn = lang === 'en';
 
   // 전해조: 절대로 열교환기(HX)로 라우팅하지 않고 전해조 세부 시뮬레이션으로만 안내
   if (t === 'electrolyzer') {
@@ -378,8 +380,12 @@ export function getUnitDesignRouteInfo(
     if (!isElectrolyzerPlantMode) {
       return {
         kind: 'electrolyzer_sub',
-        buttonLabel: '⚡ 전해조 세부 스택·순환루프 참조 시뮬 열기 →',
-        subHint: '전해조는 열교환기가 아닌 전용 멤브레인 셀 전압·패러데이 수지 모듈에서 해석합니다.',
+        buttonLabel: isEn
+          ? '⚡ Open Electrolyzer Stack & Loop Sub-Simulation →'
+          : '⚡ 전해조 세부 스택·순환루프 참조 시뮬 열기 →',
+        subHint: isEn
+          ? 'Electrolyzers are solved in the dedicated membrane cell voltage and Faraday mass-balance module, not as heat exchangers.'
+          : '전해조는 열교환기가 아닌 전용 멤브레인 셀 전압·패러데이 수지 모듈에서 해석합니다.',
         accentColor: '#1E3A8A',
         bgGradient: '#F8FAFC',
         borderColor: '#E2E8F0',
@@ -393,10 +399,16 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'hx',
-      buttonLabel: isLiq
-        ? '❄️ 이 유체·상변화 조건으로 액화기(HEX) 상세설계 →'
-        : '🔥 이 유체·온도 조건으로 열교환기(HEX) 상세설계 →',
-      subHint: '현재 유입 유량·조성·입출구 온도·냉매·잠열(3-Zone) 조건을 단위장치 설계에 그대로 반영하여 전열면적·튜브수를 즉시 계산합니다.',
+      buttonLabel: isEn
+        ? isLiq
+          ? '❄️ Detail-Design Liquefier (HEX) with Current Fluid & Phase Change →'
+          : '🔥 Detail-Design Heat Exchanger (HEX) with Current Stream Conditions →'
+        : isLiq
+          ? '❄️ 이 유체·상변화 조건으로 액화기(HEX) 상세설계 →'
+          : '🔥 이 유체·온도 조건으로 열교환기(HEX) 상세설계 →',
+      subHint: isEn
+        ? 'Carries over live stream flow, composition, inlet/outlet temperatures, refrigerant, and latent heat (3-zone) to immediately size heat-transfer area and tube count.'
+        : '현재 유입 유량·조성·입출구 온도·냉매·잠열(3-Zone) 조건을 단위장치 설계에 그대로 반영하여 전열면적·튜브수를 즉시 계산합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -407,8 +419,12 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'pump',
-      buttonLabel: '🔧 이 유량·양정 조건으로 원심펌프(PUMP) 상세설계 →',
-      subHint: '실시간 액상 유량(m³/h)·밀도·흡입/토출 압력·온도를 그대로 물고 넘어가 양정·축동력·NPSHa를 계산합니다.',
+      buttonLabel: isEn
+        ? '🔧 Detail-Design Centrifugal Pump (PUMP) with Current Duty →'
+        : '🔧 이 유량·양정 조건으로 원심펌프(PUMP) 상세설계 →',
+      subHint: isEn
+        ? 'Transfers live liquid flow (m³/h), density, suction/discharge pressures, and temperature to compute TDH, shaft power, and NPSHa.'
+        : '실시간 액상 유량(m³/h)·밀도·흡입/토출 압력·온도를 그대로 물고 넘어가 양정·축동력·NPSHa를 계산합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -419,8 +435,12 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'column',
-      buttonLabel: '🏗️ 내장 컬럼 사이징 & 인터널(트레이·충진물) 개념설계 열기 →',
-      subHint: '다성분 MESH 수렴의 단별(Stage 2~N-1) 기액유량·밀도·표면장력·점도를 실시간 연동하여 트레이(Sieve/Valve)·충진탑 탑경, 범람율, 압손, 섬프·노즐 개념디자인을 빌더 안에서 즉시 수행합니다.',
+      buttonLabel: isEn
+        ? '🏗️ Open Column Sizing & Internals (Tray / Packing) Conceptual Design →'
+        : '🏗️ 내장 컬럼 사이징 & 인터널(트레이·충진물) 개념설계 열기 →',
+      subHint: isEn
+        ? 'Links converged stagewise (Stages 2 to N-1) vapor/liquid flows, densities, surface tension, and viscosity from multicomponent MESH to size tray (sieve/valve) or packed column diameter, flooding %, pressure drop, sump, and nozzles directly in the builder.'
+        : '다성분 MESH 수렴의 단별(Stage 2~N-1) 기액유량·밀도·표면장력·점도를 실시간 연동하여 트레이(Sieve/Valve)·충진탑 탑경, 범람율, 압손, 섬프·노즐 개념디자인을 빌더 안에서 즉시 수행합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -431,14 +451,20 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'column',
-      buttonLabel: '🗼 이 기액 유량·농도로 흡수·패킹컬럼(COL) 상세설계 →',
-      subHint: '가스/흡수액 유량·온도·압력·입출구 농도(ppm)를 그대로 물고 넘어가 탑경(GPDC)·패킹 높이(HTU·NTU)·차압을 계산합니다.',
+      buttonLabel: isEn
+        ? '🗼 Detail-Design Absorber / Packed Column (COL) with Current Flows →'
+        : '🗼 이 기액 유량·농도로 흡수·패킹컬럼(COL) 상세설계 →',
+      subHint: isEn
+        ? 'Transfers gas/solvent flow rates, temperature, pressure, and inlet/outlet concentrations (ppm) to compute column diameter (GPDC), packing height (HTU/NTU), and pressure drop.'
+        : '가스/흡수액 유량·온도·압력·입출구 농도(ppm)를 그대로 물고 넘어가 탑경(GPDC)·패킹 높이(HTU·NTU)·차압을 계산합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
       secondaryAction: isElectrolyzerPlantMode
         ? {
-            label: '전해공장 전용 패킹타워(황산건조/제해) 사이징 열기 →',
+            label: isEn
+              ? 'Open Chlor-Alkali Packed Tower Sizing (H₂SO₄ Drying / Scrubber) →'
+              : '전해공장 전용 패킹타워(황산건조/제해) 사이징 열기 →',
             href: '/equipment-design?tab=packing',
             equipSubTab: 'packing',
           }
@@ -450,8 +476,12 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'vessel',
-      buttonLabel: '🛢️ 이 기액유량·압력으로 기액분리기·용기(VES) 설계 →',
-      subHint: '기상/액상 유량·밀도·운전압력을 그대로 전달하여 Souders-Brown 직경 및 ASME Sec.VIII 두께를 계산합니다.',
+      buttonLabel: isEn
+        ? '🛢️ Design Vapor-Liquid Separator / Vessel (VES) with Current Duty →'
+        : '🛢️ 이 기액유량·압력으로 기액분리기·용기(VES) 설계 →',
+      subHint: isEn
+        ? 'Carries over vapor/liquid flow rates, densities, and operating pressure to compute Souders-Brown diameter and ASME Sec. VIII wall thickness.'
+        : '기상/액상 유량·밀도·운전압력을 그대로 전달하여 Souders-Brown 직경 및 ASME Sec.VIII 두께를 계산합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -461,8 +491,12 @@ export function getUnitDesignRouteInfo(
   if (t === 'evaporator') {
     return {
       kind: isElectrolyzerPlantMode ? 'plant_evap' : 'evap_special',
-      buttonLabel: '🔥 다중효용 강하막 증발농축 상세설계 열기 →',
-      subHint: '가성소다 BPE(비점상승)·총괄열전달·강하막 튜브 적심률(Γ) 전용 증발농축 설계 화면으로 이동합니다.',
+      buttonLabel: isEn
+        ? '🔥 Open Multi-Effect Falling-Film Evaporator Design →'
+        : '🔥 다중효용 강하막 증발농축 상세설계 열기 →',
+      subHint: isEn
+        ? 'Opens the dedicated caustic evaporator sizing module for BPE (boiling point elevation), overall heat transfer coefficient, and falling-film tube wetting rate (Γ).'
+        : '가성소다 BPE(비점상승)·총괄열전달·강하막 튜브 적심률(Γ) 전용 증발농축 설계 화면으로 이동합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -472,8 +506,12 @@ export function getUnitDesignRouteInfo(
   if (t === 'saturator' || t === 'chelate_tower') {
     return {
       kind: 'plant_brine',
-      buttonLabel: '🧪 브라인 포화조·캔들필터·킬레이트탑 상세설계 →',
-      subHint: '원염 포화조 상승유속·캔들필터 여과면적·이온교환수지탑(SV/BV) 전용 사이징 화면으로 이동합니다.',
+      buttonLabel: isEn
+        ? '🧪 Detail-Design Brine Saturator, Candle Filter & Chelate Tower →'
+        : '🧪 브라인 포화조·캔들필터·킬레이트탑 상세설계 →',
+      subHint: isEn
+        ? 'Opens dedicated brine purification sizing for saturator superficial rise velocity, candle-filter filtration area, and ion-exchange resin bed (SV/BV).'
+        : '원염 포화조 상승유속·캔들필터 여과면적·이온교환수지탑(SV/BV) 전용 사이징 화면으로 이동합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',
@@ -484,8 +522,12 @@ export function getUnitDesignRouteInfo(
     return {
       kind: 'chempro',
       chemproTab: 'piping',
-      buttonLabel: '💨 토출 고압가스 배관(PIPE) 유속·차압 상세설계 →',
-      subHint: '압축 토출 가스의 실제 유량·온도·압력·기체밀도를 배관 설계 모듈로 전달하여 적정 관경(NPS)과 마하수를 계산합니다.',
+      buttonLabel: isEn
+        ? '💨 Detail-Design Compressor Discharge Piping (PIPE) Velocity & ΔP →'
+        : '💨 토출 고압가스 배관(PIPE) 유속·차압 상세설계 →',
+      subHint: isEn
+        ? 'Passes actual discharge gas flow, temperature, pressure, and density to the piping module to size nominal pipe diameter (NPS) and check Mach number.'
+        : '압축 토출 가스의 실제 유량·온도·압력·기체밀도를 배관 설계 모듈로 전달하여 적정 관경(NPS)과 마하수를 계산합니다.',
       accentColor: '#1E3A8A',
       bgGradient: '#F8FAFC',
       borderColor: '#E2E8F0',

@@ -5741,7 +5741,7 @@ export function FlowsheetWorkspace({
 
   const selectedUnitDesignRoute = useMemo(() => {
     if (!selectedDef) return null;
-    const route = getUnitDesignRouteInfo(selectedDef, isElectrolyzerMode, activeSheetId);
+    const route = getUnitDesignRouteInfo(selectedDef, isElectrolyzerMode, activeSheetId, lang);
     if (
       route &&
       isSimulatorOnlyUser(user) &&
@@ -5750,7 +5750,7 @@ export function FlowsheetWorkspace({
       return null;
     }
     return route;
-  }, [selectedDef, isElectrolyzerMode, activeSheetId, user]);
+  }, [selectedDef, isElectrolyzerMode, activeSheetId, user, lang]);
 
   const handleOpenUnitDesign = useCallback((overrideNodeId?: unknown) => {
     const explicitId = typeof overrideNodeId === 'string' ? overrideNodeId : undefined;
@@ -9571,11 +9571,16 @@ export function FlowsheetWorkspace({
                       onChange={e => applyRefrigerantPreset(e.target.value as RefrigerantPresetKey)}
                       style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', borderRadius: 4, fontSize: 11.5, fontWeight: 700, marginTop: 2, background: '#FFFFFF', color: '#0F172A' }}
                     >
-                      {(Object.keys(REFRIGERANT_PRESETS) as RefrigerantPresetKey[]).map(rk => (
-                        <option key={rk} value={rk}>
-                          {REFRIGERANT_PRESETS[rk].label}
-                        </option>
-                      ))}
+                      {(Object.keys(REFRIGERANT_PRESETS) as RefrigerantPresetKey[]).map(rk => {
+                        const rawLabel = REFRIGERANT_PRESETS[rk].label;
+                        const enMatch = rawLabel.match(/\(([^)]+)\)/);
+                        const displayLabel = isEn && enMatch ? enMatch[1] : rawLabel;
+                        return (
+                          <option key={rk} value={rk}>
+                            {displayLabel}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -10793,7 +10798,9 @@ export function FlowsheetWorkspace({
                         </div>
                       ))}
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #CBD5E1', fontSize: 11, color: '#475569', lineHeight: 1.45 }}>
-                      {selectedUnitRes.statusNote}
+                      {isEn && selectedUnitRes.statusNote.includes('미실행')
+                        ? 'Idle — Press ▶ RUN to compute'
+                        : selectedUnitRes.statusNote}
                     </div>
                   </div>
                 )}
