@@ -547,3 +547,99 @@ body {
     height: 180px !important;
   }
 }
+
+
+/* ============================================================
+   Unified Workbench Dark Theme (html[data-wb-theme="dark"])
+   MaximaLabs / VS Code Dark Engineering Slate Palette
+   ============================================================ */
+html[data-wb-theme="dark"] {
+  --bg-base: #0F172A;
+  --bg-surface: #1E293B;
+  --bg-elevated: #263449;
+  --bg-card: #1E293B;
+  --bg-hover: #334155;
+  --text-primary: #F1F5F9;
+  --text-secondary: #CBD5E1;
+  --text-muted: #94A3B8;
+  --border-subtle: #334155;
+  --border-default: #475569;
+  color-scheme: dark;
+}
+
+html[data-wb-theme="dark"] .wb-ribbon-root {
+  background-color: #0F172A !important;
+  border-bottom-color: #334155 !important;
+  color: #E2E8F0 !important;
+}
+
+html[data-wb-theme="dark"] .wb-ribbon-root > div:first-of-type {
+  background-color: #0B1220 !important;
+  border-bottom-color: #1E293B !important;
+}
+
+html[data-wb-theme="dark"] .wb-ribbon-root .wb-ribbon-scroll {
+  background-color: #0F172A !important;
+}
+
+html[data-wb-theme="dark"] .wb-tab-btn {
+  color: #94A3B8 !important;
+}
+
+html[data-wb-theme="dark"] .wb-tab-btn:hover {
+  color: #F8FAFC !important;
+  background-color: #1E293B !important;
+}
+
+html[data-wb-theme="dark"] .wb-tab-btn.active {
+  color: #60A5FA !important;
+  border-bottom-color: #3B82F6 !important;
+  background-color: #0F172A !important;
+}
+
+html[data-wb-theme="dark"] .wb-cmd-btn,
+html[data-wb-theme="dark"] .wb-icon-btn {
+  background: #1E293B !important;
+  border-color: #334155 !important;
+  color: #E2E8F0 !important;
+}
+
+html[data-wb-theme="dark"] .wb-cmd-btn:hover:not(:disabled),
+html[data-wb-theme="dark"] .wb-icon-btn:hover:not(:disabled) {
+  background: #334155 !important;
+  border-color: #475569 !important;
+  color: #FFFFFF !important;
+}
+
+html[data-wb-theme="dark"] .wb-cmd-btn.active {
+  background: #1E3A8A !important;
+  border-color: #3B82F6 !important;
+  color: #FFFFFF !important;
+}
+
+html[data-wb-theme="dark"] .wb-seg-wrap {
+  background: #1E293B !important;
+  border-color: #334155 !important;
+}
+
+html[data-wb-theme="dark"] .wb-seg-btn {
+  color: #94A3B8 !important;
+}
+
+html[data-wb-theme="dark"] .wb-seg-btn.active {
+  background: #1E3A8A !important;
+  color: #FFFFFF !important;
+}
+
+html[data-wb-theme="dark"] .react-flow {
+  background: #111827 !important;
+}
+
+html[data-wb-theme="dark"] .react-flow__background pattern circle {
+  fill: #334155 !important;
+}
+
+html[data-wb-theme="dark"] .react-flow__edge path[stroke="#F6F7F2"],
+html[data-wb-theme="dark"] .react-flow__edge path[stroke="#FFFFFF"] {
+  stroke: #111827 !important;
+}

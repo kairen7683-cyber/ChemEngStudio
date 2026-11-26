@@ -6728,6 +6728,39 @@ export function FlowsheetWorkspace({
                 onToggleBoundarySync={() => setBoundarySyncEnabled(v => !v)}
                 onNavigateRoute={href => router.push(href)}
                 onSwitchClassicUi={() => router.push('/classic-simulator')}
+                plantCustomDesign={
+                  workspaceMode === 'electrolyzer_plant'
+                    ? {
+                        labelKo: '전해공장 맞춤장치 (3효 증발관·염소액화·염수정제)',
+                        labelEn: 'Chlor-Alkali Custom Equipment',
+                        href: '/equipment-design?tab=evap',
+                      }
+                    : workspaceMode === 'hcl_1a_plant'
+                      ? {
+                          labelKo: '1A 염산 맞춤장치 (합성로·흡수탑·PSD)',
+                          labelEn: '1A HCl Custom Equipment',
+                          href: '/equipment-design?tab=hcl_hub',
+                        }
+                      : workspaceMode === 'ech_gte_plant'
+                        ? {
+                            labelKo: 'ECH 맞춤장치 (염소화·비누화·진공정제)',
+                            labelEn: 'ECH Custom Equipment',
+                            href: '/equipment-design?tab=distill',
+                          }
+                        : workspaceMode === 'cms_plant'
+                          ? {
+                              labelKo: 'CMS 맞춤장치 (염소화·회수·정제)',
+                              labelEn: 'CMS Custom Equipment',
+                              href: '/equipment-design?tab=cms_hub',
+                            }
+                          : workspaceMode === 'mdi_plant'
+                            ? {
+                                labelKo: 'MDI 맞춤장치 (MDA·포스겐화·정제)',
+                                labelEn: 'MDI Custom Equipment',
+                                href: '/equipment-design?tab=mdi_hub',
+                              }
+                            : null
+                }
                 rightExtraSlot={
                   <>
                     {!isPlantSimMode && !isSimulatorOnlyUser(user) && (
@@ -7153,6 +7186,121 @@ export function FlowsheetWorkspace({
           ref={centerSplitRef}
           style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}
         >
+          {/* ── Aspen/Classic-style 상단 MDI 문서 탭 바 (플로우시트 · 스트림 요약 · 장치 요약) ── */}
+          {!isMobile && (
+            <div
+              style={{
+                height: 29,
+                background: '#F1F5F9',
+                borderBottom: '1px solid #CBD5E1',
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 2,
+                padding: '0 8px',
+                flexShrink: 0,
+                overflowX: 'auto',
+              }}
+            >
+              {Object.keys(hierarchySheets).length > 1 && activeSheetId !== 'master' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigateToHierarchySheet('master');
+                    if (layoutMode === 'table') setLayoutMode('split');
+                  }}
+                  style={{
+                    height: 24,
+                    padding: '0 10px',
+                    borderRadius: '5px 5px 0 0',
+                    border: '1px solid #CBD5E1',
+                    borderBottom: 'none',
+                    background: '#E2E8F0',
+                    color: '#334155',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {isEn ? 'Master Flowsheet' : '마스터 도면'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (layoutMode === 'table') setLayoutMode('split');
+                }}
+                style={{
+                  height: 25,
+                  padding: '0 11px',
+                  borderRadius: '5px 5px 0 0',
+                  border: layoutMode !== 'table' ? '1px solid #CBD5E1' : '1px solid transparent',
+                  borderBottom: layoutMode !== 'table' ? '1px solid #F6F7F2' : 'none',
+                  background: layoutMode !== 'table' ? '#F6F7F2' : 'transparent',
+                  color: layoutMode !== 'table' ? '#1E3A8A' : '#475569',
+                  fontSize: 11,
+                  fontWeight: layoutMode !== 'table' ? 800 : 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  marginBottom: layoutMode !== 'table' ? -1 : 0,
+                }}
+              >
+                {activeSheetId !== 'master'
+                  ? (hierarchySheets[activeSheetId]?.shortTabLabel || activeSheetId)
+                  : (isEn ? 'Main Flowsheet' : '메인 플로우시트')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBottomTab('streams');
+                  setLayoutMode('table');
+                  setInspectorOpen(false);
+                  setPaletteOpen(false);
+                }}
+                style={{
+                  height: 25,
+                  padding: '0 11px',
+                  borderRadius: '5px 5px 0 0',
+                  border: layoutMode === 'table' && bottomTab === 'streams' ? '1px solid #CBD5E1' : '1px solid transparent',
+                  borderBottom: layoutMode === 'table' && bottomTab === 'streams' ? '1px solid #FFFFFF' : 'none',
+                  background: layoutMode === 'table' && bottomTab === 'streams' ? '#FFFFFF' : 'transparent',
+                  color: layoutMode === 'table' && bottomTab === 'streams' ? '#1E3A8A' : '#475569',
+                  fontSize: 11,
+                  fontWeight: layoutMode === 'table' && bottomTab === 'streams' ? 800 : 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  marginBottom: layoutMode === 'table' && bottomTab === 'streams' ? -1 : 0,
+                }}
+              >
+                {isEn ? 'Stream Summary' : '스트림 요약'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBottomTab('units');
+                  setLayoutMode('table');
+                  setInspectorOpen(false);
+                  setPaletteOpen(false);
+                }}
+                style={{
+                  height: 25,
+                  padding: '0 11px',
+                  borderRadius: '5px 5px 0 0',
+                  border: layoutMode === 'table' && bottomTab === 'units' ? '1px solid #CBD5E1' : '1px solid transparent',
+                  borderBottom: layoutMode === 'table' && bottomTab === 'units' ? '1px solid #FFFFFF' : 'none',
+                  background: layoutMode === 'table' && bottomTab === 'units' ? '#FFFFFF' : 'transparent',
+                  color: layoutMode === 'table' && bottomTab === 'units' ? '#1E3A8A' : '#475569',
+                  fontSize: 11,
+                  fontWeight: layoutMode === 'table' && bottomTab === 'units' ? 800 : 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  marginBottom: layoutMode === 'table' && bottomTab === 'units' ? -1 : 0,
+                }}
+              >
+                {isEn ? 'Unit Summary' : '장치 요약'}
+              </button>
+            </div>
+          )}
           {layoutMode !== 'table' && (
             <div
               ref={rfWrapperRef}

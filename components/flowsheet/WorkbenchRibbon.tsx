@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 export interface WorkbenchRibbonProps {
   lang: 'ko' | 'en';
@@ -52,6 +52,7 @@ export interface WorkbenchRibbonProps {
   onNavigateRoute: (href: string) => void;
   onSwitchClassicUi?: () => void;
   // Optional extra slot (e.g. convergence diagnostics popover or admin preset selector)
+  plantCustomDesign?: { labelKo: string; labelEn: string; href: string } | null;
   rightExtraSlot?: React.ReactNode;
 }
 
@@ -62,7 +63,7 @@ const RIBBON_TABS: Array<{ id: RibbonTabId; ko: string; en: string }> = [
   { id: 'equipment', ko: '장치설계', en: 'Equipment' },
   { id: 'economics', ko: '경제성', en: 'Economics' },
   { id: 'properties', ko: '물성 · DB', en: 'Properties & DB' },
-  { id: 'view', ko: '보기 · 도구', en: 'View & Tools' },
+  { id: 'view', ko: '보기', en: 'View' },
 ];
 
 function RibbonGroup({
@@ -156,11 +157,38 @@ export default function WorkbenchRibbon({
   onOpenComponentRequest,
   onNavigateRoute,
   onSwitchClassicUi,
+  plantCustomDesign,
   rightExtraSlot,
 }: WorkbenchRibbonProps) {
   const [activeTab, setActiveTab] = useState<RibbonTabId>('home');
+  const [wbTheme, setWbTheme] = useState<'light' | 'dark'>('light');
   const isEn = lang === 'en';
   const t = (ko: string, en: string) => (isEn ? en : ko);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const saved = window.localStorage.getItem('chemplant-wb-theme-v1');
+    const next: 'light' | 'dark' = saved === 'dark' ? 'dark' : 'light';
+    setWbTheme(next);
+    if (next === 'dark') {
+      document.documentElement.setAttribute('data-wb-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-wb-theme');
+    }
+  }, []);
+
+  const toggleWbTheme = () => {
+    const next: 'light' | 'dark' = wbTheme === 'dark' ? 'light' : 'dark';
+    setWbTheme(next);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('chemplant-wb-theme-v1', next);
+      if (next === 'dark') {
+        document.documentElement.setAttribute('data-wb-theme', 'dark');
+      } else {
+        document.documentElement.removeAttribute('data-wb-theme');
+      }
+    }
+  };
 
   // Compute flat convergence status presentation
   const statusInfo = (() => {
@@ -691,45 +719,71 @@ export default function WorkbenchRibbon({
           </>
         )}
 
-        {/* TAB 2: EQUIPMENT */}
+        {/* TAB 2: EQUIPMENT — 범용 장치 설계 vs 공장 맞춤 장치 명확 분리 */}
         {activeTab === 'equipment' && (
-          <RibbonGroup label={t('장치 사이징 · 설계', 'Equipment Sizing & Design')} noDivider={!rightExtraSlot}>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=hx')}
+          <>
+            <RibbonGroup
+              label={t('범용 장치 설계', 'General Equipment Sizing')}
+              noDivider={!plantCustomDesign && !rightExtraSlot}
             >
-              {t('열교환기', 'Heat Exchanger')}
-            </button>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=distill')}
-            >
-              {t('증류탑', 'Distillation')}
-            </button>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=pump')}
-            >
-              {t('펌프·압축기', 'Pump & Comp.')}
-            </button>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=psv')}
-            >
-              {t('PSV·플레어', 'PSV & Flare')}
-            </button>
-            <button
-              type="button"
-              className="wb-cmd-btn"
-              onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
-            >
-              {t('장치목록', 'Equipment List')}
-            </button>
-          </RibbonGroup>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/equipment-design?tab=chempro')}
+              >
+                {t('열교환기 (TEMA/판형)', 'Heat Exchanger (TEMA/Plate)')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/unit-equipment')}
+              >
+                {t('범용 6종 숏컷', '6-Unit Shortcuts')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/equipment-design?tab=compressor')}
+              >
+                {t('압축기 설계', 'Compressor')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/equipment-design?tab=psv_flare')}
+              >
+                {t('PSV·플레어', 'PSV & Flare')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => onNavigateRoute('/equipment-design?tab=equip')}
+              >
+                {t('장치목록', 'Equipment List')}
+              </button>
+            </RibbonGroup>
+
+            {plantCustomDesign && (
+              <RibbonGroup
+                label={t('공장 맞춤 장치', 'Plant-Specific Design')}
+                noDivider={!rightExtraSlot}
+              >
+                <button
+                  type="button"
+                  className="wb-cmd-btn"
+                  onClick={() => onNavigateRoute(plantCustomDesign.href)}
+                  style={{
+                    color: '#1E3A8A',
+                    borderColor: '#BFDBFE',
+                    backgroundColor: '#EFF6FF',
+                    fontWeight: 700,
+                  }}
+                >
+                  {isEn ? plantCustomDesign.labelEn : plantCustomDesign.labelKo}
+                </button>
+              </RibbonGroup>
+            )}
+          </>
         )}
 
         {/* TAB 3: ECONOMICS */}
@@ -849,7 +903,7 @@ export default function WorkbenchRibbon({
               </button>
             </RibbonGroup>
 
-            <RibbonGroup label={t('시트 · 초기화', 'Sheet & Reset')}>
+            <RibbonGroup label={t('시트 · 초기화', 'Sheet & Reset')} noDivider={!rightExtraSlot}>
               {hasMultipleSheets && onToggleBoundarySync && (
                 <label
                   style={{
@@ -887,21 +941,21 @@ export default function WorkbenchRibbon({
               <button
                 type="button"
                 className="wb-cmd-btn"
+                onClick={toggleWbTheme}
+                title={t('라이트 / 다크 테마 전환', 'Toggle Light / Dark theme')}
+              >
+                {wbTheme === 'dark'
+                  ? t('☀ 라이트 모드', '☀ Light Mode')
+                  : t('🌙 다크 모드', '🌙 Dark Mode')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
                 onClick={onResetOrClear}
               >
                 {isPlantSimMode
                   ? t('초기값 복원', 'Restore Defaults')
                   : t('캔버스 초기화', 'Clear Canvas')}
-              </button>
-            </RibbonGroup>
-
-            <RibbonGroup label={t('인터페이스', 'Interface')} noDivider={!rightExtraSlot}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={handleClassicUi}
-              >
-                {t('클래식 UI 전환', 'Classic UI')}
               </button>
             </RibbonGroup>
           </>
