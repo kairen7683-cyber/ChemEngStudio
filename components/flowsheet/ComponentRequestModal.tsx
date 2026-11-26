@@ -162,7 +162,7 @@ export default function ComponentRequestModal({ open, onClose }: ComponentReques
     try {
       const rec = await requestNewCustomComponent({
         query: cleanQuery,
-        name_ko: nameKo.trim() || undefined,
+        name_ko: isEn ? undefined : nameKo.trim() || undefined,
         tb_c: parsedTb,
         rho_l_25: parsedRho,
         note: noteInput.trim() || undefined,
@@ -440,36 +440,38 @@ export default function ComponentRequestModal({ open, onClose }: ComponentReques
                   />
                 </div>
 
-                <div>
-                  <label
-                    style={{
-                      display: 'block',
-                      fontSize: 11.8,
-                      fontWeight: 700,
-                      color: '#334155',
-                      marginBottom: 5,
-                    }}
-                  >
-                    {isEn ? 'Korean Display Name (Optional)' : '한글 표시명 (선택)'}
-                  </label>
-                  <input
-                    type="text"
-                    value={nameKo}
-                    onChange={e => setNameKo(e.target.value)}
-                    disabled={!authenticated || submitting}
-                    placeholder={isEn ? 'e.g. 플루오로에틸렌 카보네이트' : '예: 플루오로에틸렌 카보네이트'}
-                    style={{
-                      width: '100%',
-                      padding: '8px 11px',
-                      borderRadius: 7,
-                      border: '1px solid #CBD5E1',
-                      background: authenticated ? '#FFFFFF' : '#F1F5F9',
-                      color: '#0F172A',
-                      fontSize: 12.3,
-                      outline: 'none',
-                    }}
-                  />
-                </div>
+                {!isEn && (
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 11.8,
+                        fontWeight: 700,
+                        color: '#334155',
+                        marginBottom: 5,
+                      }}
+                    >
+                      한글 표시명 (선택)
+                    </label>
+                    <input
+                      type="text"
+                      value={nameKo}
+                      onChange={e => setNameKo(e.target.value)}
+                      disabled={!authenticated || submitting}
+                      placeholder="예: 플루오로에틸렌 카보네이트"
+                      style={{
+                        width: '100%',
+                        padding: '8px 11px',
+                        borderRadius: 7,
+                        border: '1px solid #CBD5E1',
+                        background: authenticated ? '#FFFFFF' : '#F1F5F9',
+                        color: '#0F172A',
+                        fontSize: 12.3,
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* Collapsible Optional Experimental Inputs */}
                 <div
@@ -748,7 +750,11 @@ export default function ComponentRequestModal({ open, onClose }: ComponentReques
                           {createdRecord.comp_key}
                         </span>
                         <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0F172A' }}>
-                          {createdRecord.formula} ({isEn ? createdRecord.name_en : createdRecord.name_ko})
+                          {createdRecord.formula} (
+                          {isEn
+                            ? createdRecord.name_en || createdRecord.comp_key
+                            : createdRecord.name_ko || createdRecord.name_en}
+                          )
                         </span>
                       </div>
                       <div style={{ fontSize: 11.2, color: '#475569', marginTop: 3 }}>
@@ -1017,7 +1023,8 @@ export default function ComponentRequestModal({ open, onClose }: ComponentReques
                                   color: '#0F172A',
                                 }}
                               >
-                                {rec.formula} ({isEn ? rec.name_en : rec.name_ko})
+                                {rec.formula} (
+                                {isEn ? rec.name_en || rec.comp_key : rec.name_ko || rec.name_en})
                               </span>
                               <span
                                 style={{

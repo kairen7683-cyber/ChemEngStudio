@@ -831,9 +831,9 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
 
   const topPortLabel =
     unitType === 'distillation'
-      ? (isEn ? 'Dist D↑' : '탑정D↑')
+      ? (isEn ? 'D↑' : '탑정D↑')
       : unitType === 'extractor'
-        ? (isEn ? 'Ext E↑' : '추출E↑')
+        ? (isEn ? 'E↑' : '추출E↑')
         : unitType === 'splitter'
           ? (isEn ? 'Out 1' : '분기1')
           : unitType === 'saturator'
@@ -844,9 +844,9 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
 
   const botPortLabel =
     unitType === 'distillation'
-      ? (isEn ? 'Bot B↓' : '탑저B↓')
+      ? (isEn ? 'B↓' : '탑저B↓')
       : unitType === 'extractor'
-        ? (isEn ? 'Raf R↓' : '추잔R↓')
+        ? (isEn ? 'R↓' : '추잔R↓')
         : unitType === 'splitter'
           ? (isEn ? 'Out 2' : '분기2')
           : unitType === 'saturator'
@@ -1244,7 +1244,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
                 style={{ ...portStyle('#7C3AED'), ...getHandleAnchorStyle(posRight, 52) }}
               />
               <span style={{ ...getInsidePortLabelStyle(posRight, 52), fontSize: 7.2, fontWeight: 900, color: '#7C3AED', fontFamily: 'JetBrains Mono, monospace' }}>
-                {isEn ? 'Side S→' : '측류S→'}
+                {isEn ? 'S→' : '측류S→'}
               </span>
             </>
           )}
@@ -5072,6 +5072,33 @@ export function FlowsheetWorkspace({
   }, [solved]);
 
   // 노드 라이브 요약 주입
+  // 기본 한글 장치명/자동 스트림명을 영문 모드에서 동적으로 영문화
+  const localizeNodeName = useCallback(
+    (rawName: string, unitType: FlowUnitType): string => {
+      if (!isEn || !rawName) return rawName;
+      const meta = UNIT_CATALOG.find(u => u.type === unitType);
+      if (meta && (rawName === meta.label || rawName === meta.label.split(' (')[0])) {
+        return meta.labelEn;
+      }
+      if (rawName === '유입 스트림') return 'Feed Stream';
+      if (rawName === '유출 스트림') return 'Product Stream';
+      const mD = rawName.match(/^(.+?)\s*탑정 유출\(D\)$/);
+      if (mD) return `${mD[1]} Distillate (D)`;
+      const mS = rawName.match(/^(.+?)\s*사이드컷 측류\(S\)$/);
+      if (mS) return `${mS[1]} Side-Cut (S)`;
+      const mB = rawName.match(/^(.+?)\s*탑저 관출\(B\)$/);
+      if (mB) return `${mB[1]} Bottoms (B)`;
+      const mG = rawName.match(/^(.+?)\s*상부 기상\(G\)$/);
+      if (mG) return `${mG[1]} Vapor (G)`;
+      const mL = rawName.match(/^(.+?)\s*하부 액상\(L\)$/);
+      if (mL) return `${mL[1]} Liquid (L)`;
+      const mF = rawName.match(/^(.+?)\s*원료 유입$/);
+      if (mF) return `${mF[1]} Feed`;
+      return rawName;
+    },
+    [isEn]
+  );
+
   const displayNodes: Node<FlowCanvasNodeData>[] = useMemo(() => {
     return rfNodes.map(n => {
       const def = simDefs.find(d => d.id === n.id);
@@ -5182,7 +5209,7 @@ export function FlowsheetWorkspace({
         selected: n.selected !== undefined ? n.selected : n.id === selectedNodeId,
         data: {
           tag: formatEquipmentTag(def?.tag ?? n.data.tag, resolvedType, tagStandard),
-          name: def?.name ?? n.data.name,
+          name: localizeNodeName(def?.name ?? n.data.name, resolvedType),
           unitType: resolvedType,
           calcMode: def?.params.calcMode ?? 'simple',
           liveSummary: summary,
@@ -5421,16 +5448,16 @@ export function FlowsheetWorkspace({
         const outTag = `S-OUT-${String(outCount).padStart(2, '0')}`;
         const outName =
           originDef.unitType === 'distillation' && rawH === 'vapor'
-            ? `${originDef.tag} 탑정 유출(D)`
+            ? (isEn ? `${originDef.tag} Distillate (D)` : `${originDef.tag} 탑정 유출(D)`)
             : originDef.unitType === 'distillation' && rawH === 'side_cut'
-              ? `${originDef.tag} 사이드컷 측류(S)`
+              ? (isEn ? `${originDef.tag} Side-Cut (S)` : `${originDef.tag} 사이드컷 측류(S)`)
               : originDef.unitType === 'distillation' && rawH === 'liquid'
-                ? `${originDef.tag} 탑저 관출(B)`
+                ? (isEn ? `${originDef.tag} Bottoms (B)` : `${originDef.tag} 탑저 관출(B)`)
                 : rawH === 'vapor'
-                  ? `${originDef.tag} 상부 기상(G)`
+                  ? (isEn ? `${originDef.tag} Vapor (G)` : `${originDef.tag} 상부 기상(G)`)
                   : rawH === 'liquid'
-                    ? `${originDef.tag} 하부 액상(L)`
-                    : '유출 스트림';
+                    ? (isEn ? `${originDef.tag} Liquid (L)` : `${originDef.tag} 하부 액상(L)`)
+                    : (isEn ? 'Product Stream' : '유출 스트림');
 
         const newOutDef: FlowNodeDef = {
           id: newNodeId,
@@ -5691,7 +5718,7 @@ export function FlowsheetWorkspace({
       setSelectedNodeId(id);
       setSelectedEdgeId(null);
     },
-    [pushUndoSnapshot, simDefs, tagStandard, useGenericDefault]
+    [pushUndoSnapshot, simDefs, tagStandard, useGenericDefault, isEn]
   );
 
   const handleDragStart = (e: React.DragEvent, unitType: FlowUnitType) => {
@@ -7194,7 +7221,7 @@ export function FlowsheetWorkspace({
             blocks={simDefs.map(d => ({
               id: d.id,
               tag: d.tag,
-              name: d.name,
+              name: localizeNodeName(d.name, d.unitType),
               unitType: d.unitType,
             }))}
             selectedNodeId={selectedNodeId}
@@ -9019,7 +9046,7 @@ export function FlowsheetWorkspace({
                 <div>
                   <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>{isEn ? 'Name' : '명칭'}</label>
                   <input
-                    value={selectedDef.name}
+                    value={localizeNodeName(selectedDef.name, selectedDef.unitType)}
                     onChange={e => updateSelectedDef({ name: e.target.value })}
                     style={{ width: '100%', padding: '5px 7px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 5, fontSize: 12, fontWeight: 700 }}
                   />

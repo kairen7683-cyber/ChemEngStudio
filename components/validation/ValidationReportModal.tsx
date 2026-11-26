@@ -17,6 +17,7 @@ import {
   FlaskCompIcon,
   VesselEquipIcon,
 } from '@/components/ui/EngIcons';
+import { useUnitStore } from '@/lib/stores/unitStore';
 
 export interface ValidationReportModalProps {
   open: boolean;
@@ -39,6 +40,8 @@ export default function ValidationReportModal({
   open,
   onClose,
 }: ValidationReportModalProps) {
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
   const [activeTab, setActiveTab] = useState<ModalTab>('thermo');
 
   useEffect(() => {
@@ -475,7 +478,11 @@ export default function ValidationReportModal({
               >
                 <span>Engine: {validationData.engineExportsDetected.mode}</span>
                 <span>·</span>
-                <span>DB: NRTL {databankCounts.nrtlBinaryPairs}쌍 · PR kij {databankCounts.prKijPairs}쌍</span>
+                <span>
+                  {isEn
+                    ? `DB: NRTL ${databankCounts.nrtlBinaryPairs} pairs · PR kij ${databankCounts.prKijPairs} pairs`
+                    : `DB: NRTL ${databankCounts.nrtlBinaryPairs}쌍 · PR kij ${databankCounts.prKijPairs}쌍`}
+                </span>
                 <span>·</span>
                 <span>Benchmark: {validationData.generatedAt.slice(0, 10)}</span>
               </div>
@@ -485,7 +492,7 @@ export default function ValidationReportModal({
           <button
             type="button"
             onClick={onClose}
-            aria-label="닫기"
+            aria-label={isEn ? 'Close' : '닫기'}
             style={{
               width: 30,
               height: 30,
@@ -539,7 +546,11 @@ export default function ValidationReportModal({
             }}
           >
             <FlaskCompIcon size={13} />
-            <span>열역학 · 상평형 문헌 검증 (VLE / LLE / 전해질)</span>
+            <span>
+              {isEn
+                ? 'Thermodynamics & Phase Equilibrium (VLE / LLE / Electrolytes)'
+                : '열역학 · 상평형 문헌 검증 (VLE / LLE / 전해질)'}
+            </span>
           </button>
 
           <button
@@ -564,7 +575,11 @@ export default function ValidationReportModal({
             }}
           >
             <VesselEquipIcon size={13} />
-            <span>장치 · 안전설계 표준 검증 (API 520/521 · TEMA)</span>
+            <span>
+              {isEn
+                ? 'Equipment & Safety Design Standards (API 520/521 · TEMA)'
+                : '장치 · 안전설계 표준 검증 (API 520/521 · TEMA)'}
+            </span>
             <span
               style={{
                 fontSize: 10,
@@ -600,27 +615,39 @@ export default function ValidationReportModal({
                 }}
               >
                 <KpiCard
-                  label="평균 기포압 오차 (%AAD)"
+                  label={isEn ? 'Mean Bubble Pressure Error (%AAD)' : '평균 기포압 오차 (%AAD)'}
                   value={`${overallMetrics.meanBubblePressureAAD_pct.toFixed(2)}%`}
-                  sub={`목표 < ${overallMetrics.targetBubblePressureAAD_pct}% · ${vleSystems.length} VLE 계`}
+                  sub={
+                    isEn
+                      ? `Target < ${overallMetrics.targetBubblePressureAAD_pct}% · ${vleSystems.length} VLE Systems`
+                      : `목표 < ${overallMetrics.targetBubblePressureAAD_pct}% · ${vleSystems.length} VLE 계`
+                  }
                   badge={overallMetrics.passesBubblePressureTarget ? 'PASS' : 'FAIL'}
                 />
                 <KpiCard
-                  label="등압 비점 오차 (ΔT AAD)"
+                  label={isEn ? 'Isobaric Bubble Temp Error (ΔT AAD)' : '등압 비점 오차 (ΔT AAD)'}
                   value={`${overallMetrics.meanIsobaricBubbleTempAAD_C.toFixed(3)} °C`}
-                  sub={`기상 조성 Δy AAD = ${overallMetrics.meanVaporCompAAD_molFrac.toFixed(4)}`}
+                  sub={
+                    isEn
+                      ? `Vapor Comp. Δy AAD = ${overallMetrics.meanVaporCompAAD_molFrac.toFixed(4)}`
+                      : `기상 조성 Δy AAD = ${overallMetrics.meanVaporCompAAD_molFrac.toFixed(4)}`
+                  }
                   badge="PASS"
                 />
                 <KpiCard
-                  label="전해질 비점상승 (BPE) 오차"
+                  label={isEn ? 'Electrolyte BPE Error' : '전해질 비점상승 (BPE) 오차'}
                   value={`${overallMetrics.meanElectrolyteBpeAAD_K.toFixed(2)} K`}
                   sub={`HCl · NaOH · NaCl (${electrolyteBpeSystems.reduce((s, e) => s + e.nPoints, 0)} pts)`}
                   badge="PASS"
                 />
                 <KpiCard
-                  label="무한희석 활동도계수 (γ∞) 오차"
+                  label={isEn ? 'Infinite Dilution γ∞ Error' : '무한희석 활동도계수 (γ∞) 오차'}
                   value={`${overallMetrics.meanGammaInfRelErr_pct.toFixed(2)}%`}
-                  sub={`NRTL ${databankCounts.nrtlBinaryPairs}쌍 · PR kij ${databankCounts.prKijPairs}쌍`}
+                  sub={
+                    isEn
+                      ? `NRTL ${databankCounts.nrtlBinaryPairs} pairs · PR kij ${databankCounts.prKijPairs} pairs`
+                      : `NRTL ${databankCounts.nrtlBinaryPairs}쌍 · PR kij ${databankCounts.prKijPairs}쌍`
+                  }
                   badge="PASS"
                 />
               </div>
@@ -636,7 +663,9 @@ export default function ValidationReportModal({
                   }}
                 >
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0F172A' }}>
-                    1. 기액상평형 (VLE) 문헌 벤치마크 검증 ({vleSystems.length} Systems)
+                    {isEn
+                      ? `1. Vapor-Liquid Equilibrium (VLE) Literature Benchmarks (${vleSystems.length} Systems)`
+                      : `1. 기액상평형 (VLE) 문헌 벤치마크 검증 (${vleSystems.length} Systems)`}
                   </div>
                   <div style={{ fontSize: 11, color: '#64748B', fontWeight: 600 }}>
                     Acceptance: ΔP AAD &lt; {overallMetrics.targetBubblePressureAAD_pct}%
@@ -742,7 +771,9 @@ export default function ValidationReportModal({
                 {/* Electrolyte BPE */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>
-                    2. 전해질 비점상승 (BPE) 검증
+                    {isEn
+                      ? '2. Electrolyte Boiling Point Elevation (BPE) Validation'
+                      : '2. 전해질 비점상승 (BPE) 검증'}
                   </div>
                   <div style={{ border: '1px solid #CBD5E1', borderRadius: 7, overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.2 }}>
@@ -779,7 +810,9 @@ export default function ValidationReportModal({
                 {/* Mutual LLE */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>
-                    3. 액액상평형 (Mutual LLE @ 25 °C) 검증
+                    {isEn
+                      ? '3. Liquid-Liquid Equilibrium (Mutual LLE @ 25 °C) Validation'
+                      : '3. 액액상평형 (Mutual LLE @ 25 °C) 검증'}
                   </div>
                   <div style={{ border: '1px solid #CBD5E1', borderRadius: 7, overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.2 }}>
@@ -817,7 +850,9 @@ export default function ValidationReportModal({
               {/* Infinite Dilution γ∞ Strip */}
               <div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: '#0F172A', marginBottom: 6 }}>
-                  4. 무한희석 활동도계수 (γ∞ in H₂O @ 25 °C) — Mean Err {overallMetrics.meanGammaInfRelErr_pct.toFixed(2)}%
+                  {isEn
+                    ? `4. Infinite Dilution Activity Coefficient (γ∞ in H₂O @ 25 °C) — Mean Err ${overallMetrics.meanGammaInfRelErr_pct.toFixed(2)}%`
+                    : `4. 무한희석 활동도계수 (γ∞ in H₂O @ 25 °C) — Mean Err ${overallMetrics.meanGammaInfRelErr_pct.toFixed(2)}%`}
                 </div>
                 <div
                   style={{
@@ -866,10 +901,14 @@ export default function ValidationReportModal({
               >
                 <div>
                   <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0F172A' }}>
-                    실시간 결정론적 솔버 검증 (Live Engine Execution)
+                    {isEn
+                      ? 'Live Deterministic Solver Verification (Live Engine Execution)'
+                      : '실시간 결정론적 솔버 검증 (Live Engine Execution)'}
                   </div>
                   <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>
-                    모달 로드 시 실제 계산 엔진 (`solvePSV`, `calcFireWettedAreaM2`, `solveFlareNetwork`, `checkTemaImpingement`, `temaVibrationCheck`)을 직접 실행하여 산출된 결과입니다.
+                    {isEn
+                      ? 'Computed directly on modal open by executing the live engineering engines (`solvePSV`, `calcFireWettedAreaM2`, `solveFlareNetwork`, `checkTemaImpingement`, `temaVibrationCheck`).'
+                      : '모달 로드 시 실제 계산 엔진 (`solvePSV`, `calcFireWettedAreaM2`, `solveFlareNetwork`, `checkTemaImpingement`, `temaVibrationCheck`)을 직접 실행하여 산출된 결과입니다.'}
                   </div>
                 </div>
                 <div
@@ -961,7 +1000,9 @@ export default function ValidationReportModal({
             }}
           >
             <strong style={{ color: '#0F172A' }}>Engineering Disclaimer:</strong>{' '}
-            본 계산 결과 및 검증 리포트는 기본설계·검토 보조용이며, 최종 제작·인허가 전 공인 기술사(PE) 검토가 필요합니다.
+            {isEn
+              ? 'These calculation results and validation benchmarks are provided for preliminary engineering and review support only. Independent verification by a licensed Professional Engineer (PE) is required prior to final fabrication or permitting.'
+              : '본 계산 결과 및 검증 리포트는 기본설계·검토 보조용이며, 최종 제작·인허가 전 공인 기술사(PE) 검토가 필요합니다.'}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -983,7 +1024,7 @@ export default function ValidationReportModal({
               }}
             >
               <DocSheetIcon size={13} />
-              <span>검증 요약 Excel (.xlsx) 다운로드</span>
+              <span>{isEn ? 'Download Summary Excel (.xlsx)' : '검증 요약 Excel (.xlsx) 다운로드'}</span>
             </button>
 
             <button
@@ -1000,7 +1041,7 @@ export default function ValidationReportModal({
                 cursor: 'pointer',
               }}
             >
-              닫기
+              {isEn ? 'Close' : '닫기'}
             </button>
           </div>
         </div>

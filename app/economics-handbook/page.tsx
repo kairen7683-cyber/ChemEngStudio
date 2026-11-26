@@ -367,7 +367,9 @@ export default function EconomicsHandbookPage() {
 
       ws1.mergeCells('A1:E1');
       const titleCell = ws1.getCell('A1');
-      titleCell.value = `Process Economics & Unit Consumption Report — ${selectedEntry.nameKo} (${selectedEntry.nameEn})`;
+      titleCell.value = isEn
+        ? `Process Economics & Unit Consumption Report — ${selectedEntry.nameEn}`
+        : `Process Economics & Unit Consumption Report — ${selectedEntry.nameKo} (${selectedEntry.nameEn})`;
       titleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
       titleCell.fill = NAVY_FILL;
       titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -375,7 +377,9 @@ export default function EconomicsHandbookPage() {
 
       ws1.mergeCells('A2:E2');
       const subCell = ws1.getCell('A2');
-      subCell.value = `Route: ${selectedEntry.routeNameKo} (${selectedEntry.routeNameEn}) | Formula: ${selectedEntry.formula} | Generated: ${new Date().toISOString().slice(0, 10)}`;
+      subCell.value = isEn
+        ? `Route: ${selectedEntry.routeNameEn} | Formula: ${selectedEntry.formula} | Generated: ${new Date().toISOString().slice(0, 10)}`
+        : `Route: ${selectedEntry.routeNameKo} (${selectedEntry.routeNameEn}) | Formula: ${selectedEntry.formula} | Generated: ${new Date().toISOString().slice(0, 10)}`;
       subCell.font = { size: 10, color: { argb: 'FFE2E8F0' } };
       subCell.fill = SUBHEADER_FILL;
       subCell.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -396,8 +400,18 @@ export default function EconomicsHandbookPage() {
 
       addSectionBanner(ws1, '1. Process Overview & Technical Basis');
       const overviewRows: [string, string][] = [
-        ['Product / Formula', `${selectedEntry.nameKo} / ${selectedEntry.nameEn} (${selectedEntry.formula})`],
-        ['Process Route', `${selectedEntry.routeNameKo} (${selectedEntry.routeNameEn})`],
+        [
+          'Product / Formula',
+          isEn
+            ? `${selectedEntry.nameEn} (${selectedEntry.formula})`
+            : `${selectedEntry.nameKo} / ${selectedEntry.nameEn} (${selectedEntry.formula})`,
+        ],
+        [
+          'Process Route',
+          isEn
+            ? selectedEntry.routeNameEn
+            : `${selectedEntry.routeNameKo} (${selectedEntry.routeNameEn})`,
+        ],
         ['Reaction Stoichiometry', selectedEntry.reactionEq],
         ['Operating Conditions', selectedEntry.operatingSummary],
         ['Block Flow Steps', selectedEntry.blockSteps.join('  →  ')],
@@ -453,10 +467,11 @@ export default function EconomicsHandbookPage() {
         cell.border = THIN_BORDER;
       });
 
+      const eokUnit = isEn ? '×10⁸ KRW' : '억 원';
       const kpiRows = [
-        ['ISBL CAPEX', `$${fmtNum(calc.isblMUsd, 1)}M`, `${fmtNum((calc.isblMUsd * calc.fxKrwPerUsd) / 100, 0)} 억 원`, `${fmtNum((calc.isblMUsd / calc.totalCapexMUsd) * 100, 1)}%`, 'Inside Battery Limits'],
-        ['OSBL CAPEX', `$${fmtNum(calc.osblMUsd, 1)}M`, `${fmtNum((calc.osblMUsd * calc.fxKrwPerUsd) / 100, 0)} 억 원`, `${fmtNum(selectedEntry.osblRatio * 100, 0)}% of ISBL`, 'Offsites & Utilities'],
-        ['Total CAPEX (TCI)', `$${fmtNum(calc.totalCapexMUsd, 1)}M`, `${fmtNum(calc.totalCapexEokKrw, 0)} 억 원`, '100%', 'Scaled by (Q/Q0)^n × (CEPCI/800)'],
+        ['ISBL CAPEX', `$${fmtNum(calc.isblMUsd, 1)}M`, `${fmtNum((calc.isblMUsd * calc.fxKrwPerUsd) / 100, 0)} ${eokUnit}`, `${fmtNum((calc.isblMUsd / calc.totalCapexMUsd) * 100, 1)}%`, 'Inside Battery Limits'],
+        ['OSBL CAPEX', `$${fmtNum(calc.osblMUsd, 1)}M`, `${fmtNum((calc.osblMUsd * calc.fxKrwPerUsd) / 100, 0)} ${eokUnit}`, `${fmtNum(selectedEntry.osblRatio * 100, 0)}% of ISBL`, 'Offsites & Utilities'],
+        ['Total CAPEX (TCI)', `$${fmtNum(calc.totalCapexMUsd, 1)}M`, `${fmtNum(calc.totalCapexEokKrw, 0)} ${eokUnit}`, '100%', 'Scaled by (Q/Q0)^n × (CEPCI/800)'],
         ['Gross Raw Materials', `${fmtUsd(calc.rawMaterialUsdPerT, 1)}/t`, `${fmtKrwPerT(calc.rawMaterialUsdPerT, calc.fxKrwPerUsd)}/t`, '-', 'Feedstock & catalysts'],
         ['Byproduct Credits', `-${fmtUsd(calc.byproductCreditUsdPerT, 1)}/t`, `-${fmtKrwPerT(calc.byproductCreditUsdPerT, calc.fxKrwPerUsd)}/t`, '-', 'Co-product credit'],
         ['Net Raw Material Cost', `${fmtUsd(netRawMaterialUsdPerT, 1)}/t`, `${fmtKrwPerT(netRawMaterialUsdPerT, calc.fxKrwPerUsd)}/t`, `${fmtNum(costBarSegments[0].pct, 1)}%`, 'Raw materials minus credits'],
@@ -465,8 +480,8 @@ export default function EconomicsHandbookPage() {
         ['Depreciation', `${fmtUsd(calc.depreciationUsdPerT, 1)}/t`, `${fmtKrwPerT(calc.depreciationUsdPerT, calc.fxKrwPerUsd)}/t`, `${fmtNum(costBarSegments[3].pct, 1)}%`, `${selectedEntry.depreciationYears}-year straight-line`],
         ['TOTAL PRODUCTION COST', `${fmtUsd(calc.totalProdCostUsdPerT, 1)}/t`, `${fmtKrwPerT(calc.totalProdCostUsdPerT, calc.fxKrwPerUsd)}/t`, '100.0%', 'Full manufacturing cost'],
         ['Gross Margin (EBIT/t)', `${fmtUsd(calc.grossMarginUsdPerT, 1)}/t`, `${fmtKrwPerT(calc.grossMarginUsdPerT, calc.fxKrwPerUsd)}/t`, `ROI ${fmtNum(calc.roiPct, 1)}%`, 'Product price - Total cost'],
-        ['Annual Revenue', `$${fmtNum((calc.productPriceUsdPerT * calc.capacityTpa) / 1e6, 1)}M/yr`, `${fmtNum(calc.annualRevenueEokKrw, 0)} 억 원/yr`, '-', `${fmtNum(calc.capacityTpa, 0)} TPA`],
-        ['Annual EBITDA', `$${fmtNum((calc.annualEbitdaEokKrw * 100) / calc.fxKrwPerUsd, 1)}M/yr`, `${fmtNum(calc.annualEbitdaEokKrw, 0)} 억 원/yr`, Number.isFinite(calc.paybackYears) ? `Payback ${fmtNum(calc.paybackYears, 1)} yr` : 'Payback N/A', 'Simple payback = CAPEX / EBITDA'],
+        ['Annual Revenue', `$${fmtNum((calc.productPriceUsdPerT * calc.capacityTpa) / 1e6, 1)}M/yr`, `${fmtNum(calc.annualRevenueEokKrw, 0)} ${eokUnit}/yr`, '-', `${fmtNum(calc.capacityTpa, 0)} TPA`],
+        ['Annual EBITDA', `$${fmtNum((calc.annualEbitdaEokKrw * 100) / calc.fxKrwPerUsd, 1)}M/yr`, `${fmtNum(calc.annualEbitdaEokKrw, 0)} ${eokUnit}/yr`, Number.isFinite(calc.paybackYears) ? `Payback ${fmtNum(calc.paybackYears, 1)} yr` : 'Payback N/A', 'Simple payback = CAPEX / EBITDA'],
       ];
       kpiRows.forEach((vals, idx) => {
         const r = ws1.addRow(vals);
@@ -489,7 +504,10 @@ export default function EconomicsHandbookPage() {
         });
       });
 
-      ENGINEERING_DISCLAIMER_ROWS.forEach((dRow) => {
+      const disclaimerRows = isEn
+        ? [[''], ['[Engineering Disclaimer]', ENGINEERING_DISCLAIMER_EN]]
+        : ENGINEERING_DISCLAIMER_ROWS;
+      disclaimerRows.forEach((dRow) => {
         const r = ws1.addRow(dRow);
         if (dRow.length > 1) {
           ws1.mergeCells(r.number, 2, r.number, 5);
@@ -512,7 +530,9 @@ export default function EconomicsHandbookPage() {
 
       ws2.mergeCells('A1:F1');
       const t2 = ws2.getCell('A1');
-      t2.value = `Unit Consumption & Variable Cost Breakdown — ${selectedEntry.nameKo} (${selectedEntry.routeNameKo})`;
+      t2.value = isEn
+        ? `Unit Consumption & Variable Cost Breakdown — ${selectedEntry.nameEn} (${selectedEntry.routeNameEn})`
+        : `Unit Consumption & Variable Cost Breakdown — ${selectedEntry.nameKo} (${selectedEntry.routeNameKo})`;
       t2.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
       t2.fill = NAVY_FILL;
       ws2.getRow(1).height = 26;
@@ -570,7 +590,7 @@ export default function EconomicsHandbookPage() {
       };
 
       writeDetailTable(
-        'A. Raw Materials (원료 원단위)',
+        isEn ? 'A. Raw Materials' : 'A. Raw Materials (원료 원단위)',
         ['Item', 'Unit Consumption', 'Unit / t', 'Unit Price ($/unit)', 'Cost ($/t)', 'Cost (KRW/t)'],
         calc.rawMaterialLines.map((l) => [
           l.note ? `${l.name} (${l.note})` : l.name,
@@ -585,7 +605,7 @@ export default function EconomicsHandbookPage() {
       );
 
       writeDetailTable(
-        'B. Utilities (유틸리티 원단위)',
+        isEn ? 'B. Utilities' : 'B. Utilities (유틸리티 원단위)',
         ['Utility', 'Unit Consumption', 'Unit / t', 'Unit Price ($/unit)', 'Cost ($/t)', 'Cost (KRW/t)'],
         calc.utilityLines.map((l) => [
           l.name,
@@ -601,7 +621,7 @@ export default function EconomicsHandbookPage() {
 
       if (calc.byproductLines.length > 0) {
         writeDetailTable(
-          'C. Byproduct Credits (부산물 크레딧)',
+          isEn ? 'C. Byproduct Credits' : 'C. Byproduct Credits (부산물 크레딧)',
           ['Byproduct', 'Yield / t', 'Unit / t', 'Credit Price ($/unit)', 'Credit ($/t)', 'Credit (KRW/t)'],
           calc.byproductLines.map((l) => [
             l.name,
@@ -624,7 +644,7 @@ export default function EconomicsHandbookPage() {
           'Net Raw ($/t)',
           'Utilities ($/t)',
           'Total Cost ($/t)',
-          'EBITDA (억 원/yr)',
+          isEn ? 'EBITDA (×10⁸ KRW/yr)' : 'EBITDA (억 원/yr)',
         ]);
         ch.eachCell((cell) => {
           cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
@@ -633,7 +653,7 @@ export default function EconomicsHandbookPage() {
         });
         comparableResults.forEach(({ entry, result }, idx) => {
           const r = ws2.addRow([
-            `${entry.routeNameKo} (${entry.routeNameEn})`,
+            isEn ? entry.routeNameEn : `${entry.routeNameKo} (${entry.routeNameEn})`,
             Number(result.totalCapexMUsd.toFixed(1)),
             Number((result.rawMaterialUsdPerT - result.byproductCreditUsdPerT).toFixed(1)),
             Number(result.utilityUsdPerT.toFixed(1)),
@@ -653,7 +673,7 @@ export default function EconomicsHandbookPage() {
         ws2.addRow([]);
       }
 
-      ENGINEERING_DISCLAIMER_ROWS.forEach((dRow) => {
+      disclaimerRows.forEach((dRow) => {
         const r = ws2.addRow(dRow);
         if (dRow.length > 1) {
           ws2.mergeCells(r.number, 2, r.number, 6);
@@ -1139,10 +1159,16 @@ export default function EconomicsHandbookPage() {
                   letterSpacing: '-0.3px',
                 }}
               >
-                {selectedEntry.nameKo}{' '}
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#64748B' }}>
-                  {selectedEntry.nameEn}
-                </span>
+                {isEn ? (
+                  selectedEntry.nameEn
+                ) : (
+                  <>
+                    {selectedEntry.nameKo}{' '}
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#64748B' }}>
+                      {selectedEntry.nameEn}
+                    </span>
+                  </>
+                )}
               </h2>
             </div>
 

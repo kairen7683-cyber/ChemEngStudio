@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import { SIM_COMPS, COMP_META, SolvedStream, type SimCompKey } from '@/lib/calculations/flowsheetSolver';
+import {
+  SIM_COMPS,
+  COMP_META,
+  COMP_LABEL_EN as SOLVER_COMP_LABEL_EN,
+  SolvedStream,
+  type SimCompKey,
+} from '@/lib/calculations/flowsheetSolver';
 import { UnitSelect, useLocalUnit } from '@/components/units/UnitControls';
 import { formatCanonicalValue, fromCanonical, getUnitLabel } from '@/lib/units/unitSystem';
 import { useUnitStore } from '@/lib/stores/unitStore';
@@ -122,6 +128,25 @@ function localizeKeyConcLabel(label: string, isEn: boolean): string {
     .replace(/^액화 Cl₂/, 'Liq Cl₂')
     .replace(/^액화 AHCl/, 'Liq AHCl')
     .replace(/글리세린/g, 'Glycerol');
+}
+
+function localizePortRole(role: string, isEn: boolean): string {
+  if (!isEn) return role;
+  const map: Record<string, string> = {
+    '주배관': 'Main',
+    '상부 기상(G↑)': 'Overhead (G↑)',
+    '상부 기상 (G↑)': 'Overhead (G↑)',
+    '하부 액상(L↓)': 'Bottoms (L↓)',
+    '하부 액상 (L↓)': 'Bottoms (L↓)',
+    '측류(S→)': 'Side-Cut (S→)',
+    '사이드컷 측류(Side-Cut S)': 'Side-Cut (S)',
+    '디캔터 수층(Decanter)': 'Decanter Aqueous',
+    '양극 출구(Anode)': 'Anode Outlet',
+    '음극 출구(Cathode)': 'Cathode Outlet',
+    '냉매/열매 유입': 'Utility In',
+    '냉매/열매 출구': 'Utility Out',
+  };
+  return map[role] ?? role;
 }
 
 export default function HorizontalFlowsheetStreamTable({
@@ -397,7 +422,7 @@ export default function HorizontalFlowsheetStreamTable({
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                     }}
-                    title={`${s.fromTag} → ${s.toTag} (${s.portRole})`}
+                    title={`${s.fromTag} → ${s.toTag} (${localizePortRole(s.portRole, isEn)})`}
                   >
                     {s.fromTag}→{s.toTag}
                   </div>
@@ -673,7 +698,9 @@ export default function HorizontalFlowsheetStreamTable({
           {visibleComps.map((comp, idx) => {
             const bg = idx % 2 === 0 ? '#FFFFFF' : '#FAF9F5';
             const massLabel = getUnitLabel('massFlow', massUnit);
-            const compLabel = isEn ? COMP_LABEL_EN[comp] ?? COMP_META[comp].formula : COMP_META[comp].label;
+            const compLabel = isEn
+              ? COMP_LABEL_EN[comp] ?? SOLVER_COMP_LABEL_EN[comp] ?? COMP_META[comp].formula
+              : COMP_META[comp].label;
             return (
               <tr key={comp}>
                 <td style={stickyRowLabel(bg, false, true)} title={compLabel}>

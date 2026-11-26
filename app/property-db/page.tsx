@@ -14,9 +14,11 @@ import {
   normalizeSearchText,
 } from '@/lib/physicalProperties';
 import { useBalanceStore } from '@/lib/stores/balanceStore';
+import { useUnitStore } from '@/lib/stores/unitStore';
 import { getPlantRegistryItem } from '@/lib/plantRegistry';
 import {
   COMP_CATALOG_META,
+  type CompChemicalFamily,
   type ResolvedPropertyMethod,
 } from '@/lib/calculations/componentCatalog';
 import { SIM_COMPS, type SimCompKey } from '@/lib/calculations/flowsheetSolver';
@@ -43,8 +45,11 @@ type PlotMetricKey = 'psat' | 'rho' | 'mu' | 'cp' | 'k';
 interface ThermoMethodInfo {
   code: ThermoMethodCode;
   name: string;
+  nameEn: string;
   shortTag: string;
+  shortTagEn: string;
   bestFor: string;
+  bestForEn: string;
   eqText: string;
   vleModel: string;
   /** 플로우시트 계산 엔진에 실제 구현·적용된 모델인지 여부 (false = 참고용 설명만 제공) */
@@ -55,17 +60,23 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
   ELECNRTL: {
     code: 'ELECNRTL',
     name: 'Electrolyte NRTL + Redlich-Kwong EOS (전해질 수용액 표준)',
+    nameEn: 'Electrolyte NRTL + Redlich-Kwong EOS (Aqueous Electrolytes)',
     shortTag: '강전해질 이온활동도 · 비점오름 표준',
+    shortTagEn: 'Strong Electrolyte Activity · BPR Standard',
     bestFor: 'NaOH(가성소다), NaCl(브라인), KOH, H₂SO₄(황산), HCl 등 강전해질 수용액의 이온 활동도계수, 비점오름(BPR), 증기압 강하 정밀 계산',
-    eqText: 'ln γ_i = ln γ_i^{PDH} (Pitzer-Debye-Hückel 장거리 정전기항) + ln γ_i^{Born} + ln γ_i^{NRTL} (단거리 이온-분자 상호작용항)',
+    bestForEn: 'Rigorous ionic activity coefficients, boiling point rise (BPR), and vapor pressure depression for strong aqueous electrolytes (NaOH, NaCl, KOH, H₂SO₄, HCl)',
+    eqText: 'ln γ_i = ln γ_i^{PDH} (Pitzer-Debye-Hückel) + ln γ_i^{Born} + ln γ_i^{NRTL} (short-range ion-molecule interaction)',
     vleModel: 'Dühring-Pitzer Ion Interaction & Bromley BPR Correlation',
     engineApplied: true,
   },
   NRTL: {
     code: 'NRTL',
     name: 'Non-Random Two-Liquid Activity Model (비이상성 액상 활동도 모델)',
+    nameEn: 'Non-Random Two-Liquid Activity Model (Non-Ideal Liquid Phase)',
     shortTag: '극성 액체 혼합물 · 공비/LLE 활동도 모델',
+    shortTagEn: 'Polar Liquid Mixtures · Azeotrope / LLE',
     bestFor: '극성 유기물(알코올·케톤·염소계 용제·ECH·MCB·아닐린) 및 수용액의 단거리 분자 상호작용 기반 기액평형(VLE) 및 액-액 분리 계산',
+    bestForEn: 'VLE and liquid-liquid equilibrium (LLE) for polar organics (alcohols, ketones, chlorinated solvents, ECH, MCB, aniline) and aqueous mixtures',
     eqText: 'ln γ_1 = x_2² [ τ_21 (G_21 / (x_1 + x_2 G_21))² + τ_12 G_12 / (x_2 + x_1 G_12)² ],  G_ij = exp(-α_ij τ_ij)',
     vleModel: 'Modified Raoult-NRTL (y_i Φ_i P = x_i γ_i P_i^{sat})',
     engineApplied: true,
@@ -73,8 +84,11 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
   'PENG-ROB': {
     code: 'PENG-ROB',
     name: 'Peng-Robinson Cubic EOS (염소·클로로메탄·탄화수소 상태방정식 표준)',
+    nameEn: 'Peng-Robinson Cubic EOS (Chlorine · Chloromethanes · Hydrocarbons)',
     shortTag: '염소(Cl₂) · CMS · 탄화수소 · 고압가스 EOS 표준',
+    shortTagEn: 'Cl₂ · CMS · Hydrocarbons · High-Press. Gas EOS',
     bestFor: '염소(Cl₂) 압축·액화, 클로로메탄(CH₃Cl·CH₂Cl₂·CHCl₃), 탄화수소·방향족·고압 가스의 압축인자(Z)·실제기체 밀도·퓨개시티 계산',
+    bestForEn: 'Compressibility (Z), real-gas density, and fugacity for Cl₂ compression/liquefaction, chloromethanes, hydrocarbons, aromatics, and high-pressure gases',
     eqText: 'P = RT/(V_m - b) - a·α(T, ω)/[V_m(V_m + b) + b(V_m - b)],  κ = 0.37464 + 1.54226ω - 0.26992ω²',
     vleModel: 'Equation-of-State Fugacity Equality (φ_i^V = φ_i^L)',
     engineApplied: true,
@@ -82,8 +96,11 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
   SRK: {
     code: 'SRK',
     name: 'Soave-Redlich-Kwong Cubic EOS (수소 · 합성가스 · 경질 탄화수소 상태방정식)',
+    nameEn: 'Soave-Redlich-Kwong Cubic EOS (H₂ · Syngas · Light Hydrocarbons)',
     shortTag: '수소(H₂) · 합성가스 · 경질 탄화수소 EOS 표준',
+    shortTagEn: 'H₂ · Syngas · Light Hydrocarbons EOS',
     bestFor: '수전해/전해 고압 수소(H₂, Graboski-Daubert 보정), 합성가스(CO·CH₄), 에틸렌·프로필렌 등 경질 올레핀 및 탄화수소 기액평형 정밀 계산',
+    bestForEn: 'VLE and gas properties for high-pressure H₂ (Graboski-Daubert quantum correction), syngas (CO, CH₄), and light olefins/hydrocarbons',
     eqText: 'P = RT/(V_m - b) - a·α(T)/[V_m(V_m + b)],  α(T) = [1 + (0.480 + 1.574ω - 0.176ω²)(1 - √T_r)]²,  α_{H2} = 1.202 exp(-0.30228 T_r)',
     vleModel: 'Soave-Graboski-Daubert Fugacity Equality (φ_i^V = φ_i^L)',
     engineApplied: true,
@@ -91,8 +108,11 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
   'STEAM-IAPWS': {
     code: 'STEAM-IAPWS',
     name: 'IAPWS-IF97 Industrial Water & Steam Formulation (순수 · 냉각수 · 스팀 유틸리티)',
+    nameEn: 'IAPWS-IF97 Industrial Water & Steam Formulation (Water · CW · Steam)',
     shortTag: '스팀(LP/MP/HP) · 냉각수 · 칠드워터 수증기 표준',
+    shortTagEn: 'LP/MP/HP Steam · CW · Chilled Water Standard',
     bestFor: '공정 순수(Process Water), 냉각수(CW), 칠드워터(CHW), 저압/중압/고압 가열 스팀 및 응축수 물성 계산',
+    bestForEn: 'Process water, cooling water (CW), chilled water (CHW), LP/MP/HP heating steam, and condensate properties',
     eqText: 'g(p, T)/(R·T) = γ^0(π, τ) + γ^r(π, τ)  [IAPWS-IF97 Region 1~4 Gibbs/Helmholtz Energy]',
     vleModel: 'Wagner Pure Water Saturation Pressure Equation',
     engineApplied: false,
@@ -102,6 +122,7 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
 interface ElectrolyteSystemEntry {
   key: string;
   name: string;
+  nameEn: string;
   formula: string;
   cas: string;
   aliases: string[];
@@ -110,131 +131,142 @@ interface ElectrolyteSystemEntry {
 }
 
 const ELECTROLYTE_SYSTEMS: ElectrolyteSystemEntry[] = [
-  { key: 'elec_naoh',  name: '가성소다 수용액 (NaOH — H₂O, 5~52 wt%)', formula: 'NaOH(aq)', cas: '1310-73-2', aliases: ['NaOH', '가성소다', 'Caustic', 'ENRTL'], defaultWt: 32.0, defaultT: 90.0 },
-  { key: 'elec_nacl',  name: '염화나트륨 브라인 (NaCl — H₂O, 5~26 wt%)', formula: 'NaCl(aq)', cas: '7647-14-5', aliases: ['NaCl', 'Brine', '브라인', '원염', 'ENRTL'], defaultWt: 25.5, defaultT: 70.0 },
-  { key: 'elec_koh',   name: '수산화칼륨 전해액 (KOH — H₂O, 5~50 wt%)', formula: 'KOH(aq)', cas: '1310-58-3', aliases: ['KOH', '수산화칼륨', 'ENRTL'], defaultWt: 30.0, defaultT: 80.0 },
-  { key: 'elec_h2so4', name: '황산 수용액 (H₂SO₄ — H₂O, 50~98 wt%)', formula: 'H₂SO₄(aq)', cas: '7664-93-9', aliases: ['H2SO4', '황산', 'Sulfuric Acid', 'ENRTL'], defaultWt: 98.0, defaultT: 35.0 },
-  { key: 'elec_hcl',   name: 'HCl–H₂O 압력변동 공비계 (5~37 wt% · PSD · eNRTL)', formula: 'HCl(aq)', cas: '7647-01-0', aliases: ['HCl', '염산', 'PSD', '공비염산', 'ENRTL'], defaultWt: 35.0, defaultT: 40.0 },
-  { key: 'elec_fecl3', name: '염화제이철 수용액 (FeCl₃ — H₂O, 10~45 wt%)', formula: 'FeCl₃(aq)', cas: '7705-08-0', aliases: ['FeCl3', '염화제이철', '에칭액', 'ENRTL'], defaultWt: 40.0, defaultT: 45.0 },
-  { key: 'elec_naocl', name: '차아염소산소다 수용액 (NaOCl — H₂O, 5~26 wt%)', formula: 'NaOCl(aq)', cas: '7681-52-9', aliases: ['NaOCl', '차아염소산소다', '하이포', 'ENRTL'], defaultWt: 12.0, defaultT: 22.0 },
+  { key: 'elec_naoh',  name: '가성소다 수용액 (NaOH — H₂O, 5~52 wt%)', nameEn: 'Caustic Soda Aqueous (NaOH — H₂O, 5–52 wt%)', formula: 'NaOH(aq)', cas: '1310-73-2', aliases: ['NaOH', '가성소다', 'Caustic', 'ENRTL'], defaultWt: 32.0, defaultT: 90.0 },
+  { key: 'elec_nacl',  name: '염화나트륨 브라인 (NaCl — H₂O, 5~26 wt%)', nameEn: 'Sodium Chloride Brine (NaCl — H₂O, 5–26 wt%)', formula: 'NaCl(aq)', cas: '7647-14-5', aliases: ['NaCl', 'Brine', '브라인', '원염', 'ENRTL'], defaultWt: 25.5, defaultT: 70.0 },
+  { key: 'elec_koh',   name: '수산화칼륨 전해액 (KOH — H₂O, 5~50 wt%)', nameEn: 'Potassium Hydroxide Electrolyte (KOH — H₂O, 5–50 wt%)', formula: 'KOH(aq)', cas: '1310-58-3', aliases: ['KOH', '수산화칼륨', 'ENRTL'], defaultWt: 30.0, defaultT: 80.0 },
+  { key: 'elec_h2so4', name: '황산 수용액 (H₂SO₄ — H₂O, 50~98 wt%)', nameEn: 'Sulfuric Acid Aqueous (H₂SO₄ — H₂O, 50–98 wt%)', formula: 'H₂SO₄(aq)', cas: '7664-93-9', aliases: ['H2SO4', '황산', 'Sulfuric Acid', 'ENRTL'], defaultWt: 98.0, defaultT: 35.0 },
+  { key: 'elec_hcl',   name: 'HCl–H₂O 압력변동 공비계 (5~37 wt% · PSD · eNRTL)', nameEn: 'HCl–H₂O Pressure-Swing Azeotropic System (5–37 wt% · PSD · eNRTL)', formula: 'HCl(aq)', cas: '7647-01-0', aliases: ['HCl', '염산', 'PSD', '공비염산', 'ENRTL'], defaultWt: 35.0, defaultT: 40.0 },
+  { key: 'elec_fecl3', name: '염화제이철 수용액 (FeCl₃ — H₂O, 10~45 wt%)', nameEn: 'Ferric Chloride Aqueous (FeCl₃ — H₂O, 10–45 wt%)', formula: 'FeCl₃(aq)', cas: '7705-08-0', aliases: ['FeCl3', '염화제이철', '에칭액', 'ENRTL'], defaultWt: 40.0, defaultT: 45.0 },
+  { key: 'elec_naocl', name: '차아염소산소다 수용액 (NaOCl — H₂O, 5~26 wt%)', nameEn: 'Sodium Hypochlorite Aqueous (NaOCl — H₂O, 5–26 wt%)', formula: 'NaOCl(aq)', cas: '7681-52-9', aliases: ['NaOCl', '차아염소산소다', '하이포', 'ENRTL'], defaultWt: 12.0, defaultT: 22.0 },
 ];
 
 // ── 물질별 적용 가능 열역학 모델 매핑 ──
 interface SubstanceCompatSpec {
   categoryLabel: string;
+  categoryLabelEn: string;
   compatibleMethods: ThermoMethodCode[];
   defaultMethod: ThermoMethodCode;
   fixedOrDefaultWt?: number;
   allowsConcEdit: boolean;
   /** 권장 배관/장치 내식 재질 */
   recommendedMaterial?: string;
+  recommendedMaterialEn?: string;
 }
 
 const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
   // 1) 가변 농도 강전해질 수용액 시스템
-  elec_naoh:     { categoryLabel: '강전해질 알칼리 수용액', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 32.0, allowsConcEdit: true },
-  elec_nacl:     { categoryLabel: '강전해질 염수(Brine) 수용액', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.5, allowsConcEdit: true },
-  elec_koh:      { categoryLabel: '강전해질 수산화칼륨 수용액', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 30.0, allowsConcEdit: true },
-  elec_h2so4:    { categoryLabel: '강산 전해질 수용액 (황산)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 98.0, allowsConcEdit: true },
-  elec_hcl:      { categoryLabel: 'HCl–H₂O 압력변동 공비계 (PSD · eNRTL)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: true },
-  elec_fecl3:    { categoryLabel: '금속염화물 수용액 (FeCl₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: true },
-  elec_naocl:    { categoryLabel: '산화성 차아염소산소다 수용액 (NaOCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 12.0, allowsConcEdit: true },
+  elec_naoh:     { categoryLabel: '강전해질 알칼리 수용액', categoryLabelEn: 'Strong Electrolyte Alkaline Aqueous', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 32.0, allowsConcEdit: true },
+  elec_nacl:     { categoryLabel: '강전해질 염수(Brine) 수용액', categoryLabelEn: 'Strong Electrolyte Brine Solution', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.5, allowsConcEdit: true },
+  elec_koh:      { categoryLabel: '강전해질 수산화칼륨 수용액', categoryLabelEn: 'Strong Electrolyte KOH Solution', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 30.0, allowsConcEdit: true },
+  elec_h2so4:    { categoryLabel: '강산 전해질 수용액 (황산)', categoryLabelEn: 'Strong Acid Electrolyte (H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 98.0, allowsConcEdit: true },
+  elec_hcl:      { categoryLabel: 'HCl–H₂O 압력변동 공비계 (PSD · eNRTL)', categoryLabelEn: 'HCl–H₂O Pressure-Swing Azeotrope (PSD · eNRTL)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: true },
+  elec_fecl3:    { categoryLabel: '금속염화물 수용액 (FeCl₃)', categoryLabelEn: 'Metal Chloride Aqueous (FeCl₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: true },
+  elec_naocl:    { categoryLabel: '산화성 차아염소산소다 수용액 (NaOCl)', categoryLabelEn: 'Oxidizing NaOCl Aqueous Solution', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 12.0, allowsConcEdit: true },
 
   // 2) 공정 가스 & 산업가스
-  cl2_gas:       { categoryLabel: '압축·액화성 할로겐 공정가스', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ahcl_gas:      { categoryLabel: '초고순도 5N 무수염화수소 가스 (AHCl)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  h2_gas:        { categoryLabel: '경질 비응축성 공정가스 (수소)', compatibleMethods: ['SRK', 'PENG-ROB'], defaultMethod: 'SRK', allowsConcEdit: false },
-  n2_gas:        { categoryLabel: '불활성 퍼지 산업가스 (질소)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  nitrogen_air:  { categoryLabel: '유틸리티 · 질소 퍼지 / 계장공기', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  air:           { categoryLabel: '유틸리티 · 계장/공정 압축공기', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  cl2_gas:       { categoryLabel: '압축·액화성 할로겐 공정가스', categoryLabelEn: 'Compressible / Liquefiable Halogen Gas', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ahcl_gas:      { categoryLabel: '초고순도 5N 무수염화수소 가스 (AHCl)', categoryLabelEn: '5N Ultra-Pure Anhydrous HCl Gas (AHCl)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  h2_gas:        { categoryLabel: '경질 비응축성 공정가스 (수소)', categoryLabelEn: 'Light Non-Condensable Gas (Hydrogen)', compatibleMethods: ['SRK', 'PENG-ROB'], defaultMethod: 'SRK', allowsConcEdit: false },
+  n2_gas:        { categoryLabel: '불활성 퍼지 산업가스 (질소)', categoryLabelEn: 'Inert Purge Industrial Gas (Nitrogen)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  nitrogen_air:  { categoryLabel: '유틸리티 · 질소 퍼지 / 계장공기', categoryLabelEn: 'Utility · Nitrogen Purge / Instrument Air', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  air:           { categoryLabel: '유틸리티 · 계장/공정 압축공기', categoryLabelEn: 'Utility · Instrument / Process Air', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
 
   // 3) 순수 · 냉각수 · 칠드워터 · 스팀 유틸리티
-  process_water: { categoryLabel: '유틸리티 · 순수/공정수', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  cooling_water: { categoryLabel: '유틸리티 · 냉각수(CW)', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  chilled_water: { categoryLabel: '유틸리티 · 칠드워터(CHW)', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  steam_lp:      { categoryLabel: '유틸리티 · 저압 스팀 (LP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  steam_mp:      { categoryLabel: '유틸리티 · 중압 스팀 (MP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  steam_hp:      { categoryLabel: '유틸리티 · 고압 스팀 (HP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
-  dowtherm_a:    { categoryLabel: '유틸리티 · 고온 열매유 (Dowtherm A)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (무수 고온 운전)' },
-  therminol_66:  { categoryLabel: '유틸리티 · 고온 무가압 열매유 (Therminol 66)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (0~345°C 무가압 열매체)' },
-  brine_coolant: { categoryLabel: '유틸리티 · 심냉 브라인 (-20°C)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
+  process_water: { categoryLabel: '유틸리티 · 순수/공정수', categoryLabelEn: 'Utility · Demineralized / Process Water', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  cooling_water: { categoryLabel: '유틸리티 · 냉각수(CW)', categoryLabelEn: 'Utility · Cooling Water (CW)', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  chilled_water: { categoryLabel: '유틸리티 · 칠드워터(CHW)', categoryLabelEn: 'Utility · Chilled Water (CHW)', compatibleMethods: ['STEAM-IAPWS', 'NRTL'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  steam_lp:      { categoryLabel: '유틸리티 · 저압 스팀 (LP Steam)', categoryLabelEn: 'Utility · Low-Pressure Steam (LP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  steam_mp:      { categoryLabel: '유틸리티 · 중압 스팀 (MP Steam)', categoryLabelEn: 'Utility · Medium-Pressure Steam (MP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  steam_hp:      { categoryLabel: '유틸리티 · 고압 스팀 (HP Steam)', categoryLabelEn: 'Utility · High-Pressure Steam (HP Steam)', compatibleMethods: ['STEAM-IAPWS', 'PENG-ROB'], defaultMethod: 'STEAM-IAPWS', allowsConcEdit: false },
+  dowtherm_a:    { categoryLabel: '유틸리티 · 고온 열매유 (Dowtherm A)', categoryLabelEn: 'Utility · High-Temp Heat Transfer Fluid (Dowtherm A)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (무수 고온 운전)', recommendedMaterialEn: 'CS / SS316L (Anhydrous High-Temp Service)' },
+  therminol_66:  { categoryLabel: '유틸리티 · 고온 무가압 열매유 (Therminol 66)', categoryLabelEn: 'Utility · Unpressurized Thermal Oil (Therminol 66)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (0~345°C 무가압 열매체)', recommendedMaterialEn: 'CS / SS316L (0–345°C Unpressurized Thermal Fluid)' },
+  brine_coolant: { categoryLabel: '유틸리티 · 심냉 브라인 (-20°C)', categoryLabelEn: 'Utility · Cryogenic Brine (-20°C)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
 
   // 4) 표준 농도 무기/전해질 수용액
-  brine_25:      { categoryLabel: '표준 염화나트륨 브라인 (25 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
-  brine_15:      { categoryLabel: '희박 염화나트륨 브라인 (15 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 15.0, allowsConcEdit: false },
-  brine_fed:     { categoryLabel: '정제 포화 브라인 (26 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 26.0, allowsConcEdit: false },
-  naoh_32:       { categoryLabel: '표준 가성소다 수용액 (32 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 32.0, allowsConcEdit: false },
-  naoh_50:       { categoryLabel: '고농도 가성소다 수용액 (50 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 50.0, allowsConcEdit: false },
-  h2so4_60:      { categoryLabel: '황산 수용액 (60 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 60.0, allowsConcEdit: false },
-  h2so4_91:      { categoryLabel: '진한 황산 수용액 (91 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 91.0, allowsConcEdit: false },
-  h2so4_94:      { categoryLabel: '진한 황산 수용액 (94 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 94.0, allowsConcEdit: false },
-  h2so4_98:      { categoryLabel: '진한 보충 황산 (98 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 98.0, allowsConcEdit: false },
-  hcl_31:        { categoryLabel: '염산 표준 수용액 (31 wt% HCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 31.0, allowsConcEdit: false },
-  catholyte:     { categoryLabel: '가성소다 순환 수용액 (33 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 33.0, allowsConcEdit: false },
-  anolyte:       { categoryLabel: '탈염 브라인 수용액 (16 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 16.0, allowsConcEdit: false },
+  brine_25:      { categoryLabel: '표준 염화나트륨 브라인 (25 wt% NaCl)', categoryLabelEn: 'Standard NaCl Brine (25 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
+  brine_15:      { categoryLabel: '희박 염화나트륨 브라인 (15 wt% NaCl)', categoryLabelEn: 'Dilute NaCl Brine (15 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 15.0, allowsConcEdit: false },
+  brine_fed:     { categoryLabel: '정제 포화 브라인 (26 wt% NaCl)', categoryLabelEn: 'Purified Saturated Brine (26 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 26.0, allowsConcEdit: false },
+  naoh_32:       { categoryLabel: '표준 가성소다 수용액 (32 wt% NaOH)', categoryLabelEn: 'Standard Caustic Soda (32 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 32.0, allowsConcEdit: false },
+  naoh_50:       { categoryLabel: '고농도 가성소다 수용액 (50 wt% NaOH)', categoryLabelEn: 'Concentrated Caustic Soda (50 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 50.0, allowsConcEdit: false },
+  h2so4_60:      { categoryLabel: '황산 수용액 (60 wt% H₂SO₄)', categoryLabelEn: 'Sulfuric Acid Solution (60 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 60.0, allowsConcEdit: false },
+  h2so4_91:      { categoryLabel: '진한 황산 수용액 (91 wt% H₂SO₄)', categoryLabelEn: 'Concentrated Sulfuric Acid (91 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 91.0, allowsConcEdit: false },
+  h2so4_94:      { categoryLabel: '진한 황산 수용액 (94 wt% H₂SO₄)', categoryLabelEn: 'Concentrated Sulfuric Acid (94 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 94.0, allowsConcEdit: false },
+  h2so4_98:      { categoryLabel: '진한 보충 황산 (98 wt% H₂SO₄)', categoryLabelEn: 'Make-up Concentrated Sulfuric Acid (98 wt% H₂SO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 98.0, allowsConcEdit: false },
+  hcl_31:        { categoryLabel: '염산 표준 수용액 (31 wt% HCl)', categoryLabelEn: 'Standard Hydrochloric Acid (31 wt% HCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 31.0, allowsConcEdit: false },
+  catholyte:     { categoryLabel: '가성소다 순환 수용액 (33 wt% NaOH)', categoryLabelEn: 'Caustic Catholyte Loop (33 wt% NaOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 33.0, allowsConcEdit: false },
+  anolyte:       { categoryLabel: '탈염 브라인 수용액 (16 wt% NaCl)', categoryLabelEn: 'Depleted Brine Anolyte (16 wt% NaCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 16.0, allowsConcEdit: false },
 
   // 5) 냉매 및 심냉 브라인
-  ref_r134a:      { categoryLabel: 'HFC 표준 냉매 (칠러·중온 액화)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r404a:      { categoryLabel: 'HFC 혼합 심냉 냉매 (R-404A)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r507a:      { categoryLabel: 'HFC 공비 심냉 냉매 (Glide 0°C)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r410a:      { categoryLabel: 'HFC 고압 냉동기 냉매 (R-410A)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r22:        { categoryLabel: 'HCFC 표준 액화 냉매 (R-22)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r32:        { categoryLabel: '저GWP 단일성분 고효율 냉매', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r1234yf:    { categoryLabel: '차세대 친환경 초저GWP HFO 냉매', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r1234ze:    { categoryLabel: '친환경 터보칠러·히트펌프 HFO 냉매', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r717:       { categoryLabel: '자연냉매 암모니아 (대용량 산업냉동)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r1270:      { categoryLabel: '탄화수소 심냉 냉매 (프로필렌)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  ref_r744:       { categoryLabel: '자연냉매 이산화탄소 (초저온 캐스케이드)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  brine_eg40:     { categoryLabel: '2차 간접 냉매 브라인 (에틸렌글리콜 40 wt%)', compatibleMethods: ['NRTL', 'ELECNRTL'], defaultMethod: 'NRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
-  brine_cacl2_25: { categoryLabel: '2차 심냉 염화칼슘 브라인 (25 wt% CaCl₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
+  ref_r134a:      { categoryLabel: 'HFC 표준 냉매 (칠러·중온 액화)', categoryLabelEn: 'HFC Standard Refrigerant (Chiller / Med-Temp)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r404a:      { categoryLabel: 'HFC 혼합 심냉 냉매 (R-404A)', categoryLabelEn: 'HFC Low-Temp Blend Refrigerant (R-404A)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r507a:      { categoryLabel: 'HFC 공비 심냉 냉매 (Glide 0°C)', categoryLabelEn: 'HFC Azeotropic Cryo Refrigerant (Glide 0°C)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r410a:      { categoryLabel: 'HFC 고압 냉동기 냉매 (R-410A)', categoryLabelEn: 'HFC High-Pressure Refrigerant (R-410A)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r22:        { categoryLabel: 'HCFC 표준 액화 냉매 (R-22)', categoryLabelEn: 'HCFC Standard Refrigerant (R-22)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r32:        { categoryLabel: '저GWP 단일성분 고효율 냉매', categoryLabelEn: 'Low-GWP Single-Component Refrigerant (R-32)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r1234yf:    { categoryLabel: '차세대 친환경 초저GWP HFO 냉매', categoryLabelEn: 'Ultra-Low GWP HFO Refrigerant (R-1234yf)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r1234ze:    { categoryLabel: '친환경 터보칠러·히트펌프 HFO 냉매', categoryLabelEn: 'HFO Turbo Chiller / Heat Pump Refrigerant (R-1234ze)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r717:       { categoryLabel: '자연냉매 암모니아 (대용량 산업냉동)', categoryLabelEn: 'Natural Refrigerant Ammonia (Industrial)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r1270:      { categoryLabel: '탄화수소 심냉 냉매 (프로필렌)', categoryLabelEn: 'Hydrocarbon Cryo Refrigerant (Propylene)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  ref_r744:       { categoryLabel: '자연냉매 이산화탄소 (초저온 캐스케이드)', categoryLabelEn: 'Natural Refrigerant CO₂ (Cascade)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  brine_eg40:     { categoryLabel: '2차 간접 냉매 브라인 (에틸렌글리콜 40 wt%)', categoryLabelEn: 'Secondary Coolant (Ethylene Glycol 40 wt%)', compatibleMethods: ['NRTL', 'ELECNRTL'], defaultMethod: 'NRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
+  brine_cacl2_25: { categoryLabel: '2차 심냉 염화칼슘 브라인 (25 wt% CaCl₂)', categoryLabelEn: 'Secondary Cryo Brine (25 wt% CaCl₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
 
   // 6) 무기염화물 · 염산 공비계 · 유기염소 중간체
-  ahcl_liq:      { categoryLabel: '고압 액화 무수염산 (Liquid AHCl)', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
-  hcl_35_up:     { categoryLabel: '초고순도 염산 수용액 (35 wt% HCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false },
-  hcl_20_azeo:   { categoryLabel: 'HCl–H₂O 압력변동 공비계 (20.2 wt% · PSD · eNRTL)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 20.2, allowsConcEdit: false },
-  naocl_12:      { categoryLabel: '차아염소산소다 표준액 (12 wt% NaOCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 12.0, allowsConcEdit: false },
-  naocl_25_hs:   { categoryLabel: '고농도 저염 차아염소산소다 (25 wt% NaOCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
-  naclo3_40:     { categoryLabel: '염소산소다 수용액 (40 wt% NaClO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
-  fecl2_28:      { categoryLabel: '염화제일철 수용액 (28 wt% FeCl₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 28.0, allowsConcEdit: false },
-  fecl3_40:      { categoryLabel: '염화제이철 수용액 (40 wt% FeCl₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
-  pac_17:        { categoryLabel: '폴리염화알루미늄 수용액 (PAC 17%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 17.0, allowsConcEdit: false },
-  glycerol:      { categoryLabel: '정제 글리세롤 (Glycerol · NRTL 비이상계)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  mch_3:         { categoryLabel: '모노클로로히드린 중간체 (3-MCH)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  dch_13:        { categoryLabel: '1,3-디클로로히드린 (1,3-DCH)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  ech_pure:      { categoryLabel: '에피클로로히드린 (ECH · 물 불균일공비 88°C)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  dcp_12:        { categoryLabel: '1,2-디클로로프로판 (1,2-DCP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  acetic_cat:    { categoryLabel: '빙초산 (Glacial Acetic Acid)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
-  aibn_initiator:{ categoryLabel: 'AIBN 라디칼 개시제 (Azobisisobutyronitrile)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  ahcl_liq:      { categoryLabel: '고압 액화 무수염산 (Liquid AHCl)', categoryLabelEn: 'High-Pressure Liquefied Anhydrous HCl', compatibleMethods: ['PENG-ROB', 'SRK'], defaultMethod: 'PENG-ROB', allowsConcEdit: false },
+  hcl_35_up:     { categoryLabel: '초고순도 염산 수용액 (35 wt% HCl)', categoryLabelEn: 'Ultra-Pure Hydrochloric Acid (35 wt% HCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false },
+  hcl_20_azeo:   { categoryLabel: 'HCl–H₂O 압력변동 공비계 (20.2 wt% · PSD · eNRTL)', categoryLabelEn: 'HCl–H₂O Pressure-Swing Azeotrope (20.2 wt% · PSD · eNRTL)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 20.2, allowsConcEdit: false },
+  naocl_12:      { categoryLabel: '차아염소산소다 표준액 (12 wt% NaOCl)', categoryLabelEn: 'Standard Sodium Hypochlorite (12 wt% NaOCl)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 12.0, allowsConcEdit: false },
+  naocl_25_hs:   { categoryLabel: '고농도 저염 차아염소산소다 (25 wt% NaOCl)', categoryLabelEn: 'High-Strength Low-Salt NaOCl (25 wt%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false },
+  naclo3_40:     { categoryLabel: '염소산소다 수용액 (40 wt% NaClO₃)', categoryLabelEn: 'Sodium Chlorate Aqueous (40 wt% NaClO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
+  fecl2_28:      { categoryLabel: '염화제일철 수용액 (28 wt% FeCl₂)', categoryLabelEn: 'Ferrous Chloride Aqueous (28 wt% FeCl₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 28.0, allowsConcEdit: false },
+  fecl3_40:      { categoryLabel: '염화제이철 수용액 (40 wt% FeCl₃)', categoryLabelEn: 'Ferric Chloride Aqueous (40 wt% FeCl₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 40.0, allowsConcEdit: false },
+  pac_17:        { categoryLabel: '폴리염화알루미늄 수용액 (PAC 17%)', categoryLabelEn: 'Polyaluminum Chloride Aqueous (PAC 17%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 17.0, allowsConcEdit: false },
+  glycerol:      { categoryLabel: '정제 글리세롤 (Glycerol · NRTL 비이상계)', categoryLabelEn: 'Refined Glycerol (NRTL Non-Ideal)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  mch_3:         { categoryLabel: '모노클로로히드린 중간체 (3-MCH)', categoryLabelEn: 'Monochlorohydrin Intermediate (3-MCH)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  dch_13:        { categoryLabel: '1,3-디클로로히드린 (1,3-DCH)', categoryLabelEn: '1,3-Dichlorohydrin (1,3-DCH)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  ech_pure:      { categoryLabel: '에피클로로히드린 (ECH · 물 불균일공비 88°C)', categoryLabelEn: 'Epichlorohydrin (ECH · Water Heteroazeotrope 88°C)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  dcp_12:        { categoryLabel: '1,2-디클로로프로판 (1,2-DCP)', categoryLabelEn: '1,2-Dichloropropane (1,2-DCP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  acetic_cat:    { categoryLabel: '빙초산 (Glacial Acetic Acid)', categoryLabelEn: 'Glacial Acetic Acid', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
+  aibn_initiator:{ categoryLabel: 'AIBN 라디칼 개시제 (Azobisisobutyronitrile)', categoryLabelEn: 'AIBN Radical Initiator (Azobisisobutyronitrile)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false },
 
   // 7) 국내 중소·중견 화학·반도체·이차전지 핵심 공정 약품 (11종 순수성분 + 6종 공업용 표준 수용액)
-  H2O2:          { categoryLabel: '산화성 무기액체 · 과산화수소 (H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE' },
-  H3PO4:         { categoryLabel: '고점도 무기산 · 인산 (H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE' },
-  HF:            { categoryLabel: '강부식성 할로겐산 · 불화수소 (HF)', compatibleMethods: ['ELECNRTL', 'NRTL', 'PENG-ROB'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276 (유리·SS 엄금)' },
-  KOH:           { categoryLabel: '강알칼리 전해질 · 수산화칼륨 (KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200 (Al·Zn 엄금)' },
-  NH4OH:         { categoryLabel: '휘발성 알칼리 수용액 · 암모니아수 (NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)' },
-  TMAH:          { categoryLabel: '반도체·디스플레이 유기 강알칼리 현상액 (TMAH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA' },
-  NMP:           { categoryLabel: '이차전지 양극재 슬러리 극성 비양성자 용매 (NMP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE (EPDM·Viton 주의)' },
-  BCS:           { categoryLabel: '글리콜에테르 도료·세정 용제 (부틸셀로솔브 · BCS)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE' },
-  Na2CO3:        { categoryLabel: '무기 알칼리 염 · 탄산나트륨 (소다회)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / FRP' },
-  NaHSO3:        { categoryLabel: '수처리 잔류염소 환원제 · 중아황산나트륨 (NaHSO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PE' },
-  CaOH2:         { categoryLabel: '폐수 중화·탈황 알칼리 · 수산화칼슘 (소석회)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / 고무라이닝 (슬러리 침강 주의)' },
-  h2o2_35:       { categoryLabel: '과산화수소수 공업용 표준액 (35 wt% H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE' },
-  h3po4_85:      { categoryLabel: '인산 공업용·식각용 표준액 (85 wt% H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 85.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE' },
-  hf_49:         { categoryLabel: '불산 반도체·산세 표준액 (49 wt% HF)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 49.0, allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276' },
-  koh_45:        { categoryLabel: '액상 수산화칼륨 표준액 (45 wt% KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 45.0, allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200' },
-  nh4oh_28:      { categoryLabel: '암모니아수 공업용 표준액 (28 wt% NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 28.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)' },
-  tmah_25:       { categoryLabel: 'TMAH 반도체·디스플레이 현상액 (25 wt%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA' },
+  H2O2:          { categoryLabel: '산화성 무기액체 · 과산화수소 (H₂O₂)', categoryLabelEn: 'Oxidizing Inorganic Liquid · Hydrogen Peroxide (H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE', recommendedMaterialEn: 'SS316L / Passivated Al · PTFE' },
+  H3PO4:         { categoryLabel: '고점도 무기산 · 인산 (H₃PO₄)', categoryLabelEn: 'High-Viscosity Inorganic Acid · Phosphoric Acid (H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE', recommendedMaterialEn: 'SS316L / Alloy 904L / PTFE' },
+  HF:            { categoryLabel: '강부식성 할로겐산 · 불화수소 (HF)', categoryLabelEn: 'Corrosive Halogen Acid · Hydrofluoric Acid (HF)', compatibleMethods: ['ELECNRTL', 'NRTL', 'PENG-ROB'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276 (유리·SS 엄금)', recommendedMaterialEn: 'PTFE / PFA / PVDF / Hastelloy C-276 (No Glass/SS)' },
+  KOH:           { categoryLabel: '강알칼리 전해질 · 수산화칼륨 (KOH)', categoryLabelEn: 'Strong Alkaline Electrolyte · Potassium Hydroxide (KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200 (Al·Zn 엄금)', recommendedMaterialEn: 'CS / SS316L / Ni200 (No Al/Zn)' },
+  NH4OH:         { categoryLabel: '휘발성 알칼리 수용액 · 암모니아수 (NH₄OH)', categoryLabelEn: 'Volatile Alkaline Aqueous · Ammonium Hydroxide (NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)', recommendedMaterialEn: 'SS316L / FRP / PP (No Cu/Brass)' },
+  TMAH:          { categoryLabel: '반도체·디스플레이 유기 강알칼리 현상액 (TMAH)', categoryLabelEn: 'Semiconductor/Display Organic Alkaline Developer (TMAH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA', recommendedMaterialEn: 'SS316L / FRP / PTFE / PFA' },
+  NMP:           { categoryLabel: '이차전지 양극재 슬러리 극성 비양성자 용매 (NMP)', categoryLabelEn: 'Li-Ion Battery Cathode Slurry Polar Aprotic Solvent (NMP)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE (EPDM·Viton 주의)', recommendedMaterialEn: 'CS / SS316L / PTFE (Check EPDM/Viton)' },
+  BCS:           { categoryLabel: '글리콜에테르 도료·세정 용제 (부틸셀로솔브 · BCS)', categoryLabelEn: 'Glycol Ether Coating/Cleaning Solvent (Butyl Cellosolve · BCS)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE', recommendedMaterialEn: 'CS / SS316L / PTFE' },
+  Na2CO3:        { categoryLabel: '무기 알칼리 염 · 탄산나트륨 (소다회)', categoryLabelEn: 'Inorganic Alkali Salt · Sodium Carbonate (Soda Ash)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / FRP', recommendedMaterialEn: 'CS / SS316L / FRP' },
+  NaHSO3:        { categoryLabel: '수처리 잔류염소 환원제 · 중아황산나트륨 (NaHSO₃)', categoryLabelEn: 'Dechlorination Reducing Agent · Sodium Bisulfite (NaHSO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PE', recommendedMaterialEn: 'SS316L / FRP / PE' },
+  CaOH2:         { categoryLabel: '폐수 중화·탈황 알칼리 · 수산화칼슘 (소석회)', categoryLabelEn: 'Wastewater Neutralization/FGD · Calcium Hydroxide', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / 고무라이닝 (슬러리 침강 주의)', recommendedMaterialEn: 'CS / SS316L / Rubber-Lined (Prevent Settling)' },
+  h2o2_35:       { categoryLabel: '과산화수소수 공업용 표준액 (35 wt% H₂O₂)', categoryLabelEn: 'Industrial Hydrogen Peroxide Solution (35 wt% H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE', recommendedMaterialEn: 'SS316L / Passivated Al · PTFE' },
+  h3po4_85:      { categoryLabel: '인산 공업용·식각용 표준액 (85 wt% H₃PO₄)', categoryLabelEn: 'Industrial/Etchant Phosphoric Acid (85 wt% H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 85.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE', recommendedMaterialEn: 'SS316L / Alloy 904L / PTFE' },
+  hf_49:         { categoryLabel: '불산 반도체·산세 표준액 (49 wt% HF)', categoryLabelEn: 'Semiconductor/Pickling Hydrofluoric Acid (49 wt% HF)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 49.0, allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276', recommendedMaterialEn: 'PTFE / PFA / PVDF / Hastelloy C-276' },
+  koh_45:        { categoryLabel: '액상 수산화칼륨 표준액 (45 wt% KOH)', categoryLabelEn: 'Liquid Potassium Hydroxide Standard (45 wt% KOH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 45.0, allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Ni200', recommendedMaterialEn: 'CS / SS316L / Ni200' },
+  nh4oh_28:      { categoryLabel: '암모니아수 공업용 표준액 (28 wt% NH₄OH)', categoryLabelEn: 'Industrial Ammonium Hydroxide (28 wt% NH₄OH)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 28.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PP (동·황동 엄금)', recommendedMaterialEn: 'SS316L / FRP / PP (No Cu/Brass)' },
+  tmah_25:       { categoryLabel: 'TMAH 반도체·디스플레이 현상액 (25 wt%)', categoryLabelEn: 'TMAH Semiconductor/Display Developer (25 wt%)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 25.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PTFE / PFA', recommendedMaterialEn: 'SS316L / FRP / PTFE / PFA' },
 };
 
-const CATEGORY_FILTERS: Array<{ id: CategoryFilterId; label: string }> = [
-  { id: 'all', label: '전체' },
-  { id: 'elec', label: '전해질 수용액 (eNRTL)' },
-  { id: 'gas', label: '무기·산업가스' },
-  { id: 'chlor', label: '염소화합물·유기용매' },
-  { id: 'aromatic', label: '방향족·이소시아네이트' },
-  { id: 'alcohol', label: '알코올·케톤·유기산' },
-  { id: 'hc', label: '탄화수소·연료' },
-  { id: 'utility', label: '물·스팀·열매·냉매' },
+const COMP_FAMILY_LABELS_EN: Record<CompChemicalFamily, string> = {
+  electrolyte_inorg: 'Electrolytes · Acids · Inorganic Salts',
+  chlor_ech: 'Chlorine · ECH · Chlorohydrins',
+  gas_syngas: 'Industrial Gases · Syngas',
+  hydrocarbon: 'Paraffin · Olefin Hydrocarbons',
+  aromatic: 'BTX Aromatics & Isocyanates',
+  polar_solvent: 'Alcohols · Ketones · Polar Solvents',
+};
+
+const CATEGORY_FILTERS: Array<{ id: CategoryFilterId; label: string; labelEn: string }> = [
+  { id: 'all', label: '전체', labelEn: 'All' },
+  { id: 'elec', label: '전해질 수용액 (eNRTL)', labelEn: 'Electrolyte Aqueous (eNRTL)' },
+  { id: 'gas', label: '무기·산업가스', labelEn: 'Inorganic & Industrial Gases' },
+  { id: 'chlor', label: '염소화합물·유기용매', labelEn: 'Chlorinated & Organic Solvents' },
+  { id: 'aromatic', label: '방향족·이소시아네이트', labelEn: 'Aromatics & Isocyanates' },
+  { id: 'alcohol', label: '알코올·케톤·유기산', labelEn: 'Alcohols · Ketones · Acids' },
+  { id: 'hc', label: '탄화수소·연료', labelEn: 'Hydrocarbons & Fuels' },
+  { id: 'utility', label: '물·스팀·열매·냉매', labelEn: 'Water · Steam · Thermal · Refrig.' },
 ];
 
 const GAS_SIM_COMPS = new Set<SimCompKey>([
@@ -293,6 +325,7 @@ function resolveCompatForKey(sysKey: string): SubstanceCompatSpec {
     }
     return {
       categoryLabel: cat.familyLabelKo,
+      categoryLabelEn: COMP_FAMILY_LABELS_EN[cat.family] ?? 'General Process Fluid',
       compatibleMethods: mapped.length > 0 ? mapped : ['NRTL', 'PENG-ROB'],
       defaultMethod: mapped[0] ?? 'NRTL',
       allowsConcEdit: false,
@@ -300,6 +333,7 @@ function resolveCompatForKey(sysKey: string): SubstanceCompatSpec {
   }
   return {
     categoryLabel: fl?.familyLabelKo ?? '일반 공정 유체',
+    categoryLabelEn: 'General Process Fluid',
     compatibleMethods: ['NRTL', 'PENG-ROB', 'SRK'],
     defaultMethod: 'NRTL',
     allowsConcEdit: false,
@@ -398,6 +432,9 @@ const NON_VOLATILE_SIM_SET = new Set<SimCompKey>([
 
 export default function PropertyDbPage() {
   const { activePlantId, lastPlantReturnHref } = useBalanceStore();
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
+  const t = (ko: string, en: string) => (isEn ? en : ko);
   const returnHref = lastPlantReturnHref || getPlantRegistryItem(activePlantId).defaultHref;
 
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilterId>('all');
@@ -418,12 +455,12 @@ export default function PropertyDbPage() {
 
   const selectedSubstanceLabel = useMemo(() => {
     const el = ELECTROLYTE_SYSTEMS.find(s => s.key === sysKey);
-    if (el) return el.name;
+    if (el) return isEn ? el.nameEn : el.name;
     const fl = FLUID_DB[sysKey];
     if (!fl) return sysKey;
     const fStr = fl.formula ? ` [${fl.formula}]` : '';
-    return `${fl.nameKo}${fStr} (${fl.name})`;
-  }, [sysKey]);
+    return isEn ? `${fl.name}${fStr}` : `${fl.nameKo}${fStr} (${fl.name})`;
+  }, [isEn, sysKey]);
 
   const handleSubstanceChange = (newKey: string) => {
     setSysKey(newKey);
@@ -594,7 +631,7 @@ export default function PropertyDbPage() {
         const bpr = (0.24 * wt + 0.0128 * wt * wt) * (1 + 0.0018 * (T - 60)) * nrtlFactor;
         const gamma = isNrtlApprox ? 0.78 + 0.95 * w * w : 0.65 + 1.45 * w * w;
         const psat = psat_water_kPa * Math.max(0.10, 1 - 0.95 * w * (1 + 0.5 * w * nrtlFactor));
-        return { rho, mu, cp, k, bpr, gamma, psat, phase: 'L (전해질 수용액)', subCoefLabel: `활동도계수 γ± = ${gamma.toFixed(3)}` };
+        return { rho, mu, cp, k, bpr, gamma, psat, phase: t('L (전해질 수용액)', 'L (Electrolyte Aqueous)'), subCoefLabel: `${t('활동도계수', 'Activity coeff.')} γ± = ${gamma.toFixed(3)}` };
       }
       if (sysKey === 'elec_nacl') {
         const rho = 998 + 740 * w - 0.42 * (T - 20);
@@ -604,7 +641,7 @@ export default function PropertyDbPage() {
         const bpr = (0.18 * wt + 0.0065 * wt * wt) * nrtlFactor;
         const gamma = isNrtlApprox ? 0.82 + 0.55 * w : 0.72 + 0.85 * w;
         const psat = psat_water_kPa * (1 - 0.62 * w * nrtlFactor);
-        return { rho, mu, cp, k, bpr, gamma, psat, phase: 'L (브라인 염수)', subCoefLabel: `활동도계수 γ± = ${gamma.toFixed(3)}` };
+        return { rho, mu, cp, k, bpr, gamma, psat, phase: t('L (브라인 염수)', 'L (Brine Solution)'), subCoefLabel: `${t('활동도계수', 'Activity coeff.')} γ± = ${gamma.toFixed(3)}` };
       }
       const rho = 1000 + 890 * w - 0.50 * (T - 20);
       const mu = Math.max(0.28, 1.05 * Math.exp(3.2 * w - 0.020 * (T - 25)));
@@ -613,7 +650,7 @@ export default function PropertyDbPage() {
       const bpr = (0.21 * wt + 0.0095 * wt * wt) * nrtlFactor;
       const gamma = isNrtlApprox ? 0.85 + 0.80 * w : 0.78 + 1.15 * w;
       const psat = psat_water_kPa * Math.max(0.04, 1 - 0.85 * w * nrtlFactor);
-      return { rho, mu, cp, k, bpr, gamma, psat, phase: 'L (전해질 수용액)', subCoefLabel: `활동도계수 γ± = ${gamma.toFixed(3)}` };
+      return { rho, mu, cp, k, bpr, gamma, psat, phase: t('L (전해질 수용액)', 'L (Electrolyte Aqueous)'), subCoefLabel: `${t('활동도계수', 'Activity coeff.')} γ± = ${gamma.toFixed(3)}` };
     }
 
     const fl = FLUID_DB[sysKey] ?? ALL_FLUIDS[0];
@@ -647,8 +684,8 @@ export default function PropertyDbPage() {
           tSatC: Tc_C,
           hvap: 0,
           superheatC: T - Tc_C,
-          phase: `초임계 (Supercritical · Z=${Z.toFixed(3)})`,
-          subCoefLabel: `임계점 초과 (Tc=${Tc_C.toFixed(1)}°C, Pc=${crit.Pc_bar.toFixed(1)} bar)`,
+          phase: `${t('초임계', 'Supercritical')} (Z=${Z.toFixed(3)})`,
+          subCoefLabel: `${t('임계점 초과', 'Above Critical Pt.')} (Tc=${Tc_C.toFixed(1)}°C, Pc=${crit.Pc_bar.toFixed(1)} bar)`,
         };
       }
 
@@ -669,8 +706,12 @@ export default function PropertyDbPage() {
           tSatC: tSatAtP_C,
           hvap: hvapAtT,
           superheatC: deltaT_SH,
-          phase: `L (과냉각 액상 · 과냉 ${Math.abs(deltaT_SH).toFixed(1)}°C)`,
-          subCoefLabel: `포화 T_sat=${tSatAtP_C.toFixed(1)}°C · 잠열 ΔHv=${hvapAtT.toFixed(0)} kJ/kg`,
+          phase: isEn
+            ? `L (Subcooled Liquid · ΔT_sub ${Math.abs(deltaT_SH).toFixed(1)}°C)`
+            : `L (과냉각 액상 · 과냉 ${Math.abs(deltaT_SH).toFixed(1)}°C)`,
+          subCoefLabel: isEn
+            ? `Sat. T_sat=${tSatAtP_C.toFixed(1)}°C · ΔHv=${hvapAtT.toFixed(0)} kJ/kg`
+            : `포화 T_sat=${tSatAtP_C.toFixed(1)}°C · 잠열 ΔHv=${hvapAtT.toFixed(0)} kJ/kg`,
         };
       }
 
@@ -688,8 +729,12 @@ export default function PropertyDbPage() {
         tSatC: tSatAtP_C,
         hvap: hvapAtT,
         superheatC: deltaT_SH,
-        phase: `G (과열 증기 · 과열 +${Math.max(0, deltaT_SH).toFixed(1)}°C · Z=${Z.toFixed(3)})`,
-        subCoefLabel: `포화 T_sat=${tSatAtP_C.toFixed(1)}°C · 잠열 ΔHv=${hvapAtT.toFixed(0)} kJ/kg`,
+        phase: isEn
+          ? `G (Superheated Vapor · +${Math.max(0, deltaT_SH).toFixed(1)}°C · Z=${Z.toFixed(3)})`
+          : `G (과열 증기 · 과열 +${Math.max(0, deltaT_SH).toFixed(1)}°C · Z=${Z.toFixed(3)})`,
+        subCoefLabel: isEn
+          ? `Sat. T_sat=${tSatAtP_C.toFixed(1)}°C · ΔHv=${hvapAtT.toFixed(0)} kJ/kg`
+          : `포화 T_sat=${tSatAtP_C.toFixed(1)}°C · 잠열 ΔHv=${hvapAtT.toFixed(0)} kJ/kg`,
       };
     }
 
@@ -723,8 +768,12 @@ export default function PropertyDbPage() {
         tSatC: Number.isFinite(tSatAtP_C) ? tSatAtP_C : 100.0,
         hvap: hvapAtT,
         superheatC: T - (Number.isFinite(tSatAtP_C) ? tSatAtP_C : 100.0),
-        phase: isSteam ? `G (수증기 Steam · Z=${Z.toFixed(3)})` : 'L (액상 물)',
-        subCoefLabel: `IAPWS 포화 T_sat=${(Number.isFinite(tSatAtP_C) ? tSatAtP_C : 100).toFixed(1)}°C · Tc=${(crit.Tc_K - 273.15).toFixed(1)}°C`,
+        phase: isSteam
+          ? t(`G (수증기 Steam · Z=${Z.toFixed(3)})`, `G (Steam Vapor · Z=${Z.toFixed(3)})`)
+          : t('L (액상 물)', 'L (Liquid Water)'),
+        subCoefLabel: isEn
+          ? `IAPWS T_sat=${(Number.isFinite(tSatAtP_C) ? tSatAtP_C : 100).toFixed(1)}°C · Tc=${(crit.Tc_K - 273.15).toFixed(1)}°C`
+          : `IAPWS 포화 T_sat=${(Number.isFinite(tSatAtP_C) ? tSatAtP_C : 100).toFixed(1)}°C · Tc=${(crit.Tc_K - 273.15).toFixed(1)}°C`,
       };
     }
 
@@ -743,8 +792,10 @@ export default function PropertyDbPage() {
         bpr,
         gamma,
         psat,
-        phase: 'L (표준 공정액)',
-        subCoefLabel: `활동도계수 γ± = ${gamma.toFixed(3)} · 표준농도 ${wt.toFixed(1)} wt%`,
+        phase: t('L (표준 공정액)', 'L (Standard Solution)'),
+        subCoefLabel: isEn
+          ? `Activity coeff. γ± = ${gamma.toFixed(3)} · Std. Conc. ${wt.toFixed(1)} wt%`
+          : `활동도계수 γ± = ${gamma.toFixed(3)} · 표준농도 ${wt.toFixed(1)} wt%`,
       };
     }
 
@@ -766,8 +817,12 @@ export default function PropertyDbPage() {
         bpr: 0.0,
         gamma: 1.0,
         psat: 0.0,
-        phase: simKey === 'H2SO4' ? 'L (고비점 무기산)' : 'S / L (비휘발성 무기성분)',
-        subCoefLabel: `비휘발성 순수 성분 · 정상비점 ${(fl.Tb_C ?? 300).toFixed(0)}°C · MW=${mw.toFixed(2)}`,
+        phase: simKey === 'H2SO4'
+          ? t('L (고비점 무기산)', 'L (High-Boiling Inorganic Acid)')
+          : t('S / L (비휘발성 무기성분)', 'S / L (Non-Volatile Inorganic)'),
+        subCoefLabel: isEn
+          ? `Non-volatile pure species · Normal BP ${(fl.Tb_C ?? 300).toFixed(0)}°C · MW=${mw.toFixed(2)}`
+          : `비휘발성 순수 성분 · 정상비점 ${(fl.Tb_C ?? 300).toFixed(0)}°C · MW=${mw.toFixed(2)}`,
       };
     }
 
@@ -806,8 +861,8 @@ export default function PropertyDbPage() {
         gamma: phi,
         psat: Math.min(crit.Pc_bar * 100, Math.max(0, psat_kPa)),
         phase: T >= Tc_C && pBar >= crit.Pc_bar
-          ? `초임계 (Supercritical · Z=${Z.toFixed(3)})`
-          : `G (초임계 기체 · Z=${Z.toFixed(3)})`,
+          ? `${t('초임계', 'Supercritical')} (Z=${Z.toFixed(3)})`
+          : t(`G (초임계 기체 · Z=${Z.toFixed(3)})`, `G (Supercritical Gas · Z=${Z.toFixed(3)})`),
         subCoefLabel: `Tc=${Tc_C.toFixed(1)}°C · Pc=${crit.Pc_bar.toFixed(1)} bar · φ=${phi.toFixed(3)}`,
       };
     }
@@ -843,9 +898,11 @@ export default function PropertyDbPage() {
         hvap: hvapAtT,
         superheatC: tSatC !== undefined ? T - tSatC : undefined,
         phase: fl.downstreamGroup === '2_ECH'
-          ? `L (유기액상 · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`
-          : `L (액상 · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`,
-        subCoefLabel: `비점(@P) ${(tSatC ?? tb_C).toFixed(1)}°C · ΔHv=${hvapAtT.toFixed(0)} kJ/kg · MW=${mw.toFixed(2)}`,
+          ? t(`L (유기액상 · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`, `L (Organic Liquid · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`)
+          : t(`L (액상 · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`, `L (Liquid · Tb=${(tSatC ?? tb_C).toFixed(1)}°C)`),
+        subCoefLabel: isEn
+          ? `BP(@P) ${(tSatC ?? tb_C).toFixed(1)}°C · ΔHv=${hvapAtT.toFixed(0)} kJ/kg · MW=${mw.toFixed(2)}`
+          : `비점(@P) ${(tSatC ?? tb_C).toFixed(1)}°C · ΔHv=${hvapAtT.toFixed(0)} kJ/kg · MW=${mw.toFixed(2)}`,
       };
     }
 
@@ -871,8 +928,8 @@ export default function PropertyDbPage() {
       tSatC,
       hvap: hvapAtT,
       superheatC: tSatC !== undefined ? T - tSatC : undefined,
-      phase: `G (기상 · Z=${Z.toFixed(3)})`,
-      subCoefLabel: `압축인자 Z=${Z.toFixed(3)} · φ=${phi.toFixed(3)} · Tb=${(tSatC ?? tb_C).toFixed(1)}°C`,
+      phase: t(`G (기상 · Z=${Z.toFixed(3)})`, `G (Vapor · Z=${Z.toFixed(3)})`),
+      subCoefLabel: `${t('압축인자', 'Compressibility')} Z=${Z.toFixed(3)} · φ=${phi.toFixed(3)} · Tb=${(tSatC ?? tb_C).toFixed(1)}°C`,
     };
   };
 
@@ -917,17 +974,17 @@ export default function PropertyDbPage() {
   const sweepRows = useMemo(
     () => sweepTemps.map(t => ({ t, ...calcPropsAt(t, concWt, pressBar) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sweepTemps, sysKey, activeMethodKey, concWt, pressBar]
+    [sweepTemps, sysKey, activeMethodKey, concWt, pressBar, isEn]
   );
 
   // SVG Plot 포인트 계산
   const chartData = useMemo(() => {
     const metricMeta: Record<PlotMetricKey, { label: string; unit: string; color: string; extract: (r: typeof sweepRows[number]) => number }> = {
-      psat: { label: '증기압 P_sat', unit: 'kPa', color: '#2563EB', extract: r => r.psat },
-      rho:  { label: '밀도 ρ', unit: 'kg/m³', color: '#0F766E', extract: r => r.rho },
-      mu:   { label: '점도 μ', unit: 'cP', color: '#7C3AED', extract: r => r.mu },
-      cp:   { label: '비열 Cp', unit: 'kJ/kg·K', color: '#D97706', extract: r => r.cp },
-      k:    { label: '열전도도 λ', unit: 'W/m·K', color: '#DC2626', extract: r => r.k },
+      psat: { label: isEn ? 'Vapor Pressure P_sat' : '증기압 P_sat', unit: 'kPa', color: '#2563EB', extract: r => r.psat },
+      rho:  { label: isEn ? 'Density ρ' : '밀도 ρ', unit: 'kg/m³', color: '#0F766E', extract: r => r.rho },
+      mu:   { label: isEn ? 'Viscosity μ' : '점도 μ', unit: 'cP', color: '#7C3AED', extract: r => r.mu },
+      cp:   { label: isEn ? 'Heat Capacity Cp' : '비열 Cp', unit: 'kJ/kg·K', color: '#D97706', extract: r => r.cp },
+      k:    { label: isEn ? 'Thermal Cond. λ' : '열전도도 λ', unit: 'W/m·K', color: '#DC2626', extract: r => r.k },
     };
     const meta = metricMeta[plotMetric];
     const rawVals = sweepRows.map(r => ({ t: r.t, val: meta.extract(r) }));
@@ -961,7 +1018,7 @@ export default function PropertyDbPage() {
     const curY = padT + (1 - curFrac) * plotH;
 
     return { meta, points, minVal, maxVal, minT, maxT, W, H, padL, padR, padT, padB, plotW, plotH, curX, curY, curVal };
-  }, [sweepRows, plotMetric, tempC, cur]);
+  }, [sweepRows, plotMetric, tempC, cur, isEn]);
 
   const currentFluidObj = FLUID_DB[sysKey];
 
@@ -1002,11 +1059,16 @@ export default function PropertyDbPage() {
                 INTEGRATED PROPERTY DB
               </span>
               <span style={{ fontSize: 16, fontWeight: 800, color: '#1A2F44' }}>
-                화학물질 통합 물성 DB ({categoryCounts.all}종) &amp; 열역학 모델
+                {isEn
+                  ? `Unified Chemical Property DB (${categoryCounts.all} Species) & Thermo Models`
+                  : `화학물질 통합 물성 DB (${categoryCounts.all}종) & 열역학 모델`}
               </span>
             </div>
             <div style={{ fontSize: 11.5, color: '#52525B', marginTop: 3 }}>
-              화학식 · 물질명 · 약어 · CAS 통합 검색 및 온도·압력별 물성 곡선 (Psat · ρ · μ · Cp · λ)
+              {t(
+                '화학식 · 물질명 · 약어 · CAS 통합 검색 및 온도·압력별 물성 곡선 (Psat · ρ · μ · Cp · λ)',
+                'Search by formula, chemical name, alias, or CAS number and inspect T/P property profiles (Psat · ρ · μ · Cp · λ)'
+              )}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1023,7 +1085,7 @@ export default function PropertyDbPage() {
                 textDecoration: 'none',
               }}
             >
-              ⚡ 단품 숏컷 계산기 →
+              {t('⚡ 단품 숏컷 계산기 →', '⚡ Unit Equipment Sizing →')}
             </Link>
             <Link
               href={returnHref}
@@ -1038,7 +1100,7 @@ export default function PropertyDbPage() {
                 textDecoration: 'none',
               }}
             >
-              ← 시뮬레이터로 복귀
+              {t('← 시뮬레이터로 복귀', '← Back to Simulator')}
             </Link>
           </div>
         </div>
@@ -1070,7 +1132,10 @@ export default function PropertyDbPage() {
                   type="text"
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="화학식 · 물질명 · 약어 · CAS 검색 (예: CHCl3, CFM, 클로로포름, 108-90-7, MDI)"
+                  placeholder={t(
+                    '화학식 · 물질명 · 약어 · CAS 검색 (예: CHCl3, CFM, 클로로포름, 108-90-7, MDI)',
+                    'Search formula, name, alias, or CAS (e.g. CHCl3, CFM, Chloroform, 108-90-7, MDI)'
+                  )}
                   style={{
                     width: '100%',
                     height: 36,
@@ -1087,7 +1152,7 @@ export default function PropertyDbPage() {
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    title="검색어 지우기"
+                    title={t('검색어 지우기', 'Clear search')}
                     style={{
                       position: 'absolute',
                       right: 8,
@@ -1111,18 +1176,20 @@ export default function PropertyDbPage() {
             </div>
 
             <div style={{ fontSize: 11.5, color: '#64748B', fontWeight: 600 }}>
-              표시 중:{' '}
+              {t('표시 중:', 'Showing:')}{' '}
               <strong style={{ color: '#0F172A' }}>
                 {searchResults.elecMatches.length + searchResults.primaryFluids.length}
               </strong>
               {' / '}
-              {categoryCounts.all}종
+              {categoryCounts.all}{isEn ? ' species' : '종'}
             </div>
           </div>
 
           {/* Quick search sample chips */}
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginBottom: 10 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B' }}>빠른 검색 예시:</span>
+            <span style={{ fontSize: 10.5, fontWeight: 700, color: '#64748B' }}>
+              {t('빠른 검색 예시:', 'Quick Examples:')}
+            </span>
             {['CFM', 'MCL', 'MCB', 'MDI', 'PMDI', '108-90-7', 'CH3Cl', 'ECH', 'NMP', 'H2O2', 'steam_lp', 'dowtherm_a', 'therminol_66'].map(tag => (
               <button
                 key={tag}
@@ -1168,7 +1235,7 @@ export default function PropertyDbPage() {
                     gap: 5,
                   }}
                 >
-                  <span>{cat.label}</span>
+                  <span>{isEn ? cat.labelEn : cat.label}</span>
                   <span
                     style={{
                       fontSize: 10,
@@ -1197,12 +1264,13 @@ export default function PropertyDbPage() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {searchResults.elecMatches.map(el => {
                 const active = sysKey === el.key;
+                const elDisplayName = isEn ? el.nameEn : el.name;
                 return (
                   <button
                     key={el.key}
                     type="button"
                     onClick={() => handleSubstanceChange(el.key)}
-                    title={`${el.name} · CAS ${el.cas}`}
+                    title={`${elDisplayName} · CAS ${el.cas}`}
                     style={{
                       padding: '5px 10px',
                       borderRadius: 6,
@@ -1219,7 +1287,7 @@ export default function PropertyDbPage() {
                   >
                     <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{el.formula}</span>
                     <span style={{ color: active ? '#1E3A8A' : '#334155', fontWeight: 500 }}>
-                      {el.name.split('(')[0].split('—')[0].trim()}
+                      {elDisplayName.split('(')[0].split('—')[0].trim()}
                     </span>
                     <span
                       style={{
@@ -1246,7 +1314,7 @@ export default function PropertyDbPage() {
                     key={f.key}
                     type="button"
                     onClick={() => handleSubstanceChange(f.key)}
-                    title={`${f.nameKo} (${f.name})${f.cas ? ` · CAS ${f.cas}` : ''}`}
+                    title={`${isEn ? f.name : `${f.nameKo} (${f.name})`}${f.cas ? ` · CAS ${f.cas}` : ''}`}
                     style={{
                       padding: '5px 10px',
                       borderRadius: 6,
@@ -1262,7 +1330,7 @@ export default function PropertyDbPage() {
                     }}
                   >
                     <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{f.formula || f.key}</span>
-                    <span style={{ color: active ? '#1E3A8A' : '#334155', fontWeight: 500 }}>{f.nameKo}</span>
+                    <span style={{ color: active ? '#1E3A8A' : '#334155', fontWeight: 500 }}>{isEn ? f.name : f.nameKo}</span>
                     {f.cas && <span style={{ color: '#64748B', fontSize: 10, fontFamily: 'monospace' }}>{f.cas}</span>}
                   </button>
                 );
@@ -1271,7 +1339,9 @@ export default function PropertyDbPage() {
               {searchResults.primaryFluids.length === 0 && searchResults.elecMatches.length === 0 && (
                 <div style={{ fontSize: 11.5, color: '#64748B', padding: '4px 6px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span>
-                    선택한 조건에서 &ldquo;{searchQuery}&rdquo; 일치 항목이 없습니다.
+                    {isEn
+                      ? `No matching items found for "${searchQuery}" under the selected filter.`
+                      : `선택한 조건에서 “${searchQuery}” 일치 항목이 없습니다.`}
                   </span>
                   {categoryFilter !== 'all' && (
                     <button
@@ -1288,7 +1358,7 @@ export default function PropertyDbPage() {
                         cursor: 'pointer',
                       }}
                     >
-                      전체 카테고리 보기
+                      {t('전체 카테고리 보기', 'Show All Categories')}
                     </button>
                   )}
                 </div>
@@ -1338,9 +1408,9 @@ export default function PropertyDbPage() {
                     fontWeight: 900,
                   }}
                 >
-                  1. 물질 선택
+                  {t('1. 물질 선택', '1. Substance')}
                 </span>
-                계산 대상 화학물질 / 수용액 / 공정가스 / 유틸리티
+                {t('계산 대상 화학물질 / 수용액 / 공정가스 / 유틸리티', 'Target Chemical / Solution / Process Gas / Utility')}
               </label>
               <select
                 value={sysKey}
@@ -1357,59 +1427,59 @@ export default function PropertyDbPage() {
                   fontWeight: 800,
                 }}
               >
-                <optgroup label={`① 전해질 수용액 — 농도 wt% 자유 조절 (eNRTL · ${ELECTROLYTE_SYSTEMS.length}종)`}>
+                <optgroup label={isEn ? `① Electrolyte Aqueous — Adjustable wt% (eNRTL · ${ELECTROLYTE_SYSTEMS.length})` : `① 전해질 수용액 — 농도 wt% 자유 조절 (eNRTL · ${ELECTROLYTE_SYSTEMS.length}종)`}>
                   {ELECTROLYTE_SYSTEMS.map(s => (
                     <option key={s.key} value={s.key}>
-                      {s.name}
+                      {isEn ? s.nameEn : s.name}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`② 전해질 수용액 · 산/알칼리/염 프리셋 (${fluidsByCategory.elec.length}종)`}>
+                <optgroup label={isEn ? `② Electrolyte Aqueous · Acid / Alkali / Salt Presets (${fluidsByCategory.elec.length})` : `② 전해질 수용액 · 산/알칼리/염 프리셋 (${fluidsByCategory.elec.length}종)`}>
                   {fluidsByCategory.elec.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`③ 무기 · 산업가스 (${fluidsByCategory.gas.length}종)`}>
+                <optgroup label={isEn ? `③ Inorganic & Industrial Gases (${fluidsByCategory.gas.length})` : `③ 무기 · 산업가스 (${fluidsByCategory.gas.length}종)`}>
                   {fluidsByCategory.gas.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`④ 염소화합물 · 유기용매 (${fluidsByCategory.chlor.length}종)`}>
+                <optgroup label={isEn ? `④ Chlorinated & Organic Solvents (${fluidsByCategory.chlor.length})` : `④ 염소화합물 · 유기용매 (${fluidsByCategory.chlor.length}종)`}>
                   {fluidsByCategory.chlor.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`⑤ 방향족 · 이소시아네이트 (${fluidsByCategory.aromatic.length}종)`}>
+                <optgroup label={isEn ? `⑤ Aromatics & Isocyanates (${fluidsByCategory.aromatic.length})` : `⑤ 방향족 · 이소시아네이트 (${fluidsByCategory.aromatic.length}종)`}>
                   {fluidsByCategory.aromatic.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`⑥ 알코올 · 케톤 · 유기산 (${fluidsByCategory.alcohol.length}종)`}>
+                <optgroup label={isEn ? `⑥ Alcohols · Ketones · Organic Acids (${fluidsByCategory.alcohol.length})` : `⑥ 알코올 · 케톤 · 유기산 (${fluidsByCategory.alcohol.length}종)`}>
                   {fluidsByCategory.alcohol.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`⑦ 탄화수소 · 연료 (${fluidsByCategory.hc.length}종)`}>
+                <optgroup label={isEn ? `⑦ Hydrocarbons & Fuels (${fluidsByCategory.hc.length})` : `⑦ 탄화수소 · 연료 (${fluidsByCategory.hc.length}종)`}>
                   {fluidsByCategory.hc.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
-                <optgroup label={`⑧ 물 · 스팀 · 열매 · 냉매 (${fluidsByCategory.utility.length}종)`}>
+                <optgroup label={isEn ? `⑧ Water · Steam · Thermal Oils · Refrigerants (${fluidsByCategory.utility.length})` : `⑧ 물 · 스팀 · 열매 · 냉매 (${fluidsByCategory.utility.length}종)`}>
                   {fluidsByCategory.utility.map(f => (
                     <option key={f.key} value={f.key}>
-                      [{f.formula || f.key}] {f.nameKo} ({f.name}){f.cas ? ` · CAS ${f.cas}` : ''}
+                      [{f.formula || f.key}] {isEn ? f.name : `${f.nameKo} (${f.name})`}{f.cas ? ` · CAS ${f.cas}` : ''}
                     </option>
                   ))}
                 </optgroup>
@@ -1441,9 +1511,11 @@ export default function PropertyDbPage() {
                       fontWeight: 900,
                     }}
                   >
-                    2. 열역학 모델
+                    {t('2. 열역학 모델', '2. Thermo Model')}
                   </span>
-                  선택 물질 적용 가능 모델 ({compat.compatibleMethods.length}종)
+                  {isEn
+                    ? `Compatible Models (${compat.compatibleMethods.length})`
+                    : `선택 물질 적용 가능 모델 (${compat.compatibleMethods.length}종)`}
                 </span>
               </label>
               <select
@@ -1466,8 +1538,8 @@ export default function PropertyDbPage() {
                   const isRecommended = mCode === compat.defaultMethod;
                   return (
                     <option key={m.code} value={m.code}>
-                      {isRecommended ? '★ [권장] ' : '[호환] '}
-                      {m.code} — {m.shortTag}
+                      {isRecommended ? t('★ [권장] ', '★ [Recommended] ') : t('[호환] ', '[Compatible] ')}
+                      {m.code} — {isEn ? m.shortTagEn : m.shortTag}
                     </option>
                   );
                 })}
@@ -1477,7 +1549,7 @@ export default function PropertyDbPage() {
             {/* [3단계: 온도 / 농도 / 압력 입력] */}
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#52525B', display: 'block', marginBottom: 5 }}>
-                온도 T (°C)
+                {t('온도 T (°C)', 'Temperature T (°C)')}
               </label>
               <input
                 type="number"
@@ -1500,7 +1572,11 @@ export default function PropertyDbPage() {
 
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#52525B', display: 'block', marginBottom: 5 }}>
-                {compat.allowsConcEdit ? '농도 C (wt%)' : compat.fixedOrDefaultWt ? '표준 농도 (고정)' : '순도 (단일성분)'}
+                {compat.allowsConcEdit
+                  ? t('농도 C (wt%)', 'Concentration C (wt%)')
+                  : compat.fixedOrDefaultWt
+                    ? t('표준 농도 (고정)', 'Standard Conc. (Fixed)')
+                    : t('순도 (단일성분)', 'Purity (Pure Component)')}
               </label>
               {compat.allowsConcEdit ? (
                 <input
@@ -1538,14 +1614,16 @@ export default function PropertyDbPage() {
                     alignItems: 'center',
                   }}
                 >
-                  {compat.fixedOrDefaultWt ? `${compat.fixedOrDefaultWt.toFixed(0)} wt% 표준액` : '100% 순수 성분'}
+                  {compat.fixedOrDefaultWt
+                    ? `${compat.fixedOrDefaultWt.toFixed(0)} ${t('wt% 표준액', 'wt% Std. Soln.')}`
+                    : t('100% 순수 성분', '100% Pure Component')}
                 </div>
               )}
             </div>
 
             <div>
               <label style={{ fontSize: 10.5, fontWeight: 700, color: '#52525B', display: 'block', marginBottom: 5 }}>
-                압력 P (barA)
+                {t('압력 P (barA)', 'Pressure P (barA)')}
               </label>
               <input
                 type="number"
@@ -1582,7 +1660,7 @@ export default function PropertyDbPage() {
           >
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 900, color: '#1A2F44', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                <span>🧪 선택 물질: <span style={{ color: '#0F5338' }}>{selectedSubstanceLabel}</span></span>
+                <span>🧪 {t('선택 물질:', 'Selected Substance:')} <span style={{ color: '#0F5338' }}>{selectedSubstanceLabel}</span></span>
                 <span
                   style={{
                     fontSize: 10.5,
@@ -1593,7 +1671,7 @@ export default function PropertyDbPage() {
                     borderRadius: 999,
                   }}
                 >
-                  분류: {compat.categoryLabel}
+                  {t('분류:', 'Category:')} {isEn ? compat.categoryLabelEn : compat.categoryLabel}
                 </span>
                 {currentFluidObj?.cas && (
                   <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#475569', background: '#FFFFFF', padding: '2px 7px', borderRadius: 999, border: '1px solid #CBD5E1' }}>
@@ -1607,17 +1685,17 @@ export default function PropertyDbPage() {
                 )}
               </div>
               <div style={{ fontSize: 11, fontWeight: 800, color: '#0F5338' }}>
-                ✓ 계산 가능 모델: {compat.compatibleMethods.join(' / ')}
+                ✓ {t('계산 가능 모델:', 'Compatible Models:')} {compat.compatibleMethods.join(' / ')}
               </div>
             </div>
 
             {compat.recommendedMaterial && (
               <div style={{ fontSize: 11, color: '#1E3A8A' }}>
-                <b>권장 내식 재질:</b> {compat.recommendedMaterial}
+                <b>{t('권장 내식 재질:', 'Recommended Corrosion-Resistant Material:')}</b> {isEn ? (compat.recommendedMaterialEn || compat.recommendedMaterial) : compat.recommendedMaterial}
               </div>
             )}
 
-            {currentFluidObj?.noteKo && (
+            {!isEn && currentFluidObj?.noteKo && (
               <div style={{ fontSize: 11, color: '#334155' }}>
                 <b>공정 비고:</b> {currentFluidObj.noteKo}
               </div>
@@ -1625,13 +1703,13 @@ export default function PropertyDbPage() {
 
             <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: 5, marginTop: 1 }}>
               <div style={{ fontSize: 11.5, fontWeight: 800, color: '#1A2F44' }}>
-                ⚙️ 적용 열역학 모델: {method.code} — {method.name}
+                ⚙️ {t('적용 열역학 모델:', 'Applied Thermo Model:')} {method.code} — {isEn ? method.nameEn : method.name}
               </div>
               <div style={{ fontSize: 11, color: '#3F3F46', marginTop: 2 }}>
-                <b>특징 및 적용 범위:</b> {method.bestFor}
+                <b>{t('특징 및 적용 범위:', 'Scope & Best For:')}</b> {isEn ? method.bestForEn : method.bestFor}
               </div>
               <div style={{ fontSize: 11, fontFamily: 'monospace', color: '#1A2F44', marginTop: 4, fontWeight: 600 }}>
-                지배방정식: {method.eqText} | 평형모델: {method.vleModel}
+                {t('지배방정식:', 'Governing Eq.:')} {method.eqText} | {t('평형모델:', 'VLE Model:')} {method.vleModel}
               </div>
             </div>
           </div>
@@ -1639,29 +1717,29 @@ export default function PropertyDbPage() {
 
         {/* Calculated Property KPI Strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12, marginBottom: 16 }}>
-          <PropBox label={`밀도 ρ (${tempC}°C · ${pressBar} barA)`} value={`${cur.rho.toFixed(2)} kg/m³`} sub={`상(Phase): ${cur.phase}`} highlight />
-          <PropBox label="점도 μ (Dynamic Viscosity)" value={`${cur.mu.toFixed(3)} cP`} sub={`비열 Cp: ${cur.cp.toFixed(3)} kJ/kg·K`} />
-          <PropBox label="열전도도 λ (Thermal Cond.)" value={`${cur.k.toFixed(3)} W/m·K`} sub={`Prandtl: ${((cur.cp * cur.mu) / Math.max(0.005, cur.k)).toFixed(2)}`} />
-          <PropBox label="포화증기압 P_sat & 열역학 계수" value={`${cur.psat.toFixed(2)} kPa`} sub={cur.subCoefLabel} />
+          <PropBox label={`${t('밀도', 'Density')} ρ (${tempC}°C · ${pressBar} barA)`} value={`${cur.rho.toFixed(2)} kg/m³`} sub={`${t('상(Phase):', 'Phase:')} ${cur.phase}`} highlight />
+          <PropBox label={t('점도 μ (Dynamic Viscosity)', 'Dynamic Viscosity μ')} value={`${cur.mu.toFixed(3)} cP`} sub={`${t('비열', 'Heat Cap.')} Cp: ${cur.cp.toFixed(3)} kJ/kg·K`} />
+          <PropBox label={t('열전도도 λ (Thermal Cond.)', 'Thermal Conductivity λ')} value={`${cur.k.toFixed(3)} W/m·K`} sub={`Prandtl: ${((cur.cp * cur.mu) / Math.max(0.005, cur.k)).toFixed(2)}`} />
+          <PropBox label={t('포화증기압 P_sat & 열역학 계수', 'Vapor Press. P_sat & Thermo Coeff.')} value={`${cur.psat.toFixed(2)} kPa`} sub={cur.subCoefLabel} />
           {'tSatC' in cur && cur.tSatC !== undefined ? (
             <PropBox
-              label="포화온도 T_sat(P) & 기화잠열"
+              label={t('포화온도 T_sat(P) & 기화잠열', 'Sat. Temp. T_sat(P) & Latent Heat')}
               value={`${cur.tSatC.toFixed(1)} °C`}
-              sub={`잠열 ΔH_vap: ${(cur.hvap ?? 0).toFixed(1)} kJ/kg · ${
+              sub={`${t('잠열', 'Latent Heat')} ΔH_vap: ${(cur.hvap ?? 0).toFixed(1)} kJ/kg · ${
                 (cur.superheatC ?? 0) > 0
-                  ? `과열도 +${(cur.superheatC ?? 0).toFixed(1)}°C`
-                  : `과냉도 ${Math.abs(cur.superheatC ?? 0).toFixed(1)}°C`
+                  ? `${t('과열도', 'Superheat')} +${(cur.superheatC ?? 0).toFixed(1)}°C`
+                  : `${t('과냉도', 'Subcooling')} ${Math.abs(cur.superheatC ?? 0).toFixed(1)}°C`
               }`}
               highlight
             />
           ) : (
             <PropBox
-              label="끓는점 오름 (BPR) / 정상비점"
+              label={t('끓는점 오름 (BPR) / 정상비점', 'Boiling Point Rise (BPR) / Normal BP')}
               value={sysKey.startsWith('elec_') || currentFluidObj?.isProcessSolution ? `+${cur.bpr.toFixed(2)} °C` : `${(currentFluidObj?.Tb_C ?? 100).toFixed(1)} °C`}
               sub={
                 sysKey.startsWith('elec_') || currentFluidObj?.isProcessSolution
-                  ? `예상 비점: ${(100 + cur.bpr).toFixed(1)} °C`
-                  : `임계온도 Tc: ${currentFluidObj?.Tc_K ? `${(currentFluidObj.Tc_K - 273.15).toFixed(1)} °C` : 'N/A'}`
+                  ? `${t('예상 비점:', 'Est. Boiling Pt.:')} ${(100 + cur.bpr).toFixed(1)} °C`
+                  : `${t('임계온도', 'Critical Temp.')} Tc: ${currentFluidObj?.Tc_K ? `${(currentFluidObj.Tc_K - 273.15).toFixed(1)} °C` : 'N/A'}`
               }
               highlight
             />
@@ -1681,20 +1759,20 @@ export default function PropertyDbPage() {
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
             <div>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: '#1A2F44' }}>
-                온도별 물성 프로파일 그래프 — {chartData.meta.label} ({chartData.meta.unit})
+                {t('온도별 물성 프로파일 그래프', 'Temperature-Dependent Property Profile')} — {chartData.meta.label} ({chartData.meta.unit})
               </div>
               <div style={{ fontSize: 11, color: '#64748B' }}>
-                {selectedSubstanceLabel} · P = {pressBar.toFixed(2)} barA · 모델: {method.code}
+                {selectedSubstanceLabel} · P = {pressBar.toFixed(2)} barA · {t('모델:', 'Model:')} {method.code}
               </div>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
               {(
                 [
-                  { id: 'psat', label: 'Psat (증기압)' },
-                  { id: 'rho', label: 'ρ (밀도)' },
-                  { id: 'mu', label: 'μ (점도)' },
-                  { id: 'cp', label: 'Cp (비열)' },
-                  { id: 'k', label: 'λ (열전도도)' },
+                  { id: 'psat', label: t('Psat (증기압)', 'Psat (Vapor Press.)') },
+                  { id: 'rho', label: t('ρ (밀도)', 'ρ (Density)') },
+                  { id: 'mu', label: t('μ (점도)', 'μ (Viscosity)') },
+                  { id: 'cp', label: t('Cp (비열)', 'Cp (Heat Cap.)') },
+                  { id: 'k', label: t('λ (열전도도)', 'λ (Thermal Cond.)') },
                 ] as const
               ).map(m => (
                 <button
@@ -1852,21 +1930,23 @@ export default function PropertyDbPage() {
           }}
         >
           <div style={{ fontSize: 12, fontWeight: 800, color: '#27272A', marginBottom: 12 }}>
-            온도별 물성 변화 테이블 ({selectedSubstanceLabel} · 적용 모델: {method.code} · P = {pressBar.toFixed(2)} barA)
+            {t('온도별 물성 변화 테이블', 'Temperature-Dependent Property Table')} ({selectedSubstanceLabel} · {t('적용 모델:', 'Model:')} {method.code} · P = {pressBar.toFixed(2)} barA)
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, minWidth: 760 }}>
               <thead>
                 <tr style={{ background: '#EFECE5' }}>
                   {[
-                    '온도 T (°C)',
-                    '상 (Phase)',
-                    '밀도 ρ (kg/m³)',
-                    '점도 μ (cP)',
-                    '비열 Cp (kJ/kg·K)',
-                    '열전도도 λ (W/m·K)',
-                    '증기압 P_sat (kPa)',
-                    sysKey.startsWith('elec_') || currentFluidObj?.isProcessSolution ? '비점오름 BPR (°C)' : '잠열 ΔH_vap (kJ/kg)',
+                    t('온도 T (°C)', 'Temp. T (°C)'),
+                    t('상 (Phase)', 'Phase'),
+                    t('밀도 ρ (kg/m³)', 'Density ρ (kg/m³)'),
+                    t('점도 μ (cP)', 'Viscosity μ (cP)'),
+                    t('비열 Cp (kJ/kg·K)', 'Heat Cap. Cp (kJ/kg·K)'),
+                    t('열전도도 λ (W/m·K)', 'Thermal Cond. λ (W/m·K)'),
+                    t('증기압 P_sat (kPa)', 'Vapor Press. P_sat (kPa)'),
+                    sysKey.startsWith('elec_') || currentFluidObj?.isProcessSolution
+                      ? t('비점오름 BPR (°C)', 'BPR (°C)')
+                      : t('잠열 ΔH_vap (kJ/kg)', 'Latent Heat ΔH_vap (kJ/kg)'),
                   ].map(h => (
                     <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#1A2F44', fontWeight: 700, borderBottom: '1px solid #DFDCD4' }}>
                       {h}

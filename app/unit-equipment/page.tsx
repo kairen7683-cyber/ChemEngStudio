@@ -43,20 +43,20 @@ interface PlantBridgeCandidate {
   payload: ChemProSimHandoffPayload;
 }
 
-function getTabKoLabel(tab: ChemProSimHandoffPayload['tab']): string {
+function getTabLabel(tab: ChemProSimHandoffPayload['tab'], isEn: boolean): string {
   switch (tab) {
     case 'hx':
-      return '열교환기';
+      return isEn ? 'Heat Exchanger' : '열교환기';
     case 'pump':
-      return '펌프';
+      return isEn ? 'Pump' : '펌프';
     case 'column':
-      return '탑/흡수/증류';
+      return isEn ? 'Column/Absorber' : '탑/흡수/증류';
     case 'vessel':
-      return '분리기/용기';
+      return isEn ? 'Vessel/Separator' : '분리기/용기';
     case 'psv':
-      return '안전밸브';
+      return isEn ? 'PSV' : '안전밸브';
     default:
-      return '배관';
+      return isEn ? 'Piping' : '배관';
   }
 }
 
@@ -67,6 +67,9 @@ function UnitEquipmentInner() {
   const { activePlantId, balance } = useBalanceStore();
   const units = useUnitStore(s => s.units);
   const hydrateUnits = useUnitStore(s => s.hydrate);
+  const lang = useUnitStore(s => s.lang);
+  const isEn = lang === 'en';
+  const t = useCallback((ko: string, en: string) => (isEn ? en : ko), [isEn]);
   const plantMeta = getPlantRegistryItem(activePlantId);
 
   useEffect(() => {
@@ -202,18 +205,22 @@ function UnitEquipmentInner() {
         const pBrine = sBrine.pressure_kgcm2g ?? 1.5;
         list.push({
           id: 'p1-p140',
-          label: `[P-140] 정제 브라인 공급펌프 (Stream 104 · ${sBrine.total_kgh.toFixed(0)} kg/h)`,
+          label: isEn
+            ? `[P-140] Purified Brine Feed Pump (Stream 104 · ${sBrine.total_kgh.toFixed(0)} kg/h)`
+            : `[P-140] 정제 브라인 공급펌프 (Stream 104 · ${sBrine.total_kgh.toFixed(0)} kg/h)`,
           summary: `${tBrine.toFixed(1)}°C · ${pBrine} kG · Q=${qM3h.toFixed(1)} m³/h`,
           group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
-            sourceLabel: 'PLANT 01 전해 기준공장 물질수지',
+            sourceLabel: t('PLANT 01 전해 기준공장 물질수지', 'PLANT 01 Electrolysis Reference Mass Balance'),
             plantId: 'clorsim',
             tab: 'pump',
             equipTag: 'P-140',
-            equipName: '정제 브라인 전해조 공급펌프',
-            detectedFluidSummary: `정제 브라인 (${(sBrine.concentration ?? 25.6).toFixed(1)} wt% NaCl)`,
+            equipName: t('정제 브라인 전해조 공급펌프', 'Purified Brine Electrolyzer Feed Pump'),
+            detectedFluidSummary: isEn
+              ? `Purified Brine (${(sBrine.concentration ?? 25.6).toFixed(1)} wt% NaCl)`
+              : `정제 브라인 (${(sBrine.concentration ?? 25.6).toFixed(1)} wt% NaCl)`,
             pump: {
               fluidId: 'brine_25',
               T_C: Number(tBrine.toFixed(1)),
@@ -234,18 +241,22 @@ function UnitEquipmentInner() {
         const tCl2 = sCl2.temperature_C ?? 87.0;
         list.push({
           id: 'p1-e210',
-          label: `[E-210] 습염소가스 1차 티타늄 냉각기 (Stream 217 · ${sCl2.total_kgh.toFixed(0)} kg/h)`,
-          summary: `입구 ${tCl2.toFixed(1)}°C → 40.0°C · 냉각수(CW)`,
+          label: isEn
+            ? `[E-210] Wet Cl₂ Gas Primary Ti Cooler (Stream 217 · ${sCl2.total_kgh.toFixed(0)} kg/h)`
+            : `[E-210] 습염소가스 1차 티타늄 냉각기 (Stream 217 · ${sCl2.total_kgh.toFixed(0)} kg/h)`,
+          summary: isEn
+            ? `Inlet ${tCl2.toFixed(1)}°C → 40.0°C · Cooling Water (CW)`
+            : `입구 ${tCl2.toFixed(1)}°C → 40.0°C · 냉각수(CW)`,
           group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
-            sourceLabel: 'PLANT 01 전해 기준공장 물질수지',
+            sourceLabel: t('PLANT 01 전해 기준공장 물질수지', 'PLANT 01 Electrolysis Reference Mass Balance'),
             plantId: 'clorsim',
             tab: 'hx',
             equipTag: 'E-210',
-            equipName: '양극 습염소가스 1차 냉각기',
-            detectedFluidSummary: '습염소가스 (Wet Cl₂ + H₂O Vapor)',
+            equipName: t('양극 습염소가스 1차 냉각기', 'Anolyte Wet Chlorine Gas Primary Cooler'),
+            detectedFluidSummary: t('습염소가스 (Wet Cl₂ + H₂O Vapor)', 'Wet Chlorine Gas (Wet Cl₂ + H₂O Vapor)'),
             hx: {
               hx_type: 'shell_tube',
               hotFluidId: 'cl2_wet_gas',
@@ -271,18 +282,22 @@ function UnitEquipmentInner() {
         const tNaoh = sNaoh.temperature_C ?? 89.0;
         list.push({
           id: 'p1-e220',
-          label: `[E-220] 32% 가성소다 판형 냉각기 (Stream L1 · ${sNaoh.total_kgh.toFixed(0)} kg/h)`,
-          summary: `입구 ${tNaoh.toFixed(1)}°C → 45.0°C · 판형(PHE)`,
+          label: isEn
+            ? `[E-220] 32% Caustic Soda Plate Cooler (Stream L1 · ${sNaoh.total_kgh.toFixed(0)} kg/h)`
+            : `[E-220] 32% 가성소다 판형 냉각기 (Stream L1 · ${sNaoh.total_kgh.toFixed(0)} kg/h)`,
+          summary: isEn
+            ? `Inlet ${tNaoh.toFixed(1)}°C → 45.0°C · Plate (PHE)`
+            : `입구 ${tNaoh.toFixed(1)}°C → 45.0°C · 판형(PHE)`,
           group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
-            sourceLabel: 'PLANT 01 전해 기준공장 물질수지',
+            sourceLabel: t('PLANT 01 전해 기준공장 물질수지', 'PLANT 01 Electrolysis Reference Mass Balance'),
             plantId: 'clorsim',
             tab: 'hx',
             equipTag: 'E-220',
-            equipName: '32% 가성소다 순환/제품 판형냉각기',
-            detectedFluidSummary: `32 wt% 가성소다 수용액`,
+            equipName: t('32% 가성소다 순환/제품 판형냉각기', '32% Caustic Soda Circulation/Product Plate Cooler'),
+            detectedFluidSummary: t('32 wt% 가성소다 수용액', '32 wt% Caustic Soda Aqueous Solution'),
             hx: {
               hx_type: 'plate_phe',
               hotFluidId: 'naoh_32',
@@ -310,18 +325,22 @@ function UnitEquipmentInner() {
         const pH2 = sH2.pressure_kgcm2g ?? 0.45;
         list.push({
           id: 'p1-pipe220',
-          label: `[PIPE-220] 음극 수소가스 주배관 사이징 (Stream 220 · ${sH2.total_kgh.toFixed(0)} kg/h)`,
-          summary: `${tH2.toFixed(1)}°C · ${pH2} kG · 기상 배관`,
+          label: isEn
+            ? `[PIPE-220] Cathode H₂ Gas Main Header Sizing (Stream 220 · ${sH2.total_kgh.toFixed(0)} kg/h)`
+            : `[PIPE-220] 음극 수소가스 주배관 사이징 (Stream 220 · ${sH2.total_kgh.toFixed(0)} kg/h)`,
+          summary: isEn
+            ? `${tH2.toFixed(1)}°C · ${pH2} kG · Gas Piping`
+            : `${tH2.toFixed(1)}°C · ${pH2} kG · 기상 배관`,
           group: 'case',
           payload: {
             version: 1,
             timestamp: Date.now(),
-            sourceLabel: 'PLANT 01 전해 기준공장 물질수지',
+            sourceLabel: t('PLANT 01 전해 기준공장 물질수지', 'PLANT 01 Electrolysis Reference Mass Balance'),
             plantId: 'clorsim',
             tab: 'piping',
             equipTag: 'H2-HDR-220',
-            equipName: '음극 습수소 헤더 배관',
-            detectedFluidSummary: '습수소 가스 (H₂ + 수증기)',
+            equipName: t('음극 습수소 헤더 배관', 'Cathode Wet Hydrogen Header Pipe'),
+            detectedFluidSummary: t('습수소 가스 (H₂ + 수증기)', 'Wet Hydrogen Gas (H₂ + Water Vapor)'),
             piping: {
               fluidId: 'h2_wet_gas',
               flowMode: 'gas',
@@ -371,7 +390,7 @@ function UnitEquipmentInner() {
                   flowEdges,
                   solved.streams,
                   uRes,
-                  '현재 클래식 케이스'
+                  t('현재 클래식 케이스', 'Current Classic Case')
                 );
                 if (!rawPayload) continue;
                 seenTags.add(tagKey);
@@ -380,11 +399,11 @@ function UnitEquipmentInner() {
                   plantId: 'classic_sim',
                 };
                 const flowTxt = uRes?.inletMassKgH ? `${uRes.inletMassKgH.toFixed(0)} kg/h` : '-';
-                const tabKo = getTabKoLabel(payload.tab);
+                const tabLbl = getTabLabel(payload.tab, isEn);
                 classicList.push({
                   id: `classic-${def.id}`,
-                  label: `[${def.tag}] ${def.name} (${tabKo} · ${flowTxt})`,
-                  summary: `현재 클래식 케이스 · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
+                  label: `[${def.tag}] ${def.name} (${tabLbl} · ${flowTxt})`,
+                  summary: `${t('현재 클래식 케이스', 'Current Classic Case')} · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
                   group: 'case',
                   payload,
                 });
@@ -446,8 +465,8 @@ function UnitEquipmentInner() {
               master: {
                 id: 'master',
                 sectionCode: 'SANDBOX',
-                shortTabLabel: '신규 빌더',
-                title: '신규 공정 플로우시트',
+                shortTabLabel: t('신규 빌더', 'New Builder'),
+                title: t('신규 공정 플로우시트', 'New Process Flowsheet'),
                 subtitle: '',
                 parentMasterNodeIds: [],
                 simDefs: parsed.simDefs as FlowNodeDef[],
@@ -508,7 +527,7 @@ function UnitEquipmentInner() {
         const uRes = unitMap.get(def.id);
         const sourceLbl =
           activePlantId === 'new_builder'
-            ? `현재 시뮬레이터 케이스 · ${sh.shortTabLabel || sh.title}`
+            ? `${t('현재 시뮬레이터 케이스', 'Current Simulator Case')} · ${sh.shortTabLabel || sh.title}`
             : `${plantMeta.code} ${plantMeta.shortLabel} · ${sh.shortTabLabel || sh.title}`;
         const rawPayload = buildChemProHandoffPayload(
           def,
@@ -524,11 +543,11 @@ function UnitEquipmentInner() {
           plantId: activePlantId,
         };
         const flowTxt = uRes?.inletMassKgH ? `${uRes.inletMassKgH.toFixed(0)} kg/h` : '-';
-        const tabKo = getTabKoLabel(payload.tab);
+        const tabLbl = getTabLabel(payload.tab, isEn);
         extracted.push({
           id: `${sh.id}-${def.id}`,
-          label: `[${def.tag}] ${def.name} (${tabKo} · ${flowTxt})`,
-          summary: `${activePlantId === 'new_builder' ? '현재 시뮬레이터 케이스' : (sh.sectionCode || sh.id)} · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
+          label: `[${def.tag}] ${def.name} (${tabLbl} · ${flowTxt})`,
+          summary: `${activePlantId === 'new_builder' ? t('현재 시뮬레이터 케이스', 'Current Simulator Case') : (sh.sectionCode || sh.id)} · ${uRes?.detectedFluidLabel || payload.detectedFluidSummary}`,
           group: 'case',
           payload,
         });
@@ -539,8 +558,12 @@ function UnitEquipmentInner() {
       extracted.push(
         {
           id: 'mdi-aux-p101',
-          label: '[P-101A/B] MDA/아닐린 순환·이송 펌프 (펌프 · 10,006 kg/h)',
-          summary: '100 SEC · 정제 조 MDA/아닐린 (95°C · 0.5→3.8 barG)',
+          label: isEn
+            ? '[P-101A/B] MDA/Aniline Circulation & Transfer Pump (Pump · 10,006 kg/h)'
+            : '[P-101A/B] MDA/아닐린 순환·이송 펌프 (펌프 · 10,006 kg/h)',
+          summary: isEn
+            ? '100 SEC · Crude MDA/Aniline (95°C · 0.5→3.8 barG)'
+            : '100 SEC · 정제 조 MDA/아닐린 (95°C · 0.5→3.8 barG)',
           group: 'case',
           payload: {
             version: 1,
@@ -549,8 +572,8 @@ function UnitEquipmentInner() {
             plantId: 'mdi_plant',
             tab: 'pump',
             equipTag: 'P-101A/B',
-            equipName: 'MDA/아닐린 순환·이송 펌프',
-            detectedFluidSummary: 'MDA/아닐린 유기 혼합액 (95°C · 3.8 kG)',
+            equipName: t('MDA/아닐린 순환·이송 펌프', 'MDA/Aniline Circulation & Transfer Pump'),
+            detectedFluidSummary: t('MDA/아닐린 유기 혼합액 (95°C · 3.8 kG)', 'MDA/Aniline Organic Mixture (95°C · 3.8 kG)'),
             pump: {
               fluidId: 'aniline',
               T_C: 95.0,
@@ -566,8 +589,12 @@ function UnitEquipmentInner() {
         },
         {
           id: 'mdi-aux-p302',
-          label: '[P-302A/B] 회수 MCB 용매 이송펌프 (펌프 · 18,807 kg/h)',
-          summary: '300 SEC · 모노클로로벤젠 MCB (68°C · -0.9→3.5 barG)',
+          label: isEn
+            ? '[P-302A/B] Recovered MCB Solvent Transfer Pump (Pump · 18,807 kg/h)'
+            : '[P-302A/B] 회수 MCB 용매 이송펌프 (펌프 · 18,807 kg/h)',
+          summary: isEn
+            ? '300 SEC · Monochlorobenzene MCB (68°C · -0.9→3.5 barG)'
+            : '300 SEC · 모노클로로벤젠 MCB (68°C · -0.9→3.5 barG)',
           group: 'case',
           payload: {
             version: 1,
@@ -576,8 +603,8 @@ function UnitEquipmentInner() {
             plantId: 'mdi_plant',
             tab: 'pump',
             equipTag: 'P-302A/B',
-            equipName: '회수 MCB 용매 이송·순환 펌프',
-            detectedFluidSummary: '회수 모노클로로벤젠 MCB 용매 (68°C · 3.5 kG)',
+            equipName: t('회수 MCB 용매 이송·순환 펌프', 'Recovered MCB Solvent Transfer & Circulation Pump'),
+            detectedFluidSummary: t('회수 모노클로로벤젠 MCB 용매 (68°C · 3.5 kG)', 'Recovered Monochlorobenzene (MCB) Solvent (68°C · 3.5 kG)'),
             pump: {
               fluidId: 'chlorobenzene',
               T_C: 68.0,
@@ -593,8 +620,12 @@ function UnitEquipmentInner() {
         },
         {
           id: 'mdi-aux-psv201',
-          label: '[PSV-201] 포스겐 반응계 긴급 안전밸브 (안전밸브 · API 526)',
-          summary: '200 SEC · 포스겐/HCl 고압 가스계 (Set 4.5 barG · 145°C)',
+          label: isEn
+            ? '[PSV-201] Phosgenation Reactor Emergency PSV (PSV · API 526)'
+            : '[PSV-201] 포스겐 반응계 긴급 안전밸브 (안전밸브 · API 526)',
+          summary: isEn
+            ? '200 SEC · Phosgene/HCl High-Press. Gas (Set 4.5 barG · 145°C)'
+            : '200 SEC · 포스겐/HCl 고압 가스계 (Set 4.5 barG · 145°C)',
           group: 'case',
           payload: {
             version: 1,
@@ -603,8 +634,8 @@ function UnitEquipmentInner() {
             plantId: 'mdi_plant',
             tab: 'psv',
             equipTag: 'PSV-201',
-            equipName: '포스겐 반응계 긴급 압력방출 안전밸브',
-            detectedFluidSummary: '포스겐(COCl₂) / 무수 HCl 반응 가스 (Set 4.5 barG · 145°C)',
+            equipName: t('포스겐 반응계 긴급 압력방출 안전밸브', 'Phosgenation System Emergency Pressure Relief Valve'),
+            detectedFluidSummary: t('포스겐(COCl₂) / 무수 HCl 반응 가스 (Set 4.5 barG · 145°C)', 'Phosgene (COCl₂) / Anhydrous HCl Reaction Gas (Set 4.5 barG · 145°C)'),
             psv: {
               fluidId: 'phosgene',
               scenario: 'blocked_outlet',
@@ -623,7 +654,7 @@ function UnitEquipmentInner() {
     }
 
     setCandidates(extracted);
-  }, [activePlantId, balance.streams, plantMeta.code, plantMeta.shortLabel, user]);
+  }, [activePlantId, balance.streams, isEn, plantMeta.code, plantMeta.shortLabel, t, user]);
 
   const effectiveTab = searchParams?.get('tab') || fallbackState.tab || 'hx';
   const effectiveHandoff = searchParams?.get('handoff') === '1' || fallbackState.handoff;
