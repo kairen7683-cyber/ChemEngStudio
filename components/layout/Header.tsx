@@ -177,12 +177,20 @@ export default function Header() {
     return () => window.removeEventListener('resize', syncMob);
   }, []);
 
-  // 클라이언트 마운트 시 저장된 활성 공장, 단위/언어 및 선호 시뮬레이터 UI 복원
+  // 클라이언트 마운트 시 저장된 활성 공장, 단위/언어 복원 (통합 단일 UI 사용)
   useEffect(() => {
     hydrateActivePlant();
     hydrateUnits();
-    setSimUiMode(getPreferredSimUiMode());
+    setSimUiMode('modern');
+    setPreferredSimUiMode('modern');
   }, [hydrateActivePlant, hydrateUnits]);
+
+  // 리본(WorkbenchRibbon)에서 검증 리포트 모달 호출 시 수신
+  useEffect(() => {
+    const onOpenVal = () => setValidationModalOpen(true);
+    window.addEventListener('chemeng:open-validation-report', onOpenVal);
+    return () => window.removeEventListener('chemeng:open-validation-report', onOpenVal);
+  }, []);
 
   // URL로 직접 /flowsheet-simulator 또는 /classic-simulator 진입 시 컨텍스트 동기화
   // 주의: activePlantId를 의존성 배열에 넣으면 시뮬레이터 화면에서 예제 공장 클릭 시
@@ -1309,10 +1317,11 @@ export default function Header() {
             <span>{lang === 'en' ? 'Save As' : isMobile ? '다른이름 저장' : '다른 이름으로 저장'}</span>
           </button>
 
-          <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
-
-          {/* 도구 ▾ 통합 드롭다운 (좌측 메뉴 그룹에 자연스럽게 배치) */}
-          <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
+          {/* 도구 ▾ 통합 드롭다운 — 시뮬레이터 화면에서는 하단 리본(장치설계·경제성·물성DB)으로 통합되었으므로 서브페이지에서만 표시 */}
+          {!pathname.startsWith('/flowsheet-simulator') && !pathname.startsWith('/material-balance') && (
+            <>
+              <span style={{ width: 1, height: 18, background: '#334155', flexShrink: 0 }} />
+              <div ref={toolsDropdownRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               ref={toolsTriggerRef}
               type="button"
@@ -1602,7 +1611,9 @@ export default function Header() {
                 </button>
               </div>
             )}
-          </div>
+              </div>
+            </>
+          )}
 
           {/* 서브페이지에서만 표시: ← 시뮬레이션 복귀 */}
           {showReturnToSimBtn && (
@@ -1802,69 +1813,6 @@ export default function Header() {
                   color: '#0F172A',
                 }}
               >
-                {/* 화면 보기 모드 (UI) */}
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>
-                    {lang === 'en' ? 'View Mode (UI)' : '화면 보기 모드 (UI)'}
-                  </div>
-                  <div
-                    role="group"
-                    aria-label={t(lang, 'header_view_title')}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      gap: 4,
-                      background: '#F1F5F9',
-                      border: '1px solid #CBD5E1',
-                      borderRadius: 7,
-                      padding: 3,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsMenuOpen(false);
-                        handleSelectSimUiMode('modern');
-                      }}
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: 5,
-                        border: 'none',
-                        background: effectiveUi === 'modern' ? '#1E3A8A' : 'transparent',
-                        color: effectiveUi === 'modern' ? '#FFFFFF' : '#475569',
-                        fontSize: 11,
-                        fontWeight: effectiveUi === 'modern' ? 800 : 600,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {t(lang, 'header_modern_ui')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsMenuOpen(false);
-                        handleSelectSimUiMode('classic');
-                      }}
-                      style={{
-                        padding: '5px 8px',
-                        borderRadius: 5,
-                        border: 'none',
-                        background: effectiveUi === 'classic' ? '#1E3A8A' : 'transparent',
-                        color: effectiveUi === 'classic' ? '#FFFFFF' : '#475569',
-                        fontSize: 11,
-                        fontWeight: effectiveUi === 'classic' ? 800 : 600,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {t(lang, 'header_classic_ui')}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={{ height: 1, background: '#E2E8F0' }} />
-
                 {/* 단위계 프리셋 */}
                 <div>
                   <div style={{ fontSize: 10, fontWeight: 800, color: '#64748B', marginBottom: 5 }}>

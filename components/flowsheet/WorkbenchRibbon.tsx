@@ -447,15 +447,37 @@ export default function WorkbenchRibbon({
           })}
         </div>
 
-        {/* Right contextual quick actions on tab bar */}
+        {/* Right contextual quick actions on tab bar (always visible Undo/Redo + active sheet) */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 6,
+            gap: 5,
             flexShrink: 0,
           }}
         >
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 3, marginRight: 2 }}>
+            <button
+              type="button"
+              className="wb-icon-btn"
+              onClick={onUndo}
+              disabled={!canUndo}
+              title={t('실행 취소 (Ctrl+Z)', 'Undo (Ctrl+Z)')}
+              style={{ height: 22, minWidth: 24, fontSize: 12, padding: '0 5px' }}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              className="wb-icon-btn"
+              onClick={onRedo}
+              disabled={!canRedo}
+              title={t('다시 실행 (Ctrl+Y)', 'Redo (Ctrl+Y)')}
+              style={{ height: 22, minWidth: 24, fontSize: 12, padding: '0 5px' }}
+            >
+              ↷
+            </button>
+          </div>
           {activeSheetTitle && (
             <span
               title={activeSheetTitle}
@@ -860,6 +882,17 @@ export default function WorkbenchRibbon({
                 }}
               >
                 {t('물질등록 요청', 'Request Component')}
+              </button>
+              <button
+                type="button"
+                className="wb-cmd-btn"
+                onClick={() => {
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('chemeng:open-validation-report'));
+                  }
+                }}
+              >
+                {t('검증 리포트 (Golden Cases)', 'Validation Report')}
               </button>
             </RibbonGroup>
           </>

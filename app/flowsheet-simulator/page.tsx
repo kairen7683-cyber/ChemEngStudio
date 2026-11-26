@@ -2061,7 +2061,7 @@ function createDefaultParamsForType(type: FlowUnitType, useGenericDefault = fals
   switch (type) {
     case 'feed':
       return useGenericDefault
-        ? { feedTempC: 30, feedPressKgcm2g: 0.3, feedFlowsKgH: { MeOH: 3000, H2O: 5000 } }
+        ? { feedTempC: 25, feedPressKgcm2g: 0, feedFlowsKgH: {} }
         : { feedTempC: 30, feedPressKgcm2g: 0.3, feedFlowsKgH: { Cl2: 5000, O2: 25 } };
     case 'saturator':
       return {
@@ -3430,9 +3430,9 @@ export function FlowsheetWorkspace({
         } else if (pending.action === 'new_blank') {
           savedNodeCount = 0;
           skipNextDirtyRef.current = true;
-          const defaultComps = getPlantDefaultComponents(workspaceMode);
-          setPropertyMethod(defaultModePropertyMethod);
-          setActiveComponents(defaultComps);
+          const emptyComps: SimCompKey[] = [];
+          setPropertyMethod('AUTO');
+          setActiveComponents(emptyComps);
           setPresetId('blank');
           setActiveSheetId('master');
           setBoundarySyncBanner([]);
@@ -3443,7 +3443,7 @@ export function FlowsheetWorkspace({
                 sectionCode: 'NEW-PLANT',
                 shortTabLabel: '기본 시뮬레이션 시트',
                 title: '공정 시뮬레이터',
-                subtitle: '하단 팔레트에서 장치를 배치하거나 상단 프리셋·저장 프로젝트를 불러와 시뮬레이션하세요.',
+                subtitle: '성분·열역학·단위계를 설정한 뒤 하단 팔레트에서 장치를 배치하세요.',
                 parentMasterNodeIds: [],
                 simDefs: [],
                 positions: {},
@@ -3456,8 +3456,8 @@ export function FlowsheetWorkspace({
           setFlowEdges([]);
           setSolvedMeta({
             result: createIdleFlowsheetResult([], [], {
-              propertyMethod: defaultModePropertyMethod,
-              activeComponents: defaultComps,
+              propertyMethod: 'AUTO',
+              activeComponents: emptyComps,
             }),
             elapsedMs: 0,
             runCount: 0,
@@ -3467,6 +3467,7 @@ export function FlowsheetWorkspace({
           setSelectedNodeId(null);
           setSelectedEdgeId(null);
           setActiveCaseTitle(null, workspacePlantId);
+          setCompSetupModalOpen(true);
         }
       } else {
         const handoff = workspaceMode === 'new_plant_builder' ? consumeUiSwitchHandoff() : null;
@@ -5013,6 +5014,15 @@ export function FlowsheetWorkspace({
   };
 
   const clearCanvas = () => {
+    if (simDefs.length > 0 || flowEdges.length > 0) {
+      const ok = window.confirm(
+        isEn
+          ? 'Clear all blocks and streams on the canvas? (You can undo with Ctrl+Z)'
+          : '캔버스의 모든 장치와 스트림을 비우시겠습니까? (실행 취소 Ctrl+Z 가능)'
+      );
+      if (!ok) return;
+      pushUndoSnapshot();
+    }
     skipNextDirtyRef.current = true;
     setPresetId('blank');
     setBoundarySyncBanner([]);
@@ -5027,14 +5037,14 @@ export function FlowsheetWorkspace({
       });
       setActiveSheetId('master');
     }
-    if (simDefs.length > 0 || flowEdges.length > 0) {
-      pushUndoSnapshot();
-    }
     setSimDefs([]);
     setRfNodes([]);
     setFlowEdges([]);
     setSolvedMeta({
-      result: createIdleFlowsheetResult([], []),
+      result: createIdleFlowsheetResult([], [], {
+        propertyMethod,
+        activeComponents,
+      }),
       elapsedMs: 0,
       runCount: 0,
       lastRunTime: '미실행 (▶ RUN 대기)',
@@ -5042,6 +5052,7 @@ export function FlowsheetWorkspace({
     setIsSimDirty(true);
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setInspectorOpen(false);
     setActiveCaseTitle(null, workspacePlantId);
   };
 
@@ -5478,25 +5489,27 @@ export function FlowsheetWorkspace({
           const fid = `u_in_${Date.now()}_${feedSeq}`;
           const ftag = `S-IN-${String(feedSeq).padStart(2, '0')}`;
           const fParams =
-            targetDef.unitType === 'distillation'
-              ? {
-                  feedTempC: 65,
-                  feedPressKgcm2g: 0.2,
-                  feedFlowsKgH: { ECH: 5000, DCH: 5000 } as Partial<Record<SimCompKey, number>>,
-                }
-              : inp.port === 'anode_in'
+            useGenericDefault
+              ? createDefaultParamsForType('feed', true)
+              : targetDef.unitType === 'distillation'
                 ? {
                     feedTempC: 65,
-                    feedPressKgcm2g: 1.2,
-                    feedFlowsKgH: { NaCl: 7680, H2O: 22320 } as Partial<Record<SimCompKey, number>>,
+                    feedPressKgcm2g: 0.2,
+                    feedFlowsKgH: { ECH: 5000, DCH: 5000 } as Partial<Record<SimCompKey, number>>,
                   }
-                : inp.port === 'cathode_in'
+                : inp.port === 'anode_in'
                   ? {
-                      feedTempC: 80,
+                      feedTempC: 65,
                       feedPressKgcm2g: 1.2,
-                      feedFlowsKgH: { NaOH: 9000, H2O: 21000 } as Partial<Record<SimCompKey, number>>,
+                      feedFlowsKgH: { NaCl: 7680, H2O: 22320 } as Partial<Record<SimCompKey, number>>,
                     }
-                  : createDefaultParamsForType('feed', useGenericDefault);
+                  : inp.port === 'cathode_in'
+                    ? {
+                        feedTempC: 80,
+                        feedPressKgcm2g: 1.2,
+                        feedFlowsKgH: { NaOH: 9000, H2O: 21000 } as Partial<Record<SimCompKey, number>>,
+                      }
+                    : createDefaultParamsForType('feed', useGenericDefault);
 
           addedDefs.push({ id: fid, tag: ftag, name: inp.label, unitType: 'feed', params: fParams });
           addedRfNodes.push({
@@ -5849,9 +5862,9 @@ export function FlowsheetWorkspace({
         setTimeout(() => rfInstance?.fitView({ padding: 0.14, duration: 240 }), 60);
       } else if (pending.action === 'new_blank') {
         skipNextDirtyRef.current = true;
-        const defaultComps = getPlantDefaultComponents(workspaceMode);
-        setPropertyMethod(defaultModePropertyMethod);
-        setActiveComponents(defaultComps);
+        const emptyComps: SimCompKey[] = [];
+        setPropertyMethod('AUTO');
+        setActiveComponents(emptyComps);
         setPresetId('blank');
         setActiveSheetId('master');
         setBoundarySyncBanner([]);
@@ -5871,8 +5884,8 @@ export function FlowsheetWorkspace({
         setFlowEdges([]);
         setSolvedMeta({
           result: createIdleFlowsheetResult([], [], {
-            propertyMethod: defaultModePropertyMethod,
-            activeComponents: defaultComps,
+            propertyMethod: 'AUTO',
+            activeComponents: emptyComps,
           }),
           elapsedMs: 0,
           runCount: 0,
@@ -5883,6 +5896,7 @@ export function FlowsheetWorkspace({
         setSelectedEdgeId(null);
         setShowStorageBar(false);
         setActiveCaseTitle(null, workspacePlantId);
+        setCompSetupModalOpen(true);
       }
     };
   });
@@ -7202,9 +7216,10 @@ export function FlowsheetWorkspace({
           ref={centerSplitRef}
           style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, overflow: 'hidden' }}
         >
-          {/* ── Aspen/Classic-style 상단 MDI 문서 탭 바 (플로우시트 · 스트림 요약 · 장치 요약) ── */}
+          {/* ── Aspen/Classic-style 상단 MDI 문서 탭 바 (플로우시트 · 스트림 요약) ── */}
           {!isMobile && (
             <div
+              className="wb-mdi-bar"
               style={{
                 height: 29,
                 background: '#F1F5F9',

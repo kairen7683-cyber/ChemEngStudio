@@ -80,6 +80,17 @@ export default function WorkbenchExplorer({
     ...sheets.filter(s => s.id !== 'master'),
   ];
 
+  // 블록 목록에는 순수 공정 장치만 표시 (feed/product 경계 노드는 스트림과 중복되므로 제외)
+  const equipmentBlocks = blocks.filter(
+    b => b.unitType !== 'feed' && b.unitType !== 'product'
+  );
+
+  // 스트림 중복 제거 (동일 streamNo/id)
+  const uniqueStreams = streams.filter((s, idx, arr) => {
+    const key = (s.streamNo || s.id).trim();
+    return arr.findIndex(x => (x.streamNo || x.id).trim() === key) === idx;
+  });
+
   const handleMouseEnterItem = (e: React.MouseEvent<HTMLElement>, title: string, sub?: string) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setHoverTip({
@@ -94,7 +105,7 @@ export default function WorkbenchExplorer({
       className="wb-slim-rail"
       onMouseLeave={() => setHoverTip(null)}
       style={{
-        width: 98,
+        width: 76,
         flexShrink: 0,
         height: '100%',
         backgroundColor: 'var(--bg-surface, #FFFFFF)',
@@ -109,7 +120,7 @@ export default function WorkbenchExplorer({
       }}
     >
       <style>{`
-        .wb-rail-scroll::-webkit-scrollbar { width: 4px; }
+        .wb-rail-scroll::-webkit-scrollbar { width: 3px; }
         .wb-rail-scroll::-webkit-scrollbar-track { background: transparent; }
         .wb-rail-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
         .wb-rail-item {
@@ -118,8 +129,8 @@ export default function WorkbenchExplorer({
           border-left: 2px solid transparent;
           background: transparent;
           text-align: left;
-          padding: 4px 6px;
-          font-size: 10.5px;
+          padding: 3.5px 5px;
+          font-size: 10px;
           font-weight: 600;
           color: var(--text-secondary, #334155);
           font-family: ${MONO};
@@ -129,6 +140,12 @@ export default function WorkbenchExplorer({
           text-overflow: ellipsis;
           white-space: nowrap;
           transition: background-color 100ms ease, color 100ms ease;
+        }
+        .wb-rail-item.wb-rail-stream {
+          color: #0F766E;
+        }
+        html[data-wb-theme="dark"] .wb-rail-item.wb-rail-stream {
+          color: #5EEAD4;
         }
         .wb-rail-item:hover {
           background-color: var(--bg-hover, #F1F5F9);
@@ -151,11 +168,11 @@ export default function WorkbenchExplorer({
           background: var(--bg-base, #F8FAFC);
           border-top: 1px solid var(--border-subtle, #E2E8F0);
           border-bottom: 1px solid var(--border-subtle, #E2E8F0);
-          padding: 4px 6px;
-          font-size: 9.5px;
+          padding: 3.5px 5px;
+          font-size: 9px;
           font-weight: 800;
           color: var(--text-muted, #64748B);
-          letter-spacing: 0.25px;
+          letter-spacing: 0.15px;
           display: flex;
           align-items: center;
           justify-content: space-between;
@@ -237,18 +254,18 @@ export default function WorkbenchExplorer({
           </div>
         )}
 
-        {/* 2) 블록 (장치 태그) */}
+        {/* 2) 블록 (순수 장치 태그만) */}
         <button
           type="button"
           className="wb-rail-sec-btn"
           onClick={() => setBlocksOpen(v => !v)}
         >
-          <span>{t('블록', 'BLOCKS')} ({blocks.length})</span>
+          <span>{t('블록', 'BLK')} ({equipmentBlocks.length})</span>
           <span>{blocksOpen ? '▾' : '▸'}</span>
         </button>
         {blocksOpen && (
           <div style={{ padding: '2px 0' }}>
-            {blocks.map(b => {
+            {equipmentBlocks.map(b => {
               const active = selectedNodeId === b.id;
               return (
                 <button
@@ -266,28 +283,27 @@ export default function WorkbenchExplorer({
           </div>
         )}
 
-        {/* 3) 스트림 (배관 번호) */}
+        {/* 3) 스트림 (중복 제거된 배관 번호) */}
         <button
           type="button"
           className="wb-rail-sec-btn"
           onClick={() => setStreamsOpen(v => !v)}
         >
-          <span>{t('스트림', 'STREAMS')} ({streams.length})</span>
+          <span>{t('스트림', 'STR')} ({uniqueStreams.length})</span>
           <span>{streamsOpen ? '▾' : '▸'}</span>
         </button>
         {streamsOpen && (
           <div style={{ padding: '2px 0 8px' }}>
-            {streams.map(s => {
+            {uniqueStreams.map(s => {
               const active = selectedEdgeId === s.id;
               return (
                 <button
                   key={s.id}
                   type="button"
-                  className={`wb-rail-item${active ? ' active' : ''}`}
+                  className={`wb-rail-item wb-rail-stream${active ? ' active' : ''}`}
                   onClick={() => onSelectStream?.(s.id)}
                   onMouseEnter={e => handleMouseEnterItem(e, s.streamNo, s.summary)}
                   onMouseLeave={() => setHoverTip(null)}
-                  style={{ color: active ? undefined : '#0F766E' }}
                 >
                   {s.streamNo}
                 </button>
@@ -302,7 +318,7 @@ export default function WorkbenchExplorer({
         <div
           style={{
             position: 'fixed',
-            left: 104,
+            left: 82,
             top: hoverTip.top,
             transform: 'translateY(-50%)',
             zIndex: 9999,

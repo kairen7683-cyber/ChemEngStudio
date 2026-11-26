@@ -30,6 +30,8 @@ import {
 } from '@/lib/calculations/customComponentEngine';
 import { useAuth } from '@/components/auth/AuthContext';
 import { isPlantAllowed, isSimulatorOnlyUser } from '@/lib/plantRegistry';
+import { useUnitStore } from '@/lib/stores/unitStore';
+import { UNIT_PRESETS } from '@/lib/units/unitSystem';
 
 export interface ComponentPropertySetupModalProps {
   open: boolean;
@@ -63,6 +65,8 @@ export default function ComponentPropertySetupModal({
   onApply,
 }: ComponentPropertySetupModalProps) {
   const { user } = useAuth();
+  const unitPresetId = useUnitStore(s => s.presetId);
+  const applyUnitPreset = useUnitStore(s => s.applyPreset);
   const isSimOnly = isSimulatorOnlyUser(user);
   const visibleGeneralPacks = useMemo(
     () => (isSimOnly ? GENERAL_COMPONENT_PACKS.filter(pk => pk.id !== 'chlorinated_org') : GENERAL_COMPONENT_PACKS),
@@ -114,7 +118,7 @@ export default function ComponentPropertySetupModal({
 
   useEffect(() => {
     if (open) {
-      setDraftComps(activeComponents.length > 0 ? activeComponents : ['H2O', 'N2']);
+      setDraftComps(activeComponents);
       setDraftMethod(propertyMethod || 'AUTO');
       setSourceTab(isPlantCtx ? 'plant' : 'general');
       setSearchQuery('');
@@ -1417,6 +1421,50 @@ export default function ComponentPropertySetupModal({
           </div>
         </div>
 
+        {/* 단위계 선택 바 (새 시뮬레이션 · 단위계 빠른 설정) */}
+        <div
+          style={{
+            padding: '7px 18px',
+            borderTop: '1px solid #E2E8F0',
+            background: '#FFFFFF',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            flexWrap: 'wrap',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#334155', whiteSpace: 'nowrap' }}>
+            단위계 (Unit System):
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+            {UNIT_PRESETS.map(p => {
+              const active = unitPresetId === p.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => applyUnitPreset(p.id)}
+                  title={p.desc}
+                  style={{
+                    padding: '3px 9px',
+                    borderRadius: 5,
+                    border: active ? '1px solid #1E3A8A' : '1px solid #CBD5E1',
+                    background: active ? '#EFF6FF' : '#F8FAFC',
+                    color: active ? '#1E3A8A' : '#475569',
+                    fontSize: 11,
+                    fontWeight: active ? 800 : 600,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* 하단 선택 성분 요약 + 적용 버튼 바 */}
         <div
           style={{
@@ -1443,26 +1491,32 @@ export default function ComponentPropertySetupModal({
             <span style={{ fontSize: 10.5, fontWeight: 800, color: '#334155', marginRight: 4 }}>
               선택 ({draftComps.length}):
             </span>
-            {draftComps.map(c => (
-              <span
-                key={c}
-                onClick={() => toggleComp(c)}
-                title="클릭하여 제거"
-                style={{
-                  fontSize: 10,
-                  fontWeight: 800,
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  background: '#FFFFFF',
-                  border: '1px solid #94A3B8',
-                  color: '#0F172A',
-                  cursor: 'pointer',
-                  fontFamily: 'JetBrains Mono, monospace',
-                }}
-              >
-                {c} ×
+            {draftComps.length === 0 ? (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#B45309' }}>
+                위 목록에서 사용할 화학 성분을 1개 이상 선택하세요 (열역학 모델 자동 추천)
               </span>
-            ))}
+            ) : (
+              draftComps.map(c => (
+                <span
+                  key={c}
+                  onClick={() => toggleComp(c)}
+                  title="클릭하여 제거"
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: '#FFFFFF',
+                    border: '1px solid #94A3B8',
+                    color: '#0F172A',
+                    cursor: 'pointer',
+                    fontFamily: 'JetBrains Mono, monospace',
+                  }}
+                >
+                  {c} ×
+                </span>
+              ))
+            )}
           </div>
 
           <div
@@ -1493,23 +1547,25 @@ export default function ComponentPropertySetupModal({
             </button>
             <button
               type="button"
+              disabled={draftComps.length === 0}
               onClick={() => {
+                if (draftComps.length === 0) return;
                 onApply(draftComps, draftMethod);
                 onClose();
               }}
               style={{
                 padding: '7px 18px',
                 borderRadius: 7,
-                border: '1px solid #1D4ED8',
-                background: '#2563EB',
+                border: '1px solid #1E3A8A',
+                background: draftComps.length === 0 ? '#94A3B8' : '#1E3A8A',
                 color: '#FFFFFF',
                 fontSize: 12,
                 fontWeight: 900,
-                cursor: 'pointer',
-                boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)',
+                cursor: draftComps.length === 0 ? 'not-allowed' : 'pointer',
+                boxShadow: draftComps.length === 0 ? 'none' : '0 2px 6px rgba(30, 58, 138, 0.25)',
               }}
             >
-              ✓ 적용 및 재계산
+              ✓ 적용 및 시작
             </button>
           </div>
         </div>
