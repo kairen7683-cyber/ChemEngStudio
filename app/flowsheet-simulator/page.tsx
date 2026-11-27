@@ -898,32 +898,37 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
               : undefined
       }
       style={{
-        minWidth: isStreamBlock
-          ? 90
-          : isElectrolyzer
-            ? 138
-            : hasSubSheet
-              ? 120
-              : unitType === 'distillation'
-                ? 112
-                : 96,
-        background: selected ? 'rgba(239, 246, 255, 0.92)' : 'rgba(255, 255, 255, 0.92)',
+        width: isElectrolyzer
+          ? 108
+          : isStreamBlock
+            ? 62
+            : unitType === 'distillation' || unitType === 'absorber' || unitType === 'extractor' || unitType === 'separator'
+              ? 68
+              : 66,
+        minHeight: isElectrolyzer
+          ? 74
+          : isStreamBlock
+            ? 46
+            : unitType === 'distillation' || unitType === 'absorber' || unitType === 'extractor' || unitType === 'separator'
+              ? 68
+              : 52,
+        background: selected ? 'rgba(239, 246, 255, 0.94)' : 'rgba(255, 255, 255, 0.94)',
         border: selected
           ? '1.5px dashed #1D4ED8'
           : visualOnly
             ? '1px dashed #CBD5E1'
-            : '1px solid #E2E8F0',
-        borderRadius: 6,
+            : '1px solid #CBD5E1',
+        borderRadius: 7,
         boxShadow: selected
-          ? '0 0 0 3px rgba(29, 78, 216, 0.14)'
-          : '0 1px 4px rgba(15, 23, 42, 0.06)',
+          ? '0 0 0 3px rgba(29, 78, 216, 0.16)'
+          : '0 1px 4px rgba(15, 23, 42, 0.07)',
         fontFamily: "'Inter', system-ui, sans-serif",
         position: 'relative',
-        padding: '6px 10px 5px 10px',
+        padding: '5px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 2,
+        justifyContent: 'center',
       }}
     >
       {/* ── 우상단 수렴(✓) / 에러(!) 상태 배지 ── */}
@@ -1020,10 +1025,9 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
         />
       )}
 
-      {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 (Flip/Rotate는 심볼에만 적용하여 텍스트 가독성 유지) ── */}
+      {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 (컴팩트 박스 내부 전용) ── */}
       <div
         style={{
-          padding: '2px 2px 1px 2px',
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
@@ -1032,83 +1036,52 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
         }}
       >
         {useClassicIcon ? (
-          <ClassicUnitSvg unitType={unitType} size={46} />
+          <ClassicUnitSvg unitType={unitType} size={38} />
         ) : (
-          <PfdEquipmentSvg type={unitType} strokeColor={visualOnly ? '#64748B' : '#1E293B'} scale={0.92} />
+          <PfdEquipmentSvg type={unitType} strokeColor={visualOnly ? '#64748B' : '#1E293B'} scale={0.82} />
         )}
       </div>
 
-      {/* ── 태그명 (단정하고 선명하게) ── */}
-      <div
-        style={{
-          fontFamily: 'JetBrains Mono, monospace',
-          fontSize: 10.5,
-          fontWeight: 900,
-          color: visualOnly ? '#64748B' : '#0F172A',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {data.tag}
-      </div>
-
-      {/* ── 장치명 ── */}
-      <div
-        style={{
-          fontSize: 9.2,
-          fontWeight: 600,
-          color: '#475569',
-          whiteSpace: 'nowrap',
-          textAlign: 'center',
-          maxWidth: 132,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {data.name}
-      </div>
-
-      {/* ── 간결한 핵심 수치 1줄 ── */}
-      {data.liveSummary && (
-        <div
-          style={{
-            fontSize: 8.5,
-            color: '#1D4ED8',
-            fontFamily: 'JetBrains Mono, monospace',
-            fontWeight: 700,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {data.liveSummary}
+      {/* ── 박스 바깥 하단 분리 라벨 (태그 · 장치명 · 핵심 수치 · 세부공정 링크) ── */}
+      <div className="cp-node-detached-label">
+        <div className={`cp-node-tag${visualOnly ? ' muted' : ''}`}>
+          {data.tag}
         </div>
-      )}
-
-      {/* ── 하위 세부 공정 진입 링크 ── */}
-      {hasSubSheet && data.subSheetId && (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation();
-            data.onOpenSubSheet?.(data.subSheetId!);
-          }}
-          title="더블클릭하거나 클릭하여 내부 세부 공정 도면으로 이동합니다."
-          style={{
-            marginTop: 1,
-            padding: '1px 5px',
-            border: 'none',
-            background: 'transparent',
-            color: '#1D4ED8',
-            fontSize: 8.5,
-            fontWeight: 800,
-            cursor: 'pointer',
-            whiteSpace: 'nowrap',
-            textDecoration: 'underline',
-          }}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            <SubprocessTreeIcon size={10} /> {data.subSheetBadge || (isEn ? 'Sub-Process' : '세부공정')}
-          </span>
-        </button>
-      )}
+        <div className="cp-node-name">
+          {data.name}
+        </div>
+        {data.liveSummary && (
+          <div className="cp-node-summary">
+            {data.liveSummary}
+          </div>
+        )}
+        {hasSubSheet && data.subSheetId && (
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              data.onOpenSubSheet?.(data.subSheetId!);
+            }}
+            title="더블클릭하거나 클릭하여 내부 세부 공정 도면으로 이동합니다."
+            style={{
+              marginTop: 1,
+              padding: '1px 5px',
+              border: 'none',
+              background: 'transparent',
+              color: '#1D4ED8',
+              fontSize: 9,
+              fontWeight: 800,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              textDecoration: 'underline',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <SubprocessTreeIcon size={10} /> {data.subSheetBadge || (isEn ? 'Sub-Process' : '세부공정')}
+            </span>
+          </button>
+        )}
+      </div>
 
       {/* ── 유입 포트 (모두 type="source" + ConnectionMode.Loose로 양방향 연결 지원) ── */}
       {isElectrolyzer ? (

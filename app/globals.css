@@ -827,3 +827,65 @@ html[data-wb-theme="dark"] .cp-stream-card-compact {
 html[data-wb-theme="dark"] .cp-stream-card-tp {
   color: #94A3B8 !important;
 }
+
+/* ============================================================
+   Compact Equipment Node — Detached Bottom Label (Light & Dark)
+   ============================================================ */
+.cp-node-detached-label {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: auto;
+  text-align: center;
+  z-index: 5;
+}
+.cp-node-tag {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 900;
+  color: #0F172A;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.cp-node-tag.muted {
+  color: #64748B;
+}
+.cp-node-name {
+  font-size: 9.8px;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+  max-width: 145px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+.cp-node-summary {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9.2px;
+  font-weight: 700;
+  color: #1D4ED8;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+html[data-wb-theme="dark"] .cp-node-tag {
+  color: #F8FAFC !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+html[data-wb-theme="dark"] .cp-node-tag.muted {
+  color: #94A3B8 !important;
+}
+html[data-wb-theme="dark"] .cp-node-name {
+  color: #CBD5E1 !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
+html[data-wb-theme="dark"] .cp-node-summary {
+  color: #60A5FA !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+}
