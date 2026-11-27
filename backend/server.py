@@ -3022,6 +3022,52 @@ def _require_hub_access(
     return user
 
 
+def _extract_hub_preview_graph(raw_json: str) -> Optional[dict[str, Any]]:
+    if not raw_json:
+        return None
+    try:
+        parsed = json.loads(raw_json)
+        if not isinstance(parsed, dict):
+            return None
+        sim_defs = parsed.get("simDefs")
+        flow_edges = parsed.get("flowEdges")
+        rf_nodes = parsed.get("rfNodes")
+        if not isinstance(sim_defs, list) or len(sim_defs) == 0:
+            return None
+        pos_map: dict[str, tuple[float, float]] = {}
+        if isinstance(rf_nodes, list):
+            for rn in rf_nodes[:40]:
+                if isinstance(rn, dict) and rn.get("id") and isinstance(rn.get("position"), dict):
+                    try:
+                        pos_map[str(rn["id"])] = (
+                            float(rn["position"].get("x", 0)),
+                            float(rn["position"].get("y", 0)),
+                        )
+                    except Exception:
+                        pass
+        nodes: list[dict[str, Any]] = []
+        for idx, d in enumerate(sim_defs[:32]):
+            if not isinstance(d, dict) or not d.get("id"):
+                continue
+            nid = str(d["id"])
+            x, y = pos_map.get(nid, (idx * 160.0, 0.0))
+            nodes.append({
+                "id": nid,
+                "x": round(x, 1),
+                "y": round(y, 1),
+                "type": str(d.get("unitType") or "unit")[:24],
+                "tag": str(d.get("tag") or "")[:14],
+            })
+        edges: list[dict[str, str]] = []
+        if isinstance(flow_edges, list):
+            for e in flow_edges[:48]:
+                if isinstance(e, dict) and e.get("source") and e.get("target"):
+                    edges.append({"s": str(e["source"]), "t": str(e["target"])})
+        return {"nodes": nodes, "edges": edges} if nodes else None
+    except Exception:
+        return None
+
+
 def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str, Any]:
     try:
         tags = json.loads(row["tags_json"] or "[]")
@@ -3029,6 +3075,7 @@ def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str
             tags = []
     except Exception:
         tags = []
+    raw_fs = row["flowsheet_json"] or ""
     item: dict[str, Any] = {
         "id": row["id"],
         "title": row["title"],
@@ -3049,9 +3096,10 @@ def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str
         "likes": row["likes"],
         "createdAt": row["created_at"],
         "updatedAt": row["updated_at"],
+        "previewGraph": _extract_hub_preview_graph(raw_fs) if raw_fs else None,
     }
     if include_json:
-        item["flowsheetJson"] = row["flowsheet_json"] or ""
+        item["flowsheetJson"] = raw_fs
     return item
 
 
