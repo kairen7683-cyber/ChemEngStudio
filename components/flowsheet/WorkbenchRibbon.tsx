@@ -55,6 +55,8 @@ export interface WorkbenchRibbonProps {
   onSaveCase?: () => void;
   onOpenHub?: () => void;
   onShareToHub?: () => void;
+  onOpenSpecModal?: () => void;
+  enabledSpecsCount?: number;
   onOpenComponentRequest?: () => void;
   onNavigateRoute: (href: string) => void;
   onSwitchClassicUi?: () => void;
@@ -164,6 +166,8 @@ export default function WorkbenchRibbon({
   onSaveCase,
   onOpenHub,
   onShareToHub,
+  onOpenSpecModal,
+  enabledSpecsCount = 0,
   onOpenComponentRequest,
   onNavigateRoute,
   onSwitchClassicUi,
@@ -505,24 +509,22 @@ export default function WorkbenchRibbon({
             flexShrink: 0,
           }}
         >
-          {activeSheetTitle && (
+          {isPlantSimMode && activeSheetTitle && (
             <span
               title={activeSheetTitle}
               style={{
                 fontSize: 11,
-                fontWeight: 600,
+                fontWeight: 700,
                 color: '#475569',
-                backgroundColor: '#F1F5F9',
-                border: '1px solid #E2E8F0',
-                borderRadius: 3,
-                padding: '1px 7px',
-                maxWidth: 220,
+                padding: '0 6px',
+                maxWidth: 240,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
+                userSelect: 'none',
               }}
             >
-              {activeSheetTitle}
+              ▸ {activeSheetTitle}
             </span>
           )}
           {onOpenCaseMenu && (
@@ -607,6 +609,34 @@ export default function WorkbenchRibbon({
               ⬆ {t('공유', 'Share')}
             </button>
           )}
+          <button
+            type="button"
+            onClick={toggleWbTheme}
+            title={
+              wbTheme === 'dark'
+                ? t('라이트 모드로 전환', 'Switch to Light Mode')
+                : t('다크 모드로 전환', 'Switch to Dark Mode')
+            }
+            aria-label={t('화면 테마 전환', 'Toggle Light / Dark Theme')}
+            style={{
+              height: 20,
+              width: 24,
+              padding: 0,
+              borderRadius: 3,
+              border: '1px solid #CBD5E1',
+              background: '#FFFFFF',
+              color: '#334155',
+              fontSize: 11.5,
+              lineHeight: '18px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {wbTheme === 'dark' ? '☀' : '🌙'}
+          </button>
         </div>
       </div>
 
@@ -645,7 +675,7 @@ export default function WorkbenchRibbon({
               </RibbonGroup>
             )}
 
-            <RibbonGroup label={t('실행', 'Run')}>
+            <RibbonGroup label={t('실행 · 해석', 'Run & Analysis')}>
               <button
                 type="button"
                 className="wb-run-btn"
@@ -689,6 +719,35 @@ export default function WorkbenchRibbon({
                 />
                 <span>{statusInfo.text}</span>
               </button>
+
+              {onOpenSpecModal && (
+                <button
+                  type="button"
+                  className={`wb-cmd-btn${enabledSpecsCount > 0 ? ' active' : ''}`}
+                  onClick={onOpenSpecModal}
+                  title={t(
+                    '목표역산 제어기(Design Spec), 민감도 분석(Sensitivity), 리사이클 수렴기 설정',
+                    'Design Spec controller, Sensitivity analysis, and recycle solver settings'
+                  )}
+                >
+                  <span>◎</span>
+                  <span>{t('목표역산 · 민감도', 'Specs · Sensitivity')}</span>
+                  {enabledSpecsCount > 0 && (
+                    <span
+                      style={{
+                        padding: '0 5px',
+                        borderRadius: 999,
+                        background: '#1E3A8A',
+                        color: '#FFFFFF',
+                        fontSize: 9.5,
+                        fontWeight: 900,
+                      }}
+                    >
+                      {enabledSpecsCount}
+                    </span>
+                  )}
+                </button>
+              )}
             </RibbonGroup>
 
             <RibbonGroup label={t('보기', 'View')}>
@@ -956,19 +1015,6 @@ export default function WorkbenchRibbon({
                   {t('미국·글로벌 EPC', 'US·Global EPC')}
                 </button>
               </div>
-            </RibbonGroup>
-
-            <RibbonGroup label={t('화면 테마', 'Theme')}>
-              <button
-                type="button"
-                className="wb-cmd-btn"
-                onClick={toggleWbTheme}
-                title={t('라이트 / 다크 테마 전환', 'Toggle Light / Dark theme')}
-              >
-                {wbTheme === 'dark'
-                  ? t('☀ 라이트 모드', '☀ Light Mode')
-                  : t('🌙 다크 모드', '🌙 Dark Mode')}
-              </button>
             </RibbonGroup>
 
             <RibbonGroup label={t('데이터시트 프로젝트 정보', 'Datasheet Project Info')} noDivider={!rightExtraSlot}>

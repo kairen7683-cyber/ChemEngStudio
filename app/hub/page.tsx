@@ -598,12 +598,12 @@ export default function ProcessHubPage() {
               OPEN-BROWSER PROCESS FLOWSHEET LIBRARY
             </div>
             <h1 style={{ margin: '0 0 8px', fontSize: 27, fontWeight: 900, letterSpacing: '-0.025em', lineHeight: 1.2 }}>
-              {isEn ? 'Live Converged Flowsheets, Ready to Fork' : '브라우저에서 바로 여는 실무 화학공정 허브'}
+              {isEn ? 'Open Community Flowsheet Hub' : '엔지니어 공정 시뮬레이션 공유 허브'}
             </h1>
-            <p style={{ margin: 0, fontSize: 13.5, color: '#CBD5E1', maxWidth: 660, lineHeight: 1.55 }}>
+            <p style={{ margin: 0, fontSize: 13.5, color: '#CBD5E1', maxWidth: 680, lineHeight: 1.55 }}>
               {isEn
-                ? 'Inspect rigorous MESH distillation, Brayton+Rankine CCGT power cycles, and recycle loops in one click. Publish your own converged PFD directly from the simulator.'
-                : '정밀 MESH 증류, LNG 복합발전(CCGT), 리사이클 반응 공정을 클릭 한 번으로 열어 수렴 실행하고 복제할 수 있습니다. 시뮬레이터 상단 [⬆ 공유]로 내 공정도 바로 게시하세요.'}
+                ? 'An open space for process engineers to freely publish simulation results, share converged PFDs, and fork each other\'s engineering models in one click.'
+                : '화학·공정 엔지니어들이 자신의 시뮬레이션 결과를 자유롭게 게시·공유하고, 다른 엔지니어의 공정 모델을 클릭 한 번으로 열어 참고·수정해 볼 수 있는 열린 공유 공간입니다.'}
             </p>
           </div>
 

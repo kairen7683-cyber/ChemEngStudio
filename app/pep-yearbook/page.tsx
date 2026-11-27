@@ -841,6 +841,96 @@ export default function ProcessEconomicsPage() {
             </table>
           </div>
         </div>
+
+        {/* ── 계산 방법론 및 출처 고지 (Verified Methodology & References) ── */}
+        <details
+          open
+          style={{
+            marginTop: 14,
+            background: '#FFFFFF',
+            border: '1px solid #E5E2DC',
+            borderRadius: 10,
+            padding: '14px 16px',
+          }}
+        >
+          <summary
+            style={{
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 900,
+              color: '#1A2F44',
+              listStyle: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span>
+              {t(
+                '📐 계산 방법론 · 가정치 및 참고 문헌 고지 (AACE Class 4/5 개략 견적)',
+                '📐 Calculation Methodology, Assumptions & Verified References (AACE Class 4/5)'
+              )}
+            </span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748B' }}>
+              {t('접기 / 펼치기', 'Toggle')}
+            </span>
+          </summary>
+
+          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))', gap: 14, fontSize: 12, color: '#334155', lineHeight: 1.6 }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '11px 13px' }}>
+              <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>
+                {t('1. 적용된 계산 수식 (실제 코드 기준)', '1. Implemented Equations (Code Basis)')}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#1E293B' }}>
+                <li>ISBL = Base_CAPEX × (Cap / Base_Cap)ⁿ  (n = {proc.scaleExponent.toFixed(2)})</li>
+                <li>OSBL = 0.32 × ISBL</li>
+                <li>Eng. &amp; Contingency = 0.18 × (ISBL + OSBL)</li>
+                <li>Total CAPEX = ISBL + OSBL + Contingency</li>
+                <li>Depreciation = 10.0%/yr × Total CAPEX (10-yr SL)</li>
+                <li>Maint. &amp; Labor = 5.5%/yr × Total CAPEX</li>
+                <li>Mfg Cost = Raw + Util + Fixed OPEX − Byproduct Credit</li>
+                <li>Simple Payback = Total CAPEX / Annual EBITDA</li>
+              </ul>
+            </div>
+
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: '11px 13px' }}>
+              <div style={{ fontWeight: 900, color: '#0F172A', marginBottom: 6 }}>
+                {t('2. 검증된 표준 참고 문헌 (Methodology Basis)', '2. Verified Engineering References')}
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11.5, color: '#334155' }}>
+                <li>
+                  <b>AACE International RP 18R-97</b> — <i>Cost Estimate Classification System for the Process Industries</i> (Class 4 / Class 5 Factored Screening Estimate, typical accuracy −30% to +50%).
+                </li>
+                <li>
+                  <b>Peters, M. S., Timmerhaus, K. D., &amp; West, R. E.</b> — <i>Plant Design and Economics for Chemical Engineers</i>, 5th Ed., McGraw-Hill (2003): Six-Tenths / Capacity-Exponent power-law scaling, OSBL &amp; contingency factoring, and straight-line depreciation / fixed OPEX structure.
+                </li>
+                <li>
+                  <b>Towler, G., &amp; Sinnott, R.</b> — <i>Chemical Engineering Design: Principles, Practice and Economics of Plant and Process Design</i>, Butterworth-Heinemann (2012/2021): ISBL/OSBL factored capital estimation and manufacturing cost breakdown.
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <div
+            style={{
+              marginTop: 10,
+              padding: '9px 12px',
+              borderRadius: 7,
+              background: '#FFFBEB',
+              border: '1px solid #FDE68A',
+              fontSize: 11.5,
+              color: '#92400E',
+              lineHeight: 1.55,
+            }}
+          >
+            <b>{t('⚠ 적용 범위 및 한계 고지:', '⚠ Scope & Limitation Notice:')}</b>{' '}
+            {t(
+              '각 공정의 기준 CAPEX, 원단위(Unit Consumption), 국내 산업용 전력(135원/kWh)·스팀(62,000원/t) 및 원료 단가는 초기 타당성 검토(Conceptual Screening)용 산업 평균 참고치입니다. CEPCI 물가지수 보정, 부지·인허가·금융이자 및 할인현금흐름(NPV/IRR)은 포함되어 있지 않으므로, 실제 투자 의사결정 및 EPC 발주 시에는 벤더 견적서(Vendor Quote) 기반의 상세 견적(Class 2/3)으로 별도 검증해야 합니다.',
+              'Base CAPEX, unit consumptions, and reference utility/feedstock prices (135 KRW/kWh power, 62,000 KRW/t steam) are indicative industry benchmarks for conceptual screening only. CEPCI escalation, site-specific civil/permitting costs, financing, and DCF (NPV/IRR) are excluded; actual EPC investment decisions require vendor-quoted Class 2/3 estimates.'
+            )}
+          </div>
+        </details>
       </div>
     </div>
   );

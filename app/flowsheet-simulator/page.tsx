@@ -7079,6 +7079,8 @@ export function FlowsheetWorkspace({
                     ? () => setHubPublishOpen(true)
                     : undefined
                 }
+                onOpenSpecModal={() => setOptModalOpen(true)}
+                enabledSpecsCount={enabledSpecsCount}
                 plantCustomDesign={
                   workspaceMode === 'electrolyzer_plant'
                     ? {
@@ -7208,49 +7210,6 @@ export function FlowsheetWorkspace({
                         )}
                       </select>
                     )}
-
-                    <button
-                      type="button"
-                      onClick={() => setOptModalOpen(true)}
-                      title={
-                        isEn
-                          ? 'Design Spec controller, Sensitivity analysis, and Broyden/Wegstein recycle convergence settings'
-                          : '플로우시트 목표역산 제어기(Design Spec), 다변수 민감도 분석(Sensitivity), Broyden/Wegstein 리사이클 수렴기 설정'
-                      }
-                      style={{
-                        height: 26,
-                        padding: '0 8px',
-                        fontSize: 10.5,
-                        fontWeight: 700,
-                        borderRadius: 4,
-                        border: '1px solid #CBD5E1',
-                        background: '#FFFFFF',
-                        color: '#1E293B',
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 4,
-                      }}
-                    >
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <SpecControlIcon size={11} /> {isEn ? 'Specs · Sensitivity' : '목표역산 · 민감도'}
-                      </span>
-                      {enabledSpecsCount > 0 && (
-                        <span
-                          style={{
-                            padding: '0 5px',
-                            borderRadius: 999,
-                            background: '#1E3A8A',
-                            color: '#FFFFFF',
-                            fontSize: 9.5,
-                            fontWeight: 900,
-                          }}
-                        >
-                          {enabledSpecsCount}
-                        </span>
-                      )}
-                    </button>
                   </>
                 }
               />
