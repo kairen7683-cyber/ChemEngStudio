@@ -43,7 +43,7 @@ import { reportInteropGaps } from '@/lib/auth/authClient';
 import { HeaderUserControls } from '@/components/auth/AdminConsoleModal';
 import { HeaderUnitSettingsButton } from '@/components/units/UnitControls';
 import { useAuth } from '@/components/auth/AuthContext';
-import { PUBLIC_MINI_EXAMPLES, type PublicMiniExample } from '@/lib/publicMiniExamples';
+import { PUBLIC_MINI_EXAMPLES, isProcessExampleFree, isProcessExampleLocked, type PublicMiniExample } from '@/lib/publicMiniExamples';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
 import {
   CalcShortcutIcon,
@@ -58,6 +58,7 @@ import {
 } from '@/components/ui/EngIcons';
 import ValidationReportModal from '@/components/validation/ValidationReportModal';
 import FeedbackModal from '@/components/feedback/FeedbackModal';
+import ProcessRequestModal from '@/components/feedback/ProcessRequestModal';
 import ResolvedFeedbackToast from '@/components/feedback/ResolvedFeedbackToast';
 import ComponentRequestModal from '@/components/flowsheet/ComponentRequestModal';
 
@@ -84,6 +85,19 @@ export default function Header() {
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [validationModalOpen, setValidationModalOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [processReqOpen, setProcessReqOpen] = useState(false);
+  const [lockedExampleLabel, setLockedExampleLabel] = useState<string | null>(null);
+  const isAdminUser = user?.role === 'admin';
+
+  useEffect(() => {
+    const onOpenProcReq = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ lockedExampleLabel?: string | null }>).detail;
+      setLockedExampleLabel(detail?.lockedExampleLabel ?? null);
+      setProcessReqOpen(true);
+    };
+    window.addEventListener('chemplant:open-process-request', onOpenProcReq);
+    return () => window.removeEventListener('chemplant:open-process-request', onOpenProcReq);
+  }, []);
   const [compReqModalOpen, setCompReqModalOpen] = useState(false);
   const [wbTheme, setWbTheme] = useState<'light' | 'dark'>('light');
 
@@ -1169,17 +1183,32 @@ export default function Header() {
                     ? `Process Examples (${PUBLIC_MINI_EXAMPLES.length})`
                     : `프로세스 예제 (${PUBLIC_MINI_EXAMPLES.length})`}
                 </div>
-                {PUBLIC_MINI_EXAMPLES.map((ex, idx) => (
+                {[...PUBLIC_MINI_EXAMPLES]
+                  .sort((a, b) => Number(isProcessExampleFree(b.id)) - Number(isProcessExampleFree(a.id)))
+                  .map(ex => {
+                    const isFree = isProcessExampleFree(ex.id);
+                    const isLocked = isProcessExampleLocked(ex.id, isAdminUser);
+                    const cleanLabel = (lang === 'en' ? ex.btnLabelEn : ex.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '');
+                    return (
                   <button
                     key={ex.id}
                     type="button"
-                    onClick={() => handleOpenPublicMiniExample(ex)}
+                    onClick={() => {
+                      if (isLocked) {
+                        setCaseMenuOpen(false);
+                        setLockedExampleLabel(cleanLabel);
+                        setProcessReqOpen(true);
+                        return;
+                      }
+                      handleOpenPublicMiniExample(ex);
+                    }}
                     style={{
                       width: '100%',
                       padding: '6px 9px',
                       borderRadius: 7,
                       border: '1px solid transparent',
                       background: '#FFFFFF',
+                      opacity: isLocked ? 0.82 : 1,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 8,
@@ -1187,8 +1216,8 @@ export default function Header() {
                       cursor: 'pointer',
                     }}
                     onMouseEnter={e => {
-                      e.currentTarget.style.background = '#F0FDFA';
-                      e.currentTarget.style.borderColor = '#99F6E4';
+                      e.currentTarget.style.background = isLocked ? '#EEF2FF' : '#F0FDFA';
+                      e.currentTarget.style.borderColor = isLocked ? '#C7D2FE' : '#99F6E4';
                     }}
                     onMouseLeave={e => {
                       e.currentTarget.style.background = '#FFFFFF';
@@ -1201,13 +1230,15 @@ export default function Header() {
                         fontWeight: 800,
                         padding: '2px 6px',
                         borderRadius: 5,
-                        background: '#0F766E',
+                        background: isFree ? '#059669' : isLocked ? '#4F46E5' : '#0F766E',
                         color: '#FFFFFF',
                         flexShrink: 0,
                         letterSpacing: '0.2px',
+                        minWidth: 46,
+                        textAlign: 'center',
                       }}
                     >
-                      MINI 0{idx + 1}
+                      {isFree ? 'FREE' : isLocked ? '🔒 PRO' : 'PRO ✓'}
                     </span>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div
@@ -1220,7 +1251,7 @@ export default function Header() {
                           whiteSpace: 'nowrap',
                         }}
                       >
-                        {(lang === 'en' ? ex.btnLabelEn : ex.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '')}
+                        {cleanLabel}
                       </div>
                       <div
                         style={{
@@ -1237,7 +1268,32 @@ export default function Header() {
                       </div>
                     </div>
                   </button>
-                ))}
+                    );
+                  })}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCaseMenuOpen(false);
+                    setLockedExampleLabel(null);
+                    setProcessReqOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    marginTop: 4,
+                    padding: '7px 10px',
+                    borderRadius: 7,
+                    border: '1px dashed #93C5FD',
+                    background: '#EFF6FF',
+                    color: '#1D4ED8',
+                    fontSize: 11.2,
+                    fontWeight: 800,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {lang === 'en' ? '+ Request Process Example' : '+ 프로세스 예제 제작 요청'}
+                </button>
 
                 {!simOnly && allowedCommercialPlants.length > 0 && (
                   <>
@@ -1517,6 +1573,33 @@ export default function Header() {
                 >
                   <FlaskCompIcon size={13} />
                   <span>{lang === 'en' ? 'Request Component' : '물질등록 요청'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsMenuOpen(false);
+                    setLockedExampleLabel(null);
+                    setProcessReqOpen(true);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '6px 9px',
+                    borderRadius: 6,
+                    border: '1px solid transparent',
+                    background: '#F8FAFC',
+                    color: '#0F172A',
+                    fontSize: 11.3,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 7,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontSize: 12 }}>🧪</span>
+                  <span>{lang === 'en' ? 'Request Process Example' : '프로세스 예제 요청'}</span>
                 </button>
 
                 <button
@@ -1930,6 +2013,11 @@ export default function Header() {
       <FeedbackModal
         open={feedbackOpen}
         onClose={() => setFeedbackOpen(false)}
+      />
+      <ProcessRequestModal
+        open={processReqOpen}
+        onClose={() => setProcessReqOpen(false)}
+        lockedExampleLabel={lockedExampleLabel}
       />
       <ComponentRequestModal
         open={compReqModalOpen}

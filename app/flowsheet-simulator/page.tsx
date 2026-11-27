@@ -21,7 +21,7 @@ import ReactFlow, {
   useUpdateNodeInternals,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
+import { PUBLIC_MINI_EXAMPLES, isProcessExampleFree, isProcessExampleLocked } from '@/lib/publicMiniExamples';
 import { localizeMetricKey, localizeSolverText } from '@/lib/i18n/localizeSolverText';
 import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
 import PidCrossingEdge from '@/components/flowsheet/PidCrossingEdge';
@@ -5023,6 +5023,14 @@ export function FlowsheetWorkspace({
 
   // 단위 예제 프리셋 로드
   const loadPreset = (p: PresetScenario) => {
+    const isAdminUser = user?.role === 'admin';
+    if (isProcessExampleLocked(p.id, isAdminUser)) {
+      const cleanLabel = (isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '');
+      window.dispatchEvent(
+        new CustomEvent('chemplant:open-process-request', { detail: { lockedExampleLabel: cleanLabel } })
+      );
+      return;
+    }
     const nextDefs = p.nodes.map(({ position: _pos, nameEn, ...def }) => ({
       ...def,
       name: isEn ? (nameEn || def.name) : def.name,
@@ -6748,11 +6756,16 @@ export function FlowsheetWorkspace({
               <optgroup label={isEn ? 'Process Examples' : '프로세스 예제'}>
                 {getAllPresets()
                   .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel}
-                    </option>
-                  ))}
+                  .sort((a, b) => Number(isProcessExampleFree(b.id)) - Number(isProcessExampleFree(a.id)))
+                  .map(p => {
+                    const locked = isProcessExampleLocked(p.id, user?.role === 'admin');
+                    const lbl = (isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '');
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {locked ? `🔒 [Pro] ${lbl}` : lbl}
+                      </option>
+                    );
+                  })}
               </optgroup>
               {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
                 <optgroup label={formatPlantLabelForUser('PLANT 01 전해 단위공정', user)}>
@@ -7040,11 +7053,16 @@ export function FlowsheetWorkspace({
                         <optgroup label={isEn ? 'Process Examples' : '프로세스 예제'}>
                           {getAllPresets()
                             .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
-                            .map(p => (
-                              <option key={p.id} value={p.id}>
-                                {isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel}
-                              </option>
-                            ))}
+                            .sort((a, b) => Number(isProcessExampleFree(b.id)) - Number(isProcessExampleFree(a.id)))
+                            .map(p => {
+                              const locked = isProcessExampleLocked(p.id, user?.role === 'admin');
+                              const lbl = (isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel).replace(/^(미니|Mini)\s*\d+:\s*/i, '');
+                              return (
+                                <option key={p.id} value={p.id}>
+                                  {locked ? `🔒 [Pro] ${lbl}` : lbl}
+                                </option>
+                              );
+                            })}
                         </optgroup>
                         {isPlantAllowed(PLANT_GROUP_TO_ID.electrolysis, user) && (
                           <optgroup label={formatPlantLabelForUser('PLANT 01 전해공장 — 단위공정 단독 프리셋', user)}>

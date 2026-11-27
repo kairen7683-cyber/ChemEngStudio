@@ -12,6 +12,7 @@ export type PublicMiniExampleNode = FlowNodeDef & {
 export interface PublicMiniExample {
   id: string;
   isPublicTextbook: true;
+  accessTier?: 'free' | 'pro';
   btnLabel: string;
   btnLabelEn: string;
   title: string;
@@ -19,6 +20,27 @@ export interface PublicMiniExample {
   recommendedMethod?: SimPropertyMethod;
   nodes: PublicMiniExampleNode[];
   edges: FlowEdgeDef[];
+}
+
+/**
+ * Free-tier open Process Examples (3 representative processes: PR Distillation, PR Recycle, NRTL Azeotropic Decanter).
+ * All other Process Examples are displayed with a Pro lock badge for guests/free users (Admins have full access).
+ */
+export const FREE_PROCESS_EXAMPLE_IDS = new Set<string>([
+  'textbook_bt_distillation',
+  'hda_toluene_benzene_recycle',
+  'ethyl_acetate_esterification',
+]);
+
+export function isProcessExampleFree(exampleId: string): boolean {
+  return FREE_PROCESS_EXAMPLE_IDS.has(exampleId);
+}
+
+export function isProcessExampleLocked(exampleId: string, isAdmin: boolean): boolean {
+  if (isAdmin) return false;
+  // Only lock examples defined in PUBLIC_MINI_EXAMPLES that are not in the free set
+  if (!PUBLIC_MINI_EXAMPLES.some(e => e.id === exampleId)) return false;
+  return !FREE_PROCESS_EXAMPLE_IDS.has(exampleId);
 }
 
 /**
