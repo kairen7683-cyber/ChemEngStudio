@@ -1311,6 +1311,7 @@ def api_admin_overview(_admin: Optional[sqlite3.Row] = Depends(require_admin_or_
             "users": [
                 {
                     **serialize_user(r),
+                    "signup_source": (r["signup_source"] if "signup_source" in r.keys() else "") or "",
                     "workspace_count": r["ws_count"],
                     "workspace_bytes": r["ws_bytes"],
                     "active_desktop_sessions": sess_counts.get(int(r["id"]), {}).get("desktop", 0),

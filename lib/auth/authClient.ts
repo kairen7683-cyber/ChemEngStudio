@@ -39,6 +39,7 @@ export interface AuthStatusResponse {
 
 export interface AdminUserSummary extends UserProfile {
   email?: string;
+  signup_source?: string;
   workspace_count: number;
   workspace_bytes: number;
   active_desktop_sessions?: number;

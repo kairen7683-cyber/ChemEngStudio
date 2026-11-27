@@ -1528,7 +1528,7 @@ export default function AdminConsoleModal() {
               <div style={{ padding: 13, borderRadius: 10, border: '1px solid #E2E8F0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 900, color: '#0F172A' }}>
-                    4. 사용자 계정 & 워크스페이스 관리 ({users.length}명)
+                    4. 사용자 계정 & 워크스페이스 관리 (전체 {users.length}명)
                   </span>
                   <button
                     type="button"
@@ -1539,6 +1539,66 @@ export default function AdminConsoleModal() {
                     {adminLoading ? '갱신 중...' : '새로고침'}
                   </button>
                 </div>
+
+                {/* 회원가입 현황 요약 KPI 카드 */}
+                {(() => {
+                  const externalUsers = users.filter(u => u.role !== 'admin');
+                  const externalCount = externalUsers.length;
+                  const inviteUsedTotal = invites.reduce((s, inv) => s + (inv.used_count || 0), 0);
+                  const openSignupCount = Math.max(0, externalCount - inviteUsedTotal);
+                  const activeInvitesSummary = invites
+                    .filter(inv => (inv.used_count || 0) > 0)
+                    .map(inv => `${inv.code} ${inv.used_count}`)
+                    .join(' · ');
+                  const srcCounts: Record<string, number> = {};
+                  externalUsers.forEach(u => {
+                    const src = (u.signup_source || '').trim();
+                    if (src) srcCounts[src] = (srcCounts[src] || 0) + 1;
+                  });
+                  const srcEntries = Object.entries(srcCounts).sort((a, b) => b[1] - a[1]);
+                  return (
+                    <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+                        <div style={{ padding: '8px 10px', borderRadius: 8, background: '#F8FAFC', border: '1px solid #CBD5E1' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#64748B' }}>외부 가입자 (전체)</div>
+                          <div style={{ fontSize: 17, fontWeight: 900, color: '#0F172A', marginTop: 2 }}>
+                            {externalCount}명 <span style={{ fontSize: 10.5, fontWeight: 600, color: '#64748B' }}>(관리자 포함 {users.length}명)</span>
+                          </div>
+                        </div>
+                        <div style={{ padding: '8px 10px', borderRadius: 8, background: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#1E40AF' }}>초대코드 가입</div>
+                          <div style={{ fontSize: 17, fontWeight: 900, color: '#1E3A8A', marginTop: 2 }}>
+                            {inviteUsedTotal}명
+                          </div>
+                          {activeInvitesSummary && (
+                            <div style={{ fontSize: 9.5, color: '#3B82F6', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {activeInvitesSummary}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ padding: '8px 10px', borderRadius: 8, background: '#ECFDF5', border: '1px solid #A7F3D0' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: '#047857' }}>자유 회원가입 (오픈)</div>
+                          <div style={{ fontSize: 17, fontWeight: 900, color: '#065F46', marginTop: 2 }}>
+                            {openSignupCount}명
+                          </div>
+                          <div style={{ fontSize: 9.5, color: '#059669', marginTop: 2 }}>
+                            현재 모드: {regMode === 'open' ? '자유가입 오픈' : regMode === 'invite_only' ? '초대코드 전용' : '승인제'}
+                          </div>
+                        </div>
+                      </div>
+                      {srcEntries.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 6, background: '#F8FAFC', border: '1px solid #E2E8F0', fontSize: 10.5 }}>
+                          <span style={{ fontWeight: 800, color: '#475569' }}>자동 추적 유입출처:</span>
+                          {srcEntries.map(([src, cnt]) => (
+                            <span key={src} style={{ padding: '1px 7px', borderRadius: 999, background: '#E0F2FE', color: '#0369A1', fontWeight: 700 }}>
+                              {src}: {cnt}명
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {lastIssuedCreds && (
                   <div
@@ -1862,6 +1922,11 @@ export default function AdminConsoleModal() {
                             {u.plant_product && (
                               <div style={{ fontSize: 10, color: '#1E3A8A', fontWeight: 700, marginTop: 2 }}>
                                 생산·분야: {u.plant_product}
+                              </div>
+                            )}
+                            {u.signup_source && (
+                              <div style={{ fontSize: 9.5, color: '#0369A1', fontWeight: 700, marginTop: 2 }}>
+                                유입출처: {u.signup_source}
                               </div>
                             )}
                           </td>

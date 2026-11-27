@@ -714,8 +714,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                       ? 'Admin Approval — your account will be activated after review.'
                       : '가입 신청 후 관리자 승인 시 접속 가능'
                     : isEn
-                      ? 'Open Registration — your workspace activates immediately.'
-                      : '자유 회원가입 오픈 중 — 즉시 계정이 활성화됩니다'}
+                      ? 'Open Beta (Free Sign-Up) — No invite code required. Free access includes the full flowsheet simulator, 4 free Process Examples, 6 unit design tools, cloud save, Excel export, and 10 daily AI auto-fixes. Pro industrial examples (🔒) will be part of paid plans.'
+                      : '오픈 베타 기간 무료 회원가입 — 초대코드 없이 즉시 활성화됩니다. 공정 시뮬레이터 · 무료 프로세스 예제 4종 · 6대 장치 설계 · 클라우드 저장 · 엑셀 내보내기 · 일일 AI 자동보정(10회)을 무료로 이용할 수 있으며, Pro 전용 산업 공정(🔒)은 추후 유료 플랜에 포함됩니다.'}
               </div>
 
               {registrationMode === 'invite_only' && (

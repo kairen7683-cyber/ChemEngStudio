@@ -1249,8 +1249,8 @@ export default function LandingPage({
                   }}
                 >
                   {lang === 'ko'
-                    ? '프로세스 예제 즉시 실행 · 저장·엑셀·AI 해결은 무료 가입 후 이용'
-                    : 'Run Process Examples instantly · Free sign-up for Save, Excel & AI Auto-Fix'}
+                    ? '오픈 베타 무료 가입(코드 불필요) · 시뮬레이터·무료 예제 4종·클라우드 저장·엑셀·일일 AI 10회 무료'
+                    : 'Open Beta Free Sign-Up (No Code Needed) · Simulator, 4 Free Examples, Cloud Save, Excel & 10 Daily AI Fixes'}
                 </div>
               )}
 
