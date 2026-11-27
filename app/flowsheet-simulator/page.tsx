@@ -22,6 +22,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { PUBLIC_MINI_EXAMPLES } from '@/lib/publicMiniExamples';
+import { localizeMetricKey, localizeSolverText } from '@/lib/i18n/localizeSolverText';
 import FeedCompositionEditor from '@/components/flowsheet/FeedCompositionEditor';
 import PidCrossingEdge from '@/components/flowsheet/PidCrossingEdge';
 
@@ -1345,6 +1346,7 @@ interface PresetScenario {
   btnLabelEn?: string;
   title: string;
   titleEn?: string;
+  recommendedMethod?: SimPropertyMethod;
   nodes: Array<FlowNodeDef & { nameEn?: string; position: { x: number; y: number } }>;
   edges: FlowEdgeDef[];
 }
@@ -5045,13 +5047,15 @@ export function FlowsheetWorkspace({
                 : activeComponents;
     const nextComps = mergeSheetFeedComponents(nextDefs, presetPlantBase);
     const nextMethod: SimPropertyMethod =
-      p.group === 'plant05'
-        ? 'PR'
-        : p.group === 'plant06'
-          ? 'NRTL'
-          : propertyMethod === 'PR' && (p.group === 'plant02' || p.group === 'plant03' || p.group === 'plant04')
-            ? 'AUTO'
-            : propertyMethod;
+      p.recommendedMethod
+        ? p.recommendedMethod
+        : p.group === 'plant05'
+          ? 'PR'
+          : p.group === 'plant06'
+            ? 'NRTL'
+            : propertyMethod === 'PR' && (p.group === 'plant02' || p.group === 'plant03' || p.group === 'plant04')
+              ? 'AUTO'
+              : propertyMethod;
 
     const bKey: 'electrolysis' | 'hcl1A' | 'ech' | 'cms' | 'mdi' | null =
       p.group === 'plant02'
@@ -5068,6 +5072,38 @@ export function FlowsheetWorkspace({
     const bSheetId = bKey ? p.id.replace(/^plant0[23456]_/, '') : '';
     const cachedEntry = bKey ? convergedBaselinesRef.current?.plants[bKey]?.[bSheetId] : undefined;
 
+    // Auto-solve non-blank presets immediately when no pre-converged baseline exists
+    let immediateSolved: { result: FlowsheetSolveResult; elapsedMs: number; lastRunTime: string; runCount: number } | undefined;
+    if (!cachedEntry && p.id !== 'new_blank' && nextDefs.length > 0) {
+      try {
+        const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+        const solvedRes = solveFlowsheet(nextDefs, nextEdges, {
+          propertyMethod: nextMethod,
+          activeComponents: nextComps,
+          tearMethod,
+        });
+        const dt = typeof performance !== 'undefined' ? Math.max(1, Math.round(performance.now() - t0)) : 1;
+        const nowStr = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+        immediateSolved = {
+          result: solvedRes,
+          elapsedMs: dt,
+          lastRunTime: nowStr,
+          runCount: 1,
+        };
+      } catch {
+        immediateSolved = undefined;
+      }
+    }
+
+    const resolvedSolved = cachedEntry
+      ? {
+          result: cachedEntry.result,
+          elapsedMs: cachedEntry.elapsedMs,
+          lastRunTime: cachedEntry.lastRunTime,
+          runCount: cachedEntry.runCount,
+        }
+      : immediateSolved;
+
     skipNextDirtyRef.current = true;
     setActiveComponents(nextComps);
     if (nextMethod !== propertyMethod) setPropertyMethod(nextMethod);
@@ -5077,21 +5113,14 @@ export function FlowsheetWorkspace({
       master: {
         id: 'master',
         sectionCode: 'PRESET',
-        shortTabLabel: p.btnLabel,
-        title: p.title,
-        subtitle: '단위공정 프리셋',
+        shortTabLabel: isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel,
+        title: isEn ? (p.titleEn || p.title) : p.title,
+        subtitle: isEn ? 'Process Preset' : '단위공정 프리셋',
         parentMasterNodeIds: [],
         simDefs: cachedEntry ? cachedEntry.simDefs.map(d => ({ ...d, params: { ...d.params } })) : nextDefs,
         positions: nextPositions,
         flowEdges: cachedEntry ? cachedEntry.flowEdges.map(e => ({ ...e })) : nextEdges,
-        cachedSolvedMeta: cachedEntry
-          ? {
-              result: cachedEntry.result,
-              elapsedMs: cachedEntry.elapsedMs,
-              lastRunTime: cachedEntry.lastRunTime,
-              runCount: cachedEntry.runCount,
-            }
-          : undefined,
+        cachedSolvedMeta: resolvedSolved,
       },
     });
     setBoundarySyncBanner([]);
@@ -5101,17 +5130,12 @@ export function FlowsheetWorkspace({
         id: n.id,
         type: 'flowUnit',
         position: { ...n.position },
-        data: { tag: n.tag, name: n.name, unitType: n.unitType, liveSummary: '', flipX: n.params.flipX, rotateDeg: n.params.rotateDeg, refrigerantPreset: n.params.refrigerantPreset },
+        data: { tag: n.tag, name: isEn ? (n.nameEn || n.name) : n.name, unitType: n.unitType, liveSummary: '', flipX: n.params.flipX, rotateDeg: n.params.rotateDeg, refrigerantPreset: n.params.refrigerantPreset },
       }))
     );
     setFlowEdges(cachedEntry ? cachedEntry.flowEdges.map(e => ({ ...e })) : nextEdges);
-    if (cachedEntry) {
-      setSolvedMeta({
-        result: cachedEntry.result,
-        elapsedMs: cachedEntry.elapsedMs,
-        runCount: cachedEntry.runCount,
-        lastRunTime: cachedEntry.lastRunTime,
-      });
+    if (resolvedSolved) {
+      setSolvedMeta(resolvedSolved);
       setIsSimDirty(false);
     } else {
       setSolvedMeta({
@@ -5121,7 +5145,7 @@ export function FlowsheetWorkspace({
         }),
         elapsedMs: 0,
         runCount: 0,
-        lastRunTime: '미실행 (▶ RUN 대기)',
+        lastRunTime: isEn ? 'Idle (Press ▶ RUN)' : '미실행 (▶ RUN 대기)',
       });
       setIsSimDirty(true);
       if (bKey) {
@@ -8613,7 +8637,7 @@ export function FlowsheetWorkspace({
 
                               {u.statusNote && (
                                 <div style={{ fontSize: 10.5, color: '#334155', lineHeight: 1.4 }}>
-                                  {u.statusNote}
+                                  {localizeSolverText(u.statusNote, isEn)}
                                 </div>
                               )}
 
@@ -8803,7 +8827,7 @@ export function FlowsheetWorkspace({
                         <td style={{ padding: '5px 10px', textAlign: 'right' }}>
                           {u.shaftPowerKW > 0 ? formatCanonicalValue('power', u.shaftPowerKW, unitSummaryPowerUnit) : '—'}
                         </td>
-                        <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', color: '#334155' }}>{u.statusNote}</td>
+                        <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', color: '#334155' }}>{localizeSolverText(u.statusNote, isEn)}</td>
                       </tr>
                       );
                     })}
@@ -11070,14 +11094,16 @@ export function FlowsheetWorkspace({
                       .filter(([k]) => k !== '인식 유체')
                       .map(([k, v]) => (
                         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginBottom: 3, fontSize: 11 }}>
-                          <span style={{ color: '#475569' }}>{k}:</span>
-                          <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A', textAlign: 'right' }}>{v}</b>
+                          <span style={{ color: '#475569' }}>{localizeMetricKey(k, isEn)}:</span>
+                          <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A', textAlign: 'right' }}>
+                            {localizeSolverText(String(v), isEn)}
+                          </b>
                         </div>
                       ))}
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed #CBD5E1', fontSize: 11, color: '#475569', lineHeight: 1.45 }}>
                       {isEn && selectedUnitRes.statusNote.includes('미실행')
                         ? 'Idle — Press ▶ RUN to compute'
-                        : selectedUnitRes.statusNote}
+                        : localizeSolverText(selectedUnitRes.statusNote, isEn)}
                     </div>
                   </div>
                 )}
