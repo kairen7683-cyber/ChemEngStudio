@@ -196,6 +196,13 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   NaHSO3:   { mw: MW.NaHSO3, kind: 'electrolyte', dHfIg: -680.0, cpIg: [95.0, 0, 0, 0], dHfAq: -866.34, dHfSolid: -853.0, cpAqKcalKgK: 0.30 },
   // Ca(OH)2: NIST ΔHf°(s) −986.09, ΔHf°(aq,∞) −1002.81
   CaOH2:    { mw: MW.CaOH2, kind: 'electrolyte', dHfIg: -610.0, cpIg: [87.5, 0, 0, 0], dHfAq: -1002.81, dHfSolid: -986.09, cpAqKcalKgK: 0.29 },
+  // ── 4차 확장: 아라미드 TPC 염소화 공정 핵심 3종 (HCPX · TPA · TPC) ──
+  // HCPX (α,α,α,α',α',α'-Hexachloro-p-xylene): C8H4Cl6, Tb 315°C (588.15 K), Tc 575°C (848.15 K), ΔHvap(Tb) 245 kJ/kg
+  HCPX:     { mw: MW.HCPX, kind: 'molecular', dHfIg: -38.0, cpIg: [30.0, 0.85, -5.0e-4, 1.3e-7], Tc: 848.15, TvapRef: 588.15, dHvapRef: 76.64, cpLiq298: 350.4 },
+  // TPA (Terephthalic Acid): C8H6O4, 비휘발성 고체/슬러리, Tb 402°C (675.15 K), Tc 640°C (913.15 K), ΔHvap 460 kJ/kg
+  TPA:      { mw: MW.TPA, kind: 'molecular', dHfIg: -706.5, cpIg: [15.0, 0.56, -3.0e-4, 6.0e-8], Tc: 913.15, TvapRef: 675.15, dHvapRef: 76.42, cpLiq298: 201.0 },
+  // TPC (Terephthaloyl Chloride): C8H4Cl2O2, Tb 266°C (539.15 K), Tc 515°C (788.15 K), ΔHvap(Tb) 295 kJ/kg
+  TPC:      { mw: MW.TPC, kind: 'molecular', dHfIg: -293.7, cpIg: [18.0, 0.62, -3.5e-4, 8.0e-8], Tc: 788.15, TvapRef: 539.15, dHvapRef: 59.89, cpLiq298: 239.6 },
 };
 
 const COMP_KEYS = Object.keys(THERMO_DATA) as SimCompKey[];
@@ -203,7 +210,7 @@ const COMP_KEYS = Object.keys(THERMO_DATA) as SimCompKey[];
 /** 비휘발성(수용액·고체로만 존재) 성분 — 기상에 실려 있어도(미스트) 액상 엔탈피로 계산 */
 const NONVOLATILE: ReadonlySet<SimCompKey> = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
 ]);
 
 // ── 적분 용해열 표 ΔHs(n) (kJ/mol 용질, 25 °C) ── [n, ΔHs]

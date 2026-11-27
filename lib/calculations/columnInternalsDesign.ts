@@ -670,6 +670,9 @@ const PURE_LIQ_DB: Record<SimCompKey, PureLiqProps> = {
   Na2CO3:   { rho20: 2540, dRhoDT: 0.12, sigma20: 84.0, visc20Cp: 2.80, viscActK: 1600 },
   NaHSO3:   { rho20: 1480, dRhoDT: 0.25, sigma20: 76.0, visc20Cp: 2.40, viscActK: 1600 },
   CaOH2:    { rho20: 2211, dRhoDT: 0.15, sigma20: 80.0, visc20Cp: 3.50, viscActK: 1700 },
+  HCPX:     { rho20: 1625, dRhoDT: 1.05, sigma20: 38.0, visc20Cp: 4.50, viscActK: 2200 },
+  TPA:      { rho20: 1510, dRhoDT: 0.20, sigma20: 55.0, visc20Cp: 12.0, viscActK: 2600 },
+  TPC:      { rho20: 1345, dRhoDT: 1.00, sigma20: 36.5, visc20Cp: 2.80, viscActK: 1950 },
 };
 
 function clamp(v: number, lo: number, hi: number): number {

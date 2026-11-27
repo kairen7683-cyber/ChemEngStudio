@@ -114,6 +114,9 @@ const COMP_LABEL_EN: Record<SimCompKey, string> = {
   Na2CO3: 'Na₂CO₃ (Sodium Carbonate)',
   NaHSO3: 'NaHSO₃ (Sodium Bisulfite)',
   CaOH2: 'Ca(OH)₂ (Calcium Hydroxide)',
+  HCPX: 'HCPX (Hexachloro-p-xylene)',
+  TPA: 'TPA (Terephthalic Acid)',
+  TPC: 'TPC (Terephthaloyl Chloride)',
 };
 
 function localizeKeyConcLabel(label: string, isEn: boolean): string {

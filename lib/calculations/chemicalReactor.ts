@@ -134,6 +134,7 @@ const NONVOLATILE_ELECTROLYTES = new Set<SimCompKey>([
   'Na2CO3',
   'NaHSO3',
   'CaOH2',
+  'TPA',
 ]);
 
 export type ElementSymbol = 'C' | 'H' | 'O' | 'N' | 'Cl' | 'S' | 'Na' | 'Fe' | 'Al' | 'Ar' | 'P' | 'F' | 'K' | 'Ca';
@@ -247,6 +248,9 @@ export const ELEMENT_COMPOSITION: Record<SimCompKey, Partial<Record<ElementSymbo
   Na2CO3: { Na: 2, C: 1, O: 3 },
   NaHSO3: { Na: 1, H: 1, S: 1, O: 3 },
   CaOH2: { Ca: 1, O: 2, H: 2 },
+  HCPX: { C: 8, H: 4, Cl: 6 },
+  TPA: { C: 8, H: 6, O: 4 },
+  TPC: { C: 8, H: 4, Cl: 2, O: 2 },
 };
 
 /**
@@ -343,6 +347,9 @@ export const GIBBS_FORMATION_298: Record<SimCompKey, { dGfIg: number; dGfLiq?: n
   Na2CO3: { dGfIg: -1044.4, dGfLiq: -1051.6 },
   NaHSO3: { dGfIg: -765.0, dGfLiq: -789.6 },
   CaOH2: { dGfIg: -898.5, dGfLiq: -868.1 },
+  HCPX: { dGfIg: 125.0, dGfLiq: 95.0 },
+  TPA: { dGfIg: -525.0, dGfLiq: -638.0 },
+  TPC: { dGfIg: -205.0, dGfLiq: -230.0 },
 };
 
 // ── 유틸리티 함수 ───────────────────────────────────────────────────────────

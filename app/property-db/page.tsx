@@ -241,6 +241,9 @@ const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
   Na2CO3:        { categoryLabel: '무기 알칼리 염 · 탄산나트륨 (소다회)', categoryLabelEn: 'Inorganic Alkali Salt · Sodium Carbonate (Soda Ash)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / FRP', recommendedMaterialEn: 'CS / SS316L / FRP' },
   NaHSO3:        { categoryLabel: '수처리 잔류염소 환원제 · 중아황산나트륨 (NaHSO₃)', categoryLabelEn: 'Dechlorination Reducing Agent · Sodium Bisulfite (NaHSO₃)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / FRP / PE', recommendedMaterialEn: 'SS316L / FRP / PE' },
   CaOH2:         { categoryLabel: '폐수 중화·탈황 알칼리 · 수산화칼슘 (소석회)', categoryLabelEn: 'Wastewater Neutralization/FGD · Calcium Hydroxide', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / 고무라이닝 (슬러리 침강 주의)', recommendedMaterialEn: 'CS / SS316L / Rubber-Lined (Prevent Settling)' },
+  HCPX:          { categoryLabel: '아라미드 중간체 · 헥사클로로-p-자일렌 (HCPX)', categoryLabelEn: 'Aramid Intermediate · Hexachloro-p-xylene (HCPX)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'GL (Glass-Lined) / Hastelloy C-276 / PTFE', recommendedMaterialEn: 'Glass-Lined / Hastelloy C-276 / PTFE' },
+  TPA:           { categoryLabel: '고분자 단량체 · 테레프탈산 (TPA, 고체/슬러리)', categoryLabelEn: 'Polymer Monomer · Terephthalic Acid (TPA, Solid/Slurry)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Ti / Glass-Lined', recommendedMaterialEn: 'SS316L / Titanium / Glass-Lined' },
+  TPC:           { categoryLabel: '아라미드 단량체 · 테레프탈로일 클로라이드 (TPC)', categoryLabelEn: 'Aramid Monomer · Terephthaloyl Chloride (TPC)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'Hastelloy C-276 / Glass-Lined / Ni200 (수분 엄금)', recommendedMaterialEn: 'Hastelloy C-276 / Glass-Lined / Ni200 (Moisture-Free)' },
   h2o2_35:       { categoryLabel: '과산화수소수 공업용 표준액 (35 wt% H₂O₂)', categoryLabelEn: 'Industrial Hydrogen Peroxide Solution (35 wt% H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE', recommendedMaterialEn: 'SS316L / Passivated Al · PTFE' },
   h3po4_85:      { categoryLabel: '인산 공업용·식각용 표준액 (85 wt% H₃PO₄)', categoryLabelEn: 'Industrial/Etchant Phosphoric Acid (85 wt% H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 85.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE', recommendedMaterialEn: 'SS316L / Alloy 904L / PTFE' },
   hf_49:         { categoryLabel: '불산 반도체·산세 표준액 (49 wt% HF)', categoryLabelEn: 'Semiconductor/Pickling Hydrofluoric Acid (49 wt% HF)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 49.0, allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276', recommendedMaterialEn: 'PTFE / PFA / PVDF / Hastelloy C-276' },
@@ -280,7 +283,7 @@ const ALCOHOL_SIM_COMPS = new Set<SimCompKey>([
   'Glycerol', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'MEK', 'EG', 'BCS', 'FormicAcid', 'HCHO', 'CUSTOM_1',
 ]);
 const CHLOR_SOLVENT_SIM_COMPS = new Set<SimCompKey>([
-  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'NMP', 'MTBE', 'DMC', 'MEA', 'MDEA',
+  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'NMP', 'MTBE', 'DMC', 'MEA', 'MDEA', 'HCPX', 'TPC',
 ]);
 
 function classifyFluidCategory(f: FluidProps): Exclude<CategoryFilterId, 'all'> {
@@ -427,7 +430,7 @@ function estimateSatTempC(fl: FluidProps, pBar: number): number | undefined {
 
 const NON_VOLATILE_SIM_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'H3PO4', 'KOH', 'Na2CO3', 'NaHSO3', 'CaOH2',
+  'H3PO4', 'KOH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
 ]);
 
 export default function PropertyDbPage() {

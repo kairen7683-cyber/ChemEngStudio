@@ -888,6 +888,32 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
     isElectrolyte: true,
     noteKo: '소석회/수산화칼슘 (불산·황산 폐수 중화 및 CaF₂ 침전용 알칼리 슬러리)',
   },
+  HCPX: {
+    cas: '68-36-0',
+    tbC: 315.0,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['NRTL', 'PR'],
+    isPolarOrganic: true,
+    noteKo: '헥사클로로-p-자일렌 (p-자일렌 광염소화 중간체 · 아라미드 TPC 원료)',
+  },
+  TPA: {
+    cas: '100-21-0',
+    tbC: 402.0,
+    family: 'aromatic',
+    familyLabelKo: COMP_FAMILY_LABELS.aromatic,
+    reliableMethods: ['NRTL', 'PR'],
+    noteKo: '테레프탈산 (비휘발성 고체/슬러리 · HCPX와 FeCl₃ 촉매 반응하여 TPC 생성)',
+  },
+  TPC: {
+    cas: '100-20-9',
+    tbC: 266.0,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['NRTL', 'PR'],
+    isPolarOrganic: true,
+    noteKo: '테레프탈로일 클로라이드 (아라미드 단량체 · 진공 증류 정제 제품, 25 mmHg @ 165°C)',
+  },
 };
 
 export interface PlantComponentPreset {
@@ -1033,6 +1059,13 @@ export const GENERAL_COMPONENT_PACKS: GeneralComponentPack[] = [
     badge: 'ENRTL / NRTL',
     descKo: '반도체·디스플레이 습식 식각/세정(H₂O₂·H₃PO₄·HF·KOH·NH₄OH·TMAH), 이차전지 용매(NMP·BCS) 및 폐수 중화·탈염소(Na₂CO₃·NaHSO₃·Ca(OH)₂)',
     components: ['H2O', 'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2'],
+  },
+  {
+    id: 'aramid_tpc_chlorination',
+    labelKo: '아라미드 TPC 광염소화 · 촉매 합성 공정',
+    badge: 'NRTL / PR',
+    descKo: 'p-자일렌 광염소화(→HCPX), TPA+HCPX FeCl₃ 촉매 합성(→TPC), 진공 증류 정제 및 HCl 배가스 가성소다 흡수',
+    components: ['pXylene', 'Cl2', 'HCl', 'HCPX', 'TPA', 'TPC', 'FeCl3', 'N2', 'NaOH', 'H2O'],
   },
 ];
 

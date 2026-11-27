@@ -127,6 +127,10 @@ export const RIGOROUS_CRIT: Record<SimCompKey, CritProps> = {
   Na2CO3: { Tc_K: 1850.0, Pc_bar: 350.0, omega: 0.250, mw: mwOf('Na2CO3', 105.9888) },
   NaHSO3: { Tc_K: 1200.0, Pc_bar: 250.0, omega: 0.350, mw: mwOf('NaHSO3', 104.061) },
   CaOH2:  { Tc_K: 1500.0, Pc_bar: 300.0, omega: 0.300, mw: mwOf('CaOH2', 74.093) },
+  // 4차 확장: 아라미드 TPC 염소화 공정 핵심 3종
+  HCPX:   { Tc_K: 848.15, Pc_bar: 26.5,  omega: 0.420, mw: mwOf('HCPX', 312.833) },
+  TPA:    { Tc_K: 913.15, Pc_bar: 39.0,  omega: 0.680, mw: mwOf('TPA', 166.132) },
+  TPC:    { Tc_K: 788.15, Pc_bar: 32.5,  omega: 0.480, mw: mwOf('TPC', 203.022) },
 };
 
 // 문헌 기반 주요 가스·탄화수소·극성 성분 이진 상호작용 파라미터 (k_ij = k_ji)
@@ -419,13 +423,13 @@ const VOLATILE_KEYS: SimCompKey[] = [
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
-  'H2O2', 'H3PO4', 'HF', 'NH4OH', 'NMP', 'BCS',
+  'H2O2', 'H3PO4', 'HF', 'NH4OH', 'NMP', 'BCS', 'HCPX', 'TPC',
 ];
 const PERMANENT_SUPERCRIT_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const AQUEOUS_HENRY_CONDENSABLE_SET = new Set<SimCompKey>(['Cl2', 'CO2', 'H2S', 'SO2', 'C2H4', 'C2H6', 'C3H6', 'C3H8']);
 export const NON_VOLATILE_RIG_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
 ]);
 const ALL_RIG_KEYS: SimCompKey[] = [
   'H2O', 'NaCl', 'NaOH', 'Cl2', 'H2', 'HCl', 'H2SO4', 'O2', 'NaOCl',
@@ -437,6 +441,7 @@ const ALL_RIG_KEYS: SimCompKey[] = [
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
   'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
+  'HCPX', 'TPA', 'TPC',
 ];
 const N_RIG = ALL_RIG_KEYS.length;
 const RIG_COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -490,6 +495,7 @@ const ZERO_RIG_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
   COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
   H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
+  HCPX: 0, TPA: 0, TPC: 0,
 };
 
 const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
@@ -505,6 +511,7 @@ const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
   H2O2: 1, H3PO4: 1, HF: 1, KOH: 1, NH4OH: 1, TMAH: 1, NMP: 1, BCS: 1, Na2CO3: 1, NaHSO3: 1, CaOH2: 1,
+  HCPX: 1, TPA: 1, TPC: 1,
 };
 
 const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
@@ -520,6 +527,7 @@ const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
   H2O2: 1, H3PO4: 1, HF: 1, KOH: 1e-12, NH4OH: 1, TMAH: 1e-12, NMP: 1, BCS: 1, Na2CO3: 1e-12, NaHSO3: 1e-12, CaOH2: 1e-12,
+  HCPX: 1, TPA: 1e-12, TPC: 1,
 };
 
 const _eosActKeys: SimCompKey[] = new Array<SimCompKey>(N_RIG);
@@ -692,6 +700,15 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
       return Math.pow(10, 4.3550 - 1783.21 / Math.max(50, T + 208.0));
     case 'BCS':
       return Math.pow(10, 4.5850 - 1695.25 / Math.max(50, T + 199.0));
+    case 'HCPX':
+      // Calibrated: P_sat(315°C) = 1.01325 barA, P_sat(180°C) ≈ 0.030 barA
+      return Math.pow(10, 4.0820 - 2017.75 / Math.max(50, T + 180.0));
+    case 'TPA':
+      // Non-volatile solid/slurry
+      return 1e-10;
+    case 'TPC':
+      // Calibrated: P_sat(266°C) = 1.01325 barA, P_sat(165°C) ≈ 0.033 barA (~25 mmHg)
+      return Math.pow(10, 5.0857 - 2265.70 / Math.max(50, T + 180.0));
     case 'HCl': {
       const logP = 4.5292 - 849.1 / Math.max(40, T + 272.76);
       return Math.pow(10, logP);

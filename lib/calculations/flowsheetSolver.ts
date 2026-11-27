@@ -145,7 +145,10 @@ export type SimCompKey =
   | 'BCS'
   | 'Na2CO3'
   | 'NaHSO3'
-  | 'CaOH2';
+  | 'CaOH2'
+  | 'HCPX'
+  | 'TPA'
+  | 'TPC';
 
 export const SIM_COMPS: SimCompKey[] = [
   'H2O',
@@ -236,6 +239,9 @@ export const SIM_COMPS: SimCompKey[] = [
   'Na2CO3',
   'NaHSO3',
   'CaOH2',
+  'HCPX',
+  'TPA',
+  'TPC',
 ];
 
 const GENERAL_21_KEYS: SimCompKey[] = [
@@ -308,6 +314,9 @@ const GENERAL_21_KEYS: SimCompKey[] = [
   'Na2CO3',
   'NaHSO3',
   'CaOH2',
+  'HCPX',
+  'TPA',
+  'TPC',
 ];
 
 const mwOf = (k: string, fallback: number): number =>
@@ -413,6 +422,9 @@ export const COMP_META: Record<
   Na2CO3:   { formula: 'Na₂CO₃',   label: 'Na₂CO₃ (탄산나트륨/소다회)',        mw: mwOf('Na2CO3', 105.9888), isGasAtStd: false, cpLiq: 0.27,  cpGas: 0.25,  group: '1B_inorg' },
   NaHSO3:   { formula: 'NaHSO₃',   label: 'NaHSO₃ (중아황산소다)',             mw: mwOf('NaHSO3', 104.061),  isGasAtStd: false, cpLiq: 0.30,  cpGas: 0.22,  group: '1B_inorg' },
   CaOH2:    { formula: 'Ca(OH)₂',  label: 'Ca(OH)₂ (소석회/수산화칼슘)',        mw: mwOf('CaOH2', 74.093),    isGasAtStd: false, cpLiq: 0.29,  cpGas: 0.28,  group: '1B_inorg' },
+  HCPX:     { formula: 'C₈H₄Cl₆',   label: 'HCPX (헥사클로로-p-자일렌)',       mw: mwOf('HCPX', 312.833),    isGasAtStd: false, cpLiq: 0.268, cpGas: 0.186, group: '2_ech' },
+  TPA:      { formula: 'C₈H₆O₄',    label: 'TPA (테레프탈산)',                  mw: mwOf('TPA', 166.132),     isGasAtStd: false, cpLiq: 0.289, cpGas: 0.227, group: 'aromatic' },
+  TPC:      { formula: 'C₈H₄Cl₂O₂', label: 'TPC (테레프탈로일 클로라이드)',     mw: mwOf('TPC', 203.022),     isGasAtStd: false, cpLiq: 0.282, cpGas: 0.203, group: '2_ech' },
 };
 
 export const COMP_LABEL_EN: Record<SimCompKey, string> = {
@@ -504,6 +516,9 @@ export const COMP_LABEL_EN: Record<SimCompKey, string> = {
   Na2CO3: 'Na₂CO₃ (Sodium Carbonate / Soda Ash)',
   NaHSO3: 'NaHSO₃ (Sodium Bisulfite)',
   CaOH2: 'Ca(OH)₂ (Calcium Hydroxide / Slaked Lime)',
+  HCPX: 'HCPX (Hexachloro-p-xylene)',
+  TPA: 'TPA (Terephthalic Acid)',
+  TPC: 'TPC (Terephthaloyl Chloride)',
 };
 
 export function getCompLabel(comp: SimCompKey, lang?: 'ko' | 'en'): string {
@@ -738,7 +753,9 @@ export type PublicReactorPresetId =
   | 'methanol_synthesis'
   | 'ammonia_synthesis'
   | 'toluene_hda'
-  | 'etoac_esterification';
+  | 'etoac_esterification'
+  | 'tpc_photo_chlorination'
+  | 'tpc_synthesis';
 
 export interface PublicReactorPresetSpec {
   id: PublicReactorPresetId;
@@ -822,6 +839,24 @@ export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
     defaultTempC: 85.0,
     defaultPressKgcm2g: 1.2,
     defaultConvPct: 72.0,
+  },
+  {
+    id: 'tpc_photo_chlorination',
+    labelKo: 'p-Xylene Photo-Chlorination (→ HCPX)',
+    labelEn: 'p-Xylene Photo-Chlorination (→ HCPX)',
+    reactionEq: 'C₈H₁₀ + 6Cl₂ → C₈H₄Cl₆(HCPX) + 6HCl (UV, 115°C)',
+    defaultTempC: 115.0,
+    defaultPressKgcm2g: 0.5,
+    defaultConvPct: 98.5,
+  },
+  {
+    id: 'tpc_synthesis',
+    labelKo: 'TPC Catalytic Synthesis (HCPX + TPA → 2TPC)',
+    labelEn: 'TPC Catalytic Synthesis (HCPX + TPA → 2TPC)',
+    reactionEq: 'HCPX + TPA → 2TPC + 2HCl (FeCl₃, 130°C)',
+    defaultTempC: 130.0,
+    defaultPressKgcm2g: 0.5,
+    defaultConvPct: 98.0,
   },
 ];
 
@@ -923,12 +958,16 @@ export interface FlowUnitParams {
     | 'methanol_synthesis'
     | 'ammonia_synthesis'
     | 'toluene_hda'
-    | 'etoac_esterification';
+    | 'etoac_esterification'
+    | 'tpc_photo_chlorination'
+    | 'tpc_synthesis';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
   reactorVolumeM3?: number;
   reactorConfig?: ReactorConfig;
+  batchCycleHr?: number;
+  batchPeakFactor?: number;
 
   // 100 SEC 브라인 포화·1차정제(saturator) & 2차 킬레이트 수지탑(chelate_tower) & 600 SEC 제습탑(desiccant_dryer)
   targetBrineWtPct?: number;          // 목표 포화 브라인 농도 (기본 25.65 wt% NaCl ≈ 310 g/L)
@@ -1270,6 +1309,9 @@ export function emptySimFlows(
     Na2CO3: 0,
     NaHSO3: 0,
     CaOH2: 0,
+    HCPX: 0,
+    TPA: 0,
+    TPC: 0,
     ...(overrides ?? {}),
   };
 }
@@ -4155,6 +4197,7 @@ export function solveFlowsheet(
         let T_out = p.operTempC ?? 120.0;
         const P_out = p.operPressKgcm2g ?? P_in;
         const outF = { ...totalIn };
+        const rxExtraMetrics: Record<string, string> = {};
         const T_rxK = Math.max(273.15, T_out + 273.15);
         const R_KJ = 0.00831446;
 
@@ -4492,6 +4535,43 @@ export function solveFlowsheet(
           outF.EtOAc += eaGen;
           outF.H2O += h2oGen;
           note = `Esterification (${T_out.toFixed(1)}°C): EtOAc ${eaGen.toFixed(1)} / H₂O ${h2oGen.toFixed(1)} kg/h (Conv ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'tpc_photo_chlorination') {
+          // p-Xylene Photo-Chlorination: C₈H₁₀ + 6Cl₂ → C₈H₄Cl₆(HCPX) + 6HCl (UV, 115°C)
+          const mwPx = COMP_META.pXylene.mw;
+          const mwHcpx = COMP_META.HCPX.mw;
+          const ext = Math.min(outF.pXylene / mwPx, outF.Cl2 / (6 * MW.Cl2)) * conv;
+          const pxUse = ext * mwPx;
+          const cl2Use = 6 * ext * MW.Cl2;
+          const hcpxGen = ext * mwHcpx;
+          const hclGen = Math.max(0, pxUse + cl2Use - hcpxGen);
+          outF.pXylene = Math.max(0, outF.pXylene - pxUse);
+          outF.Cl2 = Math.max(0, outF.Cl2 - cl2Use);
+          outF.HCPX += hcpxGen;
+          outF.HCl += hclGen;
+          const peakFactor = p.batchPeakFactor ?? 1.8;
+          const peakHclKgH = hclGen * peakFactor;
+          if (p.batchCycleHr && p.batchCycleHr > 0) {
+            const batchYieldKg = hcpxGen * p.batchCycleHr;
+            rxExtraMetrics['Batch Cycle'] = `${p.batchCycleHr.toFixed(1)} h`;
+            rxExtraMetrics['Peak HCl Off-Gas'] = `${peakHclKgH.toFixed(1)} kg/h (${peakFactor.toFixed(1)}x avg)`;
+            rxExtraMetrics['Batch Yield'] = `${batchYieldKg.toFixed(1)} kg HCPX/batch (${(conv * 100).toFixed(1)}%)`;
+          }
+          note = `p-Xylene Photo-Chlorination (${T_out.toFixed(1)}°C): HCPX ${hcpxGen.toFixed(1)} / HCl ${hclGen.toFixed(1)} kg/h (Peak HCl Off-Gas ${peakHclKgH.toFixed(1)} kg/h, Batch Yield ${(conv * 100).toFixed(1)}%${p.batchCycleHr ? ` · ${(hcpxGen * p.batchCycleHr).toFixed(1)} kg/batch` : ''})`;
+        } else if (preset === 'tpc_synthesis') {
+          // TPC Catalytic Synthesis: HCPX + TPA → 2TPC + 2HCl (FeCl₃, 130°C)
+          const mwHcpx = COMP_META.HCPX.mw;
+          const mwTpa = COMP_META.TPA.mw;
+          const mwTpc = COMP_META.TPC.mw;
+          const ext = Math.min(outF.HCPX / mwHcpx, outF.TPA / mwTpa) * conv;
+          const hcpxUse = ext * mwHcpx;
+          const tpaUse = ext * mwTpa;
+          const tpcGen = 2 * ext * mwTpc;
+          const hclGen = Math.max(0, hcpxUse + tpaUse - tpcGen);
+          outF.HCPX = Math.max(0, outF.HCPX - hcpxUse);
+          outF.TPA = Math.max(0, outF.TPA - tpaUse);
+          outF.TPC += tpcGen;
+          outF.HCl += hclGen;
+          note = `TPC Catalytic Synthesis (${T_out.toFixed(1)}°C): TPC ${tpcGen.toFixed(1)} / HCl ${hclGen.toFixed(1)} kg/h (Conv ${(conv * 100).toFixed(1)}%)`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;
@@ -4531,6 +4611,7 @@ export function solveFlowsheet(
           '인식 유체': detectedFluid,
           '운전 열모드': isAdiabatic ? `단열 반응 (출구 ${T_out.toFixed(1)}°C)` : `지정온도 ${T_out.toFixed(1)}°C (생성열 엔탈피 수지)`,
           '반응·현열 통합 열부하': `${(heatDutyKcalH / 1000).toFixed(1)} Mcal/h`,
+          ...rxExtraMetrics,
         };
         }
       }

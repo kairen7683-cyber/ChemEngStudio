@@ -299,6 +299,9 @@ const COMP_NOTE_EN: Record<SimCompKey, string> = {
   Na2CO3: 'Sodium carbonate (soda ash) · brine Ca²⁺ precipitation & acid neutralization',
   NaHSO3: 'Sodium bisulfite (SBS) · dechlorination & peroxide reduction agent',
   CaOH2: 'Calcium hydroxide (slaked lime) · HF/H₂SO₄ neutralization & CaF₂ slurry',
+  HCPX: 'Hexachloro-p-xylene (C₈H₄Cl₆) · p-xylene photo-chlorination intermediate for Aramid TPC',
+  TPA: 'Terephthalic acid (C₈H₆O₄) · non-volatile aromatic dicarboxylic acid slurry feedstock',
+  TPC: 'Terephthaloyl chloride (C₈H₄Cl₂O₂) · aramid monomer purified by vacuum distillation',
 };
 
 export default function ComponentPropertySetupModal({
