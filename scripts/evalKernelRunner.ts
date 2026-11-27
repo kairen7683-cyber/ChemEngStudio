@@ -3,7 +3,7 @@
  * SECURITY: Imports ONLY pure thermodynamic & unit-operation calculation engines.
  * ZERO imports of commercial plants (PLANT 01~06), user workspaces, auth, or DB.
  */
-import { SIM_COMPS, solveFlowsheet, type FlowEdgeDef, type FlowNodeDef, type SimCompKey } from '../lib/calculations/flowsheetSolver';
+import { COMP_META, solveFlowsheet, type FlowEdgeDef, type FlowNodeDef, type SimCompKey } from '../lib/calculations/flowsheetSolver';
 import { bubbleTemperatureC, solveRigorousFlashVLE } from '../lib/calculations/rigorousThermo';
 import { solveRigorousDistillation } from '../lib/calculations/rigorousDistillation';
 import { solveHeatExchangerDesign } from '../lib/calculations/heatExchangerDesign';
@@ -18,7 +18,7 @@ function runAction(req: EvalRequest): any {
   const p = req.payload || {};
 
   if (req.action === 'list_components') {
-    const comps = Object.entries(SIM_COMPS).map(([key, info]) => ({
+    const comps = Object.entries(COMP_META).map(([key, info]) => ({
       key,
       formula: info.formula,
       mw: info.mw,
@@ -38,7 +38,7 @@ function runAction(req: EvalRequest): any {
         pressBarA: pBarA,
         T_bubble_C: +res.T_C.toFixed(4),
         y: res.y,
-        K: res.K,
+        converged: res.converged,
       };
     }
     const tempC = Number(p.tempC ?? 95.0);
@@ -86,7 +86,7 @@ function runAction(req: EvalRequest): any {
     const n = (v: any, d = 4) => +Number(v ?? 0).toFixed(d);
     return {
       converged: Boolean(res.converged),
-      iterations: Number(res.iterations ?? 0),
+      iterations: Number((res as any).iterations ?? (res as any).innerIters ?? 0),
       topTempC: n(res.topTempC, 3),
       bottomTempC: n(res.bottomTempC, 3),
       condenserDutyMW: n((res.condenserDutyKcalH ?? 0) * 4.184 / 3.6e6, 5),

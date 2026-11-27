@@ -444,7 +444,7 @@ function calcTemaFt(
   const denA = 2 / P - 1 - R + sqrtTerm;
   const denB = 2 / P - 1 - R - sqrtTerm;
   if (numBody <= 0.01 || denB <= 0.01 || denA / denB <= 1.0001) return 0.55;
-  const ft = (sqrtTerm * Math.log(1 / numBody)) / ((R - 1) * Math.log(denA / denB));
+  const ft = (sqrtTerm * Math.log(numBody)) / ((R - 1) * Math.log(denA / denB));
   return Number.isFinite(ft) ? Math.max(0.5, Math.min(1.0, ft)) : 0.85;
 }
 
@@ -655,9 +655,23 @@ function buildProcessSideSummary(
     } else if (w('NaCl') > 0.1) {
       muCp = 1.15;
       kWmK = 0.58;
-    } else {
-      muCp = Math.max(0.28, 1.0 * Math.exp(-0.016 * (0.5 * (T_in + T_out) - 20)));
+    } else if (w('H2O') >= 0.5) {
+      const Tavg = 0.5 * (T_in + T_out);
+      muCp = Math.max(0.28, 1.0 * Math.exp(-0.016 * (Tavg - 20)));
       kWmK = 0.61;
+    } else if (w('MeOH') + w('EtOH') + w('IPA') + w('EG') > 0.35) {
+      const Tavg = 0.5 * (T_in + T_out);
+      muCp = Math.max(0.22, 0.72 * Math.exp(-0.0145 * (Tavg - 20)));
+      kWmK = Math.max(0.14, 0.19 - 0.00022 * (Tavg - 20));
+    } else {
+      // Organic / hydrocarbon / ester / chlorosilane liquid (e.g., Toluene, Benzene, EtOAc, TCS)
+      const Tavg = 0.5 * (T_in + T_out);
+      const wWater = Math.max(0, Math.min(0.5, w('H2O')));
+      const muOrg = Math.max(0.18, 0.58 * Math.exp(-0.0125 * (Tavg - 20)));
+      const kOrg = Math.max(0.085, 0.138 - 0.00028 * (Tavg - 20));
+      const muAq = Math.max(0.28, 1.0 * Math.exp(-0.016 * (Tavg - 20)));
+      muCp = (1 - wWater) * muOrg + wWater * muAq;
+      kWmK = (1 - wWater) * kOrg + wWater * 0.61;
     }
   } else {
     if (w('H2') > 0.2) {
@@ -815,8 +829,14 @@ function buildUtilitySideSummary(
   const refMeta = REFRIGERANT_PRESETS[refKey];
 
   let uMass = 0;
-  let uInT = refKey === 'custom' ? params.utilInTempC ?? 20 : refMeta.inTempC;
-  let uOutT = refKey === 'custom' ? params.utilOutTempC ?? 30 : refMeta.outTempC;
+  const explicitInT = (hxCfg as { utilInTempC?: number }).utilInTempC ?? params.utilInTempC;
+  const explicitOutT = (hxCfg as { utilOutTempC?: number }).utilOutTempC ?? params.utilOutTempC;
+  let uInT = explicitInT !== undefined && Number.isFinite(explicitInT)
+    ? explicitInT
+    : refKey === 'custom' ? 20 : refMeta.inTempC;
+  let uOutT = explicitOutT !== undefined && Number.isFinite(explicitOutT)
+    ? explicitOutT
+    : refKey === 'custom' ? 30 : refMeta.outTempC;
   let uPress = refKey === 'steam_lp' ? 3.2 : 3.5;
   const uCp = refKey === 'custom' ? Math.max(0.15, params.utilCp ?? 1.0) : refMeta.cp;
 
