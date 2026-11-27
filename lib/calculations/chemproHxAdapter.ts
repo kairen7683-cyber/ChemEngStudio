@@ -828,7 +828,7 @@ export function calcFt(Th_in: number, Th_out: number, Tc_in: number, Tc_out: num
   const sq = Math.sqrt(R * R + 1.0);
   if (Math.abs(R - 1.0) < 1e-3) {
     const num = (P / (1.0 - P)) * Math.sqrt(2.0);
-    const den = Math.log((2.0 / P - 1.0 - Math.sqrt(2.0)) / Math.max(1e-6, 2.0 / P - 1.0 + Math.sqrt(2.0)));
+    const den = Math.log((2.0 / P - 1.0 + Math.sqrt(2.0)) / Math.max(1e-6, 2.0 / P - 1.0 - Math.sqrt(2.0)));
     return clampNum(num / den, 0.5, 1.0);
   }
 
