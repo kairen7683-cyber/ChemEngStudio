@@ -6745,12 +6745,12 @@ export function FlowsheetWorkspace({
               <option value="" disabled>
                 {isEn ? 'Load Preset...' : '프리셋 불러오기...'}
               </option>
-              <optgroup label={isEn ? 'General Templates' : '기본 자유설계'}>
+              <optgroup label={isEn ? 'Process Examples' : '프로세스 예제'}>
                 {getAllPresets()
                   .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
                   .map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.btnLabel}
+                      {isEn ? (p.btnLabelEn || p.btnLabel) : p.btnLabel}
                     </option>
                   ))}
               </optgroup>
@@ -7037,7 +7037,7 @@ export function FlowsheetWorkspace({
                         <option value="" disabled>
                           {isEn ? 'Load Process Preset...' : '공정 프리셋 불러오기...'}
                         </option>
-                        <optgroup label={isEn ? 'Public Mini Examples' : '공개용 미니 예제 · 기본 템플릿'}>
+                        <optgroup label={isEn ? 'Process Examples' : '프로세스 예제'}>
                           {getAllPresets()
                             .filter(p => p.group === 'general' && (!isSimulatorOnlyUser(user) || p.isPublicTextbook))
                             .map(p => (

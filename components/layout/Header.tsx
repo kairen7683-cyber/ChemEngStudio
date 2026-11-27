@@ -1166,8 +1166,8 @@ export default function Header() {
                   }}
                 >
                   {lang === 'en'
-                    ? `Public Mini Examples (${PUBLIC_MINI_EXAMPLES.length})`
-                    : `공개 미니 예제 · 교과서 표준 (${PUBLIC_MINI_EXAMPLES.length})`}
+                    ? `Process Examples (${PUBLIC_MINI_EXAMPLES.length})`
+                    : `프로세스 예제 (${PUBLIC_MINI_EXAMPLES.length})`}
                 </div>
                 {PUBLIC_MINI_EXAMPLES.map((ex, idx) => (
                   <button
