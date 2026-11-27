@@ -148,7 +148,11 @@ export type SimCompKey =
   | 'CaOH2'
   | 'HCPX'
   | 'TPA'
-  | 'TPC';
+  | 'TPC'
+  | 'Si'
+  | 'DCS'
+  | 'TCS'
+  | 'STC';
 
 export const SIM_COMPS: SimCompKey[] = [
   'H2O',
@@ -242,6 +246,10 @@ export const SIM_COMPS: SimCompKey[] = [
   'HCPX',
   'TPA',
   'TPC',
+  'Si',
+  'DCS',
+  'TCS',
+  'STC',
 ];
 
 const GENERAL_21_KEYS: SimCompKey[] = [
@@ -317,6 +325,10 @@ const GENERAL_21_KEYS: SimCompKey[] = [
   'HCPX',
   'TPA',
   'TPC',
+  'Si',
+  'DCS',
+  'TCS',
+  'STC',
 ];
 
 const mwOf = (k: string, fallback: number): number =>
@@ -425,6 +437,10 @@ export const COMP_META: Record<
   HCPX:     { formula: 'C₈H₄Cl₆',   label: 'HCPX (헥사클로로-p-자일렌)',       mw: mwOf('HCPX', 312.833),    isGasAtStd: false, cpLiq: 0.268, cpGas: 0.186, group: '2_ech' },
   TPA:      { formula: 'C₈H₆O₄',    label: 'TPA (테레프탈산)',                  mw: mwOf('TPA', 166.132),     isGasAtStd: false, cpLiq: 0.289, cpGas: 0.227, group: 'aromatic' },
   TPC:      { formula: 'C₈H₄Cl₂O₂', label: 'TPC (테레프탈로일 클로라이드)',     mw: mwOf('TPC', 203.022),     isGasAtStd: false, cpLiq: 0.282, cpGas: 0.203, group: '2_ech' },
+  Si:       { formula: 'Si',        label: 'Si (금속 실리콘 · MG-Si)',          mw: mwOf('Si', 28.085),       isGasAtStd: false, cpLiq: 0.170, cpGas: 0.170, group: '1B_inorg' },
+  DCS:      { formula: 'SiH₂Cl₂',   label: 'DCS (디클로로실란)',                mw: mwOf('DCS', 101.006),     isGasAtStd: true,  cpLiq: 0.234, cpGas: 0.148, group: '2_ech' },
+  TCS:      { formula: 'SiHCl₃',    label: 'TCS (트리클로로실란)',              mw: mwOf('TCS', 135.452),     isGasAtStd: false, cpLiq: 0.227, cpGas: 0.139, group: '2_ech' },
+  STC:      { formula: 'SiCl₄',     label: 'STC (사염화규소)',                  mw: mwOf('STC', 169.898),     isGasAtStd: false, cpLiq: 0.206, cpGas: 0.129, group: '2_ech' },
 };
 
 export const COMP_LABEL_EN: Record<SimCompKey, string> = {
@@ -519,6 +535,10 @@ export const COMP_LABEL_EN: Record<SimCompKey, string> = {
   HCPX: 'HCPX (Hexachloro-p-xylene)',
   TPA: 'TPA (Terephthalic Acid)',
   TPC: 'TPC (Terephthaloyl Chloride)',
+  Si: 'Si (Metallurgical-Grade Silicon)',
+  DCS: 'DCS (Dichlorosilane)',
+  TCS: 'TCS (Trichlorosilane)',
+  STC: 'STC (Silicon Tetrachloride)',
 };
 
 export function getCompLabel(comp: SimCompKey, lang?: 'ko' | 'en'): string {
@@ -755,7 +775,8 @@ export type PublicReactorPresetId =
   | 'toluene_hda'
   | 'etoac_esterification'
   | 'tpc_photo_chlorination'
-  | 'tpc_synthesis';
+  | 'tpc_synthesis'
+  | 'tcs_hydrochlorination';
 
 export interface PublicReactorPresetSpec {
   id: PublicReactorPresetId;
@@ -857,6 +878,15 @@ export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
     defaultTempC: 130.0,
     defaultPressKgcm2g: 0.5,
     defaultConvPct: 98.0,
+  },
+  {
+    id: 'tcs_hydrochlorination',
+    labelKo: 'Si Fluidized-Bed Hydrochlorination (→ TCS/STC/DCS)',
+    labelEn: 'Si Fluidized-Bed Hydrochlorination (→ TCS/STC/DCS)',
+    reactionEq: 'Si + 3.09HCl → 0.85TCS + 0.12STC + 0.03DCS + 1.09H₂ (300°C, ΔH = -220 kJ/mol)',
+    defaultTempC: 300.0,
+    defaultPressKgcm2g: 2.5,
+    defaultConvPct: 92.0,
   },
 ];
 
@@ -960,7 +990,8 @@ export interface FlowUnitParams {
     | 'toluene_hda'
     | 'etoac_esterification'
     | 'tpc_photo_chlorination'
-    | 'tpc_synthesis';
+    | 'tpc_synthesis'
+    | 'tcs_hydrochlorination';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -1312,6 +1343,10 @@ export function emptySimFlows(
     HCPX: 0,
     TPA: 0,
     TPC: 0,
+    Si: 0,
+    DCS: 0,
+    TCS: 0,
+    STC: 0,
     ...(overrides ?? {}),
   };
 }
@@ -4572,6 +4607,32 @@ export function solveFlowsheet(
           outF.TPC += tpcGen;
           outF.HCl += hclGen;
           note = `TPC Catalytic Synthesis (${T_out.toFixed(1)}°C): TPC ${tpcGen.toFixed(1)} / HCl ${hclGen.toFixed(1)} kg/h (Conv ${(conv * 100).toFixed(1)}%)`;
+        } else if (preset === 'tcs_hydrochlorination') {
+          // Fluidized-Bed Silicon Hydrochlorination (300°C, 2.5 kg/cm²G):
+          //   0.85*(Si + 3HCl → TCS + H2) + 0.12*(Si + 4HCl → STC + 2H2) + 0.03*(Si + 2HCl → DCS)
+          //   Net per 1 mol Si: Si + 3.09HCl → 0.85TCS + 0.12STC + 0.03DCS + 1.09H2 (ΔH ≈ -220 kJ/mol Si)
+          const mwSi = COMP_META.Si.mw;
+          const mwHcl = MW.HCl;
+          const mwTcs = COMP_META.TCS.mw;
+          const mwStc = COMP_META.STC.mw;
+          const mwDcs = COMP_META.DCS.mw;
+          const convTcs = p.conversion !== undefined ? conv : 0.92;
+          const ext = Math.min(outF.Si / mwSi, outF.HCl / (3.09 * mwHcl)) * convTcs;
+          const siUse = ext * mwSi;
+          const hclUse = 3.09 * ext * mwHcl;
+          const tcsGen = 0.85 * ext * mwTcs;
+          const stcGen = 0.12 * ext * mwStc;
+          const dcsGen = 0.03 * ext * mwDcs;
+          const h2Gen = Math.max(0, siUse + hclUse - tcsGen - stcGen - dcsGen);
+          outF.Si = Math.max(0, outF.Si - siUse);
+          outF.HCl = Math.max(0, outF.HCl - hclUse);
+          outF.TCS += tcsGen;
+          outF.STC += stcGen;
+          outF.DCS += dcsGen;
+          outF.H2 += h2Gen;
+          rxExtraMetrics['TCS Selectivity'] = '85.0 mol% (STC 12.0% / DCS 3.0%)';
+          rxExtraMetrics['Si Conversion'] = `${(convTcs * 100).toFixed(1)}% (${siUse.toFixed(1)} kg/h Si reacted)`;
+          note = `Fluidized-Bed Si Hydrochlorination (${T_out.toFixed(1)}°C): TCS ${tcsGen.toFixed(1)} / STC ${stcGen.toFixed(1)} / DCS ${dcsGen.toFixed(1)} / H₂ ${h2Gen.toFixed(1)} kg/h (Si Conv ${(convTcs * 100).toFixed(1)}%)`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;

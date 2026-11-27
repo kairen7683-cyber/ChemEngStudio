@@ -135,9 +135,10 @@ const NONVOLATILE_ELECTROLYTES = new Set<SimCompKey>([
   'NaHSO3',
   'CaOH2',
   'TPA',
+  'Si',
 ]);
 
-export type ElementSymbol = 'C' | 'H' | 'O' | 'N' | 'Cl' | 'S' | 'Na' | 'Fe' | 'Al' | 'Ar' | 'P' | 'F' | 'K' | 'Ca';
+export type ElementSymbol = 'C' | 'H' | 'O' | 'N' | 'Cl' | 'S' | 'Na' | 'Fe' | 'Al' | 'Ar' | 'P' | 'F' | 'K' | 'Ca' | 'Si';
 
 export const ELEMENT_SYMBOLS: readonly ElementSymbol[] = [
   'C',
@@ -154,6 +155,7 @@ export const ELEMENT_SYMBOLS: readonly ElementSymbol[] = [
   'F',
   'K',
   'Ca',
+  'Si',
 ];
 
 /**
@@ -251,6 +253,10 @@ export const ELEMENT_COMPOSITION: Record<SimCompKey, Partial<Record<ElementSymbo
   HCPX: { C: 8, H: 4, Cl: 6 },
   TPA: { C: 8, H: 6, O: 4 },
   TPC: { C: 8, H: 4, Cl: 2, O: 2 },
+  Si: { Si: 1 },
+  DCS: { Si: 1, H: 2, Cl: 2 },
+  TCS: { Si: 1, H: 1, Cl: 3 },
+  STC: { Si: 1, Cl: 4 },
 };
 
 /**
@@ -350,6 +356,10 @@ export const GIBBS_FORMATION_298: Record<SimCompKey, { dGfIg: number; dGfLiq?: n
   HCPX: { dGfIg: 125.0, dGfLiq: 95.0 },
   TPA: { dGfIg: -525.0, dGfLiq: -638.0 },
   TPC: { dGfIg: -205.0, dGfLiq: -230.0 },
+  Si: { dGfIg: 0.0, dGfLiq: 0.0 },
+  DCS: { dGfIg: -295.0, dGfLiq: -293.5 },
+  TCS: { dGfIg: -466.0, dGfLiq: -467.5 },
+  STC: { dGfIg: -622.8, dGfLiq: -626.0 },
 };
 
 // ── 유틸리티 함수 ───────────────────────────────────────────────────────────
@@ -1562,6 +1572,7 @@ function solveGibbsAtTemp(
     F: 0,
     K: 0,
     Ca: 0,
+    Si: 0,
   };
   for (let i = 0; i < ALL_REACTOR_COMPS.length; i++) {
     const k = ALL_REACTOR_COMPS[i];

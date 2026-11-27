@@ -27,7 +27,7 @@ const P_STD_BAR = 1.01325;
 
 const NON_VOLATILE_EOS_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 
 const FALLBACK_GAS_KIJ: Partial<Record<string, number>> = {

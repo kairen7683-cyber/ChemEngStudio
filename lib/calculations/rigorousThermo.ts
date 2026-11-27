@@ -131,6 +131,11 @@ export const RIGOROUS_CRIT: Record<SimCompKey, CritProps> = {
   HCPX:   { Tc_K: 848.15, Pc_bar: 26.5,  omega: 0.420, mw: mwOf('HCPX', 312.833) },
   TPA:    { Tc_K: 913.15, Pc_bar: 39.0,  omega: 0.680, mw: mwOf('TPA', 166.132) },
   TPC:    { Tc_K: 788.15, Pc_bar: 32.5,  omega: 0.480, mw: mwOf('TPC', 203.022) },
+  // 5차 확장: 반도체·폴리실리콘 클로로실란 공정 핵심 4종
+  Si:     { Tc_K: 5159.0, Pc_bar: 537.0, omega: 0.000, mw: mwOf('Si', 28.085) },
+  DCS:    { Tc_K: 449.5,  Pc_bar: 46.8,  omega: 0.155, mw: mwOf('DCS', 101.006) },
+  TCS:    { Tc_K: 479.2,  Pc_bar: 41.7,  omega: 0.203, mw: mwOf('TCS', 135.452) },
+  STC:    { Tc_K: 507.2,  Pc_bar: 35.9,  omega: 0.232, mw: mwOf('STC', 169.898) },
 };
 
 // 문헌 기반 주요 가스·탄화수소·극성 성분 이진 상호작용 파라미터 (k_ij = k_ji)
@@ -423,13 +428,13 @@ const VOLATILE_KEYS: SimCompKey[] = [
   'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'CHCl3',
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
-  'H2O2', 'H3PO4', 'HF', 'NH4OH', 'NMP', 'BCS', 'HCPX', 'TPC',
+  'H2O2', 'H3PO4', 'HF', 'NH4OH', 'NMP', 'BCS', 'HCPX', 'TPC', 'DCS', 'TCS', 'STC',
 ];
 const PERMANENT_SUPERCRIT_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const AQUEOUS_HENRY_CONDENSABLE_SET = new Set<SimCompKey>(['Cl2', 'CO2', 'H2S', 'SO2', 'C2H4', 'C2H6', 'C3H6', 'C3H8']);
 export const NON_VOLATILE_RIG_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 const ALL_RIG_KEYS: SimCompKey[] = [
   'H2O', 'NaCl', 'NaOH', 'Cl2', 'H2', 'HCl', 'H2SO4', 'O2', 'NaOCl',
@@ -441,7 +446,7 @@ const ALL_RIG_KEYS: SimCompKey[] = [
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
   'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
-  'HCPX', 'TPA', 'TPC',
+  'HCPX', 'TPA', 'TPC', 'Si', 'DCS', 'TCS', 'STC',
 ];
 const N_RIG = ALL_RIG_KEYS.length;
 const RIG_COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -495,7 +500,7 @@ const ZERO_RIG_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
   COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
   H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
-  HCPX: 0, TPA: 0, TPC: 0,
+  HCPX: 0, TPA: 0, TPC: 0, Si: 0, DCS: 0, TCS: 0, STC: 0,
 };
 
 const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
@@ -511,7 +516,7 @@ const ONE_RIG_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
   H2O2: 1, H3PO4: 1, HF: 1, KOH: 1, NH4OH: 1, TMAH: 1, NMP: 1, BCS: 1, Na2CO3: 1, NaHSO3: 1, CaOH2: 1,
-  HCPX: 1, TPA: 1, TPC: 1,
+  HCPX: 1, TPA: 1, TPC: 1, Si: 1, DCS: 1, TCS: 1, STC: 1,
 };
 
 const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
@@ -527,7 +532,7 @@ const PHI_DEFAULT_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
   H2O2: 1, H3PO4: 1, HF: 1, KOH: 1e-12, NH4OH: 1, TMAH: 1e-12, NMP: 1, BCS: 1, Na2CO3: 1e-12, NaHSO3: 1e-12, CaOH2: 1e-12,
-  HCPX: 1, TPA: 1e-12, TPC: 1,
+  HCPX: 1, TPA: 1e-12, TPC: 1, Si: 1e-12, DCS: 1, TCS: 1, STC: 1,
 };
 
 const _eosActKeys: SimCompKey[] = new Array<SimCompKey>(N_RIG);
@@ -709,6 +714,18 @@ export function pureAntoineBarA(comp: SimCompKey, T_C: number): number {
     case 'TPC':
       // Calibrated: P_sat(266°C) = 1.01325 barA, P_sat(165°C) ≈ 0.033 barA (~25 mmHg)
       return Math.pow(10, 5.0857 - 2265.70 / Math.max(50, T + 180.0));
+    case 'Si':
+      // Non-volatile metallurgical-grade silicon solid
+      return 1e-10;
+    case 'DCS':
+      // Calibrated: P_sat(8.3°C) = 1.01325 barA
+      return Math.pow(10, 4.2143 - 1045.0 / Math.max(40, T + 240.0));
+    case 'TCS':
+      // Calibrated: P_sat(31.8°C) = 1.01325 barA, P_sat(60.5°C) = 2.50 barA
+      return Math.pow(10, 4.0441 - 1077.44 / Math.max(40, T + 235.0));
+    case 'STC':
+      // Calibrated: P_sat(57.65°C) = 1.01325 barA, P_sat(89.8°C) = 2.50 barA
+      return Math.pow(10, 3.9072 - 1122.26 / Math.max(40, T + 230.0));
     case 'HCl': {
       const logP = 4.5292 - 849.1 / Math.max(40, T + 272.76);
       return Math.pow(10, logP);
@@ -1902,17 +1919,20 @@ export function solveRigorousFlashVLE(
   const vap = empty();
   const liq = empty();
 
-  liq.NaCl = Math.max(0, flowsKgH.NaCl ?? 0);
-  liq.NaOH = Math.max(0, flowsKgH.NaOH ?? 0);
-  liq.H2SO4 = Math.max(0, flowsKgH.H2SO4 ?? 0);
-  liq.NaOCl = Math.max(0, flowsKgH.NaOCl ?? 0);
-  liq.NaClO3 = Math.max(0, flowsKgH.NaClO3 ?? 0);
-  liq.FeCl2 = Math.max(0, flowsKgH.FeCl2 ?? 0);
-  liq.FeCl3 = Math.max(0, flowsKgH.FeCl3 ?? 0);
-  liq.PAC = Math.max(0, flowsKgH.PAC ?? 0);
-
-  const totalSaltMass =
-    liq.NaCl + liq.NaOH + liq.H2SO4 + liq.NaOCl + liq.NaClO3 + liq.FeCl2 + liq.FeCl3 + liq.PAC;
+  // Preserve ALL non-volatile electrolytes & solids (NaCl..PAC + KOH, TPA, Si, etc.) in liquid/bottoms phase
+  let totalSaltMass = 0;
+  let totalNonVolSolidMass = 0;
+  for (const nv of NON_VOLATILE_RIG_SET) {
+    const m = Math.max(0, flowsKgH[nv] ?? 0);
+    if (m > 0) {
+      liq[nv] = m;
+      if (nv === 'NaCl' || nv === 'NaOH' || nv === 'H2SO4' || nv === 'NaOCl' || nv === 'NaClO3' || nv === 'FeCl2' || nv === 'FeCl3' || nv === 'PAC') {
+        totalSaltMass += m;
+      } else {
+        totalNonVolSolidMass += m;
+      }
+    }
+  }
 
   const nMol: Record<SimCompKey, number> = empty();
   let totVolMoles = 0;
@@ -1941,7 +1961,13 @@ export function solveRigorousFlashVLE(
   const P_bar = Math.max(1e-4, (P_kgcm2g + 1.03323) * 0.980665);
 
   if ((propertyMethod === 'PR' || propertyMethod === 'SRK') && totalSaltMass <= 1e-6) {
-    return solvePureEosFlash(activeVolComps, z, nMol, T_C, P_bar, propertyMethod);
+    const eosRes = solvePureEosFlash(activeVolComps, z, nMol, T_C, P_bar, propertyMethod);
+    if (totalNonVolSolidMass > 0) {
+      for (const nv of NON_VOLATILE_RIG_SET) {
+        if (liq[nv] > 0) eosRes.liq[nv] = (eosRes.liq[nv] || 0) + liq[nv];
+      }
+    }
+    return eosRes;
   }
 
   const T_K = Math.max(150.0, Math.min(900.0, T_C + 273.15));

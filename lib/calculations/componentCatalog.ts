@@ -914,6 +914,38 @@ export const COMP_CATALOG_META: Record<SimCompKey, CompCatalogEntry> = {
     isPolarOrganic: true,
     noteKo: '테레프탈로일 클로라이드 (아라미드 단량체 · 진공 증류 정제 제품, 25 mmHg @ 165°C)',
   },
+  Si: {
+    cas: '7440-21-3',
+    tbC: 3265.0,
+    family: 'electrolyte_inorg',
+    familyLabelKo: COMP_FAMILY_LABELS.electrolyte_inorg,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    noteKo: '야금급 금속 실리콘 (MG-Si · 비휘발성 고체 원료, 유동층 염산수소화 반응 원료)',
+  },
+  DCS: {
+    cas: '4109-96-0',
+    tbC: 8.3,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    noteKo: '디클로로실란 (SiH₂Cl₂ · 경질 클로로실란 부산물/에피택시 가스, 끓는점 8.3°C)',
+  },
+  TCS: {
+    cas: '10025-78-2',
+    tbC: 31.8,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    noteKo: '트리클로로실란 (SiHCl₃ · 폴리실리콘/반도체 지멘스 CVD 핵심 원료, 끓는점 31.8°C)',
+  },
+  STC: {
+    cas: '10026-04-7',
+    tbC: 57.65,
+    family: 'chlor_ech',
+    familyLabelKo: COMP_FAMILY_LABELS.chlor_ech,
+    reliableMethods: ['PR', 'SRK', 'NRTL'],
+    noteKo: '사염화규소 (SiCl₄ · 중질 클로로실란 부산물/광섬유·흄드실리카 원료, 끓는점 57.65°C)',
+  },
 };
 
 export interface PlantComponentPreset {
@@ -1066,6 +1098,13 @@ export const GENERAL_COMPONENT_PACKS: GeneralComponentPack[] = [
     badge: 'NRTL / PR',
     descKo: 'p-자일렌 광염소화(→HCPX), TPA+HCPX FeCl₃ 촉매 합성(→TPC), 진공 증류 정제 및 HCl 배가스 가성소다 흡수',
     components: ['pXylene', 'Cl2', 'HCl', 'HCPX', 'TPA', 'TPC', 'FeCl3', 'N2', 'NaOH', 'H2O'],
+  },
+  {
+    id: 'polysilicon_tcs_chlorosilane',
+    labelKo: '반도체·폴리실리콘 TCS 염산수소화 · 증류 정제 공정',
+    badge: 'PR / SRK',
+    descKo: 'MG-Si 유동층 염산수소화(Si + HCl → TCS/STC/DCS + H₂), 급랭 응축, 저비점(DCS) 및 고비점(STC) 다단 증류 정제',
+    components: ['Si', 'HCl', 'H2', 'DCS', 'TCS', 'STC', 'N2'],
   },
 ];
 

@@ -22,7 +22,7 @@ function zeroFlows(partial: Partial<Record<SimCompKey, number>>): Record<SimComp
     FormicAcid: 0, HNO3: 0, CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
     COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0,
     H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
-    HCPX: 0, TPA: 0, TPC: 0,
+    HCPX: 0, TPA: 0, TPC: 0, Si: 0, DCS: 0, TCS: 0, STC: 0,
     CUSTOM_1: 0, CUSTOM_2: 0,
     ...partial,
   };

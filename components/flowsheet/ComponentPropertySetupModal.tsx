@@ -302,6 +302,10 @@ const COMP_NOTE_EN: Record<SimCompKey, string> = {
   HCPX: 'Hexachloro-p-xylene (C₈H₄Cl₆) · p-xylene photo-chlorination intermediate for Aramid TPC',
   TPA: 'Terephthalic acid (C₈H₆O₄) · non-volatile aromatic dicarboxylic acid slurry feedstock',
   TPC: 'Terephthaloyl chloride (C₈H₄Cl₂O₂) · aramid monomer purified by vacuum distillation',
+  Si: 'Metallurgical-grade silicon (Si) · non-volatile solid feedstock for fluidized-bed TCS hydrochlorination',
+  DCS: 'Dichlorosilane (SiH₂Cl₂) · light chlorosilane byproduct & semiconductor epitaxy precursor (BP 8.3°C)',
+  TCS: 'Trichlorosilane (SiHCl₃) · primary polysilicon & Siemens CVD chlorosilane intermediate (BP 31.8°C)',
+  STC: 'Silicon tetrachloride (SiCl₄) · heavy chlorosilane byproduct for fumed silica & optical fiber (BP 57.65°C)',
 };
 
 export default function ComponentPropertySetupModal({

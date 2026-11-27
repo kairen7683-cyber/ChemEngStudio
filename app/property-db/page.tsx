@@ -244,6 +244,10 @@ const SUBSTANCE_COMPAT_MAP: Record<string, SubstanceCompatSpec> = {
   HCPX:          { categoryLabel: '아라미드 중간체 · 헥사클로로-p-자일렌 (HCPX)', categoryLabelEn: 'Aramid Intermediate · Hexachloro-p-xylene (HCPX)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'GL (Glass-Lined) / Hastelloy C-276 / PTFE', recommendedMaterialEn: 'Glass-Lined / Hastelloy C-276 / PTFE' },
   TPA:           { categoryLabel: '고분자 단량체 · 테레프탈산 (TPA, 고체/슬러리)', categoryLabelEn: 'Polymer Monomer · Terephthalic Acid (TPA, Solid/Slurry)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'SS316L / Ti / Glass-Lined', recommendedMaterialEn: 'SS316L / Titanium / Glass-Lined' },
   TPC:           { categoryLabel: '아라미드 단량체 · 테레프탈로일 클로라이드 (TPC)', categoryLabelEn: 'Aramid Monomer · Terephthaloyl Chloride (TPC)', compatibleMethods: ['NRTL', 'PENG-ROB'], defaultMethod: 'NRTL', allowsConcEdit: false, recommendedMaterial: 'Hastelloy C-276 / Glass-Lined / Ni200 (수분 엄금)', recommendedMaterialEn: 'Hastelloy C-276 / Glass-Lined / Ni200 (Moisture-Free)' },
+  Si:            { categoryLabel: '반도체·폴리실리콘 원료 · 야금급 금속 실리콘 (MG-Si)', categoryLabelEn: 'Semiconductor/Polysilicon Feed · Metallurgical-Grade Silicon (MG-Si)', compatibleMethods: ['PENG-ROB', 'SRK', 'NRTL'], defaultMethod: 'PENG-ROB', allowsConcEdit: false, recommendedMaterial: 'Incoloy 800H / CS (유동층 내마모 라이닝)', recommendedMaterialEn: 'Incoloy 800H / CS (Fluidized-Bed Wear Lining)' },
+  DCS:           { categoryLabel: '반도체 클로로실란 · 디클로로실란 (DCS · SiH₂Cl₂)', categoryLabelEn: 'Semiconductor Chlorosilane · Dichlorosilane (DCS · SiH₂Cl₂)', compatibleMethods: ['PENG-ROB', 'SRK', 'NRTL'], defaultMethod: 'PENG-ROB', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L (무수 조건 · 자연발화/수분 엄금)', recommendedMaterialEn: 'CS / SS316L (Anhydrous · Pyrophoric/Moisture-Free)' },
+  TCS:           { categoryLabel: '폴리실리콘 핵심 원료 · 트리클로로실란 (TCS · SiHCl₃)', categoryLabelEn: 'Polysilicon Key Intermediate · Trichlorosilane (TCS · SiHCl₃)', compatibleMethods: ['PENG-ROB', 'SRK', 'NRTL'], defaultMethod: 'PENG-ROB', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / Hastelloy C-276 (무수 조건 필수)', recommendedMaterialEn: 'CS / SS316L / Hastelloy C-276 (Anhydrous Required)' },
+  STC:           { categoryLabel: '클로로실란 부산물 · 사염화규소 (STC · SiCl₄)', categoryLabelEn: 'Chlorosilane Byproduct · Silicon Tetrachloride (STC · SiCl₄)', compatibleMethods: ['PENG-ROB', 'SRK', 'NRTL'], defaultMethod: 'PENG-ROB', allowsConcEdit: false, recommendedMaterial: 'CS / SS316L / PTFE (수분 접촉 시 HCl·SiO₂ 생성 주의)', recommendedMaterialEn: 'CS / SS316L / PTFE (Moisture-Free: Hydrolyzes to HCl/SiO₂)' },
   h2o2_35:       { categoryLabel: '과산화수소수 공업용 표준액 (35 wt% H₂O₂)', categoryLabelEn: 'Industrial Hydrogen Peroxide Solution (35 wt% H₂O₂)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 35.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Al (부동태화) · PTFE', recommendedMaterialEn: 'SS316L / Passivated Al · PTFE' },
   h3po4_85:      { categoryLabel: '인산 공업용·식각용 표준액 (85 wt% H₃PO₄)', categoryLabelEn: 'Industrial/Etchant Phosphoric Acid (85 wt% H₃PO₄)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 85.0, allowsConcEdit: false, recommendedMaterial: 'SS316L / Alloy 904L / PTFE', recommendedMaterialEn: 'SS316L / Alloy 904L / PTFE' },
   hf_49:         { categoryLabel: '불산 반도체·산세 표준액 (49 wt% HF)', categoryLabelEn: 'Semiconductor/Pickling Hydrofluoric Acid (49 wt% HF)', compatibleMethods: ['ELECNRTL', 'NRTL'], defaultMethod: 'ELECNRTL', fixedOrDefaultWt: 49.0, allowsConcEdit: false, recommendedMaterial: 'PTFE / PFA / PVDF / Hastelloy C-276', recommendedMaterialEn: 'PTFE / PFA / PVDF / Hastelloy C-276' },
@@ -283,7 +287,7 @@ const ALCOHOL_SIM_COMPS = new Set<SimCompKey>([
   'Glycerol', 'MeOH', 'EtOH', 'IPA', 'Acetone', 'AceticAcid', 'EtOAc', 'MEK', 'EG', 'BCS', 'FormicAcid', 'HCHO', 'CUSTOM_1',
 ]);
 const CHLOR_SOLVENT_SIM_COMPS = new Set<SimCompKey>([
-  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'NMP', 'MTBE', 'DMC', 'MEA', 'MDEA', 'HCPX', 'TPC',
+  'MCH', 'DCH', 'ECH', 'DCP', 'CH3Cl', 'CH2Cl2', 'CHCl3', 'CCl4', 'C2Cl4', 'COCl2', 'THF', 'DMF', 'DMSO', 'NMP', 'MTBE', 'DMC', 'MEA', 'MDEA', 'HCPX', 'TPC', 'DCS', 'TCS', 'STC',
 ]);
 
 function classifyFluidCategory(f: FluidProps): Exclude<CategoryFilterId, 'all'> {
@@ -430,7 +434,7 @@ function estimateSatTempC(fl: FluidProps, pBar: number): number | undefined {
 
 const NON_VOLATILE_SIM_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'H3PO4', 'KOH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'H3PO4', 'KOH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 
 export default function PropertyDbPage() {

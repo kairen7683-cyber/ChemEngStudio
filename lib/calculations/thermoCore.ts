@@ -203,6 +203,15 @@ export const THERMO_DATA: Record<SimCompKey, ThermoCompData> = {
   TPA:      { mw: MW.TPA, kind: 'molecular', dHfIg: -706.5, cpIg: [15.0, 0.56, -3.0e-4, 6.0e-8], Tc: 913.15, TvapRef: 675.15, dHvapRef: 76.42, cpLiq298: 201.0 },
   // TPC (Terephthaloyl Chloride): C8H4Cl2O2, Tb 266°C (539.15 K), Tc 515°C (788.15 K), ΔHvap(Tb) 295 kJ/kg
   TPC:      { mw: MW.TPC, kind: 'molecular', dHfIg: -293.7, cpIg: [18.0, 0.62, -3.5e-4, 8.0e-8], Tc: 788.15, TvapRef: 539.15, dHvapRef: 59.89, cpLiq298: 239.6 },
+  // ── 5차 확장: 반도체·폴리실리콘 클로로실란 공정 핵심 4종 (Si · DCS · TCS · STC) ──
+  // Si (Metallurgical-Grade Silicon): 비휘발성 고체, Tb 3265°C (3538.15 K), Tc 5159 K, ΔHf°(s) 0.0, Cp 0.71 kJ/(kg·K) = 19.94 J/(mol·K)
+  Si:       { mw: MW.Si,  kind: 'molecular', dHfIg: 0.0,    cpIg: [19.94, 0, 0, 0], Tc: 5159.0, TvapRef: 3538.15, dHvapRef: 0.0, cpLiq298: 19.94 },
+  // DCS (Dichlorosilane, SiH2Cl2): Tb 8.3°C (281.45 K), Tc 449.5 K, ΔHvap(Tb) 250 kJ/kg (25.25 kJ/mol), ΔHf°(g) -315.0 kJ/mol
+  DCS:      { mw: MW.DCS, kind: 'molecular', dHfIg: -315.0, cpIg: [42.0, 0.085, -5.5e-5, 1.5e-8], Tc: 449.5, TvapRef: 281.45, dHvapRef: 25.25, cpLiq298: 98.99 },
+  // TCS (Trichlorosilane, SiHCl3): Tb 31.8°C (304.95 K), Tc 479.2 K, ΔHvap(Tb) 197 kJ/kg (26.68 kJ/mol), ΔHf°(g) -496.2 kJ/mol
+  TCS:      { mw: MW.TCS, kind: 'molecular', dHfIg: -496.2, cpIg: [54.0, 0.100, -6.5e-5, 1.8e-8], Tc: 479.2, TvapRef: 304.95, dHvapRef: 26.68, cpLiq298: 128.68 },
+  // STC (Silicon Tetrachloride, SiCl4): Tb 57.65°C (330.80 K), Tc 507.2 K, ΔHvap(Tb) 170 kJ/kg (28.88 kJ/mol), ΔHf°(g) -662.7 kJ/mol
+  STC:      { mw: MW.STC, kind: 'molecular', dHfIg: -662.7, cpIg: [65.0, 0.108, -6.8e-5, 1.8e-8], Tc: 507.2, TvapRef: 330.80, dHvapRef: 28.88, cpLiq298: 146.11 },
 };
 
 const COMP_KEYS = Object.keys(THERMO_DATA) as SimCompKey[];
@@ -210,7 +219,7 @@ const COMP_KEYS = Object.keys(THERMO_DATA) as SimCompKey[];
 /** 비휘발성(수용액·고체로만 존재) 성분 — 기상에 실려 있어도(미스트) 액상 엔탈피로 계산 */
 const NONVOLATILE: ReadonlySet<SimCompKey> = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 
 // ── 적분 용해열 표 ΔHs(n) (kJ/mol 용질, 25 °C) ── [n, ΔHs]

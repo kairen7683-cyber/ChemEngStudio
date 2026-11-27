@@ -101,6 +101,10 @@ const COMP_MW: Record<SimCompKey, number> = {
   HCPX: 312.833,
   TPA: 166.132,
   TPC: 203.022,
+  Si: 28.085,
+  DCS: 101.006,
+  TCS: 135.452,
+  STC: 169.898,
 };
 
 const ALL_KEYS: SimCompKey[] = [
@@ -115,7 +119,7 @@ const ALL_KEYS: SimCompKey[] = [
   'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI',
   'CUSTOM_1', 'CUSTOM_2',
   'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
-  'HCPX', 'TPA', 'TPC',
+  'HCPX', 'TPA', 'TPC', 'Si', 'DCS', 'TCS', 'STC',
 ];
 const N_ALL = ALL_KEYS.length;
 const COMP_IDX: Record<SimCompKey, number> = {} as Record<SimCompKey, number>;
@@ -123,7 +127,7 @@ ALL_KEYS.forEach((k, idx) => { COMP_IDX[k] = idx; });
 
 const NON_VOLATILE_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 const PERMANENT_GAS_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
 const HYDROPHOBIC_ORGS = new Set<SimCompKey>([
@@ -133,7 +137,7 @@ const HYDROPHOBIC_ORGS = new Set<SimCompKey>([
   'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI',
   'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene',
   'MTBE', 'MEK', 'DMC', 'CUSTOM_1', 'CUSTOM_2',
-  'HCPX', 'TPC',
+  'HCPX', 'TPC', 'DCS', 'TCS', 'STC',
 ]);
 
 // ----------------------------------------------------------------------------
@@ -1009,7 +1013,7 @@ const ZERO_ACT_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
   COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
   H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
-  HCPX: 0, TPA: 0, TPC: 0,
+  HCPX: 0, TPA: 0, TPC: 0, Si: 0, DCS: 0, TCS: 0, STC: 0,
 };
 
 const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
@@ -1025,7 +1029,7 @@ const ONE_ACT_TEMPLATE: Record<SimCompKey, number> = {
   CH3Cl: 1, CH2Cl2: 1, CCl4: 1, C2Cl4: 1,
   COCl2: 1, HCHO: 1, MCB: 1, Aniline: 1, MDA: 1, MDI: 1, PMDI: 1, CUSTOM_1: 1, CUSTOM_2: 1,
   H2O2: 1, H3PO4: 1, HF: 1, KOH: 1, NH4OH: 1, TMAH: 1, NMP: 1, BCS: 1, Na2CO3: 1, NaHSO3: 1, CaOH2: 1,
-  HCPX: 1, TPA: 1, TPC: 1,
+  HCPX: 1, TPA: 1, TPC: 1, Si: 1, DCS: 1, TCS: 1, STC: 1,
 };
 
 function _evalExtendedNrtlDenseCore(

@@ -117,6 +117,10 @@ const COMP_LABEL_EN: Record<SimCompKey, string> = {
   HCPX: 'HCPX (Hexachloro-p-xylene)',
   TPA: 'TPA (Terephthalic Acid)',
   TPC: 'TPC (Terephthaloyl Chloride)',
+  Si: 'Si (Metallurgical Silicon)',
+  DCS: 'DCS (Dichlorosilane)',
+  TCS: 'TCS (Trichlorosilane)',
+  STC: 'STC (Silicon Tetrachloride)',
 };
 
 function localizeKeyConcLabel(label: string, isEn: boolean): string {

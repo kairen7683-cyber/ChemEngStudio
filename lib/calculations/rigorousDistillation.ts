@@ -390,7 +390,7 @@ const ALL_KEYS: SimCompKey[] = [
   'Ar', 'H2S', 'SO2', 'SO3', 'iC4H10', 'C4H8_1', 'nC5H12', 'nC8H18', 'Cyclohexane', 'Ethylbenzene', 'Styrene', 'Cumene', 'Phenol', 'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA', 'FormicAcid', 'HNO3',
   'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
   'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
-  'HCPX', 'TPA', 'TPC',
+  'HCPX', 'TPA', 'TPC', 'Si', 'DCS', 'TCS', 'STC',
 ];
 
 const NEW_DISTILL_KEYS: SimCompKey[] = [
@@ -403,7 +403,7 @@ const NEW_DISTILL_KEYS: SimCompKey[] = [
   'THF', 'DMF', 'DMSO', 'MTBE', 'MEK', 'DMC', 'EG', 'MEA', 'MDEA',
   'FormicAcid', 'HNO3', 'CH3Cl', 'CH2Cl2', 'CCl4', 'C2Cl4', 'COCl2', 'HCHO', 'MCB', 'Aniline', 'MDA', 'MDI', 'PMDI', 'CUSTOM_1', 'CUSTOM_2',
   'H2O2', 'H3PO4', 'HF', 'KOH', 'NH4OH', 'TMAH', 'NMP', 'BCS', 'Na2CO3', 'NaHSO3', 'CaOH2',
-  'HCPX', 'TPA', 'TPC',
+  'HCPX', 'TPA', 'TPC', 'Si', 'DCS', 'TCS', 'STC',
 ];
 
 const COMP_MW: Record<SimCompKey, number> = {
@@ -498,11 +498,15 @@ const COMP_MW: Record<SimCompKey, number> = {
   HCPX: mwOf('HCPX', 312.833),
   TPA: mwOf('TPA', 166.132),
   TPC: mwOf('TPC', 203.022),
+  Si: mwOf('Si', 28.085),
+  DCS: mwOf('DCS', 101.006),
+  TCS: mwOf('TCS', 135.452),
+  STC: mwOf('STC', 169.898),
 };
 
 const NON_VOLATILE_SET = new Set<SimCompKey>([
   'NaCl', 'NaOH', 'H2SO4', 'NaOCl', 'NaClO3', 'FeCl2', 'FeCl3', 'PAC',
-  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA',
+  'KOH', 'TMAH', 'Na2CO3', 'NaHSO3', 'CaOH2', 'TPA', 'Si',
 ]);
 
 const PERMANENT_GAS_SET = new Set<SimCompKey>(['H2', 'O2', 'N2', 'CH4', 'CO', 'Ar']);
@@ -520,7 +524,7 @@ function zeroCompRecord(): Record<SimCompKey, number> {
     CH3Cl: 0, CH2Cl2: 0, CCl4: 0, C2Cl4: 0,
     COCl2: 0, HCHO: 0, MCB: 0, Aniline: 0, MDA: 0, MDI: 0, PMDI: 0, CUSTOM_1: 0, CUSTOM_2: 0,
     H2O2: 0, H3PO4: 0, HF: 0, KOH: 0, NH4OH: 0, TMAH: 0, NMP: 0, BCS: 0, Na2CO3: 0, NaHSO3: 0, CaOH2: 0,
-    HCPX: 0, TPA: 0, TPC: 0,
+    HCPX: 0, TPA: 0, TPC: 0, Si: 0, DCS: 0, TCS: 0, STC: 0,
   };
 }
 

@@ -673,6 +673,10 @@ const PURE_LIQ_DB: Record<SimCompKey, PureLiqProps> = {
   HCPX:     { rho20: 1625, dRhoDT: 1.05, sigma20: 38.0, visc20Cp: 4.50, viscActK: 2200 },
   TPA:      { rho20: 1510, dRhoDT: 0.20, sigma20: 55.0, visc20Cp: 12.0, viscActK: 2600 },
   TPC:      { rho20: 1345, dRhoDT: 1.00, sigma20: 36.5, visc20Cp: 2.80, viscActK: 1950 },
+  Si:       { rho20: 2329, dRhoDT: 0.05, sigma20: 70.0, visc20Cp: 10.0, viscActK: 2500 },
+  DCS:      { rho20: 1220, dRhoDT: 1.85, sigma20: 17.5, visc20Cp: 0.30, viscActK: 850 },
+  TCS:      { rho20: 1342, dRhoDT: 1.90, sigma20: 18.2, visc20Cp: 0.33, viscActK: 920 },
+  STC:      { rho20: 1483, dRhoDT: 2.00, sigma20: 19.7, visc20Cp: 0.48, viscActK: 1050 },
 };
 
 function clamp(v: number, lo: number, hi: number): number {
