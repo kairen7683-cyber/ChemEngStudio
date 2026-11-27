@@ -1386,7 +1386,7 @@ function hasGeneralComponents(f: Partial<Record<SimCompKey, number>>): boolean {
 
 export function identifyFluidName(flows: Record<SimCompKey, number>, tempC: number, pressKgcm2g: number): string {
   const tot = sumFlows(flows);
-  if (tot <= 0.01) return '유입 배관 미연결';
+  if (tot <= 0.01) return 'No Inlet Stream';
 
   const wCl2 = flows.Cl2 / tot;
   const wH2 = flows.H2 / tot;
@@ -1405,66 +1405,66 @@ export function identifyFluidName(flows: Record<SimCompKey, number>, tempC: numb
   const wPAC = flows.PAC / tot;
   const wNaClO3 = flows.NaClO3 / tot;
 
-  if (wECH > 0.35) return `에피클로로히드린 (ECH ${(wECH * 100).toFixed(2)} wt%)`;
-  if (wDCH > 0.20) return `디클로로히드린 반응액 (DCH ${(wDCH * 100).toFixed(1)} wt%)`;
-  if (wGly > 0.30 || wMCH > 0.25) return `글리세린/MCH 중질유 (${((wGly + wMCH) * 100).toFixed(1)} wt%)`;
-  if (wDCP > 0.25) return `경질 유기염소 유분 (DCP ${(wDCP * 100).toFixed(1)} wt%)`;
-  if (wFeCl3 > 0.10) return `염화제2철 에칭액 (${(wFeCl3 * 100).toFixed(1)} wt% FeCl₃)`;
-  if (wFeCl2 > 0.08) return `폐에칭액 (${(wFeCl2 * 100).toFixed(1)} wt% FeCl₂)`;
-  if (wPAC > 0.08) return `폴리염화알루미늄 (PAC ${(wPAC * 100).toFixed(1)} wt%)`;
-  if (wNaClO3 > 0.08) return `염소산소다 용액 (${(wNaClO3 * 100).toFixed(1)} wt% NaClO₃)`;
+  if (wECH > 0.35) return `Epichlorohydrin (ECH ${(wECH * 100).toFixed(2)} wt%)`;
+  if (wDCH > 0.20) return `Dichlorohydrin Liq. (DCH ${(wDCH * 100).toFixed(1)} wt%)`;
+  if (wGly > 0.30 || wMCH > 0.25) return `Glycerol/MCH Heavy Cut (${((wGly + wMCH) * 100).toFixed(1)} wt%)`;
+  if (wDCP > 0.25) return `Light Organochlorine (DCP ${(wDCP * 100).toFixed(1)} wt%)`;
+  if (wFeCl3 > 0.10) return `Ferric Chloride Etchant (${(wFeCl3 * 100).toFixed(1)} wt% FeCl₃)`;
+  if (wFeCl2 > 0.08) return `Spent Etchant (${(wFeCl2 * 100).toFixed(1)} wt% FeCl₂)`;
+  if (wPAC > 0.08) return `Polyaluminum Chloride (PAC ${(wPAC * 100).toFixed(1)} wt%)`;
+  if (wNaClO3 > 0.08) return `Sodium Chlorate Soln. (${(wNaClO3 * 100).toFixed(1)} wt% NaClO₃)`;
 
-  // 극성 유기용제 · 방향족 · 탄화수소 · 합성가스/천연가스/암모니아 스트림 인식
-  if ((flows.MeOH || 0) / tot > 0.25) return `메탄올 용액/용제 (MeOH ${(((flows.MeOH || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.EtOH || 0) / tot > 0.25) return `에탄올 용액/용제 (EtOH ${(((flows.EtOH || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.IPA || 0) / tot > 0.25) return `이소프로판올 용제 (IPA ${(((flows.IPA || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.Acetone || 0) / tot > 0.25) return `아세톤 용제 (Acetone ${(((flows.Acetone || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.AceticAcid || 0) / tot > 0.25) return `초산 용액 (AceticAcid ${(((flows.AceticAcid || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.EtOAc || 0) / tot > 0.25) return `초산에틸 용제 (EtOAc ${(((flows.EtOAc || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.CH2Cl2 || 0) / tot > 0.40) return `정제 MCL · 디클로로메탄 (CH₂Cl₂ ${(((flows.CH2Cl2 || 0) / tot) * 100).toFixed(2)} wt%)`;
-  if ((flows.CH3Cl || 0) / tot > 0.35) return `메틸클로라이드 유분 (MC · CH₃Cl ${(((flows.CH3Cl || 0) / tot) * 100).toFixed(1)} wt%)`;
+  // Polar solvents · Aromatics · Hydrocarbons · Syngas / Natural Gas / Ammonia
+  if ((flows.MeOH || 0) / tot > 0.25) return `Methanol (MeOH ${(((flows.MeOH || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.EtOH || 0) / tot > 0.25) return `Ethanol (EtOH ${(((flows.EtOH || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.IPA || 0) / tot > 0.25) return `Isopropanol (IPA ${(((flows.IPA || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.Acetone || 0) / tot > 0.25) return `Acetone (${(((flows.Acetone || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.AceticAcid || 0) / tot > 0.25) return `Acetic Acid (${(((flows.AceticAcid || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.EtOAc || 0) / tot > 0.25) return `Ethyl Acetate (EtOAc ${(((flows.EtOAc || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CH2Cl2 || 0) / tot > 0.40) return `Purified MCL / DCM (CH₂Cl₂ ${(((flows.CH2Cl2 || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if ((flows.CH3Cl || 0) / tot > 0.35) return `Methyl Chloride (MC · CH₃Cl ${(((flows.CH3Cl || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.CHCl3 || 0) / tot > 0.35 && (flows.CCl4 || 0) / tot > 0.08) {
-    return `조 CFM/CTC 관출액 (CFM ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} · CTC ${(((flows.CCl4 || 0) / tot) * 100).toFixed(1)} wt%)`;
+    return `Crude CFM/CTC Bottoms (CFM ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} · CTC ${(((flows.CCl4 || 0) / tot) * 100).toFixed(1)} wt%)`;
   }
-  if ((flows.CHCl3 || 0) / tot > 0.35) return `정제 CFM · 클로로포름 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(2)} wt%)`;
-  if (((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot > 0.35) return `잔류 CTC · 헤비 폐유기물 (${((((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.CHCl3 || 0) / tot > 0.25) return `클로로포름/CFM 혼합유 (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CHCl3 || 0) / tot > 0.35) return `Purified CFM / Chloroform (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if (((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot > 0.35) return `Residual CTC / Heavy Organics (${((((flows.CCl4 || 0) + (flows.C2Cl4 || 0)) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CHCl3 || 0) / tot > 0.25) return `Chloroform/CFM Mix (CHCl₃ ${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.MDI || 0) / tot > 0.35 && (flows.PMDI || 0) / tot > 0.25) {
-    return `Crude MDI 혼합액 (Pure MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(1)} · PMDI ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)} wt%)`;
+    return `Crude MDI Mix (Pure MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(1)} · PMDI ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)} wt%)`;
   }
-  if ((flows.MDI || 0) / tot > 0.45) return `Pure 4,4'-MDI 제품 (MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(2)} wt%)`;
+  if ((flows.MDI || 0) / tot > 0.45) return `Pure 4,4'-MDI (MDI ${(((flows.MDI || 0) / tot) * 100).toFixed(2)} wt%)`;
   if ((flows.PMDI || 0) / tot > 0.45) return `Polymeric MDI (PMDI ${(((flows.PMDI || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.MDA || 0) / tot > 0.25) return `조 MDA 유분 (MDA ${(((flows.MDA || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.MCB || 0) / tot > 0.35) return `MCB 용매 혼합유 (MCB ${(((flows.MCB || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.Aniline || 0) / tot > 0.35) return `아닐린 유분 (Aniline ${(((flows.Aniline || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.COCl2 || 0) / tot > 0.25) return `포스겐 혼합 스트림 (COCl₂ ${(((flows.COCl2 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.MDA || 0) / tot > 0.25) return `Crude MDA Cut (MDA ${(((flows.MDA || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.MCB || 0) / tot > 0.35) return `MCB Solvent Mix (MCB ${(((flows.MCB || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.Aniline || 0) / tot > 0.35) return `Aniline Cut (${(((flows.Aniline || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.COCl2 || 0) / tot > 0.25) return `Phosgene Stream (COCl₂ ${(((flows.COCl2 || 0) / tot) * 100).toFixed(1)} wt%)`;
 
   const wBTX = ((flows.Benzene || 0) + (flows.Toluene || 0) + (flows.pXylene || 0)) / tot;
-  if ((flows.Benzene || 0) / tot > 0.45) return `벤젠 유분 (Benzene ${(((flows.Benzene || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.Toluene || 0) / tot > 0.45) return `톨루엔 유분 (Toluene ${(((flows.Toluene || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.pXylene || 0) / tot > 0.45) return `파라자일렌 유분 (p-Xylene ${(((flows.pXylene || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if (wBTX > 0.35) return `BTX 방향족 혼합유 (${(wBTX * 100).toFixed(1)} wt%)`;
+  if ((flows.Benzene || 0) / tot > 0.45) return `Benzene (${(((flows.Benzene || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.Toluene || 0) / tot > 0.45) return `Toluene (${(((flows.Toluene || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.pXylene || 0) / tot > 0.45) return `p-Xylene (${(((flows.pXylene || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if (wBTX > 0.35) return `BTX Aromatics (${(wBTX * 100).toFixed(1)} wt%)`;
 
   const wC6C7 = ((flows.nC6H14 || 0) + (flows.nC7H16 || 0)) / tot;
-  if (wC6C7 > 0.35) return `경질 나프타/파라핀 (C₆/C₇ ${(wC6C7 * 100).toFixed(1)} wt%)`;
+  if (wC6C7 > 0.35) return `Light Naphtha / Paraffin (C₆/C₇ ${(wC6C7 * 100).toFixed(1)} wt%)`;
 
   const wLPG = ((flows.C3H8 || 0) + (flows.nC4H10 || 0) + (flows.C3H6 || 0)) / tot;
-  if (wLPG > 0.35) return `LPG 탄화수소 (C₃/C₄ ${(wLPG * 100).toFixed(1)} wt%)`;
+  if (wLPG > 0.35) return `LPG Hydrocarbons (C₃/C₄ ${(wLPG * 100).toFixed(1)} wt%)`;
 
   const wC2 = ((flows.C2H4 || 0) + (flows.C2H6 || 0)) / tot;
-  if (wC2 > 0.35) return `에틸렌/에탄 경질유분 (C₂ ${(wC2 * 100).toFixed(1)} wt%)`;
+  if (wC2 > 0.35) return `Ethylene/Ethane Cut (C₂ ${(wC2 * 100).toFixed(1)} wt%)`;
 
   if ((flows.NH3 || 0) / tot > 0.15) {
     return wH2O > 0.25
-      ? `암모니아수 (${(((flows.NH3 || 0) / ((flows.NH3 || 0) + flows.H2O)) * 100).toFixed(1)} wt% NH₃)`
-      : `암모니아 (NH₃ ${(((flows.NH3 || 0) / tot) * 100).toFixed(1)} wt%)`;
+      ? `Aqueous Ammonia (${(((flows.NH3 || 0) / ((flows.NH3 || 0) + flows.H2O)) * 100).toFixed(1)} wt% NH₃)`
+      : `Ammonia (NH₃ ${(((flows.NH3 || 0) / tot) * 100).toFixed(1)} wt%)`;
   }
-  if ((flows.CO2 || 0) / tot > 0.40) return `이산화탄소 (CO₂ ${(((flows.CO2 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CO2 || 0) / tot > 0.40) return `CO₂ Gas (${(((flows.CO2 || 0) / tot) * 100).toFixed(1)} wt%)`;
   if ((flows.CO || 0) / tot > 0.20 && wH2 > 0.02) {
-    return `합성가스 (Syngas CO+H₂ ${((((flows.CO || 0) + flows.H2) / tot) * 100).toFixed(1)} wt%)`;
+    return `Syngas (CO+H₂ ${((((flows.CO || 0) + flows.H2) / tot) * 100).toFixed(1)} wt%)`;
   }
-  if ((flows.CO || 0) / tot > 0.40) return `일산화탄소 가스 (CO ${(((flows.CO || 0) / tot) * 100).toFixed(1)} wt%)`;
-  if ((flows.CH4 || 0) / tot > 0.35) return `천연가스/메탄 (CH₄ ${(((flows.CH4 || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CO || 0) / tot > 0.40) return `CO Gas (${(((flows.CO || 0) / tot) * 100).toFixed(1)} wt%)`;
+  if ((flows.CH4 || 0) / tot > 0.35) return `Natural Gas / Methane (CH₄ ${(((flows.CH4 || 0) / tot) * 100).toFixed(1)} wt%)`;
 
   if (wCl2 > 0.70) {
     const P_abs = Math.max(0.15, pressKgcm2g + 1.03323);
@@ -1472,61 +1472,61 @@ export function identifyFluidName(flows: Record<SimCompKey, number>, tempC: numb
     const yCl2 = totMoles > 0 ? (flows.Cl2 / MW.Cl2) / totMoles : 1;
     const dewT = cl2DewPointTempC(P_abs * yCl2);
     const moisturePpm = Math.round((flows.H2O / tot) * 1e6);
-    const dryTag = moisturePpm < 150 ? '건조 Cl₂' : '습윤 Cl₂';
-    return `${dryTag} (${(wCl2 * 100).toFixed(1)}% · 액화이슬점 ${dewT.toFixed(1)}°C)`;
+    const dryTag = moisturePpm < 150 ? 'Dry Cl₂' : 'Wet Cl₂';
+    return `${dryTag} (${(wCl2 * 100).toFixed(1)}% · Dew Pt ${dewT.toFixed(1)}°C)`;
   }
-  if (wH2 > 0.40) return `수소 가스 (H₂ ${(wH2 * 100).toFixed(1)} wt%)`;
+  if (wH2 > 0.40) return `Hydrogen Gas (H₂ ${(wH2 * 100).toFixed(1)} wt%)`;
   if (wHCl > 0.90 && wH2O < 0.005) {
     const isLiqAhcl = pressKgcm2g >= 10 && tempC <= 0;
     return isLiqAhcl
-      ? `액화 무수염산 (AHCl ${(wHCl * 100).toFixed(3)} wt%)`
-      : `무수 염화수소 가스 (AHCl ${(wHCl * 100).toFixed(2)} wt%)`;
+      ? `Liquid Anhydrous HCl (AHCl ${(wHCl * 100).toFixed(3)} wt%)`
+      : `Anhydrous HCl Gas (AHCl ${(wHCl * 100).toFixed(2)} wt%)`;
   }
-  if (wHCl > 0.70 && wH2O < 0.2) return `염화수소 가스 (HCl ${(wHCl * 100).toFixed(1)} wt%)`;
-  if (wHCl > 0.05 && wH2O > 0.4) return `염산 수용액 (${((flows.HCl / (flows.HCl + flows.H2O)) * 100).toFixed(1)} wt% HCl)`;
-  if (flows.NaOCl / tot > 0.02) return `차아염소산 용액 (${((flows.NaOCl / tot) * 100).toFixed(1)} wt% NaOCl)`;
-  if (wNaOH > 0.05) return `가성소다 용액 (${((flows.NaOH / (flows.NaOH + flows.H2O + flows.NaCl)) * 100).toFixed(1)} wt% NaOH)`;
-  if (wNaCl > 0.85 && wH2O < 0.15) return `원염 고체/슬러리 (NaCl ${(wNaCl * 100).toFixed(1)}%)`;
-  if (wNaCl > 0.05) return `브라인 염수 (${((flows.NaCl / (flows.NaCl + flows.H2O)) * 100).toFixed(1)} wt% NaCl)`;
-  if (wH2SO4 > 0.20) return `황산 용액 (${((flows.H2SO4 / (flows.H2SO4 + flows.H2O)) * 100).toFixed(1)} wt% H₂SO₄)`;
-  if (wH2O > 0.90) return tempC > 105 ? '수증기 (Steam)' : '순수 / 응축수 (H₂O)';
-  return `혼합 유체 (${tot.toFixed(0)} kg/h)`;
+  if (wHCl > 0.70 && wH2O < 0.2) return `HCl Gas (${(wHCl * 100).toFixed(1)} wt%)`;
+  if (wHCl > 0.05 && wH2O > 0.4) return `Hydrochloric Acid (${((flows.HCl / (flows.HCl + flows.H2O)) * 100).toFixed(1)} wt% HCl)`;
+  if (flows.NaOCl / tot > 0.02) return `NaOCl Solution (${((flows.NaOCl / tot) * 100).toFixed(1)} wt% NaOCl)`;
+  if (wNaOH > 0.05) return `Caustic Soda (${((flows.NaOH / (flows.NaOH + flows.H2O + flows.NaCl)) * 100).toFixed(1)} wt% NaOH)`;
+  if (wNaCl > 0.85 && wH2O < 0.15) return `Raw Salt Solid/Slurry (NaCl ${(wNaCl * 100).toFixed(1)}%)`;
+  if (wNaCl > 0.05) return `Brine (${((flows.NaCl / (flows.NaCl + flows.H2O)) * 100).toFixed(1)} wt% NaCl)`;
+  if (wH2SO4 > 0.20) return `Sulfuric Acid (${((flows.H2SO4 / (flows.H2SO4 + flows.H2O)) * 100).toFixed(1)} wt% H₂SO₄)`;
+  if (wH2O > 0.90) return tempC > 105 ? 'Steam (H₂O)' : 'Pure Water / Condensate (H₂O)';
+  return `Mixed Fluid (${tot.toFixed(0)} kg/h)`;
 }
 
 function detectKeyConc(flows: Record<SimCompKey, number>, phase: 'L' | 'G' | 'L/G'): string {
   const tot = sumFlows(flows);
   if (tot <= 0.01) return '—';
 
-  // 무수 액화 염소 vs 수분 동반 습윤 염소 판별!
+  // Anhydrous liquid Cl2 vs wet Cl2
   if ((phase === 'L' || phase === 'L/G') && flows.Cl2 / tot > 0.50) {
     if (flows.H2O > tot * 0.01) {
-      return `습윤 Cl₂ (${((flows.Cl2 / tot) * 100).toFixed(1)}%)`;
+      return `Wet Cl₂ (${((flows.Cl2 / tot) * 100).toFixed(1)}%)`;
     }
     return phase === 'L'
-      ? `액화 Cl₂ (${((flows.Cl2 / tot) * 100).toFixed(1)}%)`
-      : `기액혼합 Cl₂`;
+      ? `Liquid Cl₂ (${((flows.Cl2 / tot) * 100).toFixed(1)}%)`
+      : `2-Phase Cl₂`;
   }
 
-  // 액화 무수염산 (5N AHCl) 판별
+  // Liquid Anhydrous HCl (5N AHCl)
   if ((phase === 'L' || phase === 'L/G') && flows.HCl / tot > 0.85 && flows.H2O / tot < 0.02) {
-    return `액화 AHCl (${((flows.HCl / tot) * 100).toFixed(3)}%)`;
+    return `Liquid AHCl (${((flows.HCl / tot) * 100).toFixed(3)}%)`;
   }
 
-  // 유기 염소화물 (ECH / DCH / MCH / 글리세린 / DCP) 판별
+  // Organochlorides (ECH / DCH / MCH / Glycerol / DCP)
   if (flows.ECH / tot > 0.30) {
     const pct = (flows.ECH / tot) * 100;
     return pct >= 99.5 ? `${pct.toFixed(2)} wt% ECH` : `${pct.toFixed(1)} wt% ECH`;
   }
   if (flows.DCP / tot > 0.25) return `${((flows.DCP / tot) * 100).toFixed(1)} wt% DCP`;
   if (flows.DCH / tot > 0.20) return `${((flows.DCH / tot) * 100).toFixed(1)} wt% DCH`;
-  if (flows.Glycerol / tot > 0.25) return `${((flows.Glycerol / tot) * 100).toFixed(1)} wt% 글리세린`;
+  if (flows.Glycerol / tot > 0.25) return `${((flows.Glycerol / tot) * 100).toFixed(1)} wt% Glycerol`;
   if (flows.MCH / tot > 0.20) return `${((flows.MCH / tot) * 100).toFixed(1)} wt% MCH`;
   if (flows.FeCl3 / tot > 0.08) return `${((flows.FeCl3 / tot) * 100).toFixed(1)} wt% FeCl₃`;
   if (flows.FeCl2 / tot > 0.08) return `${((flows.FeCl2 / tot) * 100).toFixed(1)} wt% FeCl₂`;
   if (flows.PAC / tot > 0.08) return `${((flows.PAC / tot) * 100).toFixed(1)} wt% PAC`;
   if (flows.NaClO3 / tot > 0.08) return `${((flows.NaClO3 / tot) * 100).toFixed(1)} wt% NaClO₃`;
 
-  // 탄화수소 · 방향족 · 극성용제 · 합성가스 지배 시 주성분 표시
+  // Dominant component for hydrocarbons / aromatics / solvents / syngas
   if ((flows.CHCl3 || 0) / tot > 0.35 && (flows.CCl4 || 0) / tot > 0.08) {
     return `${(((flows.CHCl3 || 0) / tot) * 100).toFixed(1)}% CFM / ${(((flows.CCl4 || 0) / tot) * 100).toFixed(1)}% CTC`;
   }
@@ -1559,17 +1559,17 @@ function detectKeyConc(flows: Record<SimCompKey, number>, phase: 'L' | 'G' | 'L/
       const sym = COMP_META[mainGas].formula;
       return `${wt >= 99.5 ? wt.toFixed(2) : wt.toFixed(1)}% ${sym}`;
     }
-    return '수증기';
+    return 'Steam';
   }
   const liqMass = tot;
   if (liqMass <= 0.01) return '—';
   if (flows.NaOCl > 0.02 * liqMass) return `${((flows.NaOCl / liqMass) * 100).toFixed(1)} wt% NaOCl`;
   if (flows.NaOH > flows.NaCl && flows.NaOH > 0.1) return `${((flows.NaOH / liqMass) * 100).toFixed(1)} wt% NaOH`;
-  if (flows.NaCl > 0.85 * liqMass) return `원염 NaCl`;
+  if (flows.NaCl > 0.85 * liqMass) return `Raw NaCl`;
   if (flows.NaCl > 0.1) return `${((flows.NaCl / liqMass) * 100).toFixed(1)} wt% NaCl`;
   if (flows.HCl > 0.05) return `${((flows.HCl / liqMass) * 100).toFixed(1)} wt% HCl`;
   if (flows.H2SO4 > 0.1) return `${((flows.H2SO4 / liqMass) * 100).toFixed(1)} wt% H₂SO₄`;
-  return '순수/응축수';
+  return 'Water / Condensate';
 }
 
 /**
