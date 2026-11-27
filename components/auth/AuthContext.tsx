@@ -12,6 +12,7 @@ import {
   type RegistrationMode,
   type UserProfile,
   fetchAuthStatus,
+  captureAndGetSignupSource,
   flushPendingWorkspaceSyncs,
   hydrateUserWorkspaceFromServer,
   installStorageSyncInterceptor,
@@ -78,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accountModalTab, setAccountModalTab] = useState<'profile' | 'admin'>('profile');
 
   const applyStatusAndHydrate = useCallback(async () => {
+    captureAndGetSignupSource();
     setLoading(true);
     setAuthError(null);
     try {

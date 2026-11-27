@@ -5,6 +5,8 @@ import {
   getRememberMePreference,
   loginWithPassword,
   registerUserAccount,
+  captureAndGetSignupSource,
+  getStoredAutoInviteCode,
   setRememberMePreference,
 } from '@/lib/auth/authClient';
 import { PwaInstallButton } from '@/components/pwa/PwaRegistrar';
@@ -286,15 +288,9 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       );
       return;
     }
-    if (!plantProduct.trim()) {
-      setFormError(
-        isEn
-          ? 'Please enter your industry or process field.'
-          : '담당 업무 또는 관심 공정을 입력해 주세요.'
-      );
-      return;
-    }
-    if (registrationMode === 'invite_only' && !inviteCode.trim()) {
+    const autoInvite = getStoredAutoInviteCode();
+    const resolvedInvite = inviteCode.trim() || autoInvite || undefined;
+    if (registrationMode === 'invite_only' && !resolvedInvite) {
       setFormError(
         isEn
           ? 'Invite-only beta is active. Please enter your invite code.'
@@ -302,6 +298,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       );
       return;
     }
+    const detectedSource = captureAndGetSignupSource();
     setSubmitting(true);
     try {
       const res = await registerUserAccount({
@@ -310,7 +307,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         password,
         display_name: displayName.trim() || normalizedEmail.split('@')[0] || normalizedEmail,
         plant_product: plantProduct.trim(),
-        invite_code: inviteCode.trim() || undefined,
+        invite_code: resolvedInvite,
+        signup_source: detectedSource,
         remember_me: rememberMe,
       });
       if (res.status === 'active') {

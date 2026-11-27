@@ -679,6 +679,7 @@ class RegisterPayload(BaseModel):
     display_name: str = ""
     plant_product: str = ""
     invite_code: Optional[str] = None
+    signup_source: Optional[str] = None
     remember_me: bool = True
 
 
@@ -925,16 +926,29 @@ def api_auth_register(payload: RegisterPayload, request: Request, response: Resp
 
         default_beta_acl = json.dumps(["simulator_only"], ensure_ascii=False)
         plant_prod_val = (payload.plant_product or "").strip()[:120]
+        signup_src_val = (payload.signup_source or "").strip()[:80]
+        if reg_mode != "invite_only":
+            opt_code = (payload.invite_code or "").strip().upper()
+            if opt_code:
+                opt_inv = conn.execute("SELECT code FROM invite_codes WHERE code = ? AND is_active = 1", (opt_code,)).fetchone()
+                if opt_inv:
+                    conn.execute("UPDATE invite_codes SET used_count = used_count + 1 WHERE code = ?", (opt_code,))
+                if not signup_src_val:
+                    signup_src_val = f"invite:{opt_code.lower()}"
+        if not signup_src_val:
+            ref_hdr = (request.headers.get("referer") or "").strip()
+            signup_src_val = ref_hdr[:80] if ref_hdr else "direct"
         cur = conn.execute(
             """
-            INSERT INTO users(username, email, display_name, plant_product, password_hash, role, status, allowed_plants, created_at)
-            VALUES (?, ?, ?, ?, ?, 'user', ?, ?, ?)
+            INSERT INTO users(username, email, display_name, plant_product, signup_source, password_hash, role, status, allowed_plants, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'user', ?, ?, ?)
             """,
             (
                 uname,
                 email_val,
                 dname,
                 plant_prod_val,
+                signup_src_val,
                 hash_password(payload.password),
                 new_status,
                 default_beta_acl,

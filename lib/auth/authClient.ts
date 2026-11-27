@@ -399,6 +399,96 @@ export async function loginWithPassword(
   return data;
 }
 
+const SIGNUP_SOURCE_STORAGE_KEY = 'chemplant_signup_source_v1';
+const AUTO_INVITE_STORAGE_KEY = 'chemplant_auto_invite_v1';
+
+/**
+ * Automatically captures first-touch traffic source (URL ?ref / ?utm_source / ?invite or document.referrer)
+ * into localStorage so that even if a visitor browses as Guest before registering, their exact origin is preserved.
+ */
+export function captureAndGetSignupSource(): string {
+  if (typeof window === 'undefined') return 'direct';
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const paramInvite = (params.get('invite') || params.get('code') || '').trim().toUpperCase();
+    if (paramInvite) {
+      window.localStorage.setItem(AUTO_INVITE_STORAGE_KEY, paramInvite);
+    }
+
+    const paramSrc = (
+      params.get('utm_source') ||
+      params.get('ref') ||
+      params.get('src') ||
+      params.get('source') ||
+      ''
+    ).trim().toLowerCase();
+
+    if (paramSrc) {
+      const normalized = paramSrc.slice(0, 48);
+      window.localStorage.setItem(SIGNUP_SOURCE_STORAGE_KEY, normalized);
+      return normalized;
+    }
+
+    if (paramInvite) {
+      const fromInv = paramInvite.includes('REDDIT')
+        ? 'reddit'
+        : paramInvite.includes('HN')
+          ? 'hackernews'
+          : `invite:${paramInvite.toLowerCase()}`;
+      window.localStorage.setItem(SIGNUP_SOURCE_STORAGE_KEY, fromInv);
+      return fromInv;
+    }
+
+    const existing = (window.localStorage.getItem(SIGNUP_SOURCE_STORAGE_KEY) || '').trim();
+    if (existing && existing !== 'direct') {
+      return existing;
+    }
+
+    const rawRef = (document.referrer || '').trim();
+    if (rawRef) {
+      try {
+        const host = new URL(rawRef).hostname.toLowerCase().replace(/^www\./, '');
+        if (host && host !== window.location.hostname.toLowerCase().replace(/^www\./, '')) {
+          let detected = host;
+          if (host.includes('reddit.com') || host === 'redd.it') detected = 'reddit';
+          else if (host.includes('ycombinator.com')) detected = 'hackernews';
+          else if (host.includes('linkedin.com') || host === 'lnkd.in') detected = 'linkedin';
+          else if (host.includes('google.')) detected = 'google';
+          else if (host.includes('naver.')) detected = 'naver';
+          else if (host.includes('youtube.') || host === 'youtu.be') detected = 'youtube';
+          else if (host.includes('github.com')) detected = 'github';
+          else if (host === 'x.com' || host.includes('twitter.com') || host === 't.co') detected = 'x_twitter';
+          else if (host.includes('bing.com')) detected = 'bing';
+          else if (host.includes('chatgpt.com') || host.includes('openai.com')) detected = 'chatgpt';
+          else if (host.includes('perplexity.ai')) detected = 'perplexity';
+          const clean = detected.slice(0, 60);
+          window.localStorage.setItem(SIGNUP_SOURCE_STORAGE_KEY, clean);
+          return clean;
+        }
+      } catch {
+        // ignore invalid referrer URL
+      }
+    }
+
+    if (!existing) {
+      window.localStorage.setItem(SIGNUP_SOURCE_STORAGE_KEY, 'direct');
+    }
+    return existing || 'direct';
+  } catch {
+    return 'direct';
+  }
+}
+
+export function getStoredAutoInviteCode(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const v = (window.localStorage.getItem(AUTO_INVITE_STORAGE_KEY) || '').trim().toUpperCase();
+    return v || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function registerUserAccount(payload: {
   username?: string;
   email?: string;
@@ -406,6 +496,7 @@ export async function registerUserAccount(payload: {
   display_name?: string;
   plant_product?: string;
   invite_code?: string;
+  signup_source?: string;
   remember_me?: boolean;
 }): Promise<{
   status: 'active' | 'pending';
