@@ -53,6 +53,8 @@ export interface WorkbenchRibbonProps {
   // Quick Navigation / Tools
   onOpenCaseMenu?: () => void;
   onSaveCase?: () => void;
+  onOpenHub?: () => void;
+  onShareToHub?: () => void;
   onOpenComponentRequest?: () => void;
   onNavigateRoute: (href: string) => void;
   onSwitchClassicUi?: () => void;
@@ -160,6 +162,8 @@ export default function WorkbenchRibbon({
   onToggleBoundarySync,
   onOpenCaseMenu,
   onSaveCase,
+  onOpenHub,
+  onShareToHub,
   onOpenComponentRequest,
   onNavigateRoute,
   onSwitchClassicUi,
@@ -559,6 +563,48 @@ export default function WorkbenchRibbon({
               }}
             >
               {t('저장', 'Save')}
+            </button>
+          )}
+          {onOpenHub && (
+            <button
+              type="button"
+              onClick={onOpenHub}
+              title={t('Process Hub (관리자 비공개 프리뷰)', 'Process Hub (Admin Private Preview)')}
+              style={{
+                height: 20,
+                padding: '0 7px',
+                borderRadius: 3,
+                border: '1px solid #FCD34D',
+                background: '#FFFBEB',
+                color: '#92400E',
+                fontSize: 10.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🔒 Hub
+            </button>
+          )}
+          {onShareToHub && (
+            <button
+              type="button"
+              onClick={onShareToHub}
+              title={t('현재 공정을 Process Hub에 공유', 'Publish current flowsheet to Process Hub')}
+              style={{
+                height: 20,
+                padding: '0 7px',
+                borderRadius: 3,
+                border: '1px solid #93C5FD',
+                background: '#EFF6FF',
+                color: '#1D4ED8',
+                fontSize: 10.5,
+                fontWeight: 700,
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              ⬆ {t('공유', 'Share')}
             </button>
           )}
         </div>

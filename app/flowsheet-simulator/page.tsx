@@ -70,6 +70,7 @@ import WorkbenchExplorer from '@/components/flowsheet/WorkbenchExplorer';
 import HeatExchangerWorkbenchModal, {
   type HxWorkbenchView,
 } from '@/components/flowsheet/HeatExchangerWorkbenchModal';
+import PublishToHubModal from '@/components/flowsheet/PublishToHubModal';
 import { ClassicUnitSvg } from '@/components/classic-sim/ClassicBlockNode';
 import BufferedNumberInput from '@/components/common/BufferedNumberInput';
 import {
@@ -2564,6 +2565,8 @@ export function FlowsheetWorkspace({
   const simRunningRef = useRef<boolean>(false);
   const convergedBaselinesRef = useRef<ConvergedBaselinesBundle | null>(null);
   const [showConvDiag, setShowConvDiag] = useState<boolean>(false);
+  const [hubPublishOpen, setHubPublishOpen] = useState<boolean>(false);
+  const hubQueryLoadedRef = useRef<boolean>(false);
   const skipNextDirtyRef = useRef<boolean>(true);
 
   const runSimulationNow = useCallback(
@@ -5181,6 +5184,81 @@ export function FlowsheetWorkspace({
     setTimeout(() => rfInstance?.fitView({ padding: 0.16, duration: 240 }), 60);
   };
 
+  // ── Process Hub 링크 (?hub=<id> 또는 ?preset=<id>) 자동 로드 ──
+  useEffect(() => {
+    if (!hydrated || hubQueryLoadedRef.current) return;
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const hubIdParam = sp.get('hub');
+    const presetParam = sp.get('preset');
+    if (!hubIdParam && !presetParam) return;
+    hubQueryLoadedRef.current = true;
+
+    if (presetParam) {
+      const target = getAllPresets().find(p => p.id === presetParam);
+      if (target) {
+        loadPreset(target);
+      }
+      return;
+    }
+
+    if (hubIdParam && /^\d+$/.test(hubIdParam)) {
+      fetch(`/api/hub/item/${hubIdParam}`, { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(data => {
+          const item = data?.item;
+          if (!item) return;
+          if (item.presetId) {
+            const target = getAllPresets().find(p => p.id === item.presetId);
+            if (target) loadPreset(target);
+            return;
+          }
+          if (!item.flowsheetJson) return;
+          const parsed = JSON.parse(item.flowsheetJson);
+          if (!Array.isArray(parsed?.simDefs) || !Array.isArray(parsed?.flowEdges)) return;
+          const nextDefs: FlowNodeDef[] = parsed.simDefs;
+          const nextEdges: FlowEdgeDef[] = parsed.flowEdges;
+          const posMap = new Map<string, { x: number; y: number }>();
+          if (Array.isArray(parsed.rfNodes)) {
+            for (const rn of parsed.rfNodes) {
+              if (rn?.id && rn?.position) posMap.set(rn.id, rn.position);
+            }
+          }
+          const nextComps: SimCompKey[] = Array.isArray(parsed.activeComponents) && parsed.activeComponents.length > 0
+            ? parsed.activeComponents
+            : mergeSheetFeedComponents(nextDefs, activeComponents);
+          const nextMethod: SimPropertyMethod = parsed.propertyMethod || 'AUTO';
+          setActiveComponents(nextComps);
+          setPropertyMethod(nextMethod);
+          setSimDefs(nextDefs);
+          setFlowEdges(nextEdges);
+          setRfNodes(
+            nextDefs.map((d, idx) => ({
+              id: d.id,
+              type: 'flowUnit',
+              position: posMap.get(d.id) ?? { x: 80 + (idx % 5) * 200, y: 120 + Math.floor(idx / 5) * 160 },
+              data: {
+                tag: d.tag,
+                name: d.name,
+                unitType: d.unitType,
+                liveSummary: '',
+                flipX: d.params?.flipX,
+                rotateDeg: d.params?.rotateDeg,
+                refrigerantPreset: d.params?.refrigerantPreset,
+              },
+            }))
+          );
+          setSelectedNodeId(nextDefs[0]?.id ?? null);
+          setSelectedEdgeId(null);
+          setTimeout(() => {
+            runSimulationNow(nextDefs, nextEdges, nextMethod, nextComps, tearMethod);
+            rfInstance?.fitView({ padding: 0.16, duration: 240 });
+          }, 80);
+        })
+        .catch(() => {});
+    }
+  }, [hydrated]);
+
   const clearCanvas = () => {
     if (simDefs.length > 0 || flowEdges.length > 0) {
       const ok = window.confirm(
@@ -6991,6 +7069,16 @@ export function FlowsheetWorkspace({
                 onToggleBoundarySync={() => setBoundarySyncEnabled(v => !v)}
                 onNavigateRoute={href => router.push(href)}
                 onSwitchClassicUi={() => router.push('/classic-simulator')}
+                onOpenHub={
+                  user?.role === 'admin'
+                    ? () => window.open('/hub', '_blank', 'noopener,noreferrer')
+                    : undefined
+                }
+                onShareToHub={
+                  user?.role === 'admin' && !isPlantSimMode
+                    ? () => setHubPublishOpen(true)
+                    : undefined
+                }
                 plantCustomDesign={
                   workspaceMode === 'electrolyzer_plant'
                     ? {
@@ -11647,6 +11735,42 @@ export function FlowsheetWorkspace({
           />
         );
       })()}
+
+      {/* ── Process Hub 공유 모달 (관리자 비공개 프리뷰) ── */}
+      {user?.role === 'admin' && !isPlantSimMode && (
+        <PublishToHubModal
+          open={hubPublishOpen}
+          onClose={() => setHubPublishOpen(false)}
+          isEn={isEn}
+          isAdmin={user?.role === 'admin'}
+          defaultTitle={
+            getAllPresets().find(p => p.id === presetId)?.titleEn ||
+            getAllPresets().find(p => p.id === presetId)?.title ||
+            'Custom Process Flowsheet'
+          }
+          thermoMethod={
+            propertyMethod === 'AUTO'
+              ? (solved.propertyMethodUsed ?? autoPropertyRecommendation.method)
+              : propertyMethod
+          }
+          unitCount={simDefs.length}
+          streamCount={flowEdges.length}
+          massErrorPct={
+            Number.isFinite(solved.balance?.massImbalancePct)
+              ? Math.abs(solved.balance.massImbalancePct)
+              : 0
+          }
+          converged={!isSimDirty && solvedMeta.runCount > 0}
+          buildFlowsheetPayload={() => ({
+            version: 1,
+            simDefs,
+            flowEdges,
+            rfNodes: rfNodes.map(n => ({ id: n.id, position: n.position, type: n.type })),
+            activeComponents,
+            propertyMethod,
+          })}
+        />
+      )}
     </div>
   );
 }

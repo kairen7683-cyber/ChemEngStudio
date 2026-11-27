@@ -343,7 +343,123 @@ def init_db() -> str:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS hub_flowsheets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL DEFAULT 'general',
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            thermo_method TEXT NOT NULL DEFAULT 'AUTO',
+            unit_count INTEGER NOT NULL DEFAULT 0,
+            stream_count INTEGER NOT NULL DEFAULT 0,
+            mass_error_pct REAL DEFAULT NULL,
+            converged INTEGER NOT NULL DEFAULT 1,
+            is_official INTEGER NOT NULL DEFAULT 0,
+            preset_id TEXT DEFAULT NULL,
+            author_id INTEGER,
+            author_name TEXT NOT NULL DEFAULT 'ChemPlant Team',
+            flowsheet_json TEXT NOT NULL DEFAULT '',
+            views INTEGER NOT NULL DEFAULT 0,
+            forks INTEGER NOT NULL DEFAULT 0,
+            likes INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'published',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
+    )
+
+    # Seed official Process Hub starter cards once if table is empty
+    hub_count = conn.execute("SELECT COUNT(*) FROM hub_flowsheets").fetchone()[0]
+    if hub_count == 0:
+        now_seed = iso_now()
+        official_seeds = [
+            (
+                "LNG Combined-Cycle Power Plant (CCGT: Brayton + Rankine)",
+                "30 t/h Ambient Air + 650 kg/h LNG -> 15 barA Compressor -> 1,150°C Combustor -> Gas Turbine (+5.6 MWe) -> HRSG Waste Heat Recovery -> 40 barA / 480°C Steam Turbine (+1.0 MWe).",
+                "energy",
+                json.dumps(["CCGT", "Gas Turbine", "Steam Turbine", "HRSG", "Brayton", "Rankine"]),
+                "PR",
+                12,
+                12,
+                0.0,
+                1,
+                1,
+                "lng_ccgt_power_plant",
+                None,
+                "ChemPlant Team",
+                "",
+                now_seed,
+                now_seed,
+            ),
+            (
+                "Benzene / Toluene Rigorous Distillation (20-Stage MESH)",
+                "Classic equimolar 50/50 Benzene-Toluene binary separation with 20-stage rigorous MESH column, achieving >99.1% overhead purity and full condenser/reboiler duty balance.",
+                "separation",
+                json.dumps(["Distillation", "MESH", "Benzene", "Toluene", "VLE"]),
+                "PR",
+                5,
+                5,
+                0.0,
+                1,
+                1,
+                "textbook_bt_distillation",
+                None,
+                "ChemPlant Team",
+                "",
+                now_seed,
+                now_seed,
+            ),
+            (
+                "HDA Toluene Hydrodealkylation with Recycle Loop",
+                "Toluene + H2 -> Benzene + CH4 reactor loop with flash separator, gas purge/recycle Wegstein tear convergence, and aromatics recovery column.",
+                "petrochemical",
+                json.dumps(["HDA", "Recycle", "Wegstein", "Reactor", "Aromatics"]),
+                "PR",
+                9,
+                10,
+                0.0,
+                1,
+                1,
+                "hda_toluene_benzene_recycle",
+                None,
+                "ChemPlant Team",
+                "",
+                now_seed,
+                now_seed,
+            ),
+            (
+                "Ethyl Acetate Esterification & Separation (NRTL)",
+                "Acetic Acid + Ethanol -> Ethyl Acetate + H2O liquid-phase esterification with NRTL activity coefficient model and downstream distillation recovery.",
+                "reaction",
+                json.dumps(["Esterification", "NRTL", "Ethyl Acetate", "CSTR"]),
+                "NRTL",
+                6,
+                6,
+                0.0,
+                1,
+                1,
+                "ethyl_acetate_esterification",
+                None,
+                "ChemPlant Team",
+                "",
+                now_seed,
+                now_seed,
+            ),
+        ]
+        conn.executemany(
+            """
+            INSERT INTO hub_flowsheets (
+                title, description, category, tags_json, thermo_method,
+                unit_count, stream_count, mass_error_pct, converged, is_official,
+                preset_id, author_id, author_name, flowsheet_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            official_seeds,
+        )
+    conn.execute(
+        "INSERT OR IGNORE INTO system_settings (key, value) VALUES ('hub_public_enabled', '0')"
     )
 
     _ensure_column(conn, "users", "allowed_plants TEXT DEFAULT NULL")
@@ -2872,6 +2988,238 @@ async def api_eval_report(request: Request):
     out_file = _EVAL_REPORTS_DIR / f"{rid}.json"
     out_file.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "report_id": rid, "saved": True}
+
+
+# ---------------------------------------------------------------------------
+# Process Hub (Community Flowsheet Sharing) — Private Admin Preview by default
+# ---------------------------------------------------------------------------
+MAX_HUB_JSON_BYTES = 200_000
+MAX_HUB_DAILY_PUBLISH = 10
+HUB_CATEGORIES = {"energy", "separation", "reaction", "petrochemical", "gas", "electrochem", "general"}
+
+
+def _is_hub_public(conn: sqlite3.Connection) -> bool:
+    row = conn.execute("SELECT value FROM system_settings WHERE key = 'hub_public_enabled'").fetchone()
+    return bool(row and str(row["value"]).strip() == "1")
+
+
+def _require_hub_access(
+    request: Request,
+    conn: sqlite3.Connection,
+    require_auth: bool = False,
+) -> Optional[sqlite3.Row]:
+    user = resolve_session_user(request, conn)
+    is_public = _is_hub_public(conn)
+    if not is_public:
+        if not user or user["role"] != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Process Hub is currently in private preview (Admin only).",
+            )
+        return user
+    if require_auth and not user:
+        raise HTTPException(status_code=401, detail="Login required to publish or interact.")
+    return user
+
+
+def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str, Any]:
+    try:
+        tags = json.loads(row["tags_json"] or "[]")
+        if not isinstance(tags, list):
+            tags = []
+    except Exception:
+        tags = []
+    item: dict[str, Any] = {
+        "id": row["id"],
+        "title": row["title"],
+        "description": row["description"],
+        "category": row["category"],
+        "tags": [str(t) for t in tags[:8]],
+        "thermoMethod": row["thermo_method"],
+        "unitCount": row["unit_count"],
+        "streamCount": row["stream_count"],
+        "massErrorPct": row["mass_error_pct"],
+        "converged": bool(row["converged"]),
+        "isOfficial": bool(row["is_official"]),
+        "presetId": row["preset_id"],
+        "authorId": row["author_id"],
+        "authorName": row["author_name"],
+        "views": row["views"],
+        "forks": row["forks"],
+        "likes": row["likes"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+    }
+    if include_json:
+        item["flowsheetJson"] = row["flowsheet_json"] or ""
+    return item
+
+
+@app.get("/api/hub/list")
+def api_hub_list(
+    request: Request,
+    q: str = "",
+    category: str = "all",
+    sort: str = "latest",
+):
+    with get_db() as conn:
+        _require_hub_access(request, conn, require_auth=False)
+        is_pub = _is_hub_public(conn)
+        clauses = ["status = 'published'"]
+        params: list[Any] = []
+        cat_clean = category.strip().lower()
+        if cat_clean and cat_clean != "all":
+            clauses.append("category = ?")
+            params.append(cat_clean)
+        q_clean = q.strip()
+        if q_clean:
+            like_q = f"%{q_clean}%"
+            clauses.append("(title LIKE ? OR description LIKE ? OR tags_json LIKE ? OR author_name LIKE ?)")
+            params.extend([like_q, like_q, like_q, like_q])
+        order_sql = "is_official DESC, id DESC"
+        if sort == "popular":
+            order_sql = "(views + forks * 3 + likes * 2) DESC, id DESC"
+        elif sort == "liked":
+            order_sql = "likes DESC, id DESC"
+        sql = f"SELECT * FROM hub_flowsheets WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 100"
+        rows = conn.execute(sql, params).fetchall()
+        return {
+            "ok": True,
+            "isPublic": is_pub,
+            "total": len(rows),
+            "items": [_serialize_hub_row(r, include_json=False) for r in rows],
+        }
+
+
+@app.get("/api/hub/item/{item_id}")
+def api_hub_get_item(item_id: int, request: Request):
+    with get_db() as conn:
+        _require_hub_access(request, conn, require_auth=False)
+        row = conn.execute(
+            "SELECT * FROM hub_flowsheets WHERE id = ? AND status = 'published'",
+            (item_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Shared flowsheet not found.")
+        conn.execute("UPDATE hub_flowsheets SET views = views + 1 WHERE id = ?", (item_id,))
+        row = conn.execute("SELECT * FROM hub_flowsheets WHERE id = ?", (item_id,)).fetchone()
+        return {"ok": True, "item": _serialize_hub_row(row, include_json=True)}
+
+
+@app.post("/api/hub/publish")
+async def api_hub_publish(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    with get_db() as conn:
+        user = _require_hub_access(request, conn, require_auth=True)
+        assert user is not None
+        title = str((body or {}).get("title") or "").strip()[:120]
+        if len(title) < 3:
+            raise HTTPException(status_code=400, detail="Title must be at least 3 characters.")
+        description = str((body or {}).get("description") or "").strip()[:800]
+        category = str((body or {}).get("category") or "general").strip().lower()
+        if category not in HUB_CATEGORIES:
+            category = "general"
+        raw_tags = (body or {}).get("tags") or []
+        if isinstance(raw_tags, str):
+            raw_tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+        tags = [str(t).strip()[:30] for t in raw_tags if str(t).strip()][:8]
+        thermo_method = str((body or {}).get("thermoMethod") or "AUTO").strip()[:32]
+        unit_count = max(0, min(500, int((body or {}).get("unitCount") or 0)))
+        stream_count = max(0, min(500, int((body or {}).get("streamCount") or 0)))
+        mass_err = (body or {}).get("massErrorPct")
+        mass_err_val = float(mass_err) if isinstance(mass_err, (int, float)) and math.isfinite(mass_err) else None
+        converged = 1 if (body or {}).get("converged", True) else 0
+        raw_fs = (body or {}).get("flowsheetJson")
+        if isinstance(raw_fs, dict):
+            fs_str = json.dumps(raw_fs, ensure_ascii=False)
+        else:
+            fs_str = str(raw_fs or "").strip()
+        if not fs_str:
+            raise HTTPException(status_code=400, detail="Flowsheet JSON payload is required.")
+        if len(fs_str.encode("utf-8")) > MAX_HUB_JSON_BYTES:
+            raise HTTPException(status_code=413, detail="Flowsheet payload exceeds 200 KB limit.")
+
+        # Daily spam protection for non-admin users
+        if user["role"] != "admin":
+            today_prefix = utcnow().strftime("%Y-%m-%d")
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM hub_flowsheets WHERE author_id = ? AND created_at LIKE ?",
+                (user["id"], f"{today_prefix}%"),
+            ).fetchone()[0]
+            if cnt >= MAX_HUB_DAILY_PUBLISH:
+                raise HTTPException(status_code=429, detail=f"Daily publish limit ({MAX_HUB_DAILY_PUBLISH}) reached.")
+
+        now = iso_now()
+        author_name = "ChemPlant Team" if user["role"] == "admin" and (body or {}).get("asOfficial") else (user["display_name"] or user["username"])
+        is_official = 1 if (user["role"] == "admin" and (body or {}).get("asOfficial")) else 0
+        cur = conn.execute(
+            """
+            INSERT INTO hub_flowsheets (
+                title, description, category, tags_json, thermo_method,
+                unit_count, stream_count, mass_error_pct, converged, is_official,
+                preset_id, author_id, author_name, flowsheet_json, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+            """,
+            (
+                title,
+                description,
+                category,
+                json.dumps(tags, ensure_ascii=False),
+                thermo_method,
+                unit_count,
+                stream_count,
+                mass_err_val,
+                converged,
+                is_official,
+                user["id"],
+                author_name,
+                fs_str,
+                now,
+                now,
+            ),
+        )
+        new_id = cur.lastrowid
+        row = conn.execute("SELECT * FROM hub_flowsheets WHERE id = ?", (new_id,)).fetchone()
+        return {"ok": True, "item": _serialize_hub_row(row, include_json=False)}
+
+
+@app.post("/api/hub/like/{item_id}")
+def api_hub_like(item_id: int, request: Request):
+    with get_db() as conn:
+        _require_hub_access(request, conn, require_auth=True)
+        row = conn.execute("SELECT id, likes FROM hub_flowsheets WHERE id = ? AND status = 'published'", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        conn.execute("UPDATE hub_flowsheets SET likes = likes + 1 WHERE id = ?", (item_id,))
+        return {"ok": True, "likes": row["likes"] + 1}
+
+
+@app.post("/api/hub/fork/{item_id}")
+def api_hub_fork(item_id: int, request: Request):
+    with get_db() as conn:
+        _require_hub_access(request, conn, require_auth=False)
+        row = conn.execute("SELECT id, forks FROM hub_flowsheets WHERE id = ? AND status = 'published'", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        conn.execute("UPDATE hub_flowsheets SET forks = forks + 1 WHERE id = ?", (item_id,))
+        return {"ok": True, "forks": row["forks"] + 1}
+
+
+@app.delete("/api/hub/item/{item_id}")
+def api_hub_delete(item_id: int, request: Request):
+    with get_db() as conn:
+        user = _require_hub_access(request, conn, require_auth=True)
+        assert user is not None
+        row = conn.execute("SELECT id, author_id FROM hub_flowsheets WHERE id = ?", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        if user["role"] != "admin" and row["author_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the author or admin can delete this item.")
+        conn.execute("DELETE FROM hub_flowsheets WHERE id = ?", (item_id,))
+        return {"ok": True, "deletedId": item_id}
 
 
 @app.get("/{full_path:path}")
