@@ -889,3 +889,8 @@ html[data-wb-theme="dark"] .cp-node-summary {
   color: #60A5FA !important;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
 }
+html[data-wb-theme="dark"] .cp-hx-port-badge {
+  background: rgba(15, 23, 42, 0.92) !important;
+  color: #E2E8F0 !important;
+  border-color: #475569 !important;
+}

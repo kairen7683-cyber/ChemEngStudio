@@ -1143,8 +1143,8 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             }
             style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posLeft, 52) }}
           />
-          {isHexOrLiq && (
-            <span style={{ ...getOutsidePortBadgeStyle(posLeft, 52), ...portBadgeStyle(hexProcColor) }}>
+          {isHexOrLiq && selected && (
+            <span className="cp-hx-port-badge" style={{ ...getOutsidePortBadgeStyle(posLeft, 52), ...portBadgeStyle(hexProcColor) }}>
               {hexProcInBadge}
             </span>
           )}
@@ -1165,14 +1165,17 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             }
             style={{ ...portStyle(isEvaporator ? '#DC2626' : hexUtilColor), ...getHandleAnchorStyle(posTop, 50) }}
           />
-          <span
-            style={{
-              ...getOutsidePortBadgeStyle(posTop, 50),
-              ...portBadgeStyle(isEvaporator ? '#DC2626' : hexUtilColor),
-            }}
-          >
-            {isEvaporator ? 'STM' : hexUtilInBadge}
-          </span>
+          {selected && (
+            <span
+              className="cp-hx-port-badge"
+              style={{
+                ...getOutsidePortBadgeStyle(posTop, 50),
+                ...portBadgeStyle(isEvaporator ? '#DC2626' : hexUtilColor),
+              }}
+            >
+              {isEvaporator ? 'STM' : hexUtilInBadge}
+            </span>
+          )}
           <Handle
             type="source"
             position={posBottom}
@@ -1184,14 +1187,17 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             }
             style={{ ...portStyle(isEvaporator ? '#B45309' : hexUtilColor), ...getHandleAnchorStyle(posBottom, 50) }}
           />
-          <span
-            style={{
-              ...getOutsidePortBadgeStyle(posBottom, 50),
-              ...portBadgeStyle(isEvaporator ? '#B45309' : hexUtilColor),
-            }}
-          >
-            {isEvaporator ? 'COND' : hexUtilOutBadge}
-          </span>
+          {selected && (
+            <span
+              className="cp-hx-port-badge"
+              style={{
+                ...getOutsidePortBadgeStyle(posBottom, 50),
+                ...portBadgeStyle(isEvaporator ? '#B45309' : hexUtilColor),
+              }}
+            >
+              {isEvaporator ? 'COND' : hexUtilOutBadge}
+            </span>
+          )}
         </>
       )}
       {unitType === 'saturator' && (
@@ -1310,8 +1316,8 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             }
             style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posRight, 52) }}
           />
-          {isHexOrLiq && (
-            <span style={{ ...getOutsidePortBadgeStyle(posRight, 52), ...portBadgeStyle(hexProcColor) }}>
+          {isHexOrLiq && selected && (
+            <span className="cp-hx-port-badge" style={{ ...getOutsidePortBadgeStyle(posRight, 52), ...portBadgeStyle(hexProcColor) }}>
               {hexProcOutBadge}
             </span>
           )}
@@ -6950,9 +6956,6 @@ export function FlowsheetWorkspace({
                 onChangeLayoutMode={mode => {
                   setLayoutMode(mode);
                   if (mode === 'canvas') {
-                    setInspectorOpen(false);
-                    setPaletteOpen(false);
-                    setExplorerOpen(false);
                     setTimeout(() => rfInstance?.fitView({ padding: 0.08, duration: 200 }), 80);
                   } else if (mode === 'split') {
                     setInspectorOpen(true);
