@@ -205,6 +205,7 @@ const UNIT_CATALOG: UnitCatalogItem[] = [
   { type: 'extractor',       category: 'calc', label: '액-액 추출탑 (LLE)',    labelEn: 'Extractor (LLE)',       tagPrefix: 'EX',   color: '#7C3AED', badge: 'LLE추출', desc: '향류 다단 액-액 추출탑 (추출상 Extract↑ / 추잔상 Raffinate↓)', descEn: 'Counter-current multi-stage liquid-liquid extractor (Extract↑ / Raffinate↓)' },
   { type: 'desiccant_dryer', category: 'calc', label: '실리카겔 흡착 제습탑',   labelEn: 'Adsorber / Dryer',      tagPrefix: 'D',    color: '#4338CA', badge: '제습탑',  desc: '고압 수소 등 수분 흡착 제습 (노점 -60°C 이하)', descEn: 'Silica-gel desiccant adsorption dryer (dew point ≤ -60°C)' },
   { type: 'compressor',      category: 'calc', label: '가스 압축기',          labelEn: 'Compressor',            tagPrefix: 'C',    color: '#0369A1', badge: '승압',    desc: '염소·수소 승압 및 압축 후 Cl₂ 액화 이슬점 계산', descEn: 'Gas compression with shaft power and discharge dew point calculation' },
+  { type: 'turbine',         category: 'calc', label: '터빈 · 팽창기',        labelEn: 'Turbine / Expander',    tagPrefix: 'TB',   color: '#059669', badge: '발전',    desc: 'Gas Brayton · Steam Rankine 등엔트로피 팽창 및 발전 출력 계산', descEn: 'Isentropic gas/steam turbine & expander for Brayton & Rankine energy recovery' },
   { type: 'liquefier',       category: 'calc', label: '염소/가스 액화기',      labelEn: 'Liquefier',             tagPrefix: 'LQ',   color: '#0284C7', badge: '액화',    desc: '프레온·브라인 냉매 기반 Cl₂ 이슬점 판별 및 상평형 액화', descEn: 'Refrigerated gas condenser/liquefier with VLE phase separation' },
   { type: 'hex',             category: 'calc', label: '열교환기 · 냉각기',     labelEn: 'Heat Exchanger',        tagPrefix: 'E',    color: '#B45309', badge: '열수지',  desc: '냉각수·칠드워터·스팀 열교환 및 수증기 응축 계산', descEn: 'Shell-and-tube / plate heat exchanger & cooler with condensation duty' },
   { type: 'pump',            category: 'calc', label: '원심 펌프',            labelEn: 'Pump',                  tagPrefix: 'P',    color: '#1D4ED8', badge: '이송',    desc: '액상 브라인·가성소다 승압 및 축동력 산출', descEn: 'Centrifugal liquid pump for pressure boost and shaft power' },
@@ -227,7 +228,7 @@ type PaletteGroupKey = 'column_sep' | 'heat_evap' | 'press_move' | 'react_elec' 
 const PALETTE_GROUPS: Array<{ key: PaletteGroupKey; label: string; labelEn: string; types: FlowUnitType[] }> = [
   { key: 'column_sep', label: '증류·흡수·추출탑', labelEn: 'Columns & Sep',    types: ['distillation', 'absorber', 'extractor', 'separator', 'desiccant_dryer'] },
   { key: 'heat_evap',  label: '열교환·액화·증발', labelEn: 'Heat & Evap',      types: ['hex', 'liquefier', 'evaporator'] },
-  { key: 'press_move', label: '펌프·압축·감압',   labelEn: 'Pumps & Valves',   types: ['pump', 'compressor', 'valve'] },
+  { key: 'press_move', label: '펌프·압축·터빈',   labelEn: 'Pumps, Comp & Turbine', types: ['pump', 'compressor', 'turbine', 'valve'] },
   { key: 'react_elec', label: '반응·전해·정제',   labelEn: 'React & Electro',  types: ['reactor', 'electrolyzer', 'saturator', 'candle_filter', 'chelate_tower'] },
   { key: 'io_pipe',    label: '공급·혼합·출구',   labelEn: 'Streams & Mix',    types: ['feed', 'mixer', 'splitter', 'product'] },
   { key: 'visual_aux', label: '탱크·밸브(도면)',  labelEn: 'Tanks & Aux',      types: ['tank_visual', 'h_drum_visual', 'filter_visual', 'valve_visual'] },
@@ -247,6 +248,7 @@ const SHORT_CLASSIC_PALETTE_LABEL: Partial<Record<FlowUnitType, string>> = {
   evaporator: '증발관',
   pump: '펌프',
   compressor: '압축기',
+  turbine: '터빈·팽창기',
   valve: '감압밸브',
   reactor: '반응기',
   electrolyzer: '전해조',
@@ -275,6 +277,7 @@ const SHORT_CLASSIC_PALETTE_LABEL_EN: Partial<Record<FlowUnitType, string>> = {
   evaporator: 'Evaporator',
   pump: 'Pump',
   compressor: 'Compressor',
+  turbine: 'Turbine / Expander',
   valve: 'Valve',
   reactor: 'Reactor',
   electrolyzer: 'Electrolyzer',
@@ -409,6 +412,17 @@ function PfdEquipmentSvg({
           <polygon points="4,12 38,6 38,34 4,28" fill={fillBg} stroke={s} strokeWidth={1.9} strokeLinejoin="round" />
           <circle cx={18} cy={20} r={4.5} fill="none" stroke={subStroke} strokeWidth={1.2} />
           <path d="M11 20 L32 20 M27 16 L32 20 L27 24" fill="none" stroke="#0284C7" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+
+    // 4b. 터빈 / 팽창기 (Turbine / Expander — ISO 10628 역-사다리꼴 — 42×42)
+    case 'turbine':
+      return (
+        <svg width={Math.round(44 * scale)} height={Math.round(44 * scale)} viewBox="0 0 42 42">
+          <path d="M12 35 L8 39 L34 39 L30 31" fill="none" stroke={s} strokeWidth={1.6} />
+          <polygon points="4,6 38,12 38,28 4,34" fill="#ECFDF5" stroke={s} strokeWidth={1.9} strokeLinejoin="round" />
+          <circle cx={24} cy={20} r={4.5} fill="none" stroke="#059669" strokeWidth={1.3} />
+          <path d="M10 20 L31 20 M26 16 L31 20 L26 24" fill="none" stroke="#059669" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       );
 
@@ -5339,6 +5353,8 @@ export function FlowsheetWorkspace({
           }
         } else if (def.unitType === 'compressor') {
           summary = `${def.params.outletPressKgcm2g ?? 3.5}kG · ${uRes.shaftPowerKW.toFixed(1)}kW`;
+        } else if (def.unitType === 'turbine') {
+          summary = `+${Math.abs(uRes.shaftPowerKW).toFixed(1)} kW (${def.params.outletPressKgcm2g ?? 0}kG)`;
         } else if (def.unitType === 'pump') {
           summary = `${uRes.shaftPowerKW.toFixed(1)} kW`;
         } else if (def.unitType === 'evaporator') {
@@ -10018,32 +10034,42 @@ export function FlowsheetWorkspace({
                 </div>
               )}
 
-              {/* ── D) 가스 압축기 & 원심 펌프 ── */}
-              {(selectedDef.unitType === 'compressor' || selectedDef.unitType === 'pump') && (
+              {/* ── D) 가스 압축기, 터빈/팽창기 & 원심 펌프 ── */}
+              {(selectedDef.unitType === 'compressor' || selectedDef.unitType === 'pump' || selectedDef.unitType === 'turbine') && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A' }}>
                     {selectedDef.unitType === 'compressor'
                       ? (isEn ? 'Compressor Discharge & Dew Point' : '가스 압축기 승압 · 이슬점 조건')
-                      : (isEn ? 'Centrifugal Pump Discharge' : '원심 펌프 토출 조건')}
+                      : selectedDef.unitType === 'turbine'
+                        ? (isEn ? 'Turbine / Expander (Brayton · Rankine)' : '터빈 · 팽창기 발전 조건 (Brayton · Rankine)')
+                        : (isEn ? 'Centrifugal Pump Discharge' : '원심 펌프 토출 조건')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                     <div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>{isEn ? 'Discharge Pressure' : '토출 압력'}</div>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                        {selectedDef.unitType === 'turbine'
+                          ? (isEn ? 'Exhaust / Outlet Pressure' : '배기(출구) 압력')
+                          : (isEn ? 'Discharge Pressure' : '토출 압력')}
+                      </div>
                       <UnitNumberInput
                         quantity="pressG"
                         syncKey={`${selectedDef.id}-cpress`}
-                        value={selectedDef.params.outletPressKgcm2g ?? 3.5}
+                        value={selectedDef.params.outletPressKgcm2g ?? (selectedDef.unitType === 'turbine' ? 0.0 : 3.5)}
                         onValueChange={v => updateParam('outletPressKgcm2g', v)}
                         onEnterRun={() => runSimulationNow()}
                         inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>{isEn ? 'Efficiency (0–1)' : '기계 효율 (0~1)'}</label>
+                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
+                        {selectedDef.unitType === 'turbine'
+                          ? (isEn ? 'Isentropic Efficiency (0.45–0.96)' : '등엔트로피 효율 (0.45~0.96)')
+                          : (isEn ? 'Efficiency (0–1)' : '기계 효율 (0~1)')}
+                      </label>
                       <BufferedNumberInput
                         syncKey={`${selectedDef.id}-ceff`}
                         step={0.02}
-                        value={selectedDef.params.efficiency ?? 0.76}
+                        value={selectedDef.params.efficiency ?? (selectedDef.unitType === 'turbine' ? 0.85 : 0.76)}
                         onValueChange={v => updateParam('efficiency', v)}
                         onEnterRun={() => runSimulationNow()}
                         style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
@@ -11098,11 +11124,16 @@ export function FlowsheetWorkspace({
                       </b>
                     </div>
                   )}
-                  {selectedUnitRes.shaftPowerKW > 0 && (
+                  {selectedUnitRes.shaftPowerKW !== 0 && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, color: '#475569' }}>
-                      <span>{isEn ? 'Shaft Power:' : '축동력 (Power):'}</span>
-                      <b style={{ fontFamily: 'JetBrains Mono, monospace', color: '#0F172A' }}>
-                        {formatCanonicalValue('power', selectedUnitRes.shaftPowerKW, unitSummaryPowerUnit)}{' '}
+                      <span>
+                        {selectedUnitRes.shaftPowerKW < 0
+                          ? (isEn ? 'Generated Power (Work Out):' : '발전 출력 (회수 동력):')
+                          : (isEn ? 'Shaft Power:' : '축동력 (Power):')}
+                      </span>
+                      <b style={{ fontFamily: 'JetBrains Mono, monospace', color: selectedUnitRes.shaftPowerKW < 0 ? '#059669' : '#0F172A' }}>
+                        {selectedUnitRes.shaftPowerKW < 0 ? '+' : ''}
+                        {formatCanonicalValue('power', Math.abs(selectedUnitRes.shaftPowerKW), unitSummaryPowerUnit)}{' '}
                         {getUnitLabel('power', unitSummaryPowerUnit)}
                       </b>
                     </div>

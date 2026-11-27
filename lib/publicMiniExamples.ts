@@ -30,6 +30,7 @@ export const FREE_PROCESS_EXAMPLE_IDS = new Set<string>([
   'textbook_bt_distillation',
   'hda_toluene_benzene_recycle',
   'ethyl_acetate_esterification',
+  'steam_rankine_power_cycle',
 ]);
 
 export function isProcessExampleFree(exampleId: string): boolean {
@@ -1110,6 +1111,54 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
       { id: 'tcs_edge17', streamNo: 'S-617', source: 'tcs_e5', target: 'tcs_prod', sourcePort: 'out', targetPort: 'in' },
       { id: 'tcs_edge18', streamNo: 'S-618', source: 'tcs_col2', target: 'tcs_e6', sourcePort: 'liquid', targetPort: 'in' },
       { id: 'tcs_edge19', streamNo: 'S-619', source: 'tcs_e6', target: 'tcs_stc', sourcePort: 'out', targetPort: 'in' },
+    ],
+  },
+  {
+    id: 'steam_rankine_power_cycle',
+    isPublicTextbook: true,
+    btnLabel: 'Steam Rankine Power Cycle (Turbine, 40→0.1 barA)',
+    btnLabelEn: 'Steam Rankine Power Cycle (Turbine, 40→0.1 barA)',
+    title: 'Steam Rankine Power Cycle (40 barA / 450°C → 0.10 barA Condenser): Boiler Feed Pump + Superheated Steam Boiler + Isentropic Steam Turbine (+2.47 MW Work Out) + Surface Condenser',
+    titleEn: 'Steam Rankine Power Cycle (40 barA / 450°C → 0.10 barA Condenser): Boiler Feed Pump + Superheated Steam Boiler + Isentropic Steam Turbine (+2.47 MW Work Out) + Surface Condenser',
+    recommendedMethod: 'AUTO',
+    nodes: [
+      {
+        id: 'rk_feed', tag: 'FEED-CW', name: 'Condensate Water (45°C)', nameEn: 'Condensate Water (45°C)', unitType: 'feed',
+        position: { x: 40, y: 180 },
+        params: { feedTempC: 45.0, feedPressKgcm2g: -0.93, feedFlowsKgH: { H2O: 10000 } },
+      },
+      {
+        id: 'rk_pump', tag: 'P-101', name: 'Boiler Feed Pump (40 barA)', nameEn: 'Boiler Feed Pump (40 barA)', unitType: 'pump',
+        position: { x: 260, y: 180 },
+        params: { outletPressKgcm2g: 39.8, efficiency: 0.78 },
+      },
+      {
+        id: 'rk_boil', tag: 'E-101', name: 'Superheated Steam Boiler (450°C)', nameEn: 'Superheated Steam Boiler (450°C)', unitType: 'hex',
+        position: { x: 490, y: 180 },
+        params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'steam_lp', operTempC: 450.0, overallU: 350 },
+      },
+      {
+        id: 'rk_turb', tag: 'TB-101', name: 'Steam Turbine (85% Isentropic)', nameEn: 'Steam Turbine (85% Isentropic)', unitType: 'turbine',
+        position: { x: 740, y: 175 },
+        params: { outletPressKgcm2g: -0.93, efficiency: 0.85 },
+      },
+      {
+        id: 'rk_cond', tag: 'E-102', name: 'Surface Condenser (0.10 barA)', nameEn: 'Surface Condenser (0.10 barA)', unitType: 'hex',
+        position: { x: 990, y: 180 },
+        params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 45.0, overallU: 850 },
+      },
+      {
+        id: 'rk_out', tag: 'OUT-COND', name: 'Saturated Condensate Return', nameEn: 'Saturated Condensate Return', unitType: 'product',
+        position: { x: 1230, y: 180 },
+        params: {},
+      },
+    ],
+    edges: [
+      { id: 'rk_e1', streamNo: 'S-701', source: 'rk_feed', target: 'rk_pump', sourcePort: 'out', targetPort: 'in' },
+      { id: 'rk_e2', streamNo: 'S-702', source: 'rk_pump', target: 'rk_boil', sourcePort: 'out', targetPort: 'in' },
+      { id: 'rk_e3', streamNo: 'S-703', source: 'rk_boil', target: 'rk_turb', sourcePort: 'out', targetPort: 'in' },
+      { id: 'rk_e4', streamNo: 'S-704', source: 'rk_turb', target: 'rk_cond', sourcePort: 'out', targetPort: 'in' },
+      { id: 'rk_e5', streamNo: 'S-705', source: 'rk_cond', target: 'rk_out', sourcePort: 'out', targetPort: 'in' },
     ],
   },
 ];

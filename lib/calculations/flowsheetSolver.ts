@@ -592,6 +592,7 @@ export type FlowUnitType =
   | 'distillation'    // 엄밀 다단 MESH 정밀증류탑 (진공·상압·가압 공비증류)
   | 'desiccant_dryer' // 600 SEC: 실리카겔 흡착 제습탑 (노점 -60°C)
   | 'compressor'
+  | 'turbine'         // 등엔트로피 터빈 · 팽창기 (Gas Brayton & Steam Rankine 에너지 회수)
   | 'liquefier'
   | 'hex'
   | 'cooler' // 하위 호환
@@ -4005,6 +4006,115 @@ export function solveFlowsheet(
           });
         }
         if (dutyFromEnthalpy) heatDutyKcalH = derivedDutyKcalH();
+      }
+
+      // ── 7b) 등엔트로피 터빈 · 팽창기 (Turbine / Expander — Brayton & Rankine Cycle) ──
+      else if (node.unitType === 'turbine') {
+        const P_out = p.outletPressKgcm2g ?? Math.max(-0.93, P_in - 5.0);
+        const eff = Math.min(0.96, Math.max(0.45, p.efficiency ?? 0.85));
+        const inProps = calcStreamProps(totalIn, T_in, P_in, undefined, undefined, runtimePropertyMethod);
+
+        const P1_barA = Math.max(0.05, (P_in + 1.03323) * 0.980665);
+        const P2_barA = Math.max(0.02, (P_out + 1.03323) * 0.980665);
+        const expRatio = Math.max(1.0, P1_barA / P2_barA);
+
+        const moleFrac = emptyFlows();
+        SIM_COMPS.forEach(k => {
+          moleFrac[k] = (totalIn[k] / COMP_META[k].mw) / Math.max(1e-9, inProps.totalMolarKmolH);
+        });
+
+        // Estimate mixture heat capacity ratio k = Cp / (Cp - R/MW)
+        const isSteamDominant = (totalIn.H2O || 0) >= sumMassIn * 0.80;
+        const cpMolKJ = Math.max(20.0, inProps.cpKcalKgC * 4.184 * Math.max(2.0, inProps.avgMW));
+        const gammaEst = isSteamDominant
+          ? 1.30
+          : Math.min(1.66, Math.max(1.12, cpMolKJ / Math.max(4.0, cpMolKJ - 8.31446)));
+        const kExp = (gammaEst - 1.0) / gammaEst;
+
+        const useEosZ = isRigorous || isExplicitPropertyMethod || hasAnyGeneralInSheet;
+        const Z_avg = useEosZ && !isSteamDominant
+          ? (propertyMethodUsed === 'SRK'
+              ? calcSoaveRedlichKwongMixture(moleFrac, T_in, 0.5 * (P_in + P_out)).Z_vap
+              : calcPengRobinsonMixture(moleFrac, T_in, 0.5 * (P_in + P_out)).Z_vap)
+          : 1.0;
+
+        let W_gen_kW = 0;
+        let T_out = T_in;
+        let turbOutRatio: VapRatio | undefined = undefined;
+        let outQualityPct: number | null = null;
+
+        if (expRatio > 1.001 && sumMassIn > 1e-6) {
+          const T1_K = T_in + 273.15;
+          const T2s_C = T1_K * Math.pow(P2_barA / P1_barA, kExp) - 273.15;
+
+          if (isSteamDominant) {
+            // Steam Rankine Cycle (Superheated -> Saturated / Wet Steam isentropic expansion)
+            const tSatWaterC = (pBar: number) => {
+              const pMmHg = Math.max(5, pBar * 750.062);
+              return 1730.63 / (8.07131 - Math.log10(pMmHg)) - 233.426;
+            };
+            const Tsat1_C = tSatWaterC(P1_barA);
+            const Tsat2_C = tSatWaterC(P2_barA);
+            const Tsat1_K = Tsat1_C + 273.15;
+            const Tsat2_K = Tsat2_C + 273.15;
+            const hfg1 = Math.max(1200, 2257 * Math.pow(Math.max(0.05, (647.1 - Tsat1_K) / 273.95), 0.38));
+            const hfg2 = Math.max(1200, 2257 * Math.pow(Math.max(0.05, (647.1 - Tsat2_K) / 273.95), 0.38));
+            const s_in = 4.184 * Math.log(Tsat1_K / 273.16) + hfg1 / Tsat1_K + Math.max(0, T1_K - Tsat1_K) * 2.10 / (0.5 * (T1_K + Tsat1_K));
+            const sf2 = 4.184 * Math.log(Tsat2_K / 273.16);
+            const sfg2 = hfg2 / Tsat2_K;
+            const x2s = Math.max(0.50, Math.min(1.0, (s_in - sf2) / Math.max(0.5, sfg2)));
+
+            const h_in_kJ = 4.184 * Tsat1_C + hfg1 + Math.max(0, T_in - Tsat1_C) * 2.10;
+            const h_2s_kJ = x2s < 0.999
+              ? 4.184 * Tsat2_C + x2s * hfg2
+              : 4.184 * Tsat2_C + hfg2 + Math.max(0, T2s_C - Tsat2_C) * 2.02;
+            const dh_is_kJ = Math.max(0, h_in_kJ - h_2s_kJ);
+            const dh_act_kJ = dh_is_kJ * eff;
+            W_gen_kW = (sumMassIn / 3600) * dh_act_kJ;
+
+            const h_act_kJ = h_in_kJ - dh_act_kJ;
+            const hg2_kJ = 4.184 * Tsat2_C + hfg2;
+            if (h_act_kJ < hg2_kJ) {
+              const x2_act = Math.max(0.55, Math.min(1.0, (h_act_kJ - 4.184 * Tsat2_C) / Math.max(100, hfg2)));
+              outQualityPct = x2_act * 100;
+              T_out = Tsat2_C;
+              const ratioMap: VapRatio = {};
+              SIM_COMPS.forEach(k => { ratioMap[k] = x2_act; });
+              turbOutRatio = ratioMap;
+            } else {
+              T_out = Tsat2_C + (h_act_kJ - hg2_kJ) / 2.02;
+              outQualityPct = 100;
+            }
+          } else {
+            // Gas Brayton Cycle / Expander (N2, Air, CH4, CO2, Flue Gas, H2)
+            const W_is_kW =
+              (Z_avg * inProps.totalMolarKmolH * 8.31446 * T1_K * (1.0 / kExp) * (1.0 - Math.pow(P2_barA / P1_barA, kExp))) / 3600;
+            W_gen_kW = Math.max(0, W_is_kW * eff);
+            const ph = phFlashStream(totalIn, P_out, allIn.enth - W_gen_kW * KCALH_PER_KW_SOLVER, T2s_C, false, runtimePropertyMethod);
+            T_out = ph.T_C;
+            turbOutRatio = ratioFromSplit(ph.vap, ph.liq);
+          }
+        }
+
+        // Negative shaftPowerKW = power extracted/generated (energy balance: H_in + W_shaft = H_out)
+        shaftPowerKW = -W_gen_kW;
+        heatDutyKcalH = 0;
+
+        extraMetrics = {
+          'Generated Power (Work Out)': `+${W_gen_kW.toFixed(2)} kW`,
+          'Expansion Ratio (P₁/P₂)': `${expRatio.toFixed(2)} (${P1_barA.toFixed(2)} → ${P2_barA.toFixed(2)} barA)`,
+          'Isentropic Efficiency': `${(eff * 100).toFixed(1)} %`,
+          'Exhaust Temp': `${T_out.toFixed(1)} °C`,
+          ...(outQualityPct !== null ? { 'Outlet Steam Quality (x)': `${outQualityPct.toFixed(1)} %` } : {}),
+        };
+        note = `Turbine/Expander: +${W_gen_kW.toFixed(1)} kW generated (${P1_barA.toFixed(1)}→${P2_barA.toFixed(2)} barA, T_out ${T_out.toFixed(1)}°C${outQualityPct !== null ? `, x=${outQualityPct.toFixed(1)}%` : ''})`;
+
+        const nOut = Math.max(1, outEdges.length);
+        outEdges.forEach(oe => {
+          const splitF = emptyFlows();
+          SIM_COMPS.forEach(k => { splitF[k] = totalIn[k] / nOut; });
+          assignEdge(oe, splitF, T_out, P_out, turbOutRatio ? undefined : 'G', turbOutRatio);
+        });
       }
 
       // ── 8) 강하막 증발관 (Evaporator — 가성소다 등 농축 수지) ──────────────
