@@ -28,6 +28,7 @@ import PidCrossingEdge from '@/components/flowsheet/PidCrossingEdge';
 
 import {
   SIM_COMPS,
+  COMP_META,
   getCompLabel,
   SimCompKey,
   FlowUnitType,
@@ -8740,6 +8741,7 @@ export function FlowsheetWorkspace({
                     onSelectStream={edgeId => {
                       setSelectedEdgeId(edgeId);
                       setSelectedNodeId(null);
+                      setInspectorOpen(true);
                     }}
                     onDeleteStream={deleteEdgeById}
                   />
@@ -9041,6 +9043,130 @@ export function FlowsheetWorkspace({
                   <option value="cathode_out">{isEn ? 'Electrolyzer Cathode Outlet (cathode_out)' : '전해조 음극 출구 (cathode_out)'}</option>
                 </select>
               </div>
+
+              {/* ── 스트림 실시간 물성 & 성분별 조성 계산 결과 (좌측 레일/도면 스트림 클릭 즉시 표시) ── */}
+              {selectedStreamRes && (() => {
+                const totMass = Math.max(0, selectedStreamRes.totalMassKgH || 0);
+                const compEntries = Object.entries(selectedStreamRes.flowsKgH || {})
+                  .filter(([, v]) => (v || 0) > 1e-4)
+                  .map(([k, mass]) => {
+                    const ck = k as SimCompKey;
+                    const meta = COMP_META[ck];
+                    const mw = meta?.mw || 18.015;
+                    const kmol = (mass || 0) / mw;
+                    return { key: ck, label: meta?.formula || k, mass: mass || 0, kmol };
+                  })
+                  .sort((a, b) => b.mass - a.mass);
+                const totMol = compEntries.reduce((s, r) => s + r.kmol, 0);
+                return (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      padding: 10,
+                      borderRadius: 7,
+                      background: '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 900, color: '#0F172A', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{isEn ? 'Stream Properties & Composition' : '스트림 물성 · 조성 계산 결과'}</span>
+                      <span style={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: '#0369A1', fontWeight: 800 }}>
+                        VF {(selectedStreamRes.vaporFraction * 100).toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', fontSize: 10.5, fontFamily: 'JetBrains Mono, monospace' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>{isEn ? 'Mass:' : '질량:'}</span>
+                        <b style={{ color: '#0F172A' }}>{totMass.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg/h</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>{isEn ? 'Molar:' : '몰유량:'}</span>
+                        <b style={{ color: '#0F172A' }}>{(selectedStreamRes.totalMolarKmolH || totMol).toFixed(2)} kmol/h</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>{isEn ? 'Density:' : '밀도:'}</span>
+                        <b style={{ color: '#0F172A' }}>{selectedStreamRes.densityKgM3.toFixed(2)} kg/m³</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>{isEn ? 'Vol:' : '부피:'}</span>
+                        <b style={{ color: '#0F172A' }}>{selectedStreamRes.volFlowM3H.toFixed(1)} m³/h</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>Avg MW:</span>
+                        <b style={{ color: '#0F172A' }}>{selectedStreamRes.avgMW.toFixed(2)}</b>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                        <span>Cp:</span>
+                        <b style={{ color: '#0F172A' }}>{selectedStreamRes.cpKcalKgC.toFixed(3)} kcal/kg·°C</b>
+                      </div>
+                    </div>
+
+                    {compEntries.length > 0 ? (
+                      <div style={{ borderTop: '1px dashed #CBD5E1', paddingTop: 6 }}>
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1.15fr 1fr 0.8fr 0.8fr',
+                            fontSize: 9.5,
+                            fontWeight: 800,
+                            color: '#64748B',
+                            paddingBottom: 3,
+                            borderBottom: '1px solid #E2E8F0',
+                          }}
+                        >
+                          <span>{isEn ? 'Comp.' : '성분'}</span>
+                          <span style={{ textAlign: 'right' }}>kg/h</span>
+                          <span style={{ textAlign: 'right' }}>wt%</span>
+                          <span style={{ textAlign: 'right' }}>mol%</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                          {compEntries.map(row => {
+                            const wtPct = totMass > 1e-9 ? (row.mass / totMass) * 100 : 0;
+                            const molPct = totMol > 1e-9 ? (row.kmol / totMol) * 100 : 0;
+                            return (
+                              <div key={row.key} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                <div
+                                  style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1.15fr 1fr 0.8fr 0.8fr',
+                                    fontSize: 10.5,
+                                    fontFamily: 'JetBrains Mono, monospace',
+                                    color: '#0F172A',
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`${row.key} (${row.label})`}>
+                                    {row.key}
+                                  </span>
+                                  <span style={{ textAlign: 'right', color: '#334155' }}>
+                                    {row.mass >= 100 ? row.mass.toFixed(1) : row.mass.toFixed(2)}
+                                  </span>
+                                  <span style={{ textAlign: 'right', fontWeight: 800, color: '#1D4ED8' }}>
+                                    {wtPct.toFixed(2)}%
+                                  </span>
+                                  <span style={{ textAlign: 'right', color: '#0F766E' }}>
+                                    {molPct.toFixed(2)}%
+                                  </span>
+                                </div>
+                                <div style={{ height: 3, borderRadius: 999, background: '#E2E8F0', overflow: 'hidden' }}>
+                                  <div style={{ width: `${Math.min(100, Math.max(1, wtPct))}%`, height: '100%', background: '#3B82F6' }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 10.5, color: '#94A3B8', textAlign: 'center', padding: '4px 0' }}>
+                        {isEn ? 'Zero flow (Press ▶ RUN to compute)' : '유량 없음 (▶ RUN 실행 후 조성 표시)'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* HYSYS-style: 배관 시작점이 원료(Feed) 노드이면 스트림 클릭만으로도 온도·압력·유량·조성 바로 편집 */}
               {(() => {
