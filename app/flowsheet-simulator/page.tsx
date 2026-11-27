@@ -891,11 +891,15 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
     <div
       title={
         data.simStatusMsg
-          ? `[${data.tag}] ${data.simStatusMsg}`
+          ? `[${data.tag}] ${localizeSolverText(data.simStatusMsg, isEn)}`
           : hasSubSheet
-            ? `더블클릭하면 [${data.name}] 내부 세부 공정 시뮬레이션 도면으로 이동합니다!`
+            ? (isEn
+                ? `Double-click to open [${data.name}] internal sub-flowsheet`
+                : `더블클릭하면 [${data.name}] 내부 세부 공정 시뮬레이션 도면으로 이동합니다!`)
             : isStreamBlock
-              ? `물질 흐름 블록 [${data.tag}] — 클릭하여 유량·조성·온도·압력을 확인/편집하세요`
+              ? (isEn
+                  ? `Material stream block [${data.tag}] — click to inspect/edit flow, composition, T & P`
+                  : `물질 흐름 블록 [${data.tag}] — 클릭하여 유량·조성·온도·압력을 확인/편집하세요`)
               : undefined
       }
       style={{
@@ -935,7 +939,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
       {/* ── 우상단 수렴(✓) / 에러(!) 상태 배지 ── */}
       {data.simStatus === 'converged' && (
         <span
-          title={data.simStatusMsg || '수렴 완료'}
+          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Converged' : '수렴 완료')}
           style={{
             position: 'absolute',
             top: -6,
@@ -960,7 +964,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
       )}
       {data.simStatus === 'error' && (
         <span
-          title={data.simStatusMsg || '미수렴 또는 수지 오차 발생'}
+          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Not converged or balance error' : '미수렴 또는 수지 오차 발생')}
           style={{
             position: 'absolute',
             top: -6,
@@ -985,7 +989,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
       )}
       {data.simStatus === 'incomplete' && (
         <span
-          title={data.simStatusMsg || '입력 부족'}
+          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Incomplete input' : '입력 부족')}
           style={{
             position: 'absolute',
             top: -5,
@@ -1010,7 +1014,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
       )}
       {data.simStatus === 'ready' && (
         <span
-          title={data.simStatusMsg || '입력 완료 — RUN 가능'}
+          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Ready — Press RUN' : '입력 완료 — RUN 가능')}
           style={{
             position: 'absolute',
             top: -5,
@@ -1063,7 +1067,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
               e.stopPropagation();
               data.onOpenSubSheet?.(data.subSheetId!);
             }}
-            title="더블클릭하거나 클릭하여 내부 세부 공정 도면으로 이동합니다."
+            title={isEn ? 'Click or double-click to open internal sub-flowsheet.' : '더블클릭하거나 클릭하여 내부 세부 공정 도면으로 이동합니다.'}
             style={{
               marginTop: 1,
               padding: '1px 5px',
@@ -1140,7 +1144,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             title={
               isHexOrLiq
                 ? `${hexProcInBadge} — ${isEn ? 'Process Side Inlet' : '공정측 유입 배관 연결점'}`
-                : '유입 배관 연결점 (Inlet — 드래그하여 연결)'
+                : (isEn ? 'Inlet port — drag to connect' : '유입 배관 연결점 (Inlet — 드래그하여 연결)')
             }
             style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posLeft, 52) }}
           />
@@ -1161,8 +1165,10 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             id="util_in"
             title={
               isEvaporator
-                ? '가열 스팀/증기 유입 (Steam Chest — STM)'
-                : `${hexUtilInBadge} — 냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)`
+                ? (isEn ? 'Heating Steam Inlet (STM)' : '가열 스팀/증기 유입 (Steam Chest — STM)')
+                : (isEn
+                    ? `${hexUtilInBadge} — Utility Inlet (optional — auto-sized if unconnected)`
+                    : `${hexUtilInBadge} — 냉매/열매 유입 (선택사항 — 미연결 시에도 선택 냉매 기준으로 유량 자동 계산)`)
             }
             style={{ ...portStyle(isEvaporator ? '#DC2626' : hexUtilColor), ...getHandleAnchorStyle(posTop, 50) }}
           />
@@ -1183,8 +1189,8 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             id="util_out"
             title={
               isEvaporator
-                ? '스팀 응축수 배출 (Condensate Out — COND)'
-                : `${hexUtilOutBadge} — 냉매/열매 배출 (선택사항)`
+                ? (isEn ? 'Steam Condensate Outlet (COND)' : '스팀 응축수 배출 (Condensate Out — COND)')
+                : (isEn ? `${hexUtilOutBadge} — Utility Outlet (optional)` : `${hexUtilOutBadge} — 냉매/열매 배출 (선택사항)`)
             }
             style={{ ...portStyle(isEvaporator ? '#B45309' : hexUtilColor), ...getHandleAnchorStyle(posBottom, 50) }}
           />
@@ -1206,7 +1212,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
           type="source"
           position={posTop}
           id="solvent"
-          title="원염(NaCl) / 약품 투입 포트"
+          title={isEn ? 'Raw Salt (NaCl) / Reagent Feed Port' : '원염(NaCl) / 약품 투입 포트'}
           style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posTop, 50) }}
         />
       )}
@@ -1215,7 +1221,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
           type="source"
           position={posBottom}
           id="liquid"
-          title="단간·후단 응축수 녹아웃 드레인 (KO Liquid)"
+          title={isEn ? 'Inter/After-Stage Knockout Condensate Drain (KO Liquid)' : '단간·후단 응축수 녹아웃 드레인 (KO Liquid)'}
           style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posBottom, 50) }}
         />
       )}
@@ -1224,7 +1230,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
           type="source"
           position={posTop}
           id="decanter"
-          title="공비 디캔터 수층 분리 배출 (Decanter Water)"
+          title={isEn ? 'Azeotropic Decanter Aqueous Outlet (Decanter Water)' : '공비 디캔터 수층 분리 배출 (Decanter Water)'}
           style={{ ...portStyle('#0284C7'), ...getHandleAnchorStyle(posTop, 50) }}
         />
       )}
@@ -1236,7 +1242,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             type="source"
             position={posRight}
             id="anode_out"
-            title="양극 출구 (습윤 Cl₂ + 묽은 브라인)"
+            title={isEn ? 'Anode Outlet (Wet Cl₂ + Depleted Brine)' : '양극 출구 (습윤 Cl₂ + 묽은 브라인)'}
             style={{ ...portStyle('#0F766E'), ...getHandleAnchorStyle(posRight, 36) }}
           />
           <span style={{ ...getInsidePortLabelStyle(posRight, 36), fontSize: 7.5, fontWeight: 800, color: '#0F766E', fontFamily: 'JetBrains Mono, monospace' }}>
@@ -1291,12 +1297,12 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             id="liquid"
             title={
               unitType === 'splitter'
-                ? '2번 분기 출구'
+                ? (isEn ? 'Branch 2 Outlet' : '2번 분기 출구')
                 : unitType === 'saturator'
-                  ? '하부 침전 슬러지 배출 (Sludge L↓)'
+                  ? (isEn ? 'Bottom Sludge Drain (Sludge L↓)' : '하부 침전 슬러지 배출 (Sludge L↓)')
                   : unitType === 'liquefier'
-                    ? '하부 액화염소/응축액 출구 (Liquid Cl₂ L↓)'
-                    : '하부 액상/배출액 출구 (Liquid L↓)'
+                    ? (isEn ? 'Bottom Liquid Cl₂ / Condensate Outlet (L↓)' : '하부 액화염소/응축액 출구 (Liquid Cl₂ L↓)')
+                    : (isEn ? 'Bottoms Liquid Outlet (Liquid L↓)' : '하부 액상/배출액 출구 (Liquid L↓)')
             }
             style={{ ...portStyle(unitType === 'liquefier' ? hexProcColor : '#0284C7'), ...getHandleAnchorStyle(posRight, unitType === 'distillation' ? 78 : 74) }}
           />
@@ -1313,7 +1319,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
             title={
               isHexOrLiq
                 ? `${hexProcOutBadge} — ${isEn ? 'Process Side Outlet' : '공정측 출구 배관 연결점'}`
-                : '후단 배관 연결점 (Outlet — 드래그하여 다음 장치와 연결)'
+                : (isEn ? 'Outlet port — drag to connect to next unit' : '후단 배관 연결점 (Outlet — 드래그하여 다음 장치와 연결)')
             }
             style={{ ...portStyle(isHexOrLiq ? hexProcColor : meta.color), ...getHandleAnchorStyle(posRight, 52) }}
           />
@@ -5400,7 +5406,7 @@ export function FlowsheetWorkspace({
           unitType: resolvedType,
           calcMode: def?.params.calcMode ?? 'simple',
           liveSummary: summary,
-          detectedFluid: uRes?.detectedFluidLabel,
+          detectedFluid: localizeSolverText(uRes?.detectedFluidLabel, isEn),
           simStatus,
           simStatusMsg,
           subSheetId: allowSubSheet ? def?.subSheetId : undefined,
@@ -7378,15 +7384,15 @@ export function FlowsheetWorkspace({
             <span style={{ fontWeight: 700 }}>{interopNotice.text}</span>
             {interopNotice.warnings && interopNotice.warnings.length > 0 && (
               <span style={{ fontSize: 10.5, color: '#92400E' }}>
-                참고: {interopNotice.warnings.slice(0, 3).join(' / ')}
-                {interopNotice.warnings.length > 3 ? ` 외 ${interopNotice.warnings.length - 3}건` : ''}
+                {isEn ? 'Note:' : '참고:'} {interopNotice.warnings.slice(0, 3).map(w => localizeSolverText(w, isEn)).join(' / ')}
+                {interopNotice.warnings.length > 3 ? (isEn ? ` (+${interopNotice.warnings.length - 3} more)` : ` 외 ${interopNotice.warnings.length - 3}건`) : ''}
               </span>
             )}
           </div>
           <button
             type="button"
             onClick={() => setInteropNotice(null)}
-            title="알림 닫기"
+            title={isEn ? 'Dismiss notice' : '알림 닫기'}
             style={{
               background: 'transparent',
               border: 'none',
@@ -7763,7 +7769,7 @@ export function FlowsheetWorkspace({
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              {selectedDef.name}
+                              {localizeNodeName(selectedDef.name, selectedDef.unitType)}
                             </span>
                           </div>
                           <div
@@ -7777,8 +7783,8 @@ export function FlowsheetWorkspace({
                             }}
                           >
                             {selectedUnitRes
-                              ? `${selectedUnitRes.detectedFluidLabel} · 유입 ${formatCanonicalValue('massFlow', selectedUnitRes.inletMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)}`
-                              : '터치하여 운전조건 및 설계 열기'}
+                              ? `${localizeSolverText(selectedUnitRes.detectedFluidLabel, isEn)} · ${isEn ? 'In' : '유입'} ${formatCanonicalValue('massFlow', selectedUnitRes.inletMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)}`
+                              : (isEn ? 'Tap to open operating conditions & design' : '터치하여 운전조건 및 설계 열기')}
                           </div>
                         </>
                       ) : selectedEdgeDef ? (
@@ -7808,7 +7814,7 @@ export function FlowsheetWorkspace({
                                 whiteSpace: 'nowrap',
                               }}
                             >
-                              {selectedEdgeDef.name || '공정 배관 스트림'}
+                              {selectedEdgeDef.name || (isEn ? 'Process Material Stream' : '공정 배관 스트림')}
                             </span>
                           </div>
                           <div
@@ -7824,7 +7830,7 @@ export function FlowsheetWorkspace({
                           >
                             {selEdgeSt
                               ? `${formatCanonicalValue('massFlow', selEdgeSt.totalMassKgH, globalUnits.massFlow)} ${getUnitLabel('massFlow', globalUnits.massFlow)} · ${formatCanonicalValue('temp', selEdgeSt.tempC, globalUnits.temp, 1)}${getUnitLabel('temp', globalUnits.temp)} · ${formatCanonicalValue('pressG', selEdgeSt.pressKgcm2g, globalUnits.pressG, 2)} ${getUnitLabel('pressG', globalUnits.pressG)}`
-                              : '터치하여 배관 속성 열기'}
+                              : (isEn ? 'Tap to inspect stream properties' : '터치하여 배관 속성 열기')}
                           </div>
                         </>
                       ) : null}
@@ -8112,7 +8118,7 @@ export function FlowsheetWorkspace({
           {layoutMode === 'split' && (
             <div
               onMouseDown={startResizeSplit}
-              title="위·아래로 드래그하여 공정도와 스트림 테이블 높이를 자유롭게 조절하세요"
+              title={isEn ? 'Drag up or down to resize canvas and stream table height' : '위·아래로 드래그하여 공정도와 스트림 테이블 높이를 자유롭게 조절하세요'}
               style={{
                 height: 7,
                 background: '#1A2F44',
@@ -8525,7 +8531,7 @@ export function FlowsheetWorkspace({
                           borderRadius: 8,
                         }}
                       >
-                        <span style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>장치 단위</span>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>{isEn ? 'Unit Basis' : '장치 단위'}</span>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                           <UnitSelect quantity="massFlow" value={unitSummaryMassUnit} onChange={setUnitSummaryMassUnit} size="xs" />
                           <UnitSelect quantity="heatDuty" value={unitSummaryDutyUnit} onChange={setUnitSummaryDutyUnit} size="xs" />
@@ -8538,7 +8544,7 @@ export function FlowsheetWorkspace({
                           if (!q) return true;
                           const nDef = simDefs.find(d => d.id === u.nodeId);
                           const fmtTag = formatEquipmentTag(u.tag, nDef?.unitType, tagStandard);
-                          return `${fmtTag} ${u.tag} ${nDef?.name ?? ''} ${u.detectedFluidLabel} ${u.statusNote}`
+                          return `${fmtTag} ${u.tag} ${nDef ? localizeNodeName(nDef.name, nDef.unitType) : ''} ${localizeSolverText(u.detectedFluidLabel, isEn)} ${localizeSolverText(u.statusNote, isEn)}`
                             .toLowerCase()
                             .includes(q);
                         })
@@ -8586,7 +8592,7 @@ export function FlowsheetWorkspace({
                                       whiteSpace: 'nowrap',
                                     }}
                                   >
-                                    {nDef?.name ?? fmtTag}
+                                    {nDef ? localizeNodeName(nDef.name, nDef.unitType) : fmtTag}
                                   </span>
                                 </div>
                                 <span
@@ -8605,7 +8611,7 @@ export function FlowsheetWorkspace({
                               </div>
 
                               <div style={{ fontSize: 10.5, fontWeight: 700, color: '#0369A1' }}>
-                                {isEn ? 'Inlet Fluid:' : '유입 물질:'} {u.detectedFluidLabel}
+                                {isEn ? 'Inlet Fluid:' : '유입 물질:'} {localizeSolverText(u.detectedFluidLabel, isEn)}
                               </div>
 
                               <div
@@ -8822,7 +8828,7 @@ export function FlowsheetWorkspace({
                               : (isEn ? 'Simple' : '간편 발란스')}
                         </td>
                         <td style={{ padding: '5px 10px', fontFamily: 'Inter, sans-serif', fontSize: 11, fontWeight: 700, color: '#0369A1' }}>
-                          {u.detectedFluidLabel}
+                          {localizeSolverText(u.detectedFluidLabel, isEn)}
                         </td>
                         <td style={{ padding: '5px 10px', textAlign: 'right' }}>
                           {formatCanonicalValue('massFlow', u.inletMassKgH, unitSummaryMassUnit)}
@@ -8999,10 +9005,10 @@ export function FlowsheetWorkspace({
                       ? formatEquipmentTag(selectedStreamRes.toTag, dstD?.unitType, tagStandard)
                       : undefined;
                     return `${fTag ?? ''} → ${tTag ?? ''}`;
-                  })()}{selectedStreamRes?.portRole ? ` (${selectedStreamRes.portRole})` : ''}
+                  })()}{selectedStreamRes?.portRole ? ` (${localizeSolverText(selectedStreamRes.portRole, isEn)})` : ''}
                 </div>
                 <div style={{ color: '#475569', fontSize: 11 }}>
-                  {isEn ? 'Fluid:' : '인식 유체:'} <b style={{ color: '#0F172A' }}>{selectedStreamRes?.keyConcLabel ?? '—'}</b>
+                  {isEn ? 'Fluid:' : '인식 유체:'} <b style={{ color: '#0F172A' }}>{selectedStreamRes?.keyConcLabel ? localizeSolverText(selectedStreamRes.keyConcLabel, isEn) : '—'}</b>
                 </div>
                 <div style={{ color: '#475569', fontSize: 11, marginTop: 2 }}>
                   {isEn ? 'State:' : '상태:'} <b style={{ color: '#0F172A' }}>{selectedStreamRes?.phase}</b> ·{' '}
@@ -9438,7 +9444,7 @@ export function FlowsheetWorkspace({
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><FlaskCompIcon size={12} /> {isEn ? 'Auto-Detected Inlet Fluid' : '유입 배관 물질 자동 인식'}</span>
                   </div>
                   <div style={{ fontSize: 11.5, fontWeight: 900, color: '#0F172A' }}>
-                    {selectedUnitRes.detectedFluidLabel}
+                    {localizeSolverText(selectedUnitRes.detectedFluidLabel, isEn)}
                   </div>
                 </div>
               )}
