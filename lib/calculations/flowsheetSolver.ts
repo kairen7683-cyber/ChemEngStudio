@@ -777,7 +777,8 @@ export type PublicReactorPresetId =
   | 'etoac_esterification'
   | 'tpc_photo_chlorination'
   | 'tpc_synthesis'
-  | 'tcs_hydrochlorination';
+  | 'tcs_hydrochlorination'
+  | 'ch4_combustion';
 
 export interface PublicReactorPresetSpec {
   id: PublicReactorPresetId;
@@ -889,6 +890,15 @@ export const PUBLIC_REACTOR_PRESET_SPECS: PublicReactorPresetSpec[] = [
     defaultPressKgcm2g: 2.5,
     defaultConvPct: 92.0,
   },
+  {
+    id: 'ch4_combustion',
+    labelKo: 'LNG / 메탄 가스터빈 연소 (CH₄ + 2O₂ → CO₂ + 2H₂O)',
+    labelEn: 'LNG / Methane Gas Turbine Combustion (CH₄ + 2O₂ → CO₂ + 2H₂O)',
+    reactionEq: 'CH₄ + 2O₂ → CO₂ + 2H₂O (LHV = -802.3 kJ/mol, Gas Turbine Combustor)',
+    defaultTempC: 1150.0,
+    defaultPressKgcm2g: 14.0,
+    defaultConvPct: 99.9,
+  },
 ];
 
 export interface FlowUnitParams {
@@ -940,6 +950,10 @@ export interface FlowUnitParams {
   // Pump / Compressor 전용
   outletPressKgcm2g?: number;
   efficiency?: number;
+  turbineCalcMode?: 'isentropic' | 'polytropic';
+  turbineSpecMode?: 'outlet_press' | 'expansion_ratio';
+  expansionRatio?: number;
+  mechGenEfficiency?: number;
   intercooledTempC?: number; // 압축기 후단 인터쿨러 목표온도 옵션 (0 이하면 단열압축 그대로)
   compStages?: number;       // [정밀 모드] 다단 압축 단수 (1~4단)
 
@@ -992,7 +1006,8 @@ export interface FlowUnitParams {
     | 'etoac_esterification'
     | 'tpc_photo_chlorination'
     | 'tpc_synthesis'
-    | 'tcs_hydrochlorination';
+    | 'tcs_hydrochlorination'
+  | 'ch4_combustion';
   conversion?: number;
   reactorThermalMode?: 'isothermal' | 'adiabatic';
   reactorModel?: 'conversion' | 'cstr' | 'pfr';
@@ -4008,14 +4023,25 @@ export function solveFlowsheet(
         if (dutyFromEnthalpy) heatDutyKcalH = derivedDutyKcalH();
       }
 
-      // ── 7b) 등엔트로피 터빈 · 팽창기 (Turbine / Expander — Brayton & Rankine Cycle) ──
+      // ── 7b) 등엔트로피/폴리트로픽 터빈 · 팽창기 (Turbine / Expander — Brayton & Rankine Cycle) ──
       else if (node.unitType === 'turbine') {
-        const P_out = p.outletPressKgcm2g ?? Math.max(-0.93, P_in - 5.0);
+        const turbCalcMode = p.turbineCalcMode ?? 'isentropic';
+        const turbSpecMode = p.turbineSpecMode ?? 'outlet_press';
         const eff = Math.min(0.96, Math.max(0.45, p.efficiency ?? 0.85));
+        const mechGenEff = Math.min(1.0, Math.max(0.80, p.mechGenEfficiency ?? 0.98));
         const inProps = calcStreamProps(totalIn, T_in, P_in, undefined, undefined, runtimePropertyMethod);
 
         const P1_barA = Math.max(0.05, (P_in + 1.03323) * 0.980665);
-        const P2_barA = Math.max(0.02, (P_out + 1.03323) * 0.980665);
+        let P_out: number;
+        let P2_barA: number;
+        if (turbSpecMode === 'expansion_ratio') {
+          const reqRatio = Math.max(1.01, Math.min(500, p.expansionRatio ?? 10.0));
+          P2_barA = Math.max(0.02, P1_barA / reqRatio);
+          P_out = P2_barA / 0.980665 - 1.03323;
+        } else {
+          P_out = p.outletPressKgcm2g ?? Math.max(-0.93, P_in - 5.0);
+          P2_barA = Math.max(0.02, (P_out + 1.03323) * 0.980665);
+        }
         const expRatio = Math.max(1.0, P1_barA / P2_barA);
 
         const moleFrac = emptyFlows();
@@ -4023,7 +4049,6 @@ export function solveFlowsheet(
           moleFrac[k] = (totalIn[k] / COMP_META[k].mw) / Math.max(1e-9, inProps.totalMolarKmolH);
         });
 
-        // Estimate mixture heat capacity ratio k = Cp / (Cp - R/MW)
         const isSteamDominant = (totalIn.H2O || 0) >= sumMassIn * 0.80;
         const cpMolKJ = Math.max(20.0, inProps.cpKcalKgC * 4.184 * Math.max(2.0, inProps.avgMW));
         const gammaEst = isSteamDominant
@@ -4048,7 +4073,6 @@ export function solveFlowsheet(
           const T2s_C = T1_K * Math.pow(P2_barA / P1_barA, kExp) - 273.15;
 
           if (isSteamDominant) {
-            // Steam Rankine Cycle (Superheated -> Saturated / Wet Steam isentropic expansion)
             const tSatWaterC = (pBar: number) => {
               const pMmHg = Math.max(5, pBar * 750.062);
               return 1730.63 / (8.07131 - Math.log10(pMmHg)) - 233.426;
@@ -4069,7 +4093,9 @@ export function solveFlowsheet(
               ? 4.184 * Tsat2_C + x2s * hfg2
               : 4.184 * Tsat2_C + hfg2 + Math.max(0, T2s_C - Tsat2_C) * 2.02;
             const dh_is_kJ = Math.max(0, h_in_kJ - h_2s_kJ);
-            const dh_act_kJ = dh_is_kJ * eff;
+            // Polytropic reheat factor (~1.03-1.06 for multi-stage steam turbine)
+            const effActual = turbCalcMode === 'polytropic' ? Math.min(0.97, eff * 1.035) : eff;
+            const dh_act_kJ = dh_is_kJ * effActual;
             W_gen_kW = (sumMassIn / 3600) * dh_act_kJ;
 
             const h_act_kJ = h_in_kJ - dh_act_kJ;
@@ -4087,27 +4113,35 @@ export function solveFlowsheet(
             }
           } else {
             // Gas Brayton Cycle / Expander (N2, Air, CH4, CO2, Flue Gas, H2)
-            const W_is_kW =
-              (Z_avg * inProps.totalMolarKmolH * 8.31446 * T1_K * (1.0 / kExp) * (1.0 - Math.pow(P2_barA / P1_barA, kExp))) / 3600;
-            W_gen_kW = Math.max(0, W_is_kW * eff);
-            const ph = phFlashStream(totalIn, P_out, allIn.enth - W_gen_kW * KCALH_PER_KW_SOLVER, T2s_C, false, runtimePropertyMethod);
-            T_out = ph.T_C;
-            turbOutRatio = ratioFromSplit(ph.vap, ph.liq);
+            if (turbCalcMode === 'polytropic') {
+              const polyExp = eff * kExp;
+              const W_poly_kW =
+                (Z_avg * inProps.totalMolarKmolH * 8.31446 * T1_K * (1.0 / kExp) * (1.0 - Math.pow(P2_barA / P1_barA, polyExp))) / 3600;
+              W_gen_kW = Math.max(0, W_poly_kW);
+              T_out = T1_K * Math.pow(P2_barA / P1_barA, polyExp) - 273.15;
+            } else {
+              const W_is_kW =
+                (Z_avg * inProps.totalMolarKmolH * 8.31446 * T1_K * (1.0 / kExp) * (1.0 - Math.pow(P2_barA / P1_barA, kExp))) / 3600;
+              W_gen_kW = Math.max(0, W_is_kW * eff);
+              T_out = T_in - eff * (T_in - T2s_C);
+            }
           }
         }
 
-        // Negative shaftPowerKW = power extracted/generated (energy balance: H_in + W_shaft = H_out)
+        const W_elec_kW = W_gen_kW * mechGenEff;
         shaftPowerKW = -W_gen_kW;
         heatDutyKcalH = 0;
 
         extraMetrics = {
-          'Generated Power (Work Out)': `+${W_gen_kW.toFixed(2)} kW`,
+          'Calc Mode': turbCalcMode === 'polytropic' ? 'Polytropic Expansion' : 'Isentropic Expansion',
+          'Shaft Power (Work Out)': `+${W_gen_kW.toFixed(1)} kW`,
+          'Net Electrical Output': `+${W_elec_kW.toFixed(1)} kWe (η_gen ${(mechGenEff * 100).toFixed(1)}%)`,
           'Expansion Ratio (P₁/P₂)': `${expRatio.toFixed(2)} (${P1_barA.toFixed(2)} → ${P2_barA.toFixed(2)} barA)`,
-          'Isentropic Efficiency': `${(eff * 100).toFixed(1)} %`,
+          'Thermodynamic Efficiency': `${(eff * 100).toFixed(1)} %`,
           'Exhaust Temp': `${T_out.toFixed(1)} °C`,
           ...(outQualityPct !== null ? { 'Outlet Steam Quality (x)': `${outQualityPct.toFixed(1)} %` } : {}),
         };
-        note = `Turbine/Expander: +${W_gen_kW.toFixed(1)} kW generated (${P1_barA.toFixed(1)}→${P2_barA.toFixed(2)} barA, T_out ${T_out.toFixed(1)}°C${outQualityPct !== null ? `, x=${outQualityPct.toFixed(1)}%` : ''})`;
+        note = `${turbCalcMode === 'polytropic' ? 'Polytropic' : 'Isentropic'} Turbine: +${W_elec_kW.toFixed(1)} kWe (${P1_barA.toFixed(1)}→${P2_barA.toFixed(2)} barA, T_out ${T_out.toFixed(1)}°C${outQualityPct !== null ? `, x=${outQualityPct.toFixed(1)}%` : ''})`;
 
         const nOut = Math.max(1, outEdges.length);
         outEdges.forEach(oe => {
@@ -4743,6 +4777,29 @@ export function solveFlowsheet(
           rxExtraMetrics['TCS Selectivity'] = '85.0 mol% (STC 12.0% / DCS 3.0%)';
           rxExtraMetrics['Si Conversion'] = `${(convTcs * 100).toFixed(1)}% (${siUse.toFixed(1)} kg/h Si reacted)`;
           note = `Fluidized-Bed Si Hydrochlorination (${T_out.toFixed(1)}°C): TCS ${tcsGen.toFixed(1)} / STC ${stcGen.toFixed(1)} / DCS ${dcsGen.toFixed(1)} / H₂ ${h2Gen.toFixed(1)} kg/h (Si Conv ${(convTcs * 100).toFixed(1)}%)`;
+        } else if (preset === 'ch4_combustion') {
+          // LNG / Methane Combustion in Gas Turbine Combustor: CH4 + 2 O2 -> CO2 + 2 H2O (LHV = -802.3 kJ/mol)
+          const mwCh4 = COMP_META.CH4.mw;
+          const mwO2 = MW.O2;
+          const mwCo2 = COMP_META.CO2.mw;
+          const mwH2o = MW.H2O;
+          const convComb = p.conversion !== undefined ? conv : 0.999;
+          const ext = Math.min(outF.CH4 / mwCh4, outF.O2 / (2 * mwO2)) * convComb;
+          const ch4Use = ext * mwCh4;
+          const o2Use = 2 * ext * mwO2;
+          const co2Gen = ext * mwCo2;
+          const h2oGen = Math.max(0, ch4Use + o2Use - co2Gen);
+          const o2Init = outF.O2;
+          outF.CH4 = Math.max(0, outF.CH4 - ch4Use);
+          outF.O2 = Math.max(0, outF.O2 - o2Use);
+          outF.CO2 += co2Gen;
+          outF.H2O += h2oGen;
+          const fuelLhvMW = (ext * 802.3) / 3600;
+          const excessO2Pct = o2Use > 1e-6 ? ((o2Init - o2Use) / o2Use) * 100 : 0;
+          rxExtraMetrics['Fuel LHV Heat Input'] = `${fuelLhvMW.toFixed(2)} MWth (${ch4Use.toFixed(1)} kg/h CH₄)`;
+          rxExtraMetrics['Excess Air / O₂'] = `+${excessO2Pct.toFixed(0)} %`;
+          rxExtraMetrics['Flue Gas CO₂ / H₂O'] = `${co2Gen.toFixed(1)} / ${h2oGen.toFixed(1)} kg/h`;
+          note = `LNG Combustor (${T_out.toFixed(0)}°C): LHV ${fuelLhvMW.toFixed(2)} MWth · CO₂ ${co2Gen.toFixed(0)} kg/h · Excess O₂ +${excessO2Pct.toFixed(0)}%`;
         } else {
           const extent = Math.min(outF.Cl2 / MW.Cl2, outF.NaOH / (2 * MW.NaOH)) * conv;
           outF.Cl2 -= extent * MW.Cl2;

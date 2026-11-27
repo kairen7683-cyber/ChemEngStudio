@@ -10045,35 +10045,100 @@ export function FlowsheetWorkspace({
                         : (isEn ? 'Centrifugal Pump Discharge' : '원심 펌프 토출 조건')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
-                        {selectedDef.unitType === 'turbine'
-                          ? (isEn ? 'Exhaust / Outlet Pressure' : '배기(출구) 압력')
-                          : (isEn ? 'Discharge Pressure' : '토출 압력')}
+                    {selectedDef.unitType === 'turbine' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
+                            {isEn ? 'Expansion Model' : '팽창 해석 모델'}
+                          </label>
+                          <select
+                            value={selectedDef.params.turbineCalcMode ?? 'isentropic'}
+                            onChange={e => updateParam('turbineCalcMode', e.target.value as 'isentropic' | 'polytropic')}
+                            style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, fontWeight: 700 }}
+                          >
+                            <option value="isentropic">{isEn ? 'Isentropic' : '등엔트로피'}</option>
+                            <option value="polytropic">{isEn ? 'Polytropic' : '폴리트로픽'}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
+                            {isEn ? 'Pressure Spec' : '압력 지정 방식'}
+                          </label>
+                          <select
+                            value={selectedDef.params.turbineSpecMode ?? 'outlet_press'}
+                            onChange={e => updateParam('turbineSpecMode', e.target.value as 'outlet_press' | 'expansion_ratio')}
+                            style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 11.5, fontWeight: 700 }}
+                          >
+                            <option value="outlet_press">{isEn ? 'Outlet Pressure' : '배기 압력'}</option>
+                            <option value="expansion_ratio">{isEn ? 'Expansion Ratio' : '팽창비 (P₁/P₂)'}</option>
+                          </select>
+                        </div>
                       </div>
-                      <UnitNumberInput
-                        quantity="pressG"
-                        syncKey={`${selectedDef.id}-cpress`}
-                        value={selectedDef.params.outletPressKgcm2g ?? (selectedDef.unitType === 'turbine' ? 0.0 : 3.5)}
-                        onValueChange={v => updateParam('outletPressKgcm2g', v)}
-                        onEnterRun={() => runSimulationNow()}
-                        inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
-                        {selectedDef.unitType === 'turbine'
-                          ? (isEn ? 'Isentropic Efficiency (0.45–0.96)' : '등엔트로피 효율 (0.45~0.96)')
-                          : (isEn ? 'Efficiency (0–1)' : '기계 효율 (0~1)')}
-                      </label>
-                      <BufferedNumberInput
-                        syncKey={`${selectedDef.id}-ceff`}
-                        step={0.02}
-                        value={selectedDef.params.efficiency ?? (selectedDef.unitType === 'turbine' ? 0.85 : 0.76)}
-                        onValueChange={v => updateParam('efficiency', v)}
-                        onEnterRun={() => runSimulationNow()}
-                        style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
-                      />
+                    )}
+                    {selectedDef.unitType === 'turbine' && selectedDef.params.turbineSpecMode === 'expansion_ratio' ? (
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 800, color: '#475569' }}>
+                          {isEn ? 'Expansion Ratio (P₁ / P₂)' : '팽창비 (P₁ / P₂)'}
+                        </label>
+                        <BufferedNumberInput
+                          syncKey={`${selectedDef.id}-expratio`}
+                          step={0.5}
+                          value={selectedDef.params.expansionRatio ?? 10.0}
+                          onValueChange={v => updateParam('expansionRatio', v)}
+                          onEnterRun={() => runSimulationNow()}
+                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: '#475569', marginBottom: 2 }}>
+                          {selectedDef.unitType === 'turbine'
+                            ? (isEn ? 'Exhaust / Outlet Pressure' : '배기(출구) 압력')
+                            : (isEn ? 'Discharge Pressure' : '토출 압력')}
+                        </div>
+                        <UnitNumberInput
+                          quantity="pressG"
+                          syncKey={`${selectedDef.id}-cpress`}
+                          value={selectedDef.params.outletPressKgcm2g ?? (selectedDef.unitType === 'turbine' ? 0.0 : 3.5)}
+                          onValueChange={v => updateParam('outletPressKgcm2g', v)}
+                          onEnterRun={() => runSimulationNow()}
+                          inputStyle={{ padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12, fontWeight: 800 }}
+                        />
+                      </div>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: selectedDef.unitType === 'turbine' ? '1fr 1fr' : '1fr', gap: 6 }}>
+                      <div>
+                        <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
+                          {selectedDef.unitType === 'turbine'
+                            ? (selectedDef.params.turbineCalcMode === 'polytropic'
+                                ? (isEn ? 'Polytropic Eff.' : '폴리트로픽 효율')
+                                : (isEn ? 'Isentropic Eff.' : '등엔트로피 효율'))
+                            : (isEn ? 'Efficiency (0–1)' : '기계 효율 (0~1)')}
+                        </label>
+                        <BufferedNumberInput
+                          syncKey={`${selectedDef.id}-ceff`}
+                          step={0.02}
+                          value={selectedDef.params.efficiency ?? (selectedDef.unitType === 'turbine' ? 0.85 : 0.76)}
+                          onValueChange={v => updateParam('efficiency', v)}
+                          onEnterRun={() => runSimulationNow()}
+                          style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
+                        />
+                      </div>
+                      {selectedDef.unitType === 'turbine' && (
+                        <div>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: '#475569' }}>
+                            {isEn ? 'Mech/Gen Eff. (kWe)' : '기계·발전기 효율'}
+                          </label>
+                          <BufferedNumberInput
+                            syncKey={`${selectedDef.id}-mgeff`}
+                            step={0.01}
+                            value={selectedDef.params.mechGenEfficiency ?? 0.98}
+                            onValueChange={v => updateParam('mechGenEfficiency', v)}
+                            onEnterRun={() => runSimulationNow()}
+                            style={{ width: '100%', padding: '5px 6px', border: '1px solid #CBD5E1', background: '#FFFFFF', color: '#0F172A', borderRadius: 4, fontSize: 12 }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   {selectedDef.unitType === 'compressor' && (
