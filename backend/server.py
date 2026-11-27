@@ -2788,6 +2788,91 @@ def serve_protected_data(subpath: str, request: Request):
     return FileResponse(str(safe), headers={"Cache-Control": "no-store"})
 
 
+
+# ============================================================================
+# ISOLATED HEADLESS EVALUATION API (Aspen Cross-Validation Only)
+# SECURITY: Strictly token-gated (X-Eval-Token). Executes ONLY pure physics
+# kernel (eval_kernel.cjs) with ZERO access to commercial plants (PLANT 01-06),
+# user accounts, or saved workspaces.
+# ============================================================================
+import subprocess as _eval_subprocess
+import secrets as _eval_secrets
+
+_EVAL_NODE_BIN = "/usr/local/bin/node"
+_EVAL_KERNEL_JS = str(Path(__file__).resolve().parent / "eval_kernel.cjs")
+_EVAL_REPORTS_DIR = Path(__file__).resolve().parent / "data" / "aspen_eval_reports"
+
+def _verify_eval_token(request: Request) -> None:
+    provided = (request.headers.get("x-eval-token") or "").strip()
+    if not provided:
+        raise HTTPException(status_code=401, detail="Missing X-Eval-Token header.")
+    with get_db() as conn:
+        expected = get_setting(conn, "eval_api_token", "")
+    if not expected or not _eval_secrets.compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="Invalid X-Eval-Token.")
+
+@app.post("/api/eval/run")
+async def api_eval_run(request: Request):
+    _verify_eval_token(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    action = str((body or {}).get("action") or "").strip()
+    payload = (body or {}).get("payload") or {}
+    allowed = {"list_components", "vle", "distillation", "flowsheet", "hex", "column_internals"}
+    if action not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unsupported action. Allowed: {sorted(allowed)}")
+    if not Path(_EVAL_KERNEL_JS).exists():
+        raise HTTPException(status_code=503, detail="Eval kernel bundle not deployed.")
+    req_json = json.dumps({"action": action, "payload": payload}, ensure_ascii=False)
+    if len(req_json) > 250000:
+        raise HTTPException(status_code=413, detail="Payload too large.")
+    try:
+        proc = _eval_subprocess.run(
+            [_EVAL_NODE_BIN, _EVAL_KERNEL_JS],
+            input=req_json,
+            text=True,
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except _eval_subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Simulation timed out (15s limit).")
+    out_txt = (proc.stdout or "").strip()
+    if not out_txt:
+        raise HTTPException(status_code=500, detail=(proc.stderr or "Empty kernel output")[:300])
+    try:
+        parsed = json.loads(out_txt)
+    except Exception:
+        raise HTTPException(status_code=500, detail=f"Malformed kernel JSON: {out_txt[:200]}")
+    if not parsed.get("ok"):
+        raise HTTPException(status_code=400, detail=parsed.get("error", "Solver error"))
+    return {"ok": True, "action": action, "data": parsed.get("data")}
+
+@app.post("/api/eval/report")
+async def api_eval_report(request: Request):
+    _verify_eval_token(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    _EVAL_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    rid = f"eval_{ts}_{_eval_secrets.token_hex(3)}"
+    record = {
+        "report_id": rid,
+        "received_at_utc": iso_now(),
+        "evaluator": str((body or {}).get("evaluator") or "Aspen-AI")[:120],
+        "title": str((body or {}).get("title") or "Aspen vs ChemPlant Studio Benchmark Report")[:200],
+        "markdown_report": str((body or {}).get("markdown_report") or "")[:200000],
+        "json_summary": (body or {}).get("json_summary"),
+    }
+    out_file = _EVAL_REPORTS_DIR / f"{rid}.json"
+    out_file.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "report_id": rid, "saved": True}
+
+
 @app.get("/{full_path:path}")
 def serve_static_frontend(full_path: str):
     if full_path.startswith("api/"):
