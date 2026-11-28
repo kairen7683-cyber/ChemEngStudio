@@ -1381,20 +1381,30 @@ async def api_ai_advise(
         )
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    is_en_prompt = not bool(re.search(r"[가-힣]", prompt))
+    system_prefix = (
+        "Analyze the chemical process simulation data below (components, boiling points, pressure, condenser type, temperatures, target vs achieved purity).\n"
+        "Rules:\n"
+        "1. Respond 100% in English. Never include roleplay self-introductions or greetings — start directly with the technical diagnosis.\n"
+        "2. Do not use raw markdown symbols (###, **, *). Use clean plain text headings ([Root Cause], [Actionable Solutions], 1., 2., 3., -).\n"
+        "3. If optimization failed or purity targets were not met: avoid generic filler (such as CFD simulation). Cite the actual components, boiling points, critical temperatures (non-condensable gases), total vs partial condenser, azeotrope/pinch, operating pressure, and D/F mass balance limits to provide [Root Cause] and 3 concrete [Actionable Solutions].\n"
+        "4. If converged and optimized: give a concise 2-3 sentence engineering review.\n\n"
+        if is_en_prompt
+        else (
+            "아래 화학공정 시뮬레이션 데이터(성분, 비점, 압력, 응축기 형태, 온도, 순도 목표 vs 계산값)를 기술적으로 분석해 작성하세요.\n"
+            "작성 규칙:\n"
+            "1. 자기소개·역할 언급·인사말('엔지니어로서', '경력의', '분석한 결과' 등)은 절대 쓰지 말고 첫 줄부터 바로 본론만 작성할 것.\n"
+            "2. 마크다운 기호(###, **, *)를 절대 쓰지 말고, 깔끔한 일반 텍스트('[근본 원인]', '[해결 방안]', '1.', '2.', '3.', '-')만 사용할 것.\n"
+            "3. 자동 최적화 실패 또는 목표 순도 미달 시: 추상적 일반론(CFD 시뮬레이션 등)을 쓰지 말고, 실제 성분·비점·임계온도(비응축 가스 여부)·전응축/부분응축·공비/핀치·압력·D/F 물질수지 한계에 근거해 [근본 원인]과 [해결 방안] 3가지를 구체적 수치·장치 변경안으로 작성할 것.\n"
+            "4. 정상 수렴 완료 시: 핵심 운전 평가 2~3줄만 간결히 작성할 것.\n\n"
+        )
+    )
     body = {
         "contents": [
             {
                 "parts": [
                     {
-                        "text": (
-                            "아래 화학공정 시뮬레이션 데이터(성분, 비점, 압력, 응축기 형태, 온도, 순도 목표 vs 계산값)를 기술적으로 분석해 작성하세요.\n"
-                            "작성 규칙:\n"
-                            "1. 자기소개·역할 언급·인사말('엔지니어로서', '경력의', '분석한 결과' 등)은 절대 쓰지 말고 첫 줄부터 바로 본론만 작성할 것.\n"
-                            "2. 마크다운 기호(###, **, *)를 절대 쓰지 말고, 깔끔한 일반 텍스트('[근본 원인]', '[해결 방안]', '1.', '2.', '3.', '-')만 사용할 것.\n"
-                            "3. 자동 최적화 실패 또는 목표 순도 미달 시: 추상적 일반론(CFD 시뮬레이션 등)을 쓰지 말고, 실제 성분·비점·임계온도(비응축 가스 여부)·전응축/부분응축·공비/핀치·압력·D/F 물질수지 한계에 근거해 [근본 원인]과 [해결 방안] 3가지를 구체적 수치·장치 변경안으로 작성할 것.\n"
-                            "4. 정상 수렴 완료 시: 핵심 운전 평가 2~3줄만 간결히 작성할 것.\n\n"
-                            + prompt
-                        )
+                        "text": system_prefix + prompt
                     }
                 ]
             }
