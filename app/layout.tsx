@@ -67,6 +67,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <head>
         <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'SoftwareApplication',
+              name: 'ChemPlant Studio',
+              applicationCategory: 'EngineeringApplication',
+              operatingSystem: 'Web Browser',
+              url: 'https://chemplantstudio.com',
+              description:
+                'Web-native chemical process flowsheet simulator (MESH distillation, 5 reactor models, Gas/Steam Turbines, PR/SRK/NRTL/eNRTL), TEMA & API 662 heat exchanger rating, and API 520/521 PSV & flare sizing.',
+              offers: {
+                '@type': 'Offer',
+                price: '0',
+                priceCurrency: 'USD',
+              },
+              publisher: {
+                '@type': 'Organization',
+                name: 'ChemPlant Studio',
+                url: 'https://chemplantstudio.com',
+                email: 'support@chemplantstudio.com',
+              },
+            }),
+          }}
+        />
+        <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{window.__chemengDeferredPrompt=null;window.__chemengInstalled=false;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__chemengDeferredPrompt=e;window.dispatchEvent(new Event('chemeng:pwa-updated'));});window.addEventListener('appinstalled',function(){window.__chemengDeferredPrompt=null;window.__chemengInstalled=true;window.dispatchEvent(new Event('chemeng:pwa-updated'));});if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});}}catch(_){}})();`,
           }}

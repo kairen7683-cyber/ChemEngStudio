@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   getRememberMePreference,
   loginWithPassword,
@@ -63,6 +64,8 @@ function RememberMeOption({
 }
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isPublicLegalRoute = pathname === '/terms' || pathname === '/privacy' || pathname === '/refund';
   const {
     loading,
     authenticated,
@@ -354,6 +357,10 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         : isEn
           ? 'Open Registration'
           : '자유 회원가입';
+
+  if (isPublicLegalRoute) {
+    return <>{children}</>;
+  }
 
   return (
     <>

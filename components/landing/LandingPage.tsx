@@ -53,17 +53,17 @@ const CORE_MODULES: ModuleItem[] = [
     },
     bullets: {
       ko: [
-        'MESH 엄밀 다성분 증류탑, 5종 반응기(RStoic·REquil·RGibbs·RCSTR·RPlug), LLE 추출',
+        'MESH 엄밀 다성분 증류탑, 5종 반응기(RStoic·REquil·RGibbs·RCSTR·RPlug), 가스/스팀 터빈 & LLE',
         'Design Spec 목표역산 제어 및 다변수 Sensitivity 민감도 해석',
-        '자동 재순환(Recycle) 수렴 솔버 및 스트림 물성표 즉시 생성',
+        '자동 재순환(Recycle) 수렴 솔버 및 스트림 물성·조성표 즉시 생성',
       ],
       en: [
-        'Rigorous MESH distillation, 5 reactor models (RStoic, REquil, RGibbs, RCSTR, RPlug) & LLE',
+        'Rigorous MESH distillation, 5 reactor models (RStoic–RPlug), Gas/Steam Turbines & LLE',
         'Built-in Design Spec feedback control and multi-variable Sensitivity studies',
-        'Automated recycle convergence solver with instant stream property tables',
+        'Automated recycle convergence solver with instant stream property & composition tables',
       ],
     },
-    tags: ['MESH', '5 Reactors', 'LLE', 'Design Spec'],
+    tags: ['MESH', '5 Reactors', 'Turbine', 'Design Spec'],
   },
   {
     id: 'heat-exchanger',
@@ -1899,11 +1899,13 @@ export default function LandingPage({
                   fontFamily: 'JetBrains Mono, monospace',
                   fontSize: 11.5,
                   color: '#1E3A8A',
-                  fontWeight: 600,
+                  fontWeight: 700,
                   marginBottom: 12,
                 }}
               >
-                {lang === 'ko' ? '연간 결제 시 $190 / 년 (2개월 절감)' : 'or $190 / yr (save 2 months)'}
+                {lang === 'ko'
+                  ? '연간 결제 시 $149 / 년 (월 $12.4 · 35% 절감)'
+                  : 'or $149 / yr ($12.4/mo · save 35%)'}
               </div>
 
               <p style={{ fontSize: 13, color: '#475569', lineHeight: 1.55, marginBottom: 20 }}>
@@ -1952,8 +1954,13 @@ export default function LandingPage({
                 onClick={() => onOpenAuth('register')}
                 style={{ width: '100%', padding: '11px 16px', fontSize: 13.5 }}
               >
-                {lang === 'ko' ? 'Pro Engineer 시작하기' : 'Get Pro Engineer'}
+                {lang === 'ko' ? '무료 오픈베타로 먼저 시작하기' : 'Start Free in Open Beta'}
               </button>
+              <div style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: '#64748B' }}>
+                {lang === 'ko'
+                  ? '유료 결제 오픈 전까지 무료 가입으로 핵심 기능 체험 가능'
+                  : 'Core simulator free during Open Beta · paid checkout launching soon'}
+              </div>
             </div>
 
             {/* Tier 3: Team / Enterprise */}
@@ -2158,15 +2165,15 @@ export default function LandingPage({
                 >
                   {lang === 'ko' ? 'LEGAL & POLICIES' : 'LEGAL & POLICIES'}
                 </div>
-                <button type="button" className="cp-footer-link" onClick={() => setActiveLegalDoc('terms')}>
+                <a href="/terms" className="cp-footer-link" style={{ textDecoration: 'none' }}>
                   {lang === 'ko' ? '이용약관 (Terms of Service)' : 'Terms of Service'}
-                </button>
-                <button type="button" className="cp-footer-link" onClick={() => setActiveLegalDoc('privacy')}>
+                </a>
+                <a href="/privacy" className="cp-footer-link" style={{ textDecoration: 'none' }}>
                   {lang === 'ko' ? '개인정보처리방침 (Privacy Policy)' : 'Privacy Policy'}
-                </button>
-                <button type="button" className="cp-footer-link" onClick={() => setActiveLegalDoc('refund')}>
+                </a>
+                <a href="/refund" className="cp-footer-link" style={{ textDecoration: 'none' }}>
                   {lang === 'ko' ? '환불정책 (14일 전액 환불)' : 'Refund Policy (14-Day Full Refund)'}
-                </button>
+                </a>
                 <button type="button" className="cp-footer-link" onClick={() => setActiveLegalDoc('disclaimer')}>
                   {lang === 'ko' ? '엔지니어링 면책 고지' : 'Engineering Disclaimer'}
                 </button>
