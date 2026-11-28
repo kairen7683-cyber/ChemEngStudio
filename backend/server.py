@@ -1387,18 +1387,22 @@ async def api_ai_advise(
                 "parts": [
                     {
                         "text": (
-                            "당신은 화학공정 장치설계 수석 엔지니어입니다. 아래 공정·장치 해석 요약을 보고 "
-                            "실무 핵심 진단과 개선 조치 2~3줄만 한국어로 간결히 작성하세요.\n\n"
+                            "당신은 25년 경력의 화학공정·분리공정(증류/열역학/장치설계) 수석 엔지니어입니다. "
+                            "아래 제공된 실제 공정 데이터(성분, 비점, 압력, 응축기 형태, 온도, 순도 목표 vs 계산값)를 정밀 분석하여 답변하세요.\n"
+                            "- 자동 최적화가 실패했거나 목표 순도에 미달한 경우: 추상적 일반론(예: CFD 시뮬레이션, 단순 유동 분석 등)을 절대 쓰지 말고, "
+                            "반드시 실제 성분과 비점·임계온도(비응축 가스 여부)·전응축/부분응축·공비/핀치·압력·D/F 물질수지 한계에 근거해 "
+                            "**[근본 원인]**과 **[실무 해결 방안 1~3]**을 구체적 수치·장치 변경안과 함께 전문적으로 작성하세요.\n"
+                            "- 정상 수렴 및 최적화 완료된 경우: 핵심 실무 평가 2~3줄만 간결히 작성하세요.\n\n"
                             + prompt
                         )
                     }
                 ]
             }
         ],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 320, "thinkingConfig": {"thinkingBudget": 0}},
+        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 900, "thinkingConfig": {"thinkingBudget": 0}},
     }
     try:
-        async with httpx.AsyncClient(timeout=12.0) as client:
+        async with httpx.AsyncClient(timeout=18.0) as client:
             res = await client.post(url, json=body)
         if res.status_code != 200:
             raise HTTPException(status_code=502, detail="AI 모델 호출에 실패했습니다.")

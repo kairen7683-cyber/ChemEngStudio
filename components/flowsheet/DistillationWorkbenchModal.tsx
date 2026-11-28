@@ -405,9 +405,68 @@ export default function DistillationWorkbenchModal({
       if (Object.keys(fix.patch).length > 0) {
         onChangeConfig(fix.patch);
       }
+      const effCfg = { ...config, ...fix.patch };
+      const sa = fix.solvedAfter;
+      const feedSumKgH = feeds.reduce(
+        (s, f) => s + Object.values(f.flowsKgH || {}).reduce((a, v) => a + Math.max(0, Number(v) || 0), 0),
+        0
+      );
+      const feedCompMap: Record<string, number> = {};
+      for (const f of feeds) {
+        for (const [k, v] of Object.entries(f.flowsKgH || {})) {
+          const val = Math.max(0, Number(v) || 0);
+          if (val > 1e-6) feedCompMap[k] = (feedCompMap[k] || 0) + val;
+        }
+      }
+      const feedCompSummary = Object.entries(feedCompMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([k, v]) => {
+          const wt = feedSumKgH > 1e-6 ? ((v / feedSumKgH) * 100).toFixed(2) : '0';
+          const tb = COMP_CATALOG_META[k as SimCompKey]?.tbC;
+          return `${k} ${wt}wt%${typeof tb === 'number' ? `(Tb=${tb.toFixed(1)}°C)` : ''}`;
+        })
+        .join(', ');
+      const distTotalKgH = Object.values(sa.distillateFlowsKgH || {}).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0);
+      const botTotalKgH = Object.values(sa.bottomsFlowsKgH || {}).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0);
+      const topCompSummary = Object.entries(sa.distillateFlowsKgH || {})
+        .filter(([, v]) => (Number(v) || 0) > 1e-6)
+        .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))
+        .slice(0, 4)
+        .map(([k, v]) => `${k} ${((Number(v) / Math.max(1e-9, distTotalKgH)) * 100).toFixed(3)}wt%`)
+        .join(', ');
+      const botCompSummary = Object.entries(sa.bottomsFlowsKgH || {})
+        .filter(([, v]) => (Number(v) || 0) > 1e-6)
+        .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))
+        .slice(0, 4)
+        .map(([k, v]) => `${k} ${((Number(v) / Math.max(1e-9, botTotalKgH)) * 100).toFixed(4)}wt%`)
+        .join(', ');
+      const qCondKw = (Math.abs(sa.condenserDutyKcalH || 0) / 859.845).toFixed(1);
+      const qRebKw = (Math.abs(sa.reboilerDutyKcalH || 0) / 859.845).toFixed(1);
+      const causesText = [...fix.rootCauses, ...(sa.diagnostics?.causes || [])]
+        .filter(Boolean)
+        .slice(0, 5)
+        .join(' | ');
+      const isUnresolved = !fix.resolved || sa.diagnostics?.level === 'error' || sa.diagnostics?.level === 'warning';
       const prompt = isEn
-        ? `[Distillation Column ${unitTag}] N=${fix.solvedAfter.totalStagesUsed} stages, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, Status=${fix.solvedAfter.diagnostics.badgeText}. Actions: ${fix.actionsTaken.join(', ')}. Respond concisely in English.`
-        : `[증류탑 ${unitTag}] N=${fix.solvedAfter.totalStagesUsed}단, RR=${fix.solvedAfter.actualRefluxRatio.toFixed(2)}, D/F=${fix.solvedAfter.actualDOverFMass.toFixed(3)}, 상태=${fix.solvedAfter.diagnostics.badgeText}. 조치: ${fix.actionsTaken.join(', ')}`;
+        ? `[Distillation Column ${unitTag}] Mode=${effCfg.columnCalcMode ?? 'rigorous_mesh'}, Thermo=${sa.thermoModelUsed}, P_top=${(effCfg.topPressKgcm2g ?? 0.5).toFixed(2)} kg/cm2g, Condenser=${effCfg.condenserType ?? 'total'}, Reboiler=${effCfg.reboilerType ?? 'kettle'}.
+Feed (${feedSumKgH.toFixed(1)} kg/h): ${feedCompSummary}.
+Result: N=${sa.totalStagesUsed} stages (Feed=${sa.feedStageUsed}), RR=${sa.actualRefluxRatio.toFixed(2)}, D/F=${sa.actualDOverFMass.toFixed(4)}, T_top=${sa.topTempC.toFixed(1)}°C, T_bot=${sa.bottomTempC.toFixed(1)}°C, Q_cond=${qCondKw} kW, Q_reb=${qRebKw} kW.
+Distillate (${distTotalKgH.toFixed(2)} kg/h): ${topCompSummary || 'none'}.
+Bottoms (${botTotalKgH.toFixed(2)} kg/h): ${botCompSummary || 'none'}.
+Status=${sa.diagnostics.badgeText} (Resolved=${fix.resolved}).
+Diagnosed Issues: ${causesText || 'None'}.
+Actions Tried: ${fix.actionsTaken.join(', ') || 'None'}.
+${isUnresolved ? 'OPTIMIZATION FAILED OR PURITY TARGET NOT MET. Give a rigorous senior chemical process engineer root-cause analysis (citing actual boiling points, critical temp/non-condensables, azeotrope, pinch, or D/F mass-balance limits) and 3 concrete actionable engineering solutions (e.g., partial condenser, operating pressure change, flash/stripper pre-step, realistic spec). Do NOT give generic boilerplate like CFD.' : 'Optimization succeeded. Give a concise 2-3 sentence engineering review in English.'}`
+        : `[증류탑 ${unitTag}] 모드=${effCfg.columnCalcMode ?? 'rigorous_mesh'}, 열역학=${sa.thermoModelUsed}, 탑정압력=${(effCfg.topPressKgcm2g ?? 0.5).toFixed(2)} kg/cm²g, 응축기=${effCfg.condenserType ?? 'total'}, 리보일러=${effCfg.reboilerType ?? 'kettle'}.
+유입원료 (${feedSumKgH.toFixed(1)} kg/h): ${feedCompSummary}.
+해석결과: 이론단수 N=${sa.totalStagesUsed}단 (공급단 ${sa.feedStageUsed}단), 환류비 RR=${sa.actualRefluxRatio.toFixed(2)}, 유출비 D/F=${sa.actualDOverFMass.toFixed(4)}, 탑정온도=${sa.topTempC.toFixed(1)}°C, 탑저온도=${sa.bottomTempC.toFixed(1)}°C, Q_cond=${qCondKw} kW, Q_reb=${qRebKw} kW.
+탑정 유출 (${distTotalKgH.toFixed(2)} kg/h): ${topCompSummary || '없음'}.
+탑저 관출 (${botTotalKgH.toFixed(2)} kg/h): ${botCompSummary || '없음'}.
+상태=${sa.diagnostics.badgeText} (자동해결 성공여부=${fix.resolved ? '성공' : '미달/실패'}).
+진단된 문제점: ${causesText || '없음'}.
+시도한 조치: ${fix.actionsTaken.join(', ') || '없음'}.
+${isUnresolved ? '현재 자동 최적화로 목표 순도/수렴을 달성하지 못했습니다. 반드시 위 실제 성분·비점(Tb)·임계온도(비응축 가스 여부)·응축기 방식(전응축 vs 부분응축)·압력·공비/핀치·물질수지(D/F) 한계를 정량적으로 근거 삼아 (1) 물리·열역학적 근본 원인, (2) 구체적 공정·장치 해결 방안 3가지를 수석 공정 엔지니어 수준으로 전문적으로 설명하세요. CFD 시뮬레이션 같은 추상적 일반론은 절대 쓰지 마세요.' : '정상 수렴 완료. 현재 운전점의 에너지·단수 트레이드오프에 대한 핵심 실무 코멘트를 2~3줄로 작성하세요.'}`;
       const geminiNote = await fetchOptionalGeminiAdvice(prompt, isEn ? 'en' : 'ko');
       setAiReport({ result: fix, geminiNote });
       setSelectedAiOptionId(fix.distillOptions?.[0]?.id ?? null);
@@ -3334,7 +3393,20 @@ export default function DistillationWorkbenchModal({
                   </div>
                 )}
                 {aiReport.geminiNote && (
-                  <div style={{ color: '#334155', fontWeight: 700, fontSize: 10.6 }}>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      padding: '8px 10px',
+                      borderRadius: 6,
+                      background: '#F8FAFC',
+                      border: '1px solid #CBD5E1',
+                      color: '#1E293B',
+                      fontWeight: 500,
+                      fontSize: 11.5,
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-line',
+                    }}
+                  >
                     {aiReport.geminiNote}
                   </div>
                 )}

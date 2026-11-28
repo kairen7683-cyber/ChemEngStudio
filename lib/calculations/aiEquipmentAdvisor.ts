@@ -1071,8 +1071,35 @@ function prepareDistillFixContext(
     }
   }
 
-  // 4) 단일/고정 유출 정밀모사 미수렴 시에만 안정화 (RR, D/F) 운전점 탐색 (이중 품질스펙은 목표 보존)
-  if (!isDualQualitySpec) {
+  // 4) 품질 스펙이 없는 고정 (RR, D/F) 정밀모사 미수렴 시에만 안정화 운전점 탐색
+  //    (design_stages · top_spec · bot_spec 모드에서는 목표 순도를 절대 삭제·우회하지 않음!)
+  const isDesignStagesMode = (initialParams.columnCalcMode ?? 'rigorous_mesh') === 'design_stages';
+  const hasAnyQualitySpec =
+    isDualQualitySpec ||
+    isDesignStagesMode ||
+    initSlots.includes('top_spec') ||
+    initSlots.includes('bot_spec');
+
+  // 3-b) design_stages 모드에서 비응축성 경질가스(O2/N2/H2/CH4/CO)가 탑정에 존재하면 부분응축기(partial) + 목표순도 유지 탐색
+  const hasLightGasTop =
+    (feedTotals.O2 || 0) + (feedTotals.N2 || 0) + (feedTotals.H2 || 0) + (feedTotals.CH4 || 0) + (feedTotals.CO || 0) > 1e-4;
+  if (isDesignStagesMode && hasLightGasTop && (initialParams.condenserType ?? 'total') === 'total') {
+    steps.push({
+      label: isEn
+        ? 'Switch to Partial Condenser (vapor distillate) for light-gas separation while keeping purity targets'
+        : '비응축 경질가스(O₂/N₂/H₂ 등) 분리를 위해 부분응축기(기상 유출) 전환 · 목표 순도 유지',
+      progressText: isEn
+        ? 'Evaluating partial condenser with target purity preserved...'
+        : '목표 순도 유지 조건에서 부분응축기(기상 유출) 탐색 중...',
+      buildPatch: () => ({
+        columnCalcMode: 'design_stages',
+        condenserType: 'partial',
+        designRefluxMode: 'auto_opt',
+      }),
+    });
+  }
+
+  if (!hasAnyQualitySpec && !solvedBefore.converged) {
     for (const [nCand, rrCand] of [
       [24, 2.5],
       [32, 4.0],
@@ -1189,6 +1216,24 @@ function computeDistillTacScore(r: DistillSolveResult): number {
   return Number((reboilerDutyMW * 180 + numStages * 4.5).toFixed(2));
 }
 
+function getDistillKeySeparationWt(r: DistillSolveResult): { topMaxWt: number; botMaxWt: number } {
+  const topVals = Object.values(r.distillateFlowsKgH || {}).map((v) => Math.max(0, Number(v) || 0));
+  const botVals = Object.values(r.bottomsFlowsKgH || {}).map((v) => Math.max(0, Number(v) || 0));
+  const topMass = Math.max(1e-9, topVals.reduce((s, v) => s + v, 0));
+  const botMass = Math.max(1e-9, botVals.reduce((s, v) => s + v, 0));
+  let topMax = 0;
+  let botMax = 0;
+  for (const v of topVals) {
+    const wt = (v / topMass) * 100;
+    if (wt > topMax) topMax = wt;
+  }
+  for (const v of botVals) {
+    const wt = (v / botMass) * 100;
+    if (wt > botMax) botMax = wt;
+  }
+  return { topMaxWt: topMax, botMaxWt: botMax };
+}
+
 function isDistillStrictPass(r: DistillSolveResult): boolean {
   if (!r.converged || !r.dofValid) return false;
   if (r.diagnostics.level === 'error') return false;
@@ -1263,7 +1308,19 @@ function buildDistillGuidedGrid(
     (baseParams.topSpecType ?? 'reflux_ratio') === 'reflux_ratio';
 
   if (refluxAdjustable) {
-    const rrList = [1.2, 1.8, 2.5, 3.5];
+    const curRR = clamp(
+      Number(baseParams.topSpecValue || baseSol.actualRefluxRatio || 2.0),
+      0.8,
+      30
+    );
+    const rrList = Array.from(
+      new Set([
+        clamp(Number((curRR * 0.85).toFixed(2)), 0.8, 30),
+        Number(curRR.toFixed(2)),
+        clamp(Number((curRR * 1.25).toFixed(2)), 0.8, 35),
+        clamp(Number((curRR * 1.6).toFixed(2)), 0.8, 40),
+      ])
+    );
     const feedFracs = [0.45, 0.55];
     // 단수와 환류비를 교차 배치하여 시간 예산(850ms) 내에서도 넓은 설계 공간을 고르게 커버
     for (const fFrac of feedFracs) {
@@ -1525,6 +1582,13 @@ export function autoFixDistillationSimulation(
 
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
   const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore, lang);
+  const initSlotsGuard = resolveEffectiveDofSlots(initialParams);
+  const enforcePurityPreservation =
+    solvedBefore.converged &&
+    (initialParams.columnCalcMode ?? 'rigorous_mesh') === 'rigorous_mesh' &&
+    !initSlotsGuard.includes('top_spec') &&
+    !initSlotsGuard.includes('bot_spec');
+  const baseSep = enforcePurityPreservation ? getDistillKeySeparationWt(solvedBefore) : null;
 
   const evaluated: DistillEvalCandidate[] = [];
   const seenKeys = new Set<string>();
@@ -1533,12 +1597,19 @@ export function autoFixDistillationSimulation(
     res: DistillSolveResult,
     actionLabel?: string
   ): DistillEvalCandidate => {
+    let strictOk = isDistillStrictPass(res);
+    if (strictOk && baseSep && actionLabel) {
+      const sep = getDistillKeySeparationWt(res);
+      if (sep.topMaxWt < baseSep.topMaxWt - 0.5 || sep.botMaxWt < baseSep.botMaxWt - 0.5) {
+        strictOk = false;
+      }
+    }
     const cand: DistillEvalCandidate = {
       params,
       res,
       score: scoreDistillResult(res),
       tacScore: computeDistillTacScore(res),
-      allPassed: isDistillStrictPass(res),
+      allPassed: strictOk,
       actionLabel,
     };
     const key = distillCandKey(params, res);
@@ -1611,6 +1682,13 @@ export async function autoFixDistillationSimulationAsync(
 
   const solvedBefore = solveRigorousDistillation(feedsInput, initialParams);
   const { rootCauses, steps } = prepareDistillFixContext(feedsInput, initialParams, solvedBefore, lang);
+  const initSlotsGuard = resolveEffectiveDofSlots(initialParams);
+  const enforcePurityPreservation =
+    solvedBefore.converged &&
+    (initialParams.columnCalcMode ?? 'rigorous_mesh') === 'rigorous_mesh' &&
+    !initSlotsGuard.includes('top_spec') &&
+    !initSlotsGuard.includes('bot_spec');
+  const baseSep = enforcePurityPreservation ? getDistillKeySeparationWt(solvedBefore) : null;
 
   const evaluated: DistillEvalCandidate[] = [];
   const seenKeys = new Set<string>();
@@ -1619,12 +1697,19 @@ export async function autoFixDistillationSimulationAsync(
     res: DistillSolveResult,
     actionLabel?: string
   ): DistillEvalCandidate => {
+    let strictOk = isDistillStrictPass(res);
+    if (strictOk && baseSep && actionLabel) {
+      const sep = getDistillKeySeparationWt(res);
+      if (sep.topMaxWt < baseSep.topMaxWt - 0.5 || sep.botMaxWt < baseSep.botMaxWt - 0.5) {
+        strictOk = false;
+      }
+    }
     const cand: DistillEvalCandidate = {
       params,
       res,
       score: scoreDistillResult(res),
       tacScore: computeDistillTacScore(res),
-      allPassed: isDistillStrictPass(res),
+      allPassed: strictOk,
       actionLabel,
     };
     const key = distillCandKey(params, res);
@@ -2174,7 +2259,7 @@ export async function fetchOptionalGeminiAdvice(
 
     try {
       const serverCtrl = new AbortController();
-      const serverTimer = window.setTimeout(() => serverCtrl.abort(), 9000);
+      const serverTimer = window.setTimeout(() => serverCtrl.abort(), 18000);
       const serverRes = await fetch('/api/ai/advise', {
         method: 'POST',
         credentials: 'include',
