@@ -796,36 +796,36 @@ function mapBlockType(
 
 function defaultUnitLabel(unitType: FlowUnitType, blockId: string, rawType?: string): string {
   const rawUpper = (rawType ?? '').toUpperCase();
-  if (rawUpper === 'HEATER') return `${blockId} 가열기`;
-  if (rawUpper === 'COOLER') return `${blockId} 냉각기`;
-  if (rawUpper === 'HEATX' || rawUpper === 'MHEATX') return `${blockId} 열교환기`;
-  if (rawUpper === 'DECANTER' || rawUpper === 'LIQSEP') return `${blockId} 유수분리기(디캔터)`;
+  if (rawUpper === 'HEATER') return `${blockId} Heater`;
+  if (rawUpper === 'COOLER') return `${blockId} Cooler`;
+  if (rawUpper === 'HEATX' || rawUpper === 'MHEATX') return `${blockId} Heat Exchanger`;
+  if (rawUpper === 'DECANTER' || rawUpper === 'LIQSEP') return `${blockId} Decanter`;
   if (rawUpper === 'EXTRACT' || rawUpper === 'LIQEXT' || rawUpper === 'SWASH' || rawUpper === 'WASH') {
-    return `${blockId} 추출·수세탑`;
+    return `${blockId} Extractor`;
   }
   switch (unitType) {
     case 'mixer':
-      return `${blockId} 혼합기`;
+      return `${blockId} Mixer`;
     case 'splitter':
-      return `${blockId} 분배기`;
+      return `${blockId} Splitter`;
     case 'hex':
-      return `${blockId} 열교환기`;
+      return `${blockId} Heat Exchanger`;
     case 'separator':
-      return `${blockId} 기액분리기`;
+      return `${blockId} Flash Drum`;
     case 'distillation':
-      return `${blockId} 증류탑`;
+      return `${blockId} Distillation Column`;
     case 'absorber':
-      return `${blockId} 흡수탑`;
+      return `${blockId} Absorber`;
     case 'extractor':
-      return `${blockId} 추출탑`;
+      return `${blockId} Extractor`;
     case 'pump':
-      return `${blockId} 펌프`;
+      return `${blockId} Pump`;
     case 'compressor':
-      return `${blockId} 압축기`;
+      return `${blockId} Compressor`;
     case 'reactor':
-      return `${blockId} 반응기`;
+      return `${blockId} Reactor`;
     case 'valve':
-      return `${blockId} 감압밸브`;
+      return `${blockId} Valve`;
     default:
       return blockId;
   }
@@ -1859,7 +1859,7 @@ function parseNativeBkp(
       defs[fId] = {
         id: fId,
         tag: s,
-        name: `${s} 공급`,
+        name: `${s} Feed`,
         unitType: 'feed',
         params: {
           feedTempC: 25,
@@ -1873,7 +1873,7 @@ function parseNativeBkp(
       defs[pId] = {
         id: pId,
         tag: s,
-        name: `${s} 제품`,
+        name: `${s} Product`,
         unitType: 'product',
         params: {},
       };
@@ -2495,7 +2495,7 @@ export function parseProcessTextFile(
       defs[nodeId] = {
         id: nodeId,
         tag: fb.id,
-        name: `${fb.id} 혼합기`,
+        name: `${fb.id} Mixer`,
         unitType: 'mixer',
         params: { calcMode: 'rigorous' },
       };
@@ -2540,7 +2540,7 @@ export function parseProcessTextFile(
       defs[fId] = {
         id: fId,
         tag: s,
-        name: `${s} 공급`,
+        name: `${s} Feed`,
         unitType: 'feed',
         params: {
           feedTempC: 25,
@@ -2554,7 +2554,7 @@ export function parseProcessTextFile(
       defs[pId] = {
         id: pId,
         tag: s,
-        name: `${s} 제품`,
+        name: `${s} Product`,
         unitType: 'product',
         params: {},
       };

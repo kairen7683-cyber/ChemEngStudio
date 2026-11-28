@@ -59,27 +59,27 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
     recommendedMethod: 'AUTO',
     nodes: [
       {
-        id: 'np_feed1', tag: 'FEED-101', name: '혼합 원료 공급', nameEn: 'Mixed Feed', unitType: 'feed',
+        id: 'np_feed1', tag: 'FEED-101', name: 'Mixed Feed', nameEn: 'Mixed Feed', unitType: 'feed',
         position: { x: 60, y: 120 },
         params: { feedTempC: 95.0, feedPressKgcm2g: 2.0, feedFlowsKgH: { MeOH: 3000, H2O: 5000, N2: 200 } },
       },
       {
-        id: 'np_hex1', tag: 'E-101', name: '공정 냉각기', nameEn: 'Process Cooler', unitType: 'hex',
+        id: 'np_hex1', tag: 'E-101', name: 'Process Cooler', nameEn: 'Process Cooler', unitType: 'hex',
         position: { x: 320, y: 112 },
         params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 35.0, overallU: 460 },
       },
       {
-        id: 'np_sep1', tag: 'D-101', name: '기액 분리기', nameEn: 'Flash Separator', unitType: 'separator',
+        id: 'np_sep1', tag: 'D-101', name: 'Flash Separator', nameEn: 'Flash Separator', unitType: 'separator',
         position: { x: 590, y: 105 },
         params: { operTempC: 35.0, operPressKgcm2g: 1.9 },
       },
       {
-        id: 'np_pvap', tag: 'PROD-GAS', name: '상부 가스 제품(G)', nameEn: 'Overhead Vapor (G)', unitType: 'product',
+        id: 'np_pvap', tag: 'PROD-GAS', name: 'Overhead Vapor (G)', nameEn: 'Overhead Vapor (G)', unitType: 'product',
         position: { x: 860, y: 35 },
         params: {},
       },
       {
-        id: 'np_pliq', tag: 'PROD-LIQ', name: '하부 응축액 제품(L)', nameEn: 'Bottoms Liquid (L)', unitType: 'product',
+        id: 'np_pliq', tag: 'PROD-LIQ', name: 'Bottoms Liquid (L)', nameEn: 'Bottoms Liquid (L)', unitType: 'product',
         position: { x: 860, y: 195 },
         params: {},
       },
@@ -101,17 +101,17 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
     recommendedMethod: 'PR',
     nodes: [
       {
-        id: 'bt_feed', tag: 'FEED-101', name: '벤젠-톨루엔 원료', nameEn: 'Benzene–Toluene Feed', unitType: 'feed',
+        id: 'bt_feed', tag: 'FEED-101', name: 'Benzene–Toluene Feed', nameEn: 'Benzene–Toluene Feed', unitType: 'feed',
         position: { x: 50, y: 155 },
         params: { feedTempC: 75.0, feedPressKgcm2g: 0.8, feedFlowsKgH: { Benzene: 5000, Toluene: 5000 } },
       },
       {
-        id: 'bt_hx', tag: 'E-101', name: '원료 예열기', nameEn: 'Feed Preheater', unitType: 'hex',
+        id: 'bt_hx', tag: 'E-101', name: 'Feed Preheater', nameEn: 'Feed Preheater', unitType: 'hex',
         position: { x: 290, y: 150 },
         params: { hexSpecMode: 'proc_temp', operTempC: 92.0, overallU: 520 },
       },
       {
-        id: 'bt_col', tag: 'T-101', name: 'B/T 정밀증류탑 (20단)', nameEn: 'B/T Distillation Column (20-Stage)', unitType: 'distillation',
+        id: 'bt_col', tag: 'T-101', name: 'B/T Distillation Column (20-Stage)', nameEn: 'B/T Distillation Column (20-Stage)', unitType: 'distillation',
         position: { x: 545, y: 120 },
         params: {
           calcMode: 'rigorous',
@@ -130,12 +130,12 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
         },
       },
       {
-        id: 'bt_top', tag: 'PROD-BZ', name: '탑정 벤젠 제품', nameEn: 'Benzene Distillate', unitType: 'product',
+        id: 'bt_top', tag: 'PROD-BZ', name: 'Benzene Distillate', nameEn: 'Benzene Distillate', unitType: 'product',
         position: { x: 830, y: 55 },
         params: {},
       },
       {
-        id: 'bt_bot', tag: 'PROD-TOL', name: '탑저 톨루엔 제품', nameEn: 'Toluene Bottoms', unitType: 'product',
+        id: 'bt_bot', tag: 'PROD-TOL', name: 'Toluene Bottoms', nameEn: 'Toluene Bottoms', unitType: 'product',
         position: { x: 830, y: 215 },
         params: {},
       },
@@ -157,12 +157,12 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
     recommendedMethod: 'NRTL',
     nodes: [
       {
-        id: 'ew_feed', tag: 'FEED-101', name: '에탄올 수용액 원료', nameEn: 'Aqueous Ethanol Feed', unitType: 'feed',
+        id: 'ew_feed', tag: 'FEED-101', name: 'Aqueous Ethanol Feed', nameEn: 'Aqueous Ethanol Feed', unitType: 'feed',
         position: { x: 70, y: 155 },
         params: { feedTempC: 65.0, feedPressKgcm2g: 0.3, feedFlowsKgH: { EtOH: 2000, H2O: 6000 } },
       },
       {
-        id: 'ew_col', tag: 'T-101', name: '에탄올 정류탑 (24단)', nameEn: 'Ethanol Rectifying Column (24-Stage)', unitType: 'distillation',
+        id: 'ew_col', tag: 'T-101', name: 'Ethanol Rectifying Column (24-Stage)', nameEn: 'Ethanol Rectifying Column (24-Stage)', unitType: 'distillation',
         position: { x: 380, y: 120 },
         params: {
           calcMode: 'rigorous',
@@ -181,12 +181,12 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
         },
       },
       {
-        id: 'ew_top', tag: 'PROD-ETOH', name: '탑정 농축 에탄올', nameEn: 'Concentrated Ethanol', unitType: 'product',
+        id: 'ew_top', tag: 'PROD-ETOH', name: 'Concentrated Ethanol', nameEn: 'Concentrated Ethanol', unitType: 'product',
         position: { x: 700, y: 55 },
         params: {},
       },
       {
-        id: 'ew_bot', tag: 'PROD-H2O', name: '탑저 폐수(H₂O)', nameEn: 'Bottoms Water (H₂O)', unitType: 'product',
+        id: 'ew_bot', tag: 'PROD-H2O', name: 'Bottoms Water (H₂O)', nameEn: 'Bottoms Water (H₂O)', unitType: 'product',
         position: { x: 700, y: 215 },
         params: {},
       },
@@ -207,12 +207,12 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
     recommendedMethod: 'AUTO',
     nodes: [
       {
-        id: 'awe_feed', tag: 'FEED-H2O', name: '순수 공급 (DI Water)', nameEn: 'DI Water Feed', unitType: 'feed',
+        id: 'awe_feed', tag: 'FEED-H2O', name: 'DI Water Feed', nameEn: 'DI Water Feed', unitType: 'feed',
         position: { x: 50, y: 145 },
         params: { feedTempC: 60.0, feedPressKgcm2g: 5.0, feedFlowsKgH: { H2O: 2500, KOH: 500 } },
       },
       {
-        id: 'awe_el', tag: 'EL-101', name: 'AWE 수전해 스택', nameEn: 'AWE Electrolyzer Stack', unitType: 'electrolyzer',
+        id: 'awe_el', tag: 'EL-101', name: 'AWE Electrolyzer Stack', nameEn: 'AWE Electrolyzer Stack', unitType: 'electrolyzer',
         position: { x: 310, y: 120 },
         params: {
           electrolyzerPreset: 'awe_water',
@@ -226,22 +226,22 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
         },
       },
       {
-        id: 'awe_hx', tag: 'E-101', name: '수소 가스 냉각기', nameEn: 'H₂ Product Cooler', unitType: 'hex',
+        id: 'awe_hx', tag: 'E-101', name: 'H₂ Product Cooler', nameEn: 'H₂ Product Cooler', unitType: 'hex',
         position: { x: 610, y: 40 },
         params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 35.0, overallU: 350 },
       },
       {
-        id: 'awe_h2', tag: 'PROD-H2', name: '그린수소 제품 (H₂)', nameEn: 'Green H₂ Product', unitType: 'product',
+        id: 'awe_h2', tag: 'PROD-H2', name: 'Green H₂ Product', nameEn: 'Green H₂ Product', unitType: 'product',
         position: { x: 870, y: 40 },
         params: {},
       },
       {
-        id: 'awe_o2', tag: 'PROD-O2', name: '부산 산소 (O₂)', nameEn: 'Byproduct O₂', unitType: 'product',
+        id: 'awe_o2', tag: 'PROD-O2', name: 'Byproduct O₂', nameEn: 'Byproduct O₂', unitType: 'product',
         position: { x: 610, y: 165 },
         params: {},
       },
       {
-        id: 'awe_liq', tag: 'RET-KOH', name: '순환 전해액 (KOH/H₂O)', nameEn: 'Electrolyte Return (KOH/H₂O)', unitType: 'product',
+        id: 'awe_liq', tag: 'RET-KOH', name: 'Electrolyte Return (KOH/H₂O)', nameEn: 'Electrolyte Return (KOH/H₂O)', unitType: 'product',
         position: { x: 610, y: 270 },
         params: {},
       },
@@ -264,12 +264,12 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
     recommendedMethod: 'PR',
     nodes: [
       {
-        id: 'ms_feed', tag: 'FEED-SYN', name: '합성가스 원료 (CO/H₂)', nameEn: 'Syngas Feed (CO/H₂)', unitType: 'feed',
+        id: 'ms_feed', tag: 'FEED-SYN', name: 'Syngas Feed (CO/H₂)', nameEn: 'Syngas Feed (CO/H₂)', unitType: 'feed',
         position: { x: 40, y: 145 },
         params: { feedTempC: 220.0, feedPressKgcm2g: 50.0, feedFlowsKgH: { CO: 2800, H2: 420, N2: 120 } },
       },
       {
-        id: 'ms_rxn', tag: 'R-101', name: '메탄올 촉매 반응기', nameEn: 'Methanol Synthesis Reactor', unitType: 'reactor',
+        id: 'ms_rxn', tag: 'R-101', name: 'Methanol Synthesis Reactor', nameEn: 'Methanol Synthesis Reactor', unitType: 'reactor',
         position: { x: 285, y: 135 },
         params: {
           reactionPreset: 'methanol_synthesis',
@@ -280,22 +280,22 @@ export const PUBLIC_MINI_EXAMPLES: PublicMiniExample[] = [
         },
       },
       {
-        id: 'ms_hx', tag: 'E-101', name: '반응물 응축 냉각기', nameEn: 'Reactor Effluent Cooler', unitType: 'hex',
+        id: 'ms_hx', tag: 'E-101', name: 'Reactor Effluent Cooler', nameEn: 'Reactor Effluent Cooler', unitType: 'hex',
         position: { x: 540, y: 135 },
         params: { hexSpecMode: 'proc_temp', refrigerantPreset: 'cw', operTempC: 40.0, overallU: 450 },
       },
       {
-        id: 'ms_sep', tag: 'D-101', name: '고압 기액 분리기', nameEn: 'HP Flash Separator', unitType: 'separator',
+        id: 'ms_sep', tag: 'D-101', name: 'HP Flash Separator', nameEn: 'HP Flash Separator', unitType: 'separator',
         position: { x: 790, y: 128 },
         params: { operTempC: 40.0, operPressKgcm2g: 48.0 },
       },
       {
-        id: 'ms_gas', tag: 'OFF-GAS', name: '미반응 가스 (CO/H₂)', nameEn: 'Unreacted Syngas (CO/H₂)', unitType: 'product',
+        id: 'ms_gas', tag: 'OFF-GAS', name: 'Unreacted Syngas (CO/H₂)', nameEn: 'Unreacted Syngas (CO/H₂)', unitType: 'product',
         position: { x: 1030, y: 55 },
         params: {},
       },
       {
-        id: 'ms_meoh', tag: 'PROD-MEOH', name: '조메탄올 제품 (MeOH)', nameEn: 'Crude Methanol (MeOH)', unitType: 'product',
+        id: 'ms_meoh', tag: 'PROD-MEOH', name: 'Crude Methanol (MeOH)', nameEn: 'Crude Methanol (MeOH)', unitType: 'product',
         position: { x: 1030, y: 205 },
         params: {},
       },

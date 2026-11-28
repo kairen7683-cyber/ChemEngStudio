@@ -3259,7 +3259,7 @@ export function FlowsheetWorkspace({
           {
             id: `${newSubId}_in`,
             tag: `BOUND-${nodeDef.tag}`,
-            name: `${nodeDef.name} 경계 유입`,
+            name: `${nodeDef.name} Boundary Feed`,
             unitType: 'feed',
             params: {
               boundaryFromMasterNodeId: nodeDef.id,
@@ -3272,14 +3272,14 @@ export function FlowsheetWorkspace({
           {
             id: `${newSubId}_u1`,
             tag: `${nodeDef.tag}-A`,
-            name: `${nodeDef.name} 주기기`,
+            name: `${nodeDef.name} Main Unit`,
             unitType: nodeDef.unitType,
             params: { ...nodeDef.params },
           },
           {
             id: `${newSubId}_out`,
             tag: `OUT-${nodeDef.tag}`,
-            name: `${nodeDef.name} 출구 헤더`,
+            name: `${nodeDef.name} Outlet Header`,
             unitType: 'product',
             params: {},
           },
@@ -5256,6 +5256,39 @@ export function FlowsheetWorkspace({
       }
       if (rawName === '유입 스트림') return 'Feed Stream';
       if (rawName === '유출 스트림') return 'Product Stream';
+      const legacyMiniMap: Record<string, string> = {
+        '혼합 원료 공급': 'Mixed Feed',
+        '공정 냉각기': 'Process Cooler',
+        '기액 분리기': 'Flash Separator',
+        '상부 가스 제품(G)': 'Overhead Vapor (G)',
+        '하부 응축액 제품(L)': 'Bottoms Liquid (L)',
+        '벤젠-톨루엔 원료': 'Benzene–Toluene Feed',
+        '원료 예열기': 'Feed Preheater',
+        'B/T 정밀증류탑 (20단)': 'B/T Distillation Column (20-Stage)',
+        '탑정 벤젠 제품': 'Benzene Distillate',
+        '탑저 톨루엔 제품': 'Toluene Bottoms',
+        '에탄올 수용액 원료': 'Aqueous Ethanol Feed',
+        '에탄올 정류탑 (24단)': 'Ethanol Rectifying Column (24-Stage)',
+        '탑정 농축 에탄올': 'Concentrated Ethanol',
+        '탑저 폐수(H₂O)': 'Bottoms Water (H₂O)',
+        '순수 공급 (DI Water)': 'DI Water Feed',
+        'AWE 수전해 스택': 'AWE Electrolyzer Stack',
+        '수소 가스 냉각기': 'H₂ Product Cooler',
+        '그린수소 제품 (H₂)': 'Green H₂ Product',
+        '부산 산소 (O₂)': 'Byproduct O₂',
+        '순환 전해액 (KOH/H₂O)': 'Electrolyte Return (KOH/H₂O)',
+        '합성가스 원료 (CO/H₂)': 'Syngas Feed (CO/H₂)',
+        '메탄올 촉매 반응기': 'Methanol Synthesis Reactor',
+        '반응물 응축 냉각기': 'Reactor Effluent Cooler',
+        '고압 기액 분리기': 'HP Flash Separator',
+        '미반응 가스 (CO/H₂)': 'Unreacted Syngas (CO/H₂)',
+        '조메탄올 제품 (MeOH)': 'Crude Methanol (MeOH)',
+        '양극 염수 유입': 'Anode Brine Feed',
+        '음극 순수 유입': 'Cathode DI Water Feed',
+        '양극 출구류': 'Anode Outlet',
+        '음극 출구류': 'Cathode Outlet',
+      };
+      if (legacyMiniMap[rawName]) return legacyMiniMap[rawName];
       const mD = rawName.match(/^(.+?)\s*탑정 유출\(D\)$/);
       if (mD) return `${mD[1]} Distillate (D)`;
       const mS = rawName.match(/^(.+?)\s*사이드컷 측류\(S\)$/);
@@ -5268,6 +5301,12 @@ export function FlowsheetWorkspace({
       if (mL) return `${mL[1]} Liquid (L)`;
       const mF = rawName.match(/^(.+?)\s*원료 유입$/);
       if (mF) return `${mF[1]} Feed`;
+      const mOut = rawName.match(/^(.+?)\s*유출 스트림$/);
+      if (mOut) return `${mOut[1]} Product`;
+      const mTop = rawName.match(/^(.+?)\s*상부 출구$/);
+      if (mTop) return `${mTop[1]} Overhead Outlet`;
+      const mBot = rawName.match(/^(.+?)\s*하부 출구$/);
+      if (mBot) return `${mBot[1]} Bottoms Outlet`;
       return rawName;
     },
     [isEn]
@@ -5619,7 +5658,7 @@ export function FlowsheetWorkspace({
         const newFeedDef: FlowNodeDef = {
           id: newNodeId,
           tag: feedTag,
-          name: originDef.unitType === 'distillation' ? `${originDef.tag} 원료 유입` : '유입 스트림',
+          name: originDef.unitType === 'distillation' ? `${originDef.tag} Feed` : 'Feed Stream',
           unitType: 'feed',
           params: defaultParams,
         };
@@ -5652,16 +5691,16 @@ export function FlowsheetWorkspace({
         const outTag = `S-OUT-${String(outCount).padStart(2, '0')}`;
         const outName =
           originDef.unitType === 'distillation' && rawH === 'vapor'
-            ? (isEn ? `${originDef.tag} Distillate (D)` : `${originDef.tag} 탑정 유출(D)`)
+            ? `${originDef.tag} Distillate (D)`
             : originDef.unitType === 'distillation' && rawH === 'side_cut'
-              ? (isEn ? `${originDef.tag} Side-Cut (S)` : `${originDef.tag} 사이드컷 측류(S)`)
+              ? `${originDef.tag} Side-Cut (S)`
               : originDef.unitType === 'distillation' && rawH === 'liquid'
-                ? (isEn ? `${originDef.tag} Bottoms (B)` : `${originDef.tag} 탑저 관출(B)`)
+                ? `${originDef.tag} Bottoms (B)`
                 : rawH === 'vapor'
-                  ? (isEn ? `${originDef.tag} Vapor (G)` : `${originDef.tag} 상부 기상(G)`)
+                  ? `${originDef.tag} Vapor (G)`
                   : rawH === 'liquid'
-                    ? (isEn ? `${originDef.tag} Liquid (L)` : `${originDef.tag} 하부 액상(L)`)
-                    : (isEn ? 'Product Stream' : '유출 스트림');
+                    ? `${originDef.tag} Liquid (L)`
+                    : 'Product Stream';
 
         const newOutDef: FlowNodeDef = {
           id: newNodeId,
@@ -5720,10 +5759,10 @@ export function FlowsheetWorkspace({
       const reqInPorts: Array<{ port: TargetPortId; dy: number; label: string }> =
         targetDef.unitType === 'electrolyzer'
           ? [
-              { port: 'anode_in', dy: -45, label: '양극 염수 유입' },
-              { port: 'cathode_in', dy: 45, label: '음극 순수 유입' },
+              { port: 'anode_in', dy: -45, label: 'Anode Brine Feed' },
+              { port: 'cathode_in', dy: 45, label: 'Cathode DI Water Feed' },
             ]
-          : [{ port: 'in', dy: 12, label: `${targetDef.tag} 원료 유입` }];
+          : [{ port: 'in', dy: 12, label: `${targetDef.tag} Feed` }];
 
       for (const inp of reqInPorts) {
         const hasIn = flowEdges.some(
@@ -5788,32 +5827,32 @@ export function FlowsheetWorkspace({
       const reqOutPorts: Array<{ port: SourcePortId; dy: number; label: string }> =
         targetDef.unitType === 'electrolyzer'
           ? [
-              { port: 'anode_out', dy: -45, label: '양극 출구류' },
-              { port: 'cathode_out', dy: 45, label: '음극 출구류' },
+              { port: 'anode_out', dy: -45, label: 'Anode Outlet' },
+              { port: 'cathode_out', dy: 45, label: 'Cathode Outlet' },
             ]
           : isDualOut
             ? [
                 {
                   port: 'vapor',
                   dy: -38,
-                  label: targetDef.unitType === 'distillation' ? `${targetDef.tag} 탑정 유출(D)` : `${targetDef.tag} 상부 출구`,
+                  label: targetDef.unitType === 'distillation' ? `${targetDef.tag} Distillate (D)` : `${targetDef.tag} Overhead Outlet`,
                 },
                 ...(targetDef.unitType === 'distillation' && targetDef.params.distillConfig?.sideCut?.enabled
                   ? [
                       {
                         port: 'side_cut' as SourcePortId,
                         dy: 10,
-                        label: `${targetDef.tag} 사이드컷 측류(S)`,
+                        label: `${targetDef.tag} Side-Cut (S)`,
                       },
                     ]
                   : []),
                 {
                   port: 'liquid',
                   dy: 58,
-                  label: targetDef.unitType === 'distillation' ? `${targetDef.tag} 탑저 관출(B)` : `${targetDef.tag} 하부 출구`,
+                  label: targetDef.unitType === 'distillation' ? `${targetDef.tag} Bottoms (B)` : `${targetDef.tag} Bottoms Outlet`,
                 },
               ]
-            : [{ port: 'out', dy: 12, label: `${targetDef.tag} 유출 스트림` }];
+            : [{ port: 'out', dy: 12, label: `${targetDef.tag} Product` }];
 
       for (const outp of reqOutPorts) {
         const hasOut = flowEdges.some(
@@ -5903,7 +5942,7 @@ export function FlowsheetWorkspace({
       const newDef: FlowNodeDef = {
         id,
         tag,
-        name: isEn ? meta.labelEn : meta.label.split(' (')[0],
+        name: meta.labelEn,
         unitType: type,
         params: createDefaultParamsForType(type, useGenericDefault),
       };
