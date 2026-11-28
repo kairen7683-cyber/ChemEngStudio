@@ -3064,8 +3064,9 @@ def _require_hub_access(
                 detail="Process Hub is currently in private preview (Admin only).",
             )
         return user
-    if require_auth and not user:
-        raise HTTPException(status_code=401, detail="Login required to publish or interact.")
+    # Members-only beta: all Process Hub reads and writes require a logged-in account
+    if not user:
+        raise HTTPException(status_code=401, detail="Members only — please sign in to access Process Hub.")
     return user
 
 

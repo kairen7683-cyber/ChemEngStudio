@@ -654,7 +654,7 @@ export default function ProcessHubPage() {
                 color: '#7DD3FC',
               }}
             >
-              {isEn ? '🧪 Community Beta' : '🧪 테스트 버전 (Beta)'}
+              {isEn ? '🔒 Members Only · Beta' : '🔒 회원 전용 · 테스트 버전 (Beta)'}
             </span>
           </div>
 

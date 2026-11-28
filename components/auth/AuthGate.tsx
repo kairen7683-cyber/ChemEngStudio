@@ -68,8 +68,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const isPublicLegalRoute =
     pathname === '/terms' ||
     pathname === '/privacy' ||
-    pathname === '/refund' ||
-    pathname === '/hub';
+    pathname === '/refund';
   const {
     loading,
     authenticated,
