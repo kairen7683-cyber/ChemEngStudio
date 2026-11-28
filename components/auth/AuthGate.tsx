@@ -65,7 +65,11 @@ function RememberMeOption({
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublicLegalRoute = pathname === '/terms' || pathname === '/privacy' || pathname === '/refund';
+  const isPublicLegalRoute =
+    pathname === '/terms' ||
+    pathname === '/privacy' ||
+    pathname === '/refund' ||
+    pathname === '/hub';
   const {
     loading,
     authenticated,

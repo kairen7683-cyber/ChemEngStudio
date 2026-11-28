@@ -363,12 +363,28 @@ def init_db() -> str:
             views INTEGER NOT NULL DEFAULT 0,
             forks INTEGER NOT NULL DEFAULT 0,
             likes INTEGER NOT NULL DEFAULT 0,
+            post_type TEXT NOT NULL DEFAULT 'showcase',
+            is_solved INTEGER NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'published',
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS hub_replies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            hub_id INTEGER NOT NULL REFERENCES hub_flowsheets(id) ON DELETE CASCADE,
+            author_id INTEGER,
+            author_name TEXT NOT NULL DEFAULT 'ChemEng',
+            is_official INTEGER NOT NULL DEFAULT 0,
+            message TEXT NOT NULL,
+            fixed_url TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
         """
     )
+
+    _ensure_column(conn, "hub_flowsheets", "post_type TEXT NOT NULL DEFAULT 'showcase'")
+    _ensure_column(conn, "hub_flowsheets", "is_solved INTEGER NOT NULL DEFAULT 0")
 
     # Seed official Process Hub starter cards once if table is empty
     hub_count = conn.execute("SELECT COUNT(*) FROM hub_flowsheets").fetchone()[0]
@@ -459,7 +475,7 @@ def init_db() -> str:
             official_seeds,
         )
     conn.execute(
-        "INSERT OR IGNORE INTO system_settings (key, value) VALUES ('hub_public_enabled', '0')"
+        "INSERT OR IGNORE INTO system_settings (key, value) VALUES ('hub_public_enabled', '1')"
     )
 
     _ensure_column(conn, "users", "allowed_plants TEXT DEFAULT NULL")
@@ -3099,7 +3115,11 @@ def _extract_hub_preview_graph(raw_json: str) -> Optional[dict[str, Any]]:
         return None
 
 
-def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str, Any]:
+def _serialize_hub_row(
+    row: sqlite3.Row,
+    include_json: bool = False,
+    reply_count: int = 0,
+) -> dict[str, Any]:
     try:
         tags = json.loads(row["tags_json"] or "[]")
         if not isinstance(tags, list):
@@ -3107,11 +3127,17 @@ def _serialize_hub_row(row: sqlite3.Row, include_json: bool = False) -> dict[str
     except Exception:
         tags = []
     raw_fs = row["flowsheet_json"] or ""
+    keys = row.keys()
+    post_type = str(row["post_type"] if "post_type" in keys and row["post_type"] else "showcase")
+    is_solved = bool(row["is_solved"]) if "is_solved" in keys else False
     item: dict[str, Any] = {
         "id": row["id"],
         "title": row["title"],
         "description": row["description"],
         "category": row["category"],
+        "postType": post_type,
+        "isSolved": is_solved,
+        "replyCount": reply_count,
         "tags": [str(t) for t in tags[:8]],
         "thermoMethod": row["thermo_method"],
         "unitCount": row["unit_count"],
@@ -3139,6 +3165,7 @@ def api_hub_list(
     request: Request,
     q: str = "",
     category: str = "all",
+    post_type: str = "all",
     sort: str = "latest",
 ):
     with get_db() as conn:
@@ -3150,6 +3177,10 @@ def api_hub_list(
         if cat_clean and cat_clean != "all":
             clauses.append("category = ?")
             params.append(cat_clean)
+        pt_clean = post_type.strip().lower()
+        if pt_clean in ("showcase", "help"):
+            clauses.append("post_type = ?")
+            params.append(pt_clean)
         q_clean = q.strip()
         if q_clean:
             like_q = f"%{q_clean}%"
@@ -3162,11 +3193,13 @@ def api_hub_list(
             order_sql = "likes DESC, id DESC"
         sql = f"SELECT * FROM hub_flowsheets WHERE {' AND '.join(clauses)} ORDER BY {order_sql} LIMIT 100"
         rows = conn.execute(sql, params).fetchall()
+        rc_rows = conn.execute("SELECT hub_id, COUNT(*) AS cnt FROM hub_replies GROUP BY hub_id").fetchall()
+        rc_map = {int(r["hub_id"]): int(r["cnt"]) for r in rc_rows}
         return {
             "ok": True,
             "isPublic": is_pub,
             "total": len(rows),
-            "items": [_serialize_hub_row(r, include_json=False) for r in rows],
+            "items": [_serialize_hub_row(r, include_json=False, reply_count=rc_map.get(int(r["id"]), 0)) for r in rows],
         }
 
 
@@ -3201,6 +3234,9 @@ async def api_hub_publish(request: Request):
         category = str((body or {}).get("category") or "general").strip().lower()
         if category not in HUB_CATEGORIES:
             category = "general"
+        post_type = str((body or {}).get("postType") or "showcase").strip().lower()
+        if post_type not in ("showcase", "help"):
+            post_type = "showcase"
         raw_tags = (body or {}).get("tags") or []
         if isinstance(raw_tags, str):
             raw_tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
@@ -3254,15 +3290,16 @@ async def api_hub_publish(request: Request):
         cur = conn.execute(
             """
             INSERT INTO hub_flowsheets (
-                title, description, category, tags_json, thermo_method,
+                title, description, category, post_type, is_solved, tags_json, thermo_method,
                 unit_count, stream_count, mass_error_pct, converged, is_official,
                 preset_id, author_id, author_name, flowsheet_json, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)
             """,
             (
                 title,
                 description,
                 category,
+                post_type,
                 json.dumps(tags, ensure_ascii=False),
                 thermo_method,
                 unit_count,
@@ -3316,6 +3353,127 @@ def api_hub_delete(item_id: int, request: Request):
             raise HTTPException(status_code=403, detail="Only the author or admin can delete this item.")
         conn.execute("DELETE FROM hub_flowsheets WHERE id = ?", (item_id,))
         return {"ok": True, "deletedId": item_id}
+
+
+@app.get("/api/hub/item/{item_id}/replies")
+def api_hub_list_replies(item_id: int, request: Request):
+    with get_db() as conn:
+        _require_hub_access(request, conn, require_auth=False)
+        rows = conn.execute(
+            "SELECT * FROM hub_replies WHERE hub_id = ? ORDER BY id ASC LIMIT 100",
+            (item_id,),
+        ).fetchall()
+        return {
+            "ok": True,
+            "replies": [
+                {
+                    "id": r["id"],
+                    "hubId": r["hub_id"],
+                    "authorId": r["author_id"],
+                    "authorName": r["author_name"],
+                    "isOfficial": bool(r["is_official"]),
+                    "message": r["message"],
+                    "fixedUrl": r["fixed_url"] or "",
+                    "createdAt": r["created_at"],
+                }
+                for r in rows
+            ],
+        }
+
+
+@app.post("/api/hub/item/{item_id}/replies")
+async def api_hub_add_reply(item_id: int, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    message = str((body or {}).get("message") or "").strip()[:1500]
+    if len(message) < 2:
+        raise HTTPException(status_code=400, detail="Reply message must be at least 2 characters.")
+    fixed_url = str((body or {}).get("fixedUrl") or "").strip()[:300]
+    if fixed_url and not (fixed_url.startswith("https://chemplantstudio.com/") or fixed_url.startswith("/flowsheet-simulator")):
+        fixed_url = ""
+    with get_db() as conn:
+        user = _require_hub_access(request, conn, require_auth=True)
+        assert user is not None
+        exists = conn.execute("SELECT id FROM hub_flowsheets WHERE id = ? AND status = 'published'", (item_id,)).fetchone()
+        if not exists:
+            raise HTTPException(status_code=404, detail="Shared flowsheet not found.")
+        if user["role"] != "admin":
+            today_prefix = utcnow().strftime("%Y-%m-%d")
+            cnt = conn.execute(
+                "SELECT COUNT(*) FROM hub_replies WHERE author_id = ? AND created_at LIKE ?",
+                (user["id"], f"{today_prefix}%"),
+            ).fetchone()[0]
+            if cnt >= 30:
+                raise HTTPException(status_code=429, detail="Daily reply limit (30) reached.")
+        is_official = 1 if user["role"] == "admin" else 0
+        if is_official:
+            author_name = "ChemPlant Team"
+        else:
+            req_nick = sanitize_nickname((body or {}).get("authorName"))
+            stored_nick = sanitize_nickname(user["display_name"])
+            email_prefix = (user["email"] or user["username"] or "").split("@", 1)[0].strip().lower()
+            if req_nick and len(req_nick) >= 2:
+                author_name = req_nick
+            elif stored_nick and stored_nick.lower() != email_prefix and len(stored_nick) >= 2:
+                author_name = stored_nick
+            else:
+                author_name = generate_random_nickname()
+            if author_name != user["display_name"]:
+                conn.execute("UPDATE users SET display_name = ? WHERE id = ?", (author_name, user["id"]))
+        now = iso_now()
+        cur = conn.execute(
+            """
+            INSERT INTO hub_replies (hub_id, author_id, author_name, is_official, message, fixed_url, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (item_id, user["id"], author_name, is_official, message, fixed_url, now),
+        )
+        new_id = cur.lastrowid
+        r = conn.execute("SELECT * FROM hub_replies WHERE id = ?", (new_id,)).fetchone()
+        return {
+            "ok": True,
+            "reply": {
+                "id": r["id"],
+                "hubId": r["hub_id"],
+                "authorId": r["author_id"],
+                "authorName": r["author_name"],
+                "isOfficial": bool(r["is_official"]),
+                "message": r["message"],
+                "fixedUrl": r["fixed_url"] or "",
+                "createdAt": r["created_at"],
+            },
+        }
+
+
+@app.post("/api/hub/item/{item_id}/solve")
+def api_hub_toggle_solve(item_id: int, request: Request):
+    with get_db() as conn:
+        user = _require_hub_access(request, conn, require_auth=True)
+        assert user is not None
+        row = conn.execute("SELECT id, author_id, is_solved FROM hub_flowsheets WHERE id = ?", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        if user["role"] != "admin" and row["author_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the author or admin can mark solved.")
+        next_val = 0 if row["is_solved"] else 1
+        conn.execute("UPDATE hub_flowsheets SET is_solved = ?, updated_at = ? WHERE id = ?", (next_val, iso_now(), item_id))
+        return {"ok": True, "isSolved": bool(next_val)}
+
+
+@app.delete("/api/hub/reply/{reply_id}")
+def api_hub_delete_reply(reply_id: int, request: Request):
+    with get_db() as conn:
+        user = _require_hub_access(request, conn, require_auth=True)
+        assert user is not None
+        row = conn.execute("SELECT id, author_id FROM hub_replies WHERE id = ?", (reply_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Not found")
+        if user["role"] != "admin" and row["author_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Only the author or admin can delete this reply.")
+        conn.execute("DELETE FROM hub_replies WHERE id = ?", (reply_id,))
+        return {"ok": True, "deletedId": reply_id}
 
 
 @app.post("/api/auth/me/nickname")

@@ -24,6 +24,9 @@ interface HubItem {
   title: string;
   description: string;
   category: string;
+  postType?: 'showcase' | 'help';
+  isSolved?: boolean;
+  replyCount?: number;
   tags: string[];
   thermoMethod: string;
   unitCount: number;
@@ -40,6 +43,17 @@ interface HubItem {
   createdAt: string;
   updatedAt: string;
   previewGraph?: { nodes: PreviewNode[]; edges: PreviewEdge[] } | null;
+}
+
+interface HubReply {
+  id: number;
+  hubId: number;
+  authorId: number | null;
+  authorName: string;
+  isOfficial: boolean;
+  message: string;
+  fixedUrl: string;
+  createdAt: string;
 }
 
 const CATEGORIES = [
@@ -314,6 +328,21 @@ function PfdBlueprintThumbnail({ item }: { item: HubItem }) {
             ★ OFFICIAL
           </span>
         )}
+        {item.postType === 'help' && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 900,
+              padding: '2px 6px',
+              borderRadius: 4,
+              background: item.isSolved ? 'rgba(16, 185, 129, 0.24)' : 'rgba(245, 158, 11, 0.24)',
+              border: item.isSolved ? '1px solid rgba(52, 211, 153, 0.55)' : '1px solid rgba(251, 191, 36, 0.55)',
+              color: item.isSolved ? '#6EE7B7' : '#FCD34D',
+            }}
+          >
+            {item.isSolved ? '✓ SOLVED' : '🆘 HELP'}
+          </span>
+        )}
       </div>
 
       {/* Top-Right HUD: Thermo & Convergence Telemetry */}
@@ -383,20 +412,30 @@ export default function ProcessHubPage() {
 
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
+  const [postTypeFilter, setPostTypeFilter] = useState<'all' | 'showcase' | 'help'>('all');
   const [sort, setSort] = useState<'latest' | 'popular' | 'liked'>('latest');
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
 
+  // Detail & Replies modal state
+  const [activeItem, setActiveItem] = useState<HubItem | null>(null);
+  const [replies, setReplies] = useState<HubReply[]>([]);
+  const [repliesLoading, setRepliesLoading] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [replyFixedUrl, setReplyFixedUrl] = useState('');
+  const [replySubmitting, setReplySubmitting] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+
   const isAdmin = user?.role === 'admin';
 
   const fetchItems = useCallback(async () => {
-    if (!isAdmin) return;
     setLoading(true);
     setError(null);
     try {
       const qs = new URLSearchParams({
         q: search.trim(),
         category,
+        post_type: postTypeFilter,
         sort,
       });
       const res = await fetch(`/api/hub/list?${qs.toString()}`, { credentials: 'include' });
@@ -413,15 +452,112 @@ export default function ProcessHubPage() {
     } finally {
       setLoading(false);
     }
-  }, [isAdmin, search, category, sort, isEn]);
+  }, [search, category, postTypeFilter, sort, isEn]);
 
   useEffect(() => {
-    if (!authLoading && isAdmin) {
+    if (!authLoading) {
       fetchItems();
-    } else if (!authLoading) {
-      setLoading(false);
     }
-  }, [authLoading, isAdmin, fetchItems]);
+  }, [authLoading, fetchItems]);
+
+  const openDetailModal = async (item: HubItem) => {
+    setActiveItem(item);
+    setReplies([]);
+    setReplyText('');
+    setReplyFixedUrl('');
+    setReplyError(null);
+    setRepliesLoading(true);
+    try {
+      const res = await fetch(`/api/hub/item/${item.id}/replies`, { credentials: 'include' });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.replies)) {
+        setReplies(data.replies);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setRepliesLoading(false);
+    }
+  };
+
+  const handleSubmitReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeItem) return;
+    if (!user) {
+      setReplyError(isEn ? 'Please sign in to post a reply.' : '답변을 작성하려면 먼저 로그인해 주세요.');
+      return;
+    }
+    if (replyText.trim().length < 2) {
+      setReplyError(isEn ? 'Please enter at least 2 characters.' : '답변 내용을 2글자 이상 입력해 주세요.');
+      return;
+    }
+    setReplySubmitting(true);
+    setReplyError(null);
+    try {
+      const res = await fetch(`/api/hub/item/${activeItem.id}/replies`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: replyText.trim(),
+          fixedUrl: replyFixedUrl.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReplyError(data?.detail || 'Failed to post reply.');
+      } else if (data.reply) {
+        setReplies(prev => [...prev, data.reply]);
+        setItems(prev =>
+          prev.map(x => (x.id === activeItem.id ? { ...x, replyCount: (x.replyCount ?? 0) + 1 } : x))
+        );
+        setActiveItem(prev => (prev ? { ...prev, replyCount: (prev.replyCount ?? 0) + 1 } : null));
+        setReplyText('');
+        setReplyFixedUrl('');
+      }
+    } catch {
+      setReplyError(isEn ? 'Network error.' : '네트워크 오류가 발생했습니다.');
+    } finally {
+      setReplySubmitting(false);
+    }
+  };
+
+  const handleToggleSolved = async (item: HubItem) => {
+    try {
+      const res = await fetch(`/api/hub/item/${item.id}/solve`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const nextSolved = Boolean(data.isSolved);
+        setItems(prev => prev.map(x => (x.id === item.id ? { ...x, isSolved: nextSolved } : x)));
+        setActiveItem(prev => (prev && prev.id === item.id ? { ...prev, isSolved: nextSolved } : prev));
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDeleteReply = async (replyId: number) => {
+    if (!activeItem) return;
+    try {
+      const res = await fetch(`/api/hub/reply/${replyId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setReplies(prev => prev.filter(r => r.id !== replyId));
+        setItems(prev =>
+          prev.map(x =>
+            x.id === activeItem.id ? { ...x, replyCount: Math.max(0, (x.replyCount ?? 1) - 1) } : x
+          )
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const handleOpenInSimulator = async (item: HubItem) => {
     try {
@@ -480,33 +616,6 @@ export default function ProcessHubPage() {
     );
   }
 
-  // Strict Admin-only Private Preview Lock Screen
-  if (!isAdmin) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#0B1220', color: '#F8FAFC', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'Inter, system-ui, sans-serif' }}>
-        <div style={{ maxWidth: 460, width: '100%', background: '#111827', border: '1px solid #1F2937', borderRadius: 14, padding: 28, textAlign: 'center', boxShadow: '0 20px 50px rgba(0,0,0,0.45)' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: 'rgba(245, 158, 11, 0.14)', border: '1px solid rgba(245, 158, 11, 0.35)', color: '#FCD34D', fontSize: 11, fontWeight: 800, marginBottom: 14 }}>
-            🔒 Private Preview
-          </div>
-          <h1 style={{ fontSize: 20, fontWeight: 900, margin: '0 0 8px' }}>
-            ChemPlant Process Hub
-          </h1>
-          <p style={{ fontSize: 13, color: '#94A3B8', lineHeight: 1.6, margin: '0 0 20px' }}>
-            {isEn
-              ? 'Community flowsheet sharing is currently in private internal testing and will open to beta testers soon.'
-              : '커뮤니티 공정 예제 허브는 현재 내부 비공개 테스트 중입니다. 곧 정식 오픈될 예정입니다.'}
-          </p>
-          <Link
-            href="/flowsheet-simulator"
-            style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 8, background: '#2563EB', color: '#FFFFFF', fontSize: 13, fontWeight: 800, textDecoration: 'none' }}
-          >
-            {isEn ? '← Back to Flowsheet Simulator' : '← 공정 시뮬레이터로 돌아가기'}
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: '100vh', background: '#F1F5F9', color: '#0F172A', fontFamily: 'Inter, system-ui, sans-serif' }}>
       <style>{`
@@ -538,16 +647,14 @@ export default function ProcessHubPage() {
               style={{
                 fontSize: 10.5,
                 fontWeight: 800,
-                padding: '3px 8px',
+                padding: '3px 9px',
                 borderRadius: 999,
-                background: isPublic ? 'rgba(16, 185, 129, 0.18)' : 'rgba(245, 158, 11, 0.18)',
-                border: isPublic ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(245, 158, 11, 0.45)',
-                color: isPublic ? '#6EE7B7' : '#FCD34D',
+                background: 'rgba(56, 189, 248, 0.18)',
+                border: '1px solid rgba(56, 189, 248, 0.45)',
+                color: '#7DD3FC',
               }}
             >
-              {isPublic
-                ? (isEn ? '🌐 Public Live' : '🌐 공개 운영 중')
-                : (isEn ? '🔒 Admin Private Preview' : '🔒 관리자 전용 비공개 프리뷰')}
+              {isEn ? '🧪 Community Beta' : '🧪 테스트 버전 (Beta)'}
             </span>
           </div>
 
@@ -602,8 +709,8 @@ export default function ProcessHubPage() {
             </h1>
             <p style={{ margin: 0, fontSize: 13.5, color: '#CBD5E1', maxWidth: 680, lineHeight: 1.55 }}>
               {isEn
-                ? 'An open space for process engineers to freely publish simulation results, share converged PFDs, and fork each other\'s engineering models in one click.'
-                : '화학·공정 엔지니어들이 자신의 시뮬레이션 결과를 자유롭게 게시·공유하고, 다른 엔지니어의 공정 모델을 클릭 한 번으로 열어 참고·수정해 볼 수 있는 열린 공유 공간입니다.'}
+                ? 'An open beta space for process engineers to freely publish simulation results, request convergence help on tricky flowsheets, and share working fixes in one click.'
+                : '화학·공정 엔지니어들이 시뮬레이션 결과를 자유롭게 게시·공유하고, 수렴이 안 되는 공정을 올려 서로 해결 방법과 수정된 공정을 나눌 수 있는 열린 테스트 공간(Beta)입니다.'}
             </p>
           </div>
 
@@ -669,6 +776,39 @@ export default function ProcessHubPage() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Post Type Tabs (All / Showcase / Convergence Help) */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {([
+            ['all', isEn ? 'All Posts' : '전체 보기'],
+            ['showcase', isEn ? '📘 Process Showcase' : '📘 공정 공유'],
+            ['help', isEn ? '🆘 Convergence Help' : '🆘 수렴 · 조건 도움 요청'],
+          ] as const).map(([pt, lbl]) => {
+            const active = postTypeFilter === pt;
+            const isHelpTab = pt === 'help';
+            return (
+              <button
+                key={pt}
+                type="button"
+                onClick={() => setPostTypeFilter(pt)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: 8,
+                  border: active
+                    ? `1.5px solid ${isHelpTab ? '#D97706' : '#1E3A8A'}`
+                    : '1px solid #CBD5E1',
+                  background: active ? (isHelpTab ? '#FFFBEB' : '#EFF6FF') : '#FFFFFF',
+                  color: active ? (isHelpTab ? '#92400E' : '#1E3A8A') : '#334155',
+                  fontSize: 12.5,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                }}
+              >
+                {lbl}
+              </button>
+            );
+          })}
         </div>
 
         {/* Category Pills */}
@@ -788,6 +928,25 @@ export default function ProcessHubPage() {
 
                     <button
                       type="button"
+                      onClick={() => openDetailModal(item)}
+                      title={isEn ? 'View details & convergence help replies' : '상세 보기 및 수렴 답변'}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: 7,
+                        border: '1px solid #CBD5E1',
+                        background: '#FFFFFF',
+                        color: '#334155',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      💬 {item.replyCount ?? 0}
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => handleCopyLink(item)}
                       title={isEn ? 'Copy direct share link' : '직접 공유 링크 복사'}
                       style={{
@@ -823,23 +982,25 @@ export default function ProcessHubPage() {
                       ♥ {item.likes}
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(item)}
-                      title={isEn ? 'Delete (Admin)' : '삭제 (관리자)'}
-                      style={{
-                        padding: '8px 9px',
-                        borderRadius: 7,
-                        border: '1px solid #FECACA',
-                        background: '#FFFFFF',
-                        color: '#DC2626',
-                        fontSize: 11.5,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      ✕
-                    </button>
+                    {(isAdmin || (user && user.id === item.authorId)) && (
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(item)}
+                        title={isEn ? 'Delete post' : '삭제'}
+                        style={{
+                          padding: '8px 9px',
+                          borderRadius: 7,
+                          border: '1px solid #FECACA',
+                          background: '#FFFFFF',
+                          color: '#DC2626',
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
               </article>
@@ -847,6 +1008,232 @@ export default function ProcessHubPage() {
           </div>
         )}
       </main>
+
+      {/* Detail & Convergence Help Replies Modal */}
+      {activeItem && (
+        <div
+          onClick={() => setActiveItem(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15, 23, 42, 0.62)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 640,
+              maxHeight: '88vh',
+              background: '#FFFFFF',
+              borderRadius: 12,
+              border: '1px solid #CBD5E1',
+              boxShadow: '0 24px 60px rgba(15, 23, 42, 0.35)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ padding: '14px 18px', background: '#0F172A', color: '#FFFFFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                {activeItem.postType === 'help' && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: 999,
+                      background: activeItem.isSolved ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                      color: activeItem.isSolved ? '#6EE7B7' : '#FCD34D',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {activeItem.isSolved ? '✓ SOLVED' : '🆘 HELP'}
+                  </span>
+                )}
+                <span style={{ fontSize: 14.5, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {activeItem.title}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveItem(null)}
+                style={{ background: 'transparent', border: 'none', color: '#94A3B8', fontSize: 17, fontWeight: 800, cursor: 'pointer' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Scroll Body */}
+            <div style={{ padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                {activeItem.description || (isEn ? 'No description provided.' : '설명이 없습니다.')}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => handleOpenInSimulator(activeItem)}
+                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #1E3A8A', background: '#1E3A8A', color: '#FFFFFF', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
+                >
+                  ▶ {isEn ? 'Open in Simulator to Inspect / Fix' : '시뮬레이터에서 열어 확인 · 수정하기'}
+                </button>
+                {activeItem.postType === 'help' && (isAdmin || (user && user.id === activeItem.authorId)) && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleSolved(activeItem)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 7,
+                      border: activeItem.isSolved ? '1px solid #10B981' : '1px solid #CBD5E1',
+                      background: activeItem.isSolved ? '#ECFDF5' : '#FFFFFF',
+                      color: activeItem.isSolved ? '#065F46' : '#334155',
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {activeItem.isSolved
+                      ? (isEn ? '✓ Marked as Solved' : '✓ 해결됨 (취소)')
+                      : (isEn ? 'Mark as Solved ✓' : '해결 완료로 표시 ✓')}
+                  </button>
+                )}
+              </div>
+
+              {/* Replies List */}
+              <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 14 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 900, color: '#0F172A', marginBottom: 10 }}>
+                  💬 {isEn ? `Engineering Replies & Fixes (${replies.length})` : `엔지니어 답변 · 수렴 해결 내역 (${replies.length})`}
+                </div>
+
+                {repliesLoading ? (
+                  <div style={{ fontSize: 12, color: '#64748B', padding: '12px 0' }}>Loading...</div>
+                ) : replies.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#64748B', padding: '14px 12px', background: '#F8FAFC', borderRadius: 8, border: '1px dashed #CBD5E1' }}>
+                    {isEn
+                      ? 'No replies yet. Open the flowsheet, try fixing convergence, and share your solution below!'
+                      : '아직 답변이 없습니다. 공정을 열어 수렴을 해결한 뒤 아래에 팁이나 수정본 링크를 공유해 주세요!'}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {replies.map(r => (
+                      <div
+                        key={r.id}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          background: r.isOfficial ? '#EFF6FF' : '#F8FAFC',
+                          border: r.isOfficial ? '1px solid #BFDBFE' : '1px solid #E2E8F0',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
+                            <b style={{ color: '#0F172A' }}>{r.authorName}</b>
+                            {r.isOfficial && (
+                              <span style={{ fontSize: 9.5, fontWeight: 900, padding: '1px 6px', borderRadius: 999, background: '#1E3A8A', color: '#FFFFFF' }}>
+                                ★ OFFICIAL
+                              </span>
+                            )}
+                          </div>
+                          {(isAdmin || (user && user.id === r.authorId)) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReply(r.id)}
+                              style={{ background: 'transparent', border: 'none', color: '#DC2626', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              {isEn ? 'Delete' : '삭제'}
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: '#1E293B', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                          {r.message}
+                        </div>
+                        {r.fixedUrl && (
+                          <div style={{ marginTop: 8 }}>
+                            <a
+                              href={r.fixedUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '5px 10px',
+                                borderRadius: 6,
+                                background: '#059669',
+                                color: '#FFFFFF',
+                                fontSize: 11.5,
+                                fontWeight: 800,
+                                textDecoration: 'none',
+                              }}
+                            >
+                              ▶ {isEn ? 'Open Converged Fix in Simulator ↗' : '수정 · 수렴된 공정 열기 ↗'}
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Reply Composer */}
+              {user ? (
+                <form onSubmit={handleSubmitReply} style={{ borderTop: '1px solid #E2E8F0', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <textarea
+                    rows={3}
+                    value={replyText}
+                    onChange={e => setReplyText(e.target.value)}
+                    placeholder={
+                      isEn
+                        ? 'Share how you converged it, parameter tips, or questions...'
+                        : '수렴 해결 방법, 운전 조건 조언, 또는 의견을 자유롭게 남겨주세요...'
+                    }
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid #CBD5E1', fontSize: 12.5, color: '#0F172A', resize: 'vertical' }}
+                  />
+                  <input
+                    type="text"
+                    value={replyFixedUrl}
+                    onChange={e => setReplyFixedUrl(e.target.value)}
+                    placeholder={
+                      isEn
+                        ? '(Optional) Paste fixed flowsheet link: https://chemplantstudio.com/flowsheet-simulator?hub=...'
+                        : '(선택) 수정해 수렴시킨 공정 링크 붙여넣기: https://chemplantstudio.com/flowsheet-simulator?hub=...'
+                    }
+                    style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1px solid #CBD5E1', fontSize: 11.5, color: '#0F172A', fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                  {replyError && (
+                    <div style={{ fontSize: 11.5, color: '#DC2626', fontWeight: 700 }}>{replyError}</div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="submit"
+                      disabled={replySubmitting}
+                      style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid #1E3A8A', background: '#1E3A8A', color: '#FFFFFF', fontSize: 12, fontWeight: 800, cursor: replySubmitting ? 'wait' : 'pointer' }}
+                    >
+                      {replySubmitting ? (isEn ? 'Posting...' : '등록 중...') : (isEn ? 'Post Reply' : '답변 등록')}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: 12, fontSize: 12, color: '#475569', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>{isEn ? 'Sign in to post a reply or share your fixed flowsheet.' : '로그인하시면 답변과 수정된 공정을 공유할 수 있습니다.'}</span>
+                  <Link href="/" style={{ padding: '6px 12px', borderRadius: 6, background: '#1E3A8A', color: '#FFFFFF', fontSize: 11.5, fontWeight: 800, textDecoration: 'none' }}>
+                    {isEn ? 'Sign In' : '로그인'}
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

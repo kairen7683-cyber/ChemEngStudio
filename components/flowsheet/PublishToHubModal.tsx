@@ -63,6 +63,7 @@ export default function PublishToHubModal({
   buildFlowsheetPayload,
 }: PublishToHubModalProps) {
   const [title, setTitle] = useState(defaultTitle);
+  const [postType, setPostType] = useState<'showcase' | 'help'>('showcase');
   const [authorName, setAuthorName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('general');
@@ -76,6 +77,7 @@ export default function PublishToHubModal({
   React.useEffect(() => {
     if (open) {
       setTitle(defaultTitle || '');
+      setPostType(converged ? 'showcase' : 'help');
       const cleanDef = (defaultAuthorName || '').trim();
       const emailPrefix = (userEmail || '').split('@')[0]?.trim().toLowerCase() || '';
       const needsRandom =
@@ -114,6 +116,7 @@ export default function PublishToHubModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
+          postType,
           authorName: authorName.trim(),
           description: description.trim(),
           category,
@@ -177,8 +180,8 @@ export default function PublishToHubModal({
             <span style={{ fontSize: 14, fontWeight: 900 }}>
               {isEn ? '⬆ Publish to Process Hub' : '⬆ Process Hub에 공정 공유'}
             </span>
-            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 999, background: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D' }}>
-              🔒 Private Preview
+            <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 999, background: 'rgba(56, 189, 248, 0.2)', color: '#7DD3FC' }}>
+              🧪 Beta
             </span>
           </div>
           <button
@@ -248,6 +251,50 @@ export default function PublishToHubModal({
               <span style={{ color: converged ? '#059669' : '#D97706', fontWeight: 800 }}>
                 {converged ? `✓ ${massErrorPct !== null ? `${massErrorPct.toFixed(2)}% err` : 'Converged'}` : 'Not Run'}
               </span>
+            </div>
+
+            {/* Post Type Selector: Showcase vs Convergence Help */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setPostType('showcase')}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 7,
+                  border: postType === 'showcase' ? '1.5px solid #1E3A8A' : '1px solid #CBD5E1',
+                  background: postType === 'showcase' ? '#EFF6FF' : '#FFFFFF',
+                  color: postType === 'showcase' ? '#1E3A8A' : '#475569',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div>📘 {isEn ? 'Process Showcase' : '공정 공유'}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginTop: 2 }}>
+                  {isEn ? 'Share a working flowsheet' : '수렴 완료된 공정 예제 공유'}
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPostType('help')}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 7,
+                  border: postType === 'help' ? '1.5px solid #D97706' : '1px solid #CBD5E1',
+                  background: postType === 'help' ? '#FFFBEB' : '#FFFFFF',
+                  color: postType === 'help' ? '#92400E' : '#475569',
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <div>🆘 {isEn ? 'Convergence Help' : '수렴 · 조건 도움 요청'}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, opacity: 0.8, marginTop: 2 }}>
+                  {isEn ? 'Ask for debugging / fixes' : '안 풀리는 공정 질문 & 해결 요청'}
+                </div>
+              </button>
             </div>
 
             <div>

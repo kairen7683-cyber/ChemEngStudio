@@ -571,21 +571,21 @@ export default function WorkbenchRibbon({
             <button
               type="button"
               onClick={onOpenHub}
-              title={t('Process Hub (관리자 비공개 프리뷰)', 'Process Hub (Admin Private Preview)')}
+              title={t('Process Hub (Beta) — 공정 공유 및 수렴 도움 요청', 'Process Hub (Beta) — Community Flowsheets & Convergence Help')}
               style={{
                 height: 20,
                 padding: '0 7px',
                 borderRadius: 3,
-                border: '1px solid #FCD34D',
-                background: '#FFFBEB',
-                color: '#92400E',
+                border: '1px solid #93C5FD',
+                background: '#EFF6FF',
+                color: '#1E3A8A',
                 fontSize: 10.5,
                 fontWeight: 700,
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
               }}
             >
-              🔒 Hub
+              🌐 Hub
             </button>
           )}
           {onShareToHub && (

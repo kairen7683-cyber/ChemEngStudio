@@ -7069,13 +7069,9 @@ export function FlowsheetWorkspace({
                 onToggleBoundarySync={() => setBoundarySyncEnabled(v => !v)}
                 onNavigateRoute={href => router.push(href)}
                 onSwitchClassicUi={() => router.push('/classic-simulator')}
-                onOpenHub={
-                  user?.role === 'admin'
-                    ? () => window.open('/hub', '_blank', 'noopener,noreferrer')
-                    : undefined
-                }
+                onOpenHub={() => window.open('/hub', '_blank', 'noopener,noreferrer')}
                 onShareToHub={
-                  user?.role === 'admin' && !isPlantSimMode
+                  Boolean(user) && !isPlantSimMode
                     ? () => setHubPublishOpen(true)
                     : undefined
                 }
@@ -11695,8 +11691,8 @@ export function FlowsheetWorkspace({
         );
       })()}
 
-      {/* ── Process Hub 공유 모달 (관리자 비공개 프리뷰) ── */}
-      {user?.role === 'admin' && !isPlantSimMode && (
+      {/* ── Process Hub 공유 모달 (Beta) ── */}
+      {Boolean(user) && !isPlantSimMode && (
         <PublishToHubModal
           open={hubPublishOpen}
           onClose={() => setHubPublishOpen(false)}

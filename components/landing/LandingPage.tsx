@@ -2148,6 +2148,9 @@ export default function LandingPage({
                 <button type="button" className="cp-footer-link" onClick={() => scrollToSection('pricing')}>
                   {lang === 'ko' ? '요금제' : 'Pricing'}
                 </button>
+                <a href="/hub" className="cp-footer-link" style={{ textDecoration: 'none' }}>
+                  {lang === 'ko' ? 'Process Hub (Beta)' : 'Process Hub (Beta)'}
+                </a>
                 <button type="button" className="cp-footer-link" onClick={() => onOpenAuth('login')}>
                   {lang === 'ko' ? '워크스페이스 로그인' : 'Workspace Sign In'}
                 </button>
