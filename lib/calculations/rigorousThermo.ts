@@ -15,7 +15,8 @@ import { MW } from './constants';
 import type { SimCompKey } from './flowsheetSolver';
 import type { ResolvedPropertyMethod } from './componentCatalog';
 import { chlorAlkaliThermoneutralVoltage } from './thermoCore';
-import { calcExtendedNrtlGamma } from './activityModels';
+import { calcExtendedNrtlGamma, calcUnifacGamma } from './activityModels';
+import { if97SatPressBarA } from './iapwsIf97';
 import { PR_KIJ_DATABANK, SRK_KIJ_DATABANK, lookupKij } from './data/kijDatabank';
 import {
   PSAT_DIPPR101,
@@ -1970,15 +1971,69 @@ export function solveRigorousFlashVLE(
     return eosRes;
   }
 
+  // IDEAL (Raoult's Law: γ_i = 1, φ_i^V = 1, Z = 1) direct Rachford-Rice flash
+  if (propertyMethod === 'IDEAL') {
+    const kIdeal = empty();
+    for (let i = 0; i < activeVolComps.length; i++) {
+      const k = activeVolComps[i];
+      const ps = pureDipprOrAntoineBarA(k, T_C);
+      kIdeal[k] = Math.max(1e-10, Math.min(1e7, ps / P_bar));
+    }
+    const betaId = solveRachfordRiceBeta(activeVolComps, z, kIdeal);
+    const vapOut = empty();
+    const liqOut = empty();
+    for (let i = 0; i < activeVolComps.length; i++) {
+      const k = activeVolComps[i];
+      const denom = 1.0 + betaId * (kIdeal[k] - 1.0);
+      const xk = denom > 1e-15 ? z[k] / denom : z[k];
+      const yk = kIdeal[k] * xk;
+      const vMol = totVolMoles * betaId * yk;
+      const lMol = totVolMoles * (1.0 - betaId) * xk;
+      vapOut[k] = vMol * RIGOROUS_CRIT[k].mw;
+      liqOut[k] = lMol * RIGOROUS_CRIT[k].mw;
+    }
+    if (totalNonVolSolidMass > 0) {
+      for (const nv of NON_VOLATILE_RIG_SET) {
+        if (liq[nv] > 0) liqOut[nv] = (liqOut[nv] || 0) + liq[nv];
+      }
+    }
+    return { vap: vapOut, liq: liqOut, betaVapMole: betaId, Z_vap: 1.0, converged: true, iterations: 1 };
+  }
+
+  // STEAM_IF97 pure water/steam fast exact saturation check (IAPWS-IF97 Region 4)
+  if (
+    propertyMethod === 'STEAM_IF97' &&
+    totalSaltMass <= 1e-6 &&
+    activeVolComps.length === 1 &&
+    activeVolComps[0] === 'H2O'
+  ) {
+    const pSat = if97SatPressBarA(T_C);
+    const betaSt = pSat > P_bar * 1.0001 ? 1.0 : pSat < P_bar * 0.9999 ? 0.0 : 0.5;
+    const vapOut = empty();
+    const liqOut = empty();
+    const h2oMass = nMol.H2O * RIGOROUS_CRIT.H2O.mw;
+    vapOut.H2O = h2oMass * betaSt;
+    liqOut.H2O = h2oMass * (1.0 - betaSt);
+    if (totalNonVolSolidMass > 0) {
+      for (const nv of NON_VOLATILE_RIG_SET) {
+        if (liq[nv] > 0) liqOut[nv] = (liqOut[nv] || 0) + liq[nv];
+      }
+    }
+    return { vap: vapOut, liq: liqOut, betaVapMole: betaSt, Z_vap: 0.98, converged: true, iterations: 1 };
+  }
+
   const T_K = Math.max(150.0, Math.min(900.0, T_C + 273.15));
-  const useElectrolytes = propertyMethod !== 'NRTL' && totalSaltMass > 1e-9;
+  const useElectrolytes = propertyMethod === 'ENRTL' && totalSaltMass > 1e-9;
 
   const pSatMap = empty();
   const f0LiqBase = empty();
   const kHenryPure = empty();
   for (let i = 0; i < activeVolComps.length; i++) {
     const k = activeVolComps[i];
-    const ps = pureDipprOrAntoineBarA(k, T_C);
+    const ps =
+      propertyMethod === 'STEAM_IF97' && k === 'H2O'
+        ? if97SatPressBarA(T_C)
+        : pureDipprOrAntoineBarA(k, T_C);
     pSatMap[k] = ps;
     const vLiq = liquidMolarVolumeLPerMol(k);
     const poynt = Math.exp(Math.max(-0.5, Math.min(1.5, (vLiq * (P_bar - ps)) / (R_GAS_BAR * T_K))));
@@ -2132,7 +2187,10 @@ export function solveRigorousFlashVLE(
   for (let outer = 0; outer < 80; outer++) {
     iterUsed = outer + 1;
 
-    const gamma = calcExtendedNrtlGamma(activeVolComps, xMol, T_C);
+    const gamma =
+      propertyMethod === 'UNIFAC'
+        ? calcUnifacGamma(activeVolComps, xMol, T_C)
+        : calcExtendedNrtlGamma(activeVolComps, xMol, T_C);
     let eosVap = evalCubicEosBar(eosMethodForVap, yMol, T_C, P_bar);
     if (eosVap.rootCount === 1 && eosVap.Z_vap < 0.28) {
       let pSatMix = 0;
@@ -2385,20 +2443,20 @@ export function liquidActivityCoefficients(
   comps: SimCompKey[],
   xMol: Partial<Record<SimCompKey, number>>,
   T_C: number,
-  method: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method: ResolvedPropertyMethod
 ): Record<SimCompKey, number>;
 export function liquidActivityCoefficients(
   xMol: Partial<Record<SimCompKey, number>>,
   T_C: number,
-  method?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method?: ResolvedPropertyMethod
 ): Record<SimCompKey, number>;
 export function liquidActivityCoefficients(
   arg0: SimCompKey[] | Partial<Record<SimCompKey, number>>,
   arg1: Partial<Record<SimCompKey, number>> | number,
-  arg2?: number | ('PR' | 'SRK' | 'NRTL' | 'ENRTL'),
-  arg3?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  arg2?: number | ResolvedPropertyMethod,
+  arg3?: ResolvedPropertyMethod
 ): Record<SimCompKey, number> {
-  const { comps, xMol, scalar: T_C, method } = unpackValidationArgs<'PR' | 'SRK' | 'NRTL' | 'ENRTL'>(
+  const { comps, xMol, scalar: T_C, method } = unpackValidationArgs<ResolvedPropertyMethod>(
     arg0,
     arg1,
     arg2 as number,
@@ -2417,6 +2475,13 @@ export function liquidActivityCoefficients(
     for (let i = 0; i < ALL_RIG_KEYS.length; i++) fullX[ALL_RIG_KEYS[i]] /= xSum;
   }
   const active = comps.length > 0 ? comps : ALL_RIG_KEYS.filter(k => fullX[k] > 0);
+
+  if (method === 'IDEAL' || method === 'STEAM_IF97') {
+    return zeroRigRecord(1.0);
+  }
+  if (method === 'UNIFAC') {
+    return calcUnifacGamma(active, fullX, T_C);
+  }
 
   if (method === 'PR' || method === 'SRK') {
     const gammaOut = zeroRigRecord(1.0);
@@ -2470,20 +2535,20 @@ export function bubblePressureBarA(
   comps: SimCompKey[],
   xMol: Partial<Record<SimCompKey, number>>,
   T_C: number,
-  method: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method: ResolvedPropertyMethod
 ): { P_barA: number; y: Record<SimCompKey, number>; converged: boolean };
 export function bubblePressureBarA(
   xMol: Partial<Record<SimCompKey, number>>,
   T_C: number,
-  method?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method?: ResolvedPropertyMethod
 ): { P_barA: number; y: Record<SimCompKey, number>; converged: boolean };
 export function bubblePressureBarA(
   arg0: SimCompKey[] | Partial<Record<SimCompKey, number>>,
   arg1: Partial<Record<SimCompKey, number>> | number,
-  arg2?: number | ('PR' | 'SRK' | 'NRTL' | 'ENRTL'),
-  arg3?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  arg2?: number | ResolvedPropertyMethod,
+  arg3?: ResolvedPropertyMethod
 ): { P_barA: number; y: Record<SimCompKey, number>; converged: boolean } {
-  const { comps, xMol, scalar: T_C, method } = unpackValidationArgs<'PR' | 'SRK' | 'NRTL' | 'ENRTL'>(
+  const { comps, xMol, scalar: T_C, method } = unpackValidationArgs<ResolvedPropertyMethod>(
     arg0,
     arg1,
     arg2 as number,
@@ -2512,6 +2577,20 @@ export function bubblePressureBarA(
   let volSum = 0;
   for (const k of volComps) volSum += fullX[k];
   for (const k of volComps) xVol[k] = fullX[k] / Math.max(1e-15, volSum);
+
+  if (method === 'IDEAL' || (method === 'STEAM_IF97' && volComps.length === 1 && volComps[0] === 'H2O')) {
+    let P_sum = 0;
+    const y = zeroRigRecord(0);
+    for (const k of volComps) {
+      const ps = method === 'STEAM_IF97' && k === 'H2O' ? if97SatPressBarA(T_C) : pureDipprOrAntoineBarA(k, T_C);
+      const pk = xVol[k] * ps;
+      y[k] = pk;
+      P_sum += pk;
+    }
+    const P_out = Math.max(1e-6, P_sum);
+    for (const k of volComps) y[k] = y[k] / P_out;
+    return { P_barA: P_out, y, converged: true };
+  }
 
   if (method === 'PR' || method === 'SRK') {
     const T_K = Math.max(60, T_C + 273.15);
@@ -2579,7 +2658,10 @@ export function bubblePressureBarA(
   }
 
   const T_K = Math.max(150, T_C + 273.15);
-  const gamma = calcExtendedNrtlGamma(volComps, xVol, T_C);
+  const gamma =
+    method === 'UNIFAC'
+      ? calcUnifacGamma(volComps, xVol, T_C)
+      : calcExtendedNrtlGamma(volComps, xVol, T_C);
   const xW = xVol.H2O || 0;
 
   let molElec: ElectrolyteMolalities = {
@@ -2694,20 +2776,20 @@ export function bubbleTemperatureC(
   comps: SimCompKey[],
   xMol: Partial<Record<SimCompKey, number>>,
   P_barA: number,
-  method: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method: ResolvedPropertyMethod
 ): { T_C: number; y: Record<SimCompKey, number>; converged: boolean };
 export function bubbleTemperatureC(
   xMol: Partial<Record<SimCompKey, number>>,
   P_barA: number,
-  method?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  method?: ResolvedPropertyMethod
 ): { T_C: number; y: Record<SimCompKey, number>; converged: boolean };
 export function bubbleTemperatureC(
   arg0: SimCompKey[] | Partial<Record<SimCompKey, number>>,
   arg1: Partial<Record<SimCompKey, number>> | number,
-  arg2?: number | ('PR' | 'SRK' | 'NRTL' | 'ENRTL'),
-  arg3?: 'PR' | 'SRK' | 'NRTL' | 'ENRTL'
+  arg2?: number | ResolvedPropertyMethod,
+  arg3?: ResolvedPropertyMethod
 ): { T_C: number; y: Record<SimCompKey, number>; converged: boolean } {
-  const { comps, xMol, scalar: P_barA, method } = unpackValidationArgs<'PR' | 'SRK' | 'NRTL' | 'ENRTL'>(
+  const { comps, xMol, scalar: P_barA, method } = unpackValidationArgs<ResolvedPropertyMethod>(
     arg0,
     arg1,
     arg2 as number,

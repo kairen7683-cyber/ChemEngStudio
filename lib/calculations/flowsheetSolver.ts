@@ -7,6 +7,7 @@
 // ============================================================
 import { MW } from './constants';
 import { waterSatVaporPressureKgcm2A, waterActivityNaCl, waterActivityNaOH } from './electrolyzer';
+import { if97WaterSteamState } from './iapwsIf97';
 import {
   analyzeFlowsheetTopology,
   wegsteinAccelerate,
@@ -1995,15 +1996,28 @@ function calcStreamProps(
   const P_atm = Math.max(0.08, (pressKgcm2g + 1.03323) / 1.03323);
   const T_K = Math.max(150, tempC + 273.15);
 
-  if (phase === 'G') {
-    const moleFrac = emptyFlows();
-    for (const k of SIM_COMPS) moleFrac[k] = (flows[k] / COMP_META[k].mw) / Math.max(1e-9, totalMolar);
-    const eos =
-      propertyMethod === 'SRK'
-        ? calcSoaveRedlichKwongMixture(moleFrac, tempC, pressKgcm2g)
-        : calcPengRobinsonMixture(moleFrac, tempC, pressKgcm2g);
-    compZ = Number(eos.Z_vap.toFixed(3));
-    density = (P_atm * avgMW) / (Math.max(0.3, eos.Z_vap) * 0.082057 * T_K);
+  if (propertyMethod === 'STEAM_IF97' && flows.H2O / totalMass >= 0.995) {
+    const P_barA = Math.max(0.01, (pressKgcm2g + 1.03323) * 0.980665);
+    const st = if97WaterSteamState(tempC, P_barA, vapFrac);
+    density = st.rho_kgm3;
+    cpMix = st.cp_kJkgK / 4.184; // kJ/(kg·K) -> kcal/(kg·°C)
+    if (st.phase === 'G') {
+      compZ = Number(((P_atm * avgMW) / Math.max(1e-6, density * 0.082057 * T_K)).toFixed(3));
+    }
+  } else if (phase === 'G') {
+    if (propertyMethod === 'IDEAL') {
+      compZ = 1.0;
+      density = (P_atm * avgMW) / (0.082057 * T_K);
+    } else {
+      const moleFrac = emptyFlows();
+      for (const k of SIM_COMPS) moleFrac[k] = (flows[k] / COMP_META[k].mw) / Math.max(1e-9, totalMolar);
+      const eos =
+        propertyMethod === 'SRK'
+          ? calcSoaveRedlichKwongMixture(moleFrac, tempC, pressKgcm2g)
+          : calcPengRobinsonMixture(moleFrac, tempC, pressKgcm2g);
+      compZ = Number(eos.Z_vap.toFixed(3));
+      density = (P_atm * avgMW) / (Math.max(0.3, eos.Z_vap) * 0.082057 * T_K);
+    }
   } else {
     const isLiqCl2 = flows.Cl2 / totalMass > 0.50;
     const isLiqAhcl = flows.HCl / totalMass > 0.85 && flows.H2O / totalMass < 0.02;

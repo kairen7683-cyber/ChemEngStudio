@@ -30,7 +30,7 @@ import {
 } from '@/lib/calculations/thermoCore';
 import { calcRackettLiquidVolumeLmol } from '@/lib/calculations/eosDeparture';
 
-type ThermoMethodCode = 'ELECNRTL' | 'NRTL' | 'PENG-ROB' | 'SRK' | 'STEAM-IAPWS';
+type ThermoMethodCode = 'ELECNRTL' | 'NRTL' | 'UNIFAC' | 'PENG-ROB' | 'SRK' | 'STEAM-IAPWS' | 'IDEAL';
 type CategoryFilterId =
   | 'all'
   | 'elec'
@@ -114,8 +114,32 @@ const THERMO_METHODS: Record<ThermoMethodCode, ThermoMethodInfo> = {
     bestFor: '공정 순수(Process Water), 냉각수(CW), 칠드워터(CHW), 저압/중압/고압 가열 스팀 및 응축수 물성 계산',
     bestForEn: 'Process water, cooling water (CW), chilled water (CHW), LP/MP/HP heating steam, and condensate properties',
     eqText: 'g(p, T)/(R·T) = γ^0(π, τ) + γ^r(π, τ)  [IAPWS-IF97 Region 1~4 Gibbs/Helmholtz Energy]',
-    vleModel: 'Wagner Pure Water Saturation Pressure Equation',
-    engineApplied: false,
+    vleModel: 'IAPWS-IF97 Region 4 Exact Saturation & Region 1/2 Steam Properties',
+    engineApplied: true,
+  },
+  UNIFAC: {
+    code: 'UNIFAC',
+    name: 'UNIFAC Group Contribution Activity Model (Hansen 1991 예측형 활동도 모델)',
+    nameEn: 'UNIFAC Group Contribution Activity Model (Hansen 1991 Predictive VLE)',
+    shortTag: '이성분 파라미터 없는 신규 유기 혼합물 예측 VLE',
+    shortTagEn: 'Predictive VLE Without Binary Interaction Data',
+    bestFor: 'NRTL 이성분 상호작용 파라미터가 없는 신규 극성·비극성 유기 혼합물의 분자 작용기 기반 활동도계수 예측',
+    bestForEn: 'Group-contribution activity coefficient prediction for novel polar/non-polar organic mixtures lacking experimental NRTL binary parameters',
+    eqText: 'ln γ_i = ln γ_i^C (Combinatorial) + ln γ_i^R (Residual Group Interaction, Hansen 1991)',
+    vleModel: 'Modified Raoult-UNIFAC (y_i P = x_i γ_i^{UNIFAC} P_i^{sat})',
+    engineApplied: true,
+  },
+  IDEAL: {
+    code: 'IDEAL',
+    name: 'Ideal Solution / Ideal Gas (Raoult’s Law, 저압 이상용액 기준)',
+    nameEn: 'Ideal Solution / Ideal Gas (Raoult’s Law, Low-Pressure Baseline)',
+    shortTag: '유사구조 탄화수소(BTX) · 초기 공정 스크리닝 · 교육용',
+    shortTagEn: 'Ideal BTX Mixtures · Rapid Screening · Education',
+    bestFor: '저압(≤3 bar) 이상기체 및 벤젠/톨루엔/자일렌(BTX) 등 유사 구조 탄화수소 혼합물의 빠른 기준 계산 및 교육용',
+    bestForEn: 'Fast baseline calculations for low-pressure (≤3 bar) ideal gases and structurally similar mixtures such as Benzene/Toluene/Xylene (BTX)',
+    eqText: 'y_i P = x_i P_i^{sat}(T),  γ_i = 1,  φ_i = 1,  Z = 1',
+    vleModel: 'Raoult’s Law + Ideal Gas (K_i = P_i^{sat} / P)',
+    engineApplied: true,
   },
 };
 
@@ -313,8 +337,11 @@ function classifyFluidCategory(f: FluidProps): Exclude<CategoryFilterId, 'all'> 
 const METHOD_MAP_TO_PAGE: Record<ResolvedPropertyMethod, ThermoMethodCode> = {
   ENRTL: 'ELECNRTL',
   NRTL: 'NRTL',
+  UNIFAC: 'UNIFAC',
   PR: 'PENG-ROB',
   SRK: 'SRK',
+  STEAM_IF97: 'STEAM-IAPWS',
+  IDEAL: 'IDEAL',
 };
 
 function resolveCompatForKey(sysKey: string): SubstanceCompatSpec {

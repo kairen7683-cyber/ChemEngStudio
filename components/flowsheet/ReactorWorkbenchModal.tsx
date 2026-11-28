@@ -137,8 +137,11 @@ const THERMAL_OPTIONS: Array<{ key: ReactorThermalMode; labelKo: string; labelEn
 const PROPERTY_METHOD_SHORT_EN: Record<ResolvedPropertyMethod, string> = {
   ENRTL: 'Electrolytes · Acid/Base Aqueous',
   NRTL: 'Polar Organic Solvents · Azeotrope/LLE',
+  UNIFAC: 'Predictive Group-Contribution VLE (Hansen 1991)',
   PR: 'Hydrocarbons · Aromatics · Liquefied Gas',
   SRK: 'Hydrogen · Syngas · Light Olefins',
+  STEAM_IF97: 'IAPWS-IF97 Pure Water · Steam · Condensate',
+  IDEAL: 'Raoult’s Law · Ideal Gas / BTX Baseline',
 };
 
 const TEMPLATE_EN: Record<string, { category: string; label: string; desc: string }> = {

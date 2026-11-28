@@ -35,6 +35,7 @@ import {
 import {
   calcExtendedNrtlGamma,
   calcExtendedNrtlGammaInto,
+  calcUnifacGamma,
   solveRigorousLLEDecanter,
   type ActivityEvalDiagnostics,
   type LLETieWarmStart,
@@ -43,8 +44,27 @@ import { COMP_CATALOG_META, recommendPropertyMethod, type SimPropertyMethod } fr
 import type { SimCompKey } from './flowsheetSolver';
 import type { ColumnInternalsParams } from './columnInternalsDesign';
 
-export type DistillThermoModel = 'AUTO' | 'ENRTL' | 'NRTL' | 'PR' | 'SRK' | 'ELEC_HCL_AZEO' | 'PENG_ROB';
-export type ResolvedDistillThermoModel = 'ENRTL' | 'NRTL' | 'PR' | 'SRK' | 'ELEC_HCL_AZEO' | 'PENG_ROB';
+export type DistillThermoModel =
+  | 'AUTO'
+  | 'ENRTL'
+  | 'NRTL'
+  | 'UNIFAC'
+  | 'PR'
+  | 'SRK'
+  | 'STEAM_IF97'
+  | 'IDEAL'
+  | 'ELEC_HCL_AZEO'
+  | 'PENG_ROB';
+export type ResolvedDistillThermoModel =
+  | 'ENRTL'
+  | 'NRTL'
+  | 'UNIFAC'
+  | 'PR'
+  | 'SRK'
+  | 'STEAM_IF97'
+  | 'IDEAL'
+  | 'ELEC_HCL_AZEO'
+  | 'PENG_ROB';
 export type DistillCondenserType = 'total' | 'partial' | 'decanter_ech' | 'none';
 export type DistillReboilerType = 'kettle' | 'thermosyphon' | 'live_steam' | 'none';
 
@@ -832,8 +852,28 @@ function calcStageKValuesDense(
     return;
   }
 
-  // Rigorous γ-φ Mode (NRTL / ENRTL): DIPPR-101 P_sat + Poynting + PR φ_sat/φ_V + True 2-Liquid VLLE Tie-Line
-  calcExtendedNrtlGammaInto(comps, xArr, nComps, T_C, _kWorkGamma);
+  // IDEAL (Raoult's Law: γ = 1, φ = 1) fast K-value mode
+  if (model === 'IDEAL') {
+    for (let i = 0; i < nComps; i++) {
+      const c = comps[i];
+      if (NON_VOLATILE_SET.has(c)) {
+        kOut[i] = 1e-11;
+      } else {
+        kOut[i] = clamp(pureSatPressBarA(c, T_C) / P, 1e-9, maxGasKCap);
+      }
+    }
+    return;
+  }
+
+  // Rigorous γ-φ Mode (NRTL / ENRTL / UNIFAC / STEAM_IF97): DIPPR-101 P_sat + Poynting + PR φ_sat/φ_V + True 2-Liquid VLLE Tie-Line
+  if (model === 'UNIFAC') {
+    const xMap = zeroCompRecord();
+    for (let i = 0; i < nComps; i++) xMap[comps[i]] = Math.max(0, xArr[i] || 0);
+    const gMap = calcUnifacGamma([...comps.slice(0, nComps)], xMap, T_C);
+    for (let i = 0; i < nComps; i++) _kWorkGamma[i] = gMap[comps[i]] || 1.0;
+  } else {
+    calcExtendedNrtlGammaInto(comps, xArr, nComps, T_C, _kWorkGamma);
+  }
   for (let i = 0; i < nComps; i++) _kWorkGammaEff[i] = _kWorkGamma[i];
 
   let xWater = 0;

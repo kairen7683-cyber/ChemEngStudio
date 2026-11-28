@@ -97,6 +97,21 @@ const PROPERTY_METHOD_EN: Record<
     formulaDesc: 'P = RT/(v-b) - aα(T)/[v(v+b)], Graboski-Daubert H₂ quantum correction α_H2, binary k_ij & enthalpy departure',
     bestFor: 'High-P H₂, syngas (CO·H₂·CH₄·N₂), ethylene/propylene olefin separation, petrochemical gas trains',
   },
+  UNIFAC: {
+    label: 'UNIFAC (Hansen 1991 Group-Contribution Activity)',
+    formulaDesc: 'ln γ_i = ln γ_i^C (Combinatorial) + ln γ_i^R (Residual), 25-group Hansen UNIFAC + PR vapor fugacity',
+    bestFor: 'Polar organic mixtures & hypothetical components lacking experimental NRTL binary parameters (VLE / LLE)',
+  },
+  STEAM_IF97: {
+    label: 'STEAM-IF97 (IAPWS-IF97 Water & Steam Tables)',
+    formulaDesc: 'Exact 10-coefficient IAPWS-IF97 Region 4 saturation + compressed liquid & superheated steam density/enthalpy',
+    bestFor: 'Steam turbines (Rankine), HRSG boilers, HP/MP/LP steam headers, condensate recovery & pure water utilities',
+  },
+  IDEAL: {
+    label: 'IDEAL (Ideal Gas & Raoult\'s Law)',
+    formulaDesc: 'K_i = P_sat,i(T) / P (γ_i = 1.0, φ_i^V = 1.0, Z = 1.0) — low-pressure ideal mixture reference',
+    bestFor: 'Low-pressure near-ideal hydrocarbons (Benzene/Toluene), academic textbook checks & rapid baseline screening',
+  },
 };
 
 const PLANT_PRESET_EN: Record<string, { label: string; desc: string }> = {
@@ -1895,7 +1910,7 @@ export default function ComponentPropertySetupModal({
               {t('개별 모델 직접 선택:', 'Select Property Method Manually:')}
             </div>
 
-            {(['ENRTL', 'NRTL', 'PR', 'SRK'] as const).map(mCode => {
+            {(['ENRTL', 'NRTL', 'UNIFAC', 'PR', 'SRK', 'STEAM_IF97', 'IDEAL'] as const).map(mCode => {
               const info = PROPERTY_METHOD_INFO[mCode];
               const infoEn = PROPERTY_METHOD_EN[mCode];
               const isManualSelected = draftMethod === mCode;

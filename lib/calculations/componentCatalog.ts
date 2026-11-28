@@ -1,7 +1,7 @@
 import type { SimCompKey } from './flowsheetSolver';
 
-export type SimPropertyMethod = 'AUTO' | 'ENRTL' | 'NRTL' | 'PR' | 'SRK';
-export type ResolvedPropertyMethod = 'ENRTL' | 'NRTL' | 'PR' | 'SRK';
+export type SimPropertyMethod = 'AUTO' | 'ENRTL' | 'NRTL' | 'UNIFAC' | 'PR' | 'SRK' | 'STEAM_IF97' | 'IDEAL';
+export type ResolvedPropertyMethod = 'ENRTL' | 'NRTL' | 'UNIFAC' | 'PR' | 'SRK' | 'STEAM_IF97' | 'IDEAL';
 
 export type CompChemicalFamily =
   | 'electrolyte_inorg'
@@ -62,6 +62,36 @@ export const PROPERTY_METHOD_INFO: Record<ResolvedPropertyMethod, PropertyMethod
     accent: '#0369A1',
     bg: '#F0F9FF',
     border: '#7DD3FC',
+  },
+  UNIFAC: {
+    code: 'UNIFAC',
+    labelKo: 'UNIFAC (Hansen 1991 그룹기여 활동도 예측)',
+    shortKo: 'BIP 미지 극성 유기물 예측',
+    formulaDesc: 'ln γ_i = ln γ_i^C (Combinatorial) + ln γ_i^R (Residual), 25-그룹 Hansen UNIFAC + PR 기상 퓨개시티',
+    bestForKo: '실험 이성분 파라미터(NRTL BIP)가 없는 신규 유기용제·에스터·케톤·가상성분 혼합물의 기액/액액 평형 예측',
+    accent: '#9333EA',
+    bg: '#FAF5FF',
+    border: '#D8B4FE',
+  },
+  STEAM_IF97: {
+    code: 'STEAM_IF97',
+    labelKo: 'STEAM-IF97 (IAPWS-IF97 정밀 스팀 테이블)',
+    shortKo: '고압 스팀 · 보일러 · 발전 사이클',
+    formulaDesc: 'IAPWS-IF97 Region 4 정밀 포화방정식(10-계수) + 압축수/과열증기 엔탈피·밀도 (ASME 스팀 테이블 기준)',
+    bestForKo: '스팀 터빈(Rankine), HRSG 보일러, 고압 스팀 헤더, 응축수 회수 등 순수 H₂O·스팀 유틸리티 공정',
+    accent: '#0284C7',
+    bg: '#F0F9FF',
+    border: '#38BDF8',
+  },
+  IDEAL: {
+    code: 'IDEAL',
+    labelKo: 'IDEAL (이상 기체 · Raoult 법칙)',
+    shortKo: '기초 검증 · 비공비 근사',
+    formulaDesc: 'K_i = P_sat,i(T) / P (γ_i = 1.0, φ_i^V = 1.0, Z = 1.0), 저압 이상 혼합물 및 교과서 기준 비교',
+    bestForKo: '저압 비극성 유사 이성분계(벤젠-톨루엔 등), 학부/교과서 Raoult 기준선 검증, 초기 감도 스크리닝',
+    accent: '#475569',
+    bg: '#F8FAFC',
+    border: '#CBD5E1',
   },
 };
 
@@ -1148,6 +1178,25 @@ export function recommendPropertyMethod(
   const hasHydrocarbon = present.some(k => COMP_CATALOG_META[k]?.isHydrocarbon);
   const hasH2OrCO = present.includes('H2') || present.includes('CO');
   const hasLightOlefin = present.includes('C2H4') || present.includes('C3H6');
+
+  // 0) 순수 물/스팀 단일 성분 계 (H2O >= 99.5 wt%) -> STEAM_IF97
+  if (hasH2O && present.length === 1) {
+    return {
+      method: 'STEAM_IF97',
+      reasonKo: '순수 H₂O / Steam 공정 → IAPWS-IF97 정밀 스팀 테이블 자동 적용',
+      alternatives: ['PR', 'IDEAL'],
+    };
+  }
+  if (hasH2O && feedFlowsKgH && !hasElectrolyte && !hasPolarOrg && !hasHydrocarbon) {
+    const totF = present.reduce((s, k) => s + (feedFlowsKgH[k] ?? 0), 0);
+    if (totF > 0 && (feedFlowsKgH.H2O ?? 0) / totF >= 0.995) {
+      return {
+        method: 'STEAM_IF97',
+        reasonKo: '순수 H₂O / Steam (≥99.5 wt%) → IAPWS-IF97 정밀 스팀 테이블 자동 적용',
+        alternatives: ['PR', 'IDEAL'],
+      };
+    }
+  }
 
   // 1) 이온성 전해질(산·알칼리·염)이 물/극성 용매와 공존하거나 암모니아 수용액인 계 -> ENRTL
   if ((hasElectrolyte && (hasH2O || hasPolarOrg)) || (hasNH3 && hasH2O)) {
