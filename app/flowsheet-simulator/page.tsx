@@ -11702,6 +11702,8 @@ export function FlowsheetWorkspace({
           onClose={() => setHubPublishOpen(false)}
           isEn={isEn}
           isAdmin={user?.role === 'admin'}
+          defaultAuthorName={user?.display_name || ''}
+          userEmail={user?.email || user?.username || ''}
           defaultTitle={
             getAllPresets().find(p => p.id === presetId)?.titleEn ||
             getAllPresets().find(p => p.id === presetId)?.title ||

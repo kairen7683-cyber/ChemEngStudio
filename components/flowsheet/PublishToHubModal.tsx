@@ -7,6 +7,8 @@ interface PublishToHubModalProps {
   onClose: () => void;
   isEn: boolean;
   isAdmin: boolean;
+  defaultAuthorName?: string;
+  userEmail?: string;
   defaultTitle: string;
   thermoMethod: string;
   unitCount: number;
@@ -14,6 +16,25 @@ interface PublishToHubModalProps {
   massErrorPct: number | null;
   converged: boolean;
   buildFlowsheetPayload: () => Record<string, unknown>;
+}
+
+const NICK_PREFIXES = [
+  'ChemEng',
+  'ProcessPro',
+  'Reflux',
+  'Catalyst',
+  'Thermo',
+  'Distill',
+  'Reactor',
+  'Pinch',
+  'Syngas',
+  'Enthalpy',
+];
+
+function genRandomHandle(): string {
+  const p = NICK_PREFIXES[Math.floor(Math.random() * NICK_PREFIXES.length)];
+  const n = Math.floor(1000 + Math.random() * 9000);
+  return `${p}_${n}`;
 }
 
 const HUB_CATS = [
@@ -31,6 +52,8 @@ export default function PublishToHubModal({
   onClose,
   isEn,
   isAdmin,
+  defaultAuthorName = '',
+  userEmail = '',
   defaultTitle,
   thermoMethod,
   unitCount,
@@ -40,6 +63,7 @@ export default function PublishToHubModal({
   buildFlowsheetPayload,
 }: PublishToHubModalProps) {
   const [title, setTitle] = useState(defaultTitle);
+  const [authorName, setAuthorName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('general');
   const [tagsText, setTagsText] = useState('');
@@ -52,13 +76,20 @@ export default function PublishToHubModal({
   React.useEffect(() => {
     if (open) {
       setTitle(defaultTitle || '');
+      const cleanDef = (defaultAuthorName || '').trim();
+      const emailPrefix = (userEmail || '').split('@')[0]?.trim().toLowerCase() || '';
+      const needsRandom =
+        !cleanDef ||
+        cleanDef.includes('@') ||
+        (emailPrefix.length > 0 && cleanDef.toLowerCase() === emailPrefix);
+      setAuthorName(needsRandom ? genRandomHandle() : cleanDef);
       setDescription('');
       setTagsText('');
       setError(null);
       setPublishedId(null);
       setCopied(false);
     }
-  }, [open, defaultTitle]);
+  }, [open, defaultTitle, defaultAuthorName, userEmail]);
 
   if (!open) return null;
 
@@ -83,6 +114,7 @@ export default function PublishToHubModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: title.trim(),
+          authorName: authorName.trim(),
           description: description.trim(),
           category,
           tags: tagsText
@@ -273,6 +305,32 @@ export default function PublishToHubModal({
                 />
               </div>
             </div>
+
+            {!(isAdmin && asOfficial) && (
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: '#334155', display: 'block', marginBottom: 4 }}>
+                  {isEn ? 'Author Nickname (public handle — email is never shown)' : '작성자 별명 (공개 닉네임 · 이메일은 노출되지 않음)'}
+                </label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    maxLength={32}
+                    value={authorName}
+                    onChange={e => setAuthorName(e.target.value)}
+                    placeholder="e.g. ChemEng_4821"
+                    style={{ flex: 1, padding: '7px 10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 12, color: '#0F172A' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAuthorName(genRandomHandle())}
+                    title={isEn ? 'Generate random nickname' : '무작위 별명 다시 생성'}
+                    style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #CBD5E1', background: '#F8FAFC', color: '#334155', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                  >
+                    🎲 {isEn ? 'Random' : '랜덤'}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {isAdmin && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: '#334155', cursor: 'pointer' }}>

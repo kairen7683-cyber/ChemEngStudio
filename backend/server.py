@@ -982,12 +982,43 @@ def _normalize_username_and_email(
     return uname, email_val
 
 
+_NICKNAME_PREFIXES = (
+    "ChemEng",
+    "ProcessPro",
+    "Reflux",
+    "Catalyst",
+    "Thermo",
+    "Distill",
+    "Reactor",
+    "Pinch",
+    "Syngas",
+    "Enthalpy",
+)
+
+
+def generate_random_nickname() -> str:
+    prefix = _NICKNAME_PREFIXES[secrets.randbelow(len(_NICKNAME_PREFIXES))]
+    num = secrets.randbelow(9000) + 1000
+    return f"{prefix}_{num}"
+
+
+def sanitize_nickname(raw: Optional[str]) -> str:
+    s = str(raw or "").strip()
+    if not s:
+        return ""
+    # Never allow email addresses to leak as public nicknames
+    if "@" in s:
+        s = s.split("@", 1)[0].strip()
+    s = re.sub(r"[\r\n\t]+", " ", s)[:32].strip()
+    return s
+
+
 @app.post("/api/auth/register")
 def api_auth_register(payload: RegisterPayload, request: Request, response: Response):
     ip = client_ip(request)
     check_auth_rate_limit(ip)
     uname, email_val = _normalize_username_and_email(payload.username, payload.email)
-    dname = payload.display_name.strip() or (uname.split("@")[0] if "@" in uname else uname)
+    dname = sanitize_nickname(payload.display_name) or generate_random_nickname()
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="비밀번호는 최소 6자 이상이어야 합니다.")
 
@@ -3201,8 +3232,25 @@ async def api_hub_publish(request: Request):
                 raise HTTPException(status_code=429, detail=f"Daily publish limit ({MAX_HUB_DAILY_PUBLISH}) reached.")
 
         now = iso_now()
-        author_name = "ChemPlant Team" if user["role"] == "admin" and (body or {}).get("asOfficial") else (user["display_name"] or user["username"])
         is_official = 1 if (user["role"] == "admin" and (body or {}).get("asOfficial")) else 0
+        if is_official:
+            author_name = "ChemPlant Team"
+        else:
+            req_nick = sanitize_nickname((body or {}).get("authorName"))
+            stored_nick = sanitize_nickname(user["display_name"])
+            email_prefix = (user["email"] or user["username"] or "").split("@", 1)[0].strip().lower()
+            if req_nick and len(req_nick) >= 2:
+                author_name = req_nick
+            elif stored_nick and stored_nick.lower() != email_prefix and len(stored_nick) >= 2:
+                author_name = stored_nick
+            else:
+                author_name = generate_random_nickname()
+            # Persist nickname to user profile so it's remembered next time
+            if author_name and author_name != user["display_name"]:
+                conn.execute(
+                    "UPDATE users SET display_name = ? WHERE id = ?",
+                    (author_name, user["id"]),
+                )
         cur = conn.execute(
             """
             INSERT INTO hub_flowsheets (
@@ -3268,6 +3316,27 @@ def api_hub_delete(item_id: int, request: Request):
             raise HTTPException(status_code=403, detail="Only the author or admin can delete this item.")
         conn.execute("DELETE FROM hub_flowsheets WHERE id = ?", (item_id,))
         return {"ok": True, "deletedId": item_id}
+
+
+@app.post("/api/auth/me/nickname")
+async def api_update_my_nickname(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.")
+    raw = str((body or {}).get("nickname") or "").strip()
+    if "@" in raw:
+        raise HTTPException(status_code=400, detail="Nickname cannot be an email address.")
+    nick = sanitize_nickname(raw)
+    if len(nick) < 2:
+        raise HTTPException(status_code=400, detail="Nickname must be at least 2 characters.")
+    with get_db() as conn:
+        user = resolve_session_user(request, conn)
+        if not user:
+            raise HTTPException(status_code=401, detail="Login required.")
+        conn.execute("UPDATE users SET display_name = ? WHERE id = ?", (nick, user["id"]))
+        updated = conn.execute("SELECT * FROM users WHERE id = ?", (user["id"],)).fetchone()
+        return {"ok": True, "nickname": nick, "user": serialize_user(updated)}
 
 
 @app.get("/{full_path:path}")
