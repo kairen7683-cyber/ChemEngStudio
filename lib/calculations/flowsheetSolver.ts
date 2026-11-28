@@ -2225,8 +2225,11 @@ export function createIdleFlowsheetResult(
   const isExplicitPropertyMethod =
     propertyMethodMode === 'ENRTL' ||
     propertyMethodMode === 'NRTL' ||
+    propertyMethodMode === 'UNIFAC' ||
     propertyMethodMode === 'PR' ||
-    propertyMethodMode === 'SRK';
+    propertyMethodMode === 'SRK' ||
+    propertyMethodMode === 'STEAM_IF97' ||
+    propertyMethodMode === 'IDEAL';
   const autoRec = recommendPropertyMethod(options?.activeComponents ?? SIM_COMPS, aggFeedFlows, maxFeedP);
   const propertyMethodUsed: ResolvedPropertyMethod = isExplicitPropertyMethod
     ? propertyMethodMode
@@ -2461,8 +2464,11 @@ export function solveFlowsheet(
   const isExplicitPropertyMethod =
     propertyMethodMode === 'ENRTL' ||
     propertyMethodMode === 'NRTL' ||
+    propertyMethodMode === 'UNIFAC' ||
     propertyMethodMode === 'PR' ||
-    propertyMethodMode === 'SRK';
+    propertyMethodMode === 'SRK' ||
+    propertyMethodMode === 'STEAM_IF97' ||
+    propertyMethodMode === 'IDEAL';
   const autoRec = recommendPropertyMethod(options?.activeComponents ?? SIM_COMPS, aggFeedFlows, maxFeedP);
   const propertyMethodUsed: ResolvedPropertyMethod = isExplicitPropertyMethod
     ? propertyMethodMode
@@ -2472,7 +2478,9 @@ export function solveFlowsheet(
     : autoRec.reasonKo;
   const hasAnyGeneralInSheet = hasGeneralComponents(aggFeedFlows);
   const runtimePropertyMethod: ResolvedPropertyMethod =
-    isExplicitPropertyMethod || hasAnyGeneralInSheet ? propertyMethodUsed : 'ENRTL';
+    isExplicitPropertyMethod || hasAnyGeneralInSheet || propertyMethodUsed === 'STEAM_IF97'
+      ? propertyMethodUsed
+      : 'ENRTL';
 
   // 1) 위상 정렬 및 순환 루프 Tear Stream 자동 탐색
   const topo = analyzeFlowsheetTopology(
@@ -3917,7 +3925,7 @@ export function solveFlowsheet(
 
           const moleFrac = emptyFlows();
           SIM_COMPS.forEach(k => { moleFrac[k] = (totalIn[k] / COMP_META[k].mw) / Math.max(1e-9, inProps.totalMolarKmolH); });
-          const useEosZ = isRigorous || isExplicitPropertyMethod || hasAnyGeneralInSheet;
+          const useEosZ = (isRigorous || isExplicitPropertyMethod || hasAnyGeneralInSheet) && propertyMethodUsed !== 'IDEAL';
           const Z_avg = useEosZ
             ? (propertyMethodUsed === 'SRK'
                 ? calcSoaveRedlichKwongMixture(moleFrac, T_in, 0.5 * (P_in + P_out)).Z_vap
@@ -4070,7 +4078,7 @@ export function solveFlowsheet(
           : Math.min(1.66, Math.max(1.12, cpMolKJ / Math.max(4.0, cpMolKJ - 8.31446)));
         const kExp = (gammaEst - 1.0) / gammaEst;
 
-        const useEosZ = isRigorous || isExplicitPropertyMethod || hasAnyGeneralInSheet;
+        const useEosZ = (isRigorous || isExplicitPropertyMethod || hasAnyGeneralInSheet) && propertyMethodUsed !== 'IDEAL';
         const Z_avg = useEosZ && !isSteamDominant
           ? (propertyMethodUsed === 'SRK'
               ? calcSoaveRedlichKwongMixture(moleFrac, T_in, 0.5 * (P_in + P_out)).Z_vap
