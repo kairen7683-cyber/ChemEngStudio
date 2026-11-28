@@ -888,8 +888,32 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
     unitType === 'pump' ||
     unitType === 'compressor';
 
+  const statusBorder =
+    data.simStatus === 'error'
+      ? '2px solid #EF4444'
+      : data.simStatus === 'incomplete'
+        ? '1.8px solid #F59E0B'
+        : data.simStatus === 'converged'
+          ? '1.5px solid #10B981'
+          : data.simStatus === 'ready'
+            ? '1.5px solid #3B82F6'
+            : visualOnly
+              ? '1px dashed #CBD5E1'
+              : '1px solid #CBD5E1';
+
+  const statusShadow = selected
+    ? data.simStatus === 'error'
+      ? '0 0 0 3px rgba(239, 68, 68, 0.28)'
+      : '0 0 0 3px rgba(29, 78, 216, 0.22)'
+    : data.simStatus === 'error'
+      ? '0 0 0 2.5px rgba(239, 68, 68, 0.22)'
+      : data.simStatus === 'incomplete'
+        ? '0 0 0 2px rgba(245, 158, 11, 0.16)'
+        : '0 1px 4px rgba(15, 23, 42, 0.07)';
+
   return (
     <div
+      data-sim-status={data.simStatus || 'none'}
       title={
         data.simStatusMsg
           ? `[${data.tag}] ${localizeSolverText(data.simStatusMsg, isEn)}`
@@ -920,14 +944,10 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
               : 52,
         background: selected ? 'rgba(239, 246, 255, 0.94)' : 'rgba(255, 255, 255, 0.94)',
         border: selected
-          ? '1.5px dashed #1D4ED8'
-          : visualOnly
-            ? '1px dashed #CBD5E1'
-            : '1px solid #CBD5E1',
+          ? (data.simStatus === 'error' ? '2px dashed #EF4444' : '2px dashed #1D4ED8')
+          : statusBorder,
         borderRadius: 7,
-        boxShadow: selected
-          ? '0 0 0 3px rgba(29, 78, 216, 0.16)'
-          : '0 1px 4px rgba(15, 23, 42, 0.07)',
+        boxShadow: statusShadow,
         fontFamily: "'Inter', system-ui, sans-serif",
         position: 'relative',
         padding: '5px',
@@ -937,99 +957,7 @@ function FlowUnitNode({ id, data, selected }: NodeProps<FlowCanvasNodeData>) {
         justifyContent: 'center',
       }}
     >
-      {/* ── 우상단 수렴(✓) / 에러(!) 상태 배지 ── */}
-      {data.simStatus === 'converged' && (
-        <span
-          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Converged' : '수렴 완료')}
-          style={{
-            position: 'absolute',
-            top: -6,
-            right: -6,
-            width: 16,
-            height: 16,
-            borderRadius: 999,
-            background: '#059669',
-            color: '#FFFFFF',
-            fontSize: 10,
-            fontWeight: 900,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1.5px solid #FFFFFF',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            zIndex: 20,
-          }}
-        >
-          ✓
-        </span>
-      )}
-      {data.simStatus === 'error' && (
-        <span
-          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Not converged or balance error' : '미수렴 또는 수지 오차 발생')}
-          style={{
-            position: 'absolute',
-            top: -6,
-            right: -6,
-            width: 16,
-            height: 16,
-            borderRadius: 999,
-            background: '#DC2626',
-            color: '#FFFFFF',
-            fontSize: 10,
-            fontWeight: 900,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1.5px solid #FFFFFF',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            zIndex: 20,
-          }}
-        >
-          !
-        </span>
-      )}
-      {data.simStatus === 'incomplete' && (
-        <span
-          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Incomplete input' : '입력 부족')}
-          style={{
-            position: 'absolute',
-            top: -5,
-            right: -5,
-            width: 14,
-            height: 14,
-            borderRadius: 999,
-            background: '#FEF3C7',
-            color: '#B45309',
-            fontSize: 9,
-            fontWeight: 900,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1.5px solid #D97706',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
-            zIndex: 20,
-          }}
-        >
-          •
-        </span>
-      )}
-      {data.simStatus === 'ready' && (
-        <span
-          title={localizeSolverText(data.simStatusMsg, isEn) || (isEn ? 'Ready — Press RUN' : '입력 완료 — RUN 가능')}
-          style={{
-            position: 'absolute',
-            top: -5,
-            right: -5,
-            width: 13,
-            height: 13,
-            borderRadius: 999,
-            background: '#2563EB',
-            border: '1.5px solid #FFFFFF',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.18)',
-            zIndex: 20,
-          }}
-        />
-      )}
+      {/* 상태 표시는 입출구 포트 점과 혼동되지 않도록 블록 테두리 색상(data-sim-status)으로 직관 표현 */}
 
       {/* ── 표준 엔지니어링 단색 선화 SVG 심볼 본체 (컴팩트 박스 내부 전용) ── */}
       <div
@@ -9389,31 +9317,56 @@ export function FlowsheetWorkspace({
                   gap: 6,
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                    color: isSimDirty ? '#D97706' : '#059669',
-                    whiteSpace: 'nowrap',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 5,
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: isSimDirty ? '#D97706' : '#059669',
-                      display: 'inline-block',
-                      flexShrink: 0,
-                    }}
-                  />
-                  {isSimDirty
-                    ? (isEn ? 'Modified (Run Needed)' : '미수렴 (변경됨)')
-                    : (isEn ? `Converged (${solvedMeta.elapsedMs}ms)` : `수렴 (${solvedMeta.elapsedMs}ms)`)}
-                </span>
+                {(() => {
+                  const selUnitFailed = selectedUnitRes?.distillResult?.converged === false;
+                  const totalFailed = solved.convergence?.failedUnitCount ?? 0;
+                  const totalWarn = solved.convergence?.warningUnitCount ?? 0;
+                  const isFailed = !isSimDirty && (selUnitFailed || totalFailed > 0 || solved.convergence?.converged === false);
+                  const isWarn = !isSimDirty && !isFailed && totalWarn > 0;
+                  const badgeColor = isSimDirty
+                    ? '#D97706'
+                    : isFailed
+                      ? '#DC2626'
+                      : isWarn
+                        ? '#D97706'
+                        : '#059669';
+                  const badgeLabel = isSimDirty
+                    ? (isEn ? 'Modified (Run Needed)' : '변경됨 (RUN 필요)')
+                    : isFailed
+                      ? (isEn
+                          ? `Not Converged (${Math.max(1, totalFailed)} · ${solvedMeta.elapsedMs}ms)`
+                          : `미수렴 (${Math.max(1, totalFailed)}건 · ${solvedMeta.elapsedMs}ms)`)
+                      : isWarn
+                        ? (isEn
+                            ? `Warnings (${totalWarn} · ${solvedMeta.elapsedMs}ms)`
+                            : `경고 포함 (${totalWarn}건 · ${solvedMeta.elapsedMs}ms)`)
+                        : (isEn ? `Converged (${solvedMeta.elapsedMs}ms)` : `수렴 (${solvedMeta.elapsedMs}ms)`);
+                  return (
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 800,
+                        color: badgeColor,
+                        whiteSpace: 'nowrap',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: badgeColor,
+                          display: 'inline-block',
+                          flexShrink: 0,
+                        }}
+                      />
+                      {badgeLabel}
+                    </span>
+                  );
+                })()}
                 <button
                   type="button"
                   disabled={isSimRunning}
