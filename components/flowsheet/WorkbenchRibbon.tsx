@@ -84,40 +84,31 @@ function RibbonGroup({
 }) {
   return (
     <div
+      className="wb-ribbon-group"
+      title={label}
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: '2px 8px 1px',
-        borderRight: noDivider ? 'none' : '1px solid #E2E8F0',
+        gap: 3,
+        padding: '0 6px',
         flexShrink: 0,
-        height: 44,
+        height: 36,
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          height: 28,
-        }}
-      >
-        {children}
-      </div>
-      <span
-        style={{
-          fontSize: 9,
-          lineHeight: '11px',
-          fontWeight: 600,
-          color: '#94A3B8',
-          letterSpacing: '0.02em',
-          userSelect: 'none',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {label}
-      </span>
+      {children}
+      {!noDivider && (
+        <span
+          className="wb-group-div"
+          aria-hidden="true"
+          style={{
+            width: 1,
+            height: 16,
+            marginLeft: 6,
+            backgroundColor: '#E2E8F0',
+            flexShrink: 0,
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -328,11 +319,11 @@ export default function WorkbenchRibbon({
         .wb-ribbon-scroll::-webkit-scrollbar-track { background: transparent; }
         .wb-ribbon-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
         .wb-tab-btn {
-          height: 28px;
-          padding: 0 12px;
+          height: 30px;
+          padding: 0 13px;
           border: none;
           background: transparent;
-          font-size: 11.5px;
+          font-size: 12px;
           font-weight: 500;
           color: #475569;
           cursor: pointer;
@@ -351,48 +342,48 @@ export default function WorkbenchRibbon({
           border-bottom-color: #1E3A8A;
         }
         .wb-cmd-btn {
-          height: 26px;
+          height: 24px;
           padding: 0 8px;
-          border-radius: 4px;
-          border: 1px solid #E2E8F0;
-          background: #FFFFFF;
+          border-radius: 5px;
+          border: 1px solid transparent;
+          background: transparent;
           color: #334155;
-          font-size: 11.5px;
+          font-size: 11px;
           font-weight: 500;
           display: inline-flex;
           align-items: center;
-          gap: 5px;
+          gap: 4px;
           cursor: pointer;
           white-space: nowrap;
           transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
         }
         .wb-cmd-btn:hover:not(:disabled) {
           background: #F1F5F9;
-          border-color: #CBD5E1;
+          border-color: #E2E8F0;
           color: #0F172A;
         }
         .wb-cmd-btn:disabled {
-          opacity: 0.42;
+          opacity: 0.4;
           cursor: not-allowed;
         }
         .wb-cmd-btn.active {
           background: #EFF6FF;
-          border-color: #93C5FD;
+          border-color: #BFDBFE;
           color: #1E3A8A;
           font-weight: 600;
         }
         .wb-run-btn {
-          height: 26px;
-          padding: 0 11px;
-          border-radius: 4px;
+          height: 24px;
+          padding: 0 10px;
+          border-radius: 5px;
           border: 1px solid #1E3A8A;
           background: #1E3A8A;
           color: #FFFFFF;
-          font-size: 11.5px;
+          font-size: 11px;
           font-weight: 700;
           display: inline-flex;
           align-items: center;
-          gap: 5px;
+          gap: 4px;
           cursor: pointer;
           white-space: nowrap;
           letter-spacing: 0.01em;
@@ -411,18 +402,18 @@ export default function WorkbenchRibbon({
           align-items: center;
           background: #F1F5F9;
           border: 1px solid #E2E8F0;
-          border-radius: 4px;
+          border-radius: 5px;
           padding: 1px;
-          height: 26px;
+          height: 24px;
         }
         .wb-seg-btn {
-          height: 22px;
+          height: 20px;
           padding: 0 7px;
           border: none;
-          border-radius: 3px;
+          border-radius: 4px;
           background: transparent;
           color: #475569;
-          font-size: 11px;
+          font-size: 10.5px;
           font-weight: 500;
           cursor: pointer;
           white-space: nowrap;
@@ -434,40 +425,40 @@ export default function WorkbenchRibbon({
         .wb-seg-btn.active {
           background: #FFFFFF;
           color: #1E3A8A;
-          font-weight: 700;
+          font-weight: 600;
           box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
         }
         .wb-icon-btn {
-          height: 26px;
-          min-width: 26px;
-          padding: 0 6px;
-          border-radius: 4px;
-          border: 1px solid #E2E8F0;
-          background: #FFFFFF;
-          color: #334155;
-          font-size: 13px;
+          height: 24px;
+          min-width: 24px;
+          padding: 0 5px;
+          border-radius: 5px;
+          border: 1px solid transparent;
+          background: transparent;
+          color: #475569;
+          font-size: 12px;
           line-height: 1;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          transition: background-color 120ms ease, border-color 120ms ease;
+          transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
         }
         .wb-icon-btn:hover:not(:disabled) {
           background: #F1F5F9;
-          border-color: #CBD5E1;
+          border-color: #E2E8F0;
           color: #0F172A;
         }
         .wb-icon-btn:disabled {
-          opacity: 0.38;
+          opacity: 0.35;
           cursor: not-allowed;
         }
       `}</style>
 
-      {/* Row 1: Compact Tab Strip (~28px) */}
+      {/* Row 1: Compact Tab Strip (~30px) */}
       <div
         style={{
-          height: 28,
+          height: 30,
           backgroundColor: '#F8FAFC',
           borderBottom: '1px solid #E2E8F0',
           display: 'flex',
@@ -640,11 +631,11 @@ export default function WorkbenchRibbon({
         </div>
       </div>
 
-      {/* Row 2: Single-line Grouped Command Strip (~46px) */}
+      {/* Row 2: Sleek Single-Line Command Strip (~36px) */}
       <div
         className="wb-ribbon-scroll"
         style={{
-          height: 46,
+          height: 36,
           backgroundColor: '#FFFFFF',
           display: 'flex',
           alignItems: 'center',
@@ -692,13 +683,13 @@ export default function WorkbenchRibbon({
                 onClick={onToggleConvDiag}
                 title={t('수렴 진단 열기/닫기', 'Toggle Convergence Diagnostics')}
                 style={{
-                  height: 26,
+                  height: 24,
                   padding: '0 8px',
-                  borderRadius: 4,
+                  borderRadius: 5,
                   border: `1px solid ${statusInfo.border}`,
                   backgroundColor: statusInfo.bg,
                   color: statusInfo.color,
-                  fontSize: 11,
+                  fontSize: 10.5,
                   fontWeight: 600,
                   display: 'inline-flex',
                   alignItems: 'center',
