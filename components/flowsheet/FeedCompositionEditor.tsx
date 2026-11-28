@@ -182,12 +182,38 @@ export default function FeedCompositionEditor({
     }
   };
 
+  const unenteredComps = useMemo(
+    () => visibleComps.filter(c => (Number(draftPcts[c]) || 0) <= 1e-9),
+    [visibleComps, draftPcts]
+  );
+  const canFillRemainder = pctSum > 1e-9 && pctSum < 100 - 1e-4 && unenteredComps.length > 0;
+  const remainderPct = Math.max(0, Number((100 - pctSum).toFixed(3)));
+
   const handleNormalize = () => {
     if (pctSum <= 1e-9) return;
     const normalized: Record<string, number> = {};
-    for (const c of visibleComps) {
-      const raw = Math.max(0, Number(draftPcts[c]) || 0);
-      normalized[c] = Number(((raw / pctSum) * 100).toFixed(3));
+    if (canFillRemainder) {
+      // 입력한 성분 값은 그대로 유지하고, 미입력(0) 성분에 잔여 (100 - 합계)%를 채워 넣음
+      for (const c of visibleComps) {
+        normalized[c] = Math.max(0, Number(draftPcts[c]) || 0);
+      }
+      const nEmpty = unenteredComps.length;
+      const each = Number((remainderPct / nEmpty).toFixed(3));
+      let allocated = 0;
+      unenteredComps.forEach((c, idx) => {
+        const val =
+          idx === nEmpty - 1
+            ? Math.max(0, Number((remainderPct - allocated).toFixed(3)))
+            : each;
+        normalized[c] = val;
+        allocated += val;
+      });
+    } else {
+      // 모든 성분이 입력됐거나 100% 초과 시 비례 정규화
+      for (const c of visibleComps) {
+        const raw = Math.max(0, Number(draftPcts[c]) || 0);
+        normalized[c] = Number(((raw / pctSum) * 100).toFixed(3));
+      }
     }
     setDraftPcts(normalized);
     const effectiveTotal = draftTotalKgH > 0 ? draftTotalKgH : actualTotalKgH;
@@ -403,18 +429,37 @@ export default function FeedCompositionEditor({
               <button
                 type="button"
                 onClick={handleNormalize}
+                title={
+                  canFillRemainder
+                    ? isEn
+                      ? `Keep entered values and assign remaining ${remainderPct}% to unentered component(s)`
+                      : `입력한 비율은 유지하고 미입력 성분에 잔여 ${remainderPct}%를 자동 채움`
+                    : isEn
+                      ? 'Proportionally scale all components to sum to 100%'
+                      : '전체 성분 비율을 합계 100%로 비례 정규화'
+                }
                 style={{
                   padding: '2px 7px',
                   fontSize: 9.5,
                   fontWeight: 800,
                   borderRadius: 4,
-                  border: '1px solid #F59E0B',
-                  background: '#FEF3C7',
-                  color: '#92400E',
+                  border: canFillRemainder ? '1px solid #3B82F6' : '1px solid #F59E0B',
+                  background: canFillRemainder ? '#DBEAFE' : '#FEF3C7',
+                  color: canFillRemainder ? '#1E40AF' : '#92400E',
                   cursor: 'pointer',
                 }}
               >
-                {isEn ? 'Normalize 100%' : '100% 자동맞춤'}
+                {canFillRemainder
+                  ? unenteredComps.length === 1
+                    ? isEn
+                      ? `Fill ${unenteredComps[0]} (${remainderPct}%)`
+                      : `잔여 ${remainderPct}% → ${unenteredComps[0]} 채우기`
+                    : isEn
+                      ? `Fill Remainder (${remainderPct}%)`
+                      : `빈 성분에 잔여 ${remainderPct}% 채우기`
+                  : isEn
+                    ? 'Normalize 100%'
+                    : '100% 비례 정규화'}
               </button>
             )}
           </div>
